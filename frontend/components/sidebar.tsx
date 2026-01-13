@@ -11,6 +11,7 @@ import {
     Phone,
     BarChart3,
     Users,
+    FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,12 @@ const navItems: NavItem[] = [
         label: "Utilisateurs",
         href: "/dashboard/users",
         icon: Users,
+        roles: ["ADMIN"],
+    },
+    {
+        label: "Logs d'appels",
+        href: "/admin/logs",
+        icon: FileText,
         roles: ["ADMIN"],
     },
     {
