@@ -67,14 +67,23 @@ function formatDuration(seconds: number): string {
 }
 
 /**
- * Helper to pick the best display number
+ * Helper to pick the best display number for caller/callee
+ * Priority: participant_phone_number (real caller ID) > presentation > dn_number
  */
-function getDisplayNumber(dnNumber: string | null, participantNumber: string | null): string {
-    // Si on a un vrai numéro de participant (et qu'il n'est pas vide), on l'utilise
+function getDisplayNumber(
+    dnNumber: string | null,
+    participantNumber: string | null,
+    presentation: string | null = null
+): string {
+    // 1. source_participant_phone_number contient le VRAI Caller ID (ex: +41798728245)
     if (participantNumber && participantNumber.trim() !== "") {
         return participantNumber;
     }
-    // Sinon on se rabat sur le DN (ex: 10004 ou 101)
+    // 2. source_presentation (fallback, parfois contient le nom du trunk)
+    if (presentation && presentation.trim() !== "") {
+        return presentation;
+    }
+    // 3. Fallback sur le DN (extension interne ou trunk ID)
     return dnNumber || "-";
 }
 
@@ -133,11 +142,12 @@ export async function getCallLogs(
                     cdr_started_at: true,
                     cdr_answered_at: true,
                     cdr_ended_at: true,
-                    // On récupère les deux types de numéros
+                    // Source (appelant)
                     source_dn_number: true,
                     source_participant_phone_number: true,
+                    source_presentation: true, // <-- Vrai Caller ID pour appels entrants
                     source_dn_type: true,
-
+                    // Destination (appelé)
                     destination_dn_number: true,
                     destination_participant_phone_number: true,
                     destination_dn_type: true,
@@ -167,11 +177,18 @@ export async function getCallLogs(
                 startedAt: call.cdr_started_at
                     ? new Date(call.cdr_started_at).toISOString()
                     : "",
-                // Utilisation de la fonction helper pour choisir le bon numéro
-                sourceNumber: getDisplayNumber(call.source_dn_number, call.source_participant_phone_number),
+                // source_presentation contient le vrai Caller ID pour les appels entrants
+                sourceNumber: getDisplayNumber(
+                    call.source_dn_number,
+                    call.source_participant_phone_number,
+                    call.source_presentation // <- Priorité au Caller ID
+                ),
                 sourceType: call.source_dn_type || "-",
 
-                destinationNumber: getDisplayNumber(call.destination_dn_number, call.destination_participant_phone_number),
+                destinationNumber: getDisplayNumber(
+                    call.destination_dn_number,
+                    call.destination_participant_phone_number
+                ),
                 destinationType: call.destination_dn_type || "-",
 
                 direction: determineDirection(
