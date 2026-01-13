@@ -12,22 +12,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: callcenter-backend
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/callcenter
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
 
   frontend:
     build:
@@ -40,10 +28,9 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/callcenter
       - NEXTAUTH_URL=http://localhost:3000
       - NEXTAUTH_SECRET=your-production-secret-change-this
-      - BACKEND_URL=http://backend:8000
     depends_on:
-      - backend
-      - postgres
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
     LayoutDashboard,
-    Upload,
     Settings,
     ChevronLeft,
     ChevronRight,
@@ -50,12 +49,6 @@ const navItems: NavItem[] = [
         label: "Utilisateurs",
         href: "/dashboard/users",
         icon: Users,
-        roles: ["ADMIN"],
-    },
-    {
-        label: "Upload CSV",
-        href: "/admin/upload",
-        icon: Upload,
         roles: ["ADMIN"],
     },
     {
