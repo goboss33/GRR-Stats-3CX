@@ -9,52 +9,57 @@ import {
 } from "@/types/stats.types";
 
 /**
- * Get global metrics for the dashboard
- * Returns: Total calls, answered, missed, average duration, answer rate
+ * Get global metrics using optimized SQL aggregations
  */
 export async function getGlobalMetrics(
     startDate: Date,
     endDate: Date
 ): Promise<GlobalMetrics> {
-    // Fetch all calls within the date range
-    const calls = await prisma.cdroutput.findMany({
+    // 1. Compter le total et les répondus directement en base
+    const counts = await prisma.cdroutput.groupBy({
+        by: ['processed'], // On doit grouper par quelque chose, 'processed' est souvent constant ou on ignore
         where: {
             cdr_started_at: {
                 gte: startDate,
                 lte: endDate,
             },
         },
-        select: {
-            cdr_answered_at: true,
-            cdr_started_at: true,
-            cdr_ended_at: true,
+        _count: {
+            cdr_id: true, // Total calls
         },
     });
 
-    const totalCalls = calls.length;
-    const answeredCalls = calls.filter((c) => c.cdr_answered_at !== null).length;
+    // Pour avoir le décompte précis des répondus (où cdr_answered_at n'est pas null)
+    // Prisma groupBy ne permet pas de filtre conditionnel dans le count, donc on fait deux requêtes rapides
+    const totalCalls = await prisma.cdroutput.count({
+        where: {
+            cdr_started_at: { gte: startDate, lte: endDate },
+        },
+    });
+
+    const answeredCalls = await prisma.cdroutput.count({
+        where: {
+            cdr_started_at: { gte: startDate, lte: endDate },
+            cdr_answered_at: { not: null },
+        },
+    });
+
     const missedCalls = totalCalls - answeredCalls;
 
-    // Calculate average duration for answered calls
-    let totalDurationMs = 0;
-    let answeredWithDuration = 0;
+    // 2. Calculer la durée moyenne (DMT) via SQL brut pour la performance
+    // On demande à Postgres de faire la moyenne de (fin - début)
+    const avgResult = await prisma.$queryRaw<[{ avg_duration: number | null }]>`
+        SELECT AVG(EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at))) as avg_duration
+        FROM cdroutput
+        WHERE cdr_started_at >= ${startDate}
+          AND cdr_started_at <= ${endDate}
+          AND cdr_answered_at IS NOT NULL
+          AND cdr_ended_at IS NOT NULL
+    `;
 
-    for (const call of calls) {
-        if (call.cdr_answered_at && call.cdr_ended_at) {
-            const duration =
-                new Date(call.cdr_ended_at).getTime() -
-                new Date(call.cdr_answered_at).getTime();
-            if (duration > 0) {
-                totalDurationMs += duration;
-                answeredWithDuration++;
-            }
-        }
-    }
-
-    const avgDurationSeconds =
-        answeredWithDuration > 0
-            ? Math.round(totalDurationMs / answeredWithDuration / 1000)
-            : 0;
+    const avgDurationSeconds = avgResult[0]?.avg_duration
+        ? Math.round(Number(avgResult[0].avg_duration))
+        : 0;
 
     const answerRate = totalCalls > 0 ? (answeredCalls / totalCalls) * 100 : 0;
 
@@ -68,143 +73,97 @@ export async function getGlobalMetrics(
 }
 
 /**
- * Get timeline data for the chart
- * Groups calls by day (or hour if the range is "today")
+ * Get timeline data grouped by SQL (date_trunc)
  */
 export async function getTimelineData(
     startDate: Date,
     endDate: Date
 ): Promise<TimelineDataPoint[]> {
-    const calls = await prisma.cdroutput.findMany({
-        where: {
-            cdr_started_at: {
-                gte: startDate,
-                lte: endDate,
-            },
-        },
-        select: {
-            cdr_started_at: true,
-            cdr_answered_at: true,
-        },
-        orderBy: {
-            cdr_started_at: "asc",
-        },
-    });
-
-    // Determine if we should group by hour (same day) or by day
     const diffMs = endDate.getTime() - startDate.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    const groupByHour = diffDays <= 1;
 
-    const groups: Map<string, { answered: number; missed: number }> = new Map();
+    // Si la période est <= 2 jours, on groupe par heure, sinon par jour
+    const interval = diffDays <= 2 ? 'hour' : 'day';
 
-    for (const call of calls) {
-        if (!call.cdr_started_at) continue;
+    // Requête SQL optimisée pour grouper par temps
+    // COALESCE(SUM(...), 0) assure qu'on reçoit 0 au lieu de null
+    const rawData = await prisma.$queryRaw<Array<{ date_group: Date, answered: bigint, missed: bigint }>>`
+        SELECT 
+            date_trunc(${interval}, cdr_started_at) as date_group,
+            COUNT(CASE WHEN cdr_answered_at IS NOT NULL THEN 1 END) as answered,
+            COUNT(CASE WHEN cdr_answered_at IS NULL THEN 1 END) as missed
+        FROM cdroutput
+        WHERE cdr_started_at >= ${startDate}
+          AND cdr_started_at <= ${endDate}
+        GROUP BY date_group
+        ORDER BY date_group ASC
+    `;
 
-        const date = new Date(call.cdr_started_at);
-        let key: string;
-        let label: string;
+    // Transformation pour le frontend
+    return rawData.map((row) => {
+        const date = new Date(row.date_group);
+        let label = "";
 
-        if (groupByHour) {
-            // Group by hour (format: "2024-01-15 14:00")
-            key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:00`;
+        if (interval === 'hour') {
+            // Format HH:00
             label = `${String(date.getHours()).padStart(2, "0")}:00`;
         } else {
-            // Group by day (format: "2024-01-15")
-            key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+            // Format DD/MM
             label = `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}`;
         }
 
-        if (!groups.has(key)) {
-            groups.set(key, { answered: 0, missed: 0 });
-        }
-
-        const group = groups.get(key)!;
-        if (call.cdr_answered_at) {
-            group.answered++;
-        } else {
-            group.missed++;
-        }
-    }
-
-    // Convert to array and sort by date
-    const result: TimelineDataPoint[] = Array.from(groups.entries())
-        .map(([date, data]) => ({
-            date,
-            label: groupByHour ? date.split(" ")[1] : date.split("-").slice(1, 3).reverse().join("/"),
-            answered: data.answered,
-            missed: data.missed,
-        }))
-        .sort((a, b) => a.date.localeCompare(b.date));
-
-    return result;
+        return {
+            date: date.toISOString(),
+            label,
+            answered: Number(row.answered), // BigInt vers Number
+            missed: Number(row.missed),
+        };
+    });
 }
 
 /**
- * Get top extensions by call volume
- * Groups by destination_dn_number (extensions receiving calls)
+ * Get top extensions using SQL Group By
  */
 export async function getTopExtensions(
     startDate: Date,
     endDate: Date,
     limit: number = 10
 ): Promise<ExtensionStats[]> {
-    const calls = await prisma.cdroutput.findMany({
-        where: {
-            cdr_started_at: {
-                gte: startDate,
-                lte: endDate,
-            },
-            destination_dn_number: {
-                not: null,
-            },
-        },
-        select: {
-            destination_dn_number: true,
-            cdr_answered_at: true,
-        },
+    // Agrégation puissante pour avoir le total ET les répondus par extension en une seule passe
+    const rawStats = await prisma.$queryRaw<Array<{
+        extension: string,
+        total: bigint,
+        answered: bigint
+    }>>`
+        SELECT 
+            destination_dn_number as extension,
+            COUNT(*) as total,
+            COUNT(CASE WHEN cdr_answered_at IS NOT NULL THEN 1 END) as answered
+        FROM cdroutput
+        WHERE cdr_started_at >= ${startDate}
+          AND cdr_started_at <= ${endDate}
+          AND destination_dn_number IS NOT NULL
+        GROUP BY destination_dn_number
+        ORDER BY total DESC
+        LIMIT ${limit}
+    `;
+
+    return rawStats.map((row) => {
+        const total = Number(row.total);
+        const answered = Number(row.answered);
+        const answerRate = total > 0 ? (answered / total) * 100 : 0;
+
+        return {
+            extensionNumber: row.extension || "Inconnu",
+            totalCalls: total,
+            answeredCalls: answered,
+            answerRate: Math.round(answerRate * 10) / 10,
+        };
     });
-
-    // Group by extension
-    const extensionMap: Map<
-        string,
-        { total: number; answered: number }
-    > = new Map();
-
-    for (const call of calls) {
-        const ext = call.destination_dn_number || "Unknown";
-
-        if (!extensionMap.has(ext)) {
-            extensionMap.set(ext, { total: 0, answered: 0 });
-        }
-
-        const stats = extensionMap.get(ext)!;
-        stats.total++;
-        if (call.cdr_answered_at) {
-            stats.answered++;
-        }
-    }
-
-    // Sort by total calls and take top N
-    const sorted = Array.from(extensionMap.entries())
-        .map(([ext, stats]) => ({
-            extensionNumber: ext,
-            totalCalls: stats.total,
-            answeredCalls: stats.answered,
-            answerRate:
-                stats.total > 0
-                    ? Math.round((stats.answered / stats.total) * 100 * 10) / 10
-                    : 0,
-        }))
-        .sort((a, b) => b.totalCalls - a.totalCalls)
-        .slice(0, limit);
-
-    return sorted;
 }
 
 /**
- * Get recent calls for the live log
- * Returns the last N calls with formatted data
+ * Get recent calls (Restricted to 50, optimized select)
  */
 export async function getRecentCalls(limit: number = 50): Promise<RecentCall[]> {
     const calls = await prisma.cdroutput.findMany({
@@ -223,7 +182,6 @@ export async function getRecentCalls(limit: number = 50): Promise<RecentCall[]> 
     });
 
     return calls.map((call) => {
-        // Calculate duration
         let durationSeconds = 0;
         if (call.cdr_answered_at && call.cdr_ended_at) {
             durationSeconds = Math.round(
@@ -233,22 +191,16 @@ export async function getRecentCalls(limit: number = 50): Promise<RecentCall[]> 
             );
         }
 
-        // Format duration as MM:SS
         const minutes = Math.floor(durationSeconds / 60);
         const seconds = durationSeconds % 60;
         const durationFormatted = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 
-        // Format startedAt for local timezone display
-        const startedAt = call.cdr_started_at
-            ? new Date(call.cdr_started_at).toISOString()
-            : "";
-
         return {
             id: call.cdr_id,
-            startedAt,
+            startedAt: call.cdr_started_at ? new Date(call.cdr_started_at).toISOString() : "",
             sourceExtension: call.source_dn_number || "-",
             destinationExtension: call.destination_dn_number || "-",
-            status: call.cdr_answered_at ? ("answered" as const) : ("missed" as const),
+            status: call.cdr_answered_at ? "answered" : "missed",
             durationSeconds,
             durationFormatted,
         };
