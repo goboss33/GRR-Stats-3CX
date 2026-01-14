@@ -1,29 +1,57 @@
 "use client";
 
-import { useState, useEffect, useTransition, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { RefreshCw, Search, FileText } from "lucide-react";
+import { RefreshCw, Download, FileText, Layers } from "lucide-react";
 import { subDays, startOfDay, endOfDay, parseISO } from "date-fns";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { LogsTable } from "@/components/logs-table";
 import { Pagination } from "@/components/pagination";
+import { AdvancedFilters } from "@/components/advanced-filters";
+import { ColumnVisibilityToggle } from "@/components/column-visibility-toggle";
+import { CallChainModal } from "@/components/call-chain-modal";
 
-import { getCallLogs } from "@/services/logs.service";
+import { getCallLogs, exportCallLogsCSV } from "@/services/logs.service";
 import { useDebounce } from "@/lib/use-debounce";
-import type { CallLog, CallDirection, CallLogsResponse } from "@/types/logs.types";
+import type {
+    CallLog,
+    CallDirection,
+    CallStatus,
+    EntityType,
+    LogsFilters,
+    LogsSort,
+    SortField,
+    ColumnVisibility,
+    CallLogsResponse,
+} from "@/types/logs.types";
 
 const PAGE_SIZE = 50;
+
+const defaultFilters: LogsFilters = {
+    directions: ["inbound", "outbound", "internal"],
+    statuses: [],
+    entityTypes: [],
+    extensionExact: undefined,
+    externalNumber: undefined,
+    durationMin: undefined,
+    durationMax: undefined,
+};
+
+const defaultColumnVisibility: ColumnVisibility = {
+    callHistoryId: true,
+    trunkDid: false,
+    ringDuration: false,
+    terminationReason: false,
+};
 
 export default function AdminLogsPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const [isPending, startTransition] = useTransition();
 
     // Parse URL params
     const getInitialDateRange = () => {
@@ -35,12 +63,6 @@ export default function AdminLogsPage() {
         };
     };
 
-    const getInitialDirections = (): CallDirection[] => {
-        const dirParam = searchParams.get("dir");
-        if (!dirParam) return ["inbound", "outbound", "internal"];
-        return dirParam.split(",") as CallDirection[];
-    };
-
     const getInitialPage = () => {
         const pageParam = searchParams.get("page");
         return pageParam ? parseInt(pageParam, 10) : 1;
@@ -48,34 +70,37 @@ export default function AdminLogsPage() {
 
     // State
     const [dateRange, setDateRange] = useState(getInitialDateRange);
-    const [directions, setDirections] = useState<CallDirection[]>(getInitialDirections);
-    const [extensionSearch, setExtensionSearch] = useState(searchParams.get("ext") || "");
+    const [filters, setFilters] = useState<LogsFilters>(defaultFilters);
     const [currentPage, setCurrentPage] = useState(getInitialPage);
+    const [sort, setSort] = useState<LogsSort | undefined>(undefined);
+    const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(defaultColumnVisibility);
+    const [uniqueCallsMode, setUniqueCallsMode] = useState(false);
 
     // Data state
     const [data, setData] = useState<CallLogsResponse | null>(null);
-    const [isInitialLoad, setIsInitialLoad] = useState(true);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isExporting, setIsExporting] = useState(false);
 
-    // Debounce extension search
-    const debouncedExtension = useDebounce(extensionSearch, 300);
+    // Modal state
+    const [selectedCallHistoryId, setSelectedCallHistoryId] = useState<string | null>(null);
+
+    // Debounce searches
+    const debouncedExtension = useDebounce(filters.extensionExact, 300);
+    const debouncedExternalNumber = useDebounce(filters.externalNumber, 300);
+
+    // Build debounced filters
+    const effectiveFilters: LogsFilters = {
+        ...filters,
+        extensionExact: debouncedExtension,
+        externalNumber: debouncedExternalNumber,
+    };
 
     // Update URL when filters change
     const updateUrl = useCallback(
-        (
-            range: { startDate: Date; endDate: Date },
-            dirs: CallDirection[],
-            ext: string,
-            page: number
-        ) => {
+        (range: { startDate: Date; endDate: Date }, page: number) => {
             const params = new URLSearchParams();
             params.set("start", range.startDate.toISOString().split("T")[0]);
             params.set("end", range.endDate.toISOString().split("T")[0]);
-            if (dirs.length > 0 && dirs.length < 3) {
-                params.set("dir", dirs.join(","));
-            }
-            if (ext) {
-                params.set("ext", ext);
-            }
             if (page > 1) {
                 params.set("page", page.toString());
             }
@@ -84,48 +109,39 @@ export default function AdminLogsPage() {
         [router]
     );
 
-    // Fetch data
+    // Fetch data - using regular async/await with proper loading state
     const fetchData = useCallback(async () => {
-        startTransition(async () => {
-            try {
-                const result = await getCallLogs(
-                    dateRange.startDate,
-                    dateRange.endDate,
-                    {
-                        directions,
-                        extension: debouncedExtension || undefined,
-                    },
-                    {
-                        page: currentPage,
-                        pageSize: PAGE_SIZE,
-                    }
-                );
-                setData(result);
-                setIsInitialLoad(false);
-            } catch (error) {
-                console.error("Error fetching logs:", error);
-                setIsInitialLoad(false);
-            }
-        });
-    }, [dateRange, directions, debouncedExtension, currentPage]);
+        setIsLoading(true);
+        try {
+            const result = await getCallLogs(
+                dateRange.startDate,
+                dateRange.endDate,
+                effectiveFilters,
+                { page: currentPage, pageSize: PAGE_SIZE },
+                sort
+            );
+            setData(result);
+        } catch (error) {
+            console.error("Error fetching logs:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [dateRange.startDate, dateRange.endDate, debouncedExtension, debouncedExternalNumber, filters.directions, filters.statuses, filters.entityTypes, filters.durationMin, filters.durationMax, currentPage, sort]);
 
     // Fetch on filter/page change
     useEffect(() => {
         fetchData();
-        updateUrl(dateRange, directions, debouncedExtension, currentPage);
-    }, [fetchData, updateUrl, dateRange, directions, debouncedExtension, currentPage]);
+        updateUrl(dateRange, currentPage);
+    }, [fetchData, updateUrl, dateRange, currentPage]);
 
     // Handlers
     const handleDateRangeChange = (range: { startDate: Date; endDate: Date }) => {
         setDateRange(range);
-        setCurrentPage(1); // Reset to page 1
+        setCurrentPage(1);
     };
 
-    const handleDirectionChange = (direction: CallDirection, checked: boolean) => {
-        const newDirs = checked
-            ? [...directions, direction]
-            : directions.filter((d) => d !== direction);
-        setDirections(newDirs);
+    const handleFiltersChange = (newFilters: LogsFilters) => {
+        setFilters(newFilters);
         setCurrentPage(1);
     };
 
@@ -133,29 +149,90 @@ export default function AdminLogsPage() {
         setCurrentPage(page);
     };
 
+    const handleSort = (field: SortField) => {
+        setSort((prev) => {
+            if (prev?.field === field) {
+                // Toggle direction
+                return { field, direction: prev.direction === "asc" ? "desc" : "asc" };
+            }
+            return { field, direction: "desc" };
+        });
+    };
+
     const handleRefresh = () => {
         fetchData();
+    };
+
+    const handleExport = async () => {
+        setIsExporting(true);
+        try {
+            const csv = await exportCallLogsCSV(dateRange.startDate, dateRange.endDate, effectiveFilters);
+            const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `logs_${dateRange.startDate.toISOString().split("T")[0]}_${dateRange.endDate.toISOString().split("T")[0]}.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error("Export error:", error);
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-center gap-3">
-                <FileText className="h-8 w-8 text-slate-700" />
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Logs d&apos;appels</h1>
-                    <p className="text-slate-500">Exploration et audit des CDR</p>
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <FileText className="h-8 w-8 text-slate-700" />
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-900">Logs d&apos;appels</h1>
+                        <p className="text-slate-500">Exploration et audit des CDR</p>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <ColumnVisibilityToggle
+                        visibility={columnVisibility}
+                        onChange={setColumnVisibility}
+                    />
+                    <Button
+                        variant="outline"
+                        onClick={handleExport}
+                        disabled={isExporting || !data?.logs.length}
+                    >
+                        <Download className={`h-4 w-4 mr-2 ${isExporting ? "animate-pulse" : ""}`} />
+                        Exporter CSV
+                    </Button>
                 </div>
             </div>
 
-            {/* Filters */}
+            {/* Filters Card */}
             <Card className="border-slate-200 shadow-sm">
                 <CardHeader className="pb-3">
-                    <CardTitle className="text-base font-medium">Filtres</CardTitle>
+                    <div className="flex items-center justify-between">
+                        <CardTitle className="text-base font-medium">Filtres</CardTitle>
+                        <div className="flex items-center gap-4">
+                            {/* Unique calls toggle */}
+                            <div className="flex items-center gap-2">
+                                <Switch
+                                    id="unique-calls"
+                                    checked={uniqueCallsMode}
+                                    onCheckedChange={setUniqueCallsMode}
+                                />
+                                <Label htmlFor="unique-calls" className="text-sm cursor-pointer flex items-center gap-1">
+                                    <Layers className="h-4 w-4" />
+                                    Appels uniques
+                                </Label>
+                            </div>
+                        </div>
+                    </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
+                    {/* Date Range */}
                     <div className="flex flex-wrap items-end gap-4">
-                        {/* Date Range */}
                         <div>
                             <Label className="text-sm text-slate-600 mb-1.5 block">Période</Label>
                             <DateRangePicker
@@ -163,79 +240,18 @@ export default function AdminLogsPage() {
                                 onDateRangeChange={handleDateRangeChange}
                             />
                         </div>
-
-                        {/* Direction Filters */}
-                        <div>
-                            <Label className="text-sm text-slate-600 mb-2 block">Direction</Label>
-                            <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-2">
-                                    <Checkbox
-                                        id="dir-inbound"
-                                        checked={directions.includes("inbound")}
-                                        onCheckedChange={(checked) =>
-                                            handleDirectionChange("inbound", checked as boolean)
-                                        }
-                                    />
-                                    <Label htmlFor="dir-inbound" className="text-sm cursor-pointer">
-                                        Entrant
-                                    </Label>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Checkbox
-                                        id="dir-outbound"
-                                        checked={directions.includes("outbound")}
-                                        onCheckedChange={(checked) =>
-                                            handleDirectionChange("outbound", checked as boolean)
-                                        }
-                                    />
-                                    <Label htmlFor="dir-outbound" className="text-sm cursor-pointer">
-                                        Sortant
-                                    </Label>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Checkbox
-                                        id="dir-internal"
-                                        checked={directions.includes("internal")}
-                                        onCheckedChange={(checked) =>
-                                            handleDirectionChange("internal", checked as boolean)
-                                        }
-                                    />
-                                    <Label htmlFor="dir-internal" className="text-sm cursor-pointer">
-                                        Interne
-                                    </Label>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Extension Search */}
-                        <div className="flex-1 min-w-[200px]">
-                            <Label className="text-sm text-slate-600 mb-1.5 block">
-                                Rechercher extension
-                            </Label>
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                                <Input
-                                    placeholder="Ex: 101"
-                                    value={extensionSearch}
-                                    onChange={(e) => {
-                                        setExtensionSearch(e.target.value);
-                                        setCurrentPage(1);
-                                    }}
-                                    className="pl-9"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Refresh */}
                         <Button
                             variant="outline"
                             onClick={handleRefresh}
-                            disabled={isPending}
+                            disabled={isLoading}
                         >
-                            <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
+                            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
                             Actualiser
                         </Button>
                     </div>
+
+                    {/* Advanced Filters */}
+                    <AdvancedFilters filters={filters} onChange={handleFiltersChange} />
                 </CardContent>
             </Card>
 
@@ -246,15 +262,21 @@ export default function AdminLogsPage() {
                         <span className="font-medium">{data.totalCount.toLocaleString()}</span> appels trouvés
                     </span>
                     <span>
-                        Affichage de {((currentPage - 1) * PAGE_SIZE) + 1} à{" "}
-                        {Math.min(currentPage * PAGE_SIZE, data.totalCount)} sur {data.totalCount}
+                        Page {data.currentPage} sur {data.totalPages}
                     </span>
                 </div>
             )}
 
             {/* Table */}
             <Card className="border-slate-200 shadow-sm overflow-hidden">
-                <LogsTable logs={data?.logs || []} isLoading={isInitialLoad || isPending} />
+                <LogsTable
+                    logs={data?.logs || []}
+                    isLoading={isLoading}
+                    columnVisibility={columnVisibility}
+                    sort={sort}
+                    onSort={handleSort}
+                    onViewChain={setSelectedCallHistoryId}
+                />
                 {data && data.totalPages > 1 && (
                     <Pagination
                         currentPage={data.currentPage}
@@ -263,6 +285,12 @@ export default function AdminLogsPage() {
                     />
                 )}
             </Card>
+
+            {/* Call Chain Modal */}
+            <CallChainModal
+                callHistoryId={selectedCallHistoryId}
+                onClose={() => setSelectedCallHistoryId(null)}
+            />
         </div>
     );
 }
