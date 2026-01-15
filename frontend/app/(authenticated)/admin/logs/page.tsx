@@ -2,19 +2,22 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { RefreshCw, Download, FileText, Layers } from "lucide-react";
+import { RefreshCw, Download, FileText, Settings2 } from "lucide-react";
 import { subDays, startOfDay, endOfDay, parseISO } from "date-fns";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { DateRangePicker } from "@/components/date-range-picker";
 import { LogsTable } from "@/components/logs-table";
 import { Pagination } from "@/components/pagination";
-import { AdvancedFilters } from "@/components/advanced-filters";
 import { ColumnVisibilityToggle } from "@/components/column-visibility-toggle";
 import { CallChainModal } from "@/components/call-chain-modal";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 import { getCallLogs, exportCallLogsCSV } from "@/services/logs.service";
 import { useDebounce } from "@/lib/use-debounce";
@@ -32,22 +35,19 @@ import type {
 
 const PAGE_SIZE = 50;
 
-const defaultFilters: LogsFilters = {
-    directions: ["inbound", "outbound", "internal"],
-    statuses: [],
-    entityTypes: [],
-    extensionExact: undefined,
-    externalNumber: undefined,
-    durationMin: undefined,
-    durationMax: undefined,
-};
-
 const defaultColumnVisibility: ColumnVisibility = {
     callHistoryId: true,
     trunkDid: false,
     ringDuration: false,
     terminationReason: false,
 };
+
+const entityOptions: { value: EntityType; label: string }[] = [
+    { value: "extension", label: "Extensions" },
+    { value: "external", label: "Externes" },
+    { value: "queue", label: "Files d'attente" },
+    { value: "ivr", label: "IVR/Scripts" },
+];
 
 export default function AdminLogsPage() {
     const router = useRouter();
@@ -68,31 +68,42 @@ export default function AdminLogsPage() {
         return pageParam ? parseInt(pageParam, 10) : 1;
     };
 
-    // State
+    // Date range state
     const [dateRange, setDateRange] = useState(getInitialDateRange);
-    const [filters, setFilters] = useState<LogsFilters>(defaultFilters);
     const [currentPage, setCurrentPage] = useState(getInitialPage);
     const [sort, setSort] = useState<LogsSort | undefined>(undefined);
     const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(defaultColumnVisibility);
-    const [uniqueCallsMode, setUniqueCallsMode] = useState(false);
+
+    // Filter states (moved from advanced-filters)
+    const [selectedDirections, setSelectedDirections] = useState<CallDirection[]>(["inbound", "outbound", "internal"]);
+    const [selectedStatuses, setSelectedStatuses] = useState<CallStatus[]>([]);
+    const [selectedEntityTypes, setSelectedEntityTypes] = useState<EntityType[]>([]);
+    const [callerSearch, setCallerSearch] = useState("");
+    const [calleeSearch, setCalleeSearch] = useState("");
+    const [durationMin, setDurationMin] = useState<number | undefined>(undefined);
+    const [durationMax, setDurationMax] = useState<number | undefined>(undefined);
 
     // Data state
     const [data, setData] = useState<CallLogsResponse | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
 
-    // Modal state
+    // Modal state - now row click opens modal
     const [selectedCallHistoryId, setSelectedCallHistoryId] = useState<string | null>(null);
 
-    // Debounce searches
-    const debouncedExtension = useDebounce(filters.extensionExact, 300);
-    const debouncedExternalNumber = useDebounce(filters.externalNumber, 300);
+    // Debounce search inputs (500ms as per PRD)
+    const debouncedCallerSearch = useDebounce(callerSearch, 500);
+    const debouncedCalleeSearch = useDebounce(calleeSearch, 500);
 
-    // Build debounced filters
+    // Build effective filters
     const effectiveFilters: LogsFilters = {
-        ...filters,
-        extensionExact: debouncedExtension,
-        externalNumber: debouncedExternalNumber,
+        directions: selectedDirections,
+        statuses: selectedStatuses,
+        entityTypes: selectedEntityTypes,
+        callerSearch: debouncedCallerSearch || undefined,
+        calleeSearch: debouncedCalleeSearch || undefined,
+        durationMin,
+        durationMax,
     };
 
     // Update URL when filters change
@@ -109,7 +120,7 @@ export default function AdminLogsPage() {
         [router]
     );
 
-    // Fetch data - using regular async/await with proper loading state
+    // Fetch data
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
@@ -126,7 +137,19 @@ export default function AdminLogsPage() {
         } finally {
             setIsLoading(false);
         }
-    }, [dateRange.startDate, dateRange.endDate, debouncedExtension, debouncedExternalNumber, filters.directions, filters.statuses, filters.entityTypes, filters.durationMin, filters.durationMax, currentPage, sort]);
+    }, [
+        dateRange.startDate,
+        dateRange.endDate,
+        debouncedCallerSearch,
+        debouncedCalleeSearch,
+        selectedDirections,
+        selectedStatuses,
+        selectedEntityTypes,
+        durationMin,
+        durationMax,
+        currentPage,
+        sort
+    ]);
 
     // Fetch on filter/page change
     useEffect(() => {
@@ -140,11 +163,6 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
-    const handleFiltersChange = (newFilters: LogsFilters) => {
-        setFilters(newFilters);
-        setCurrentPage(1);
-    };
-
     const handlePageChange = (page: number) => {
         setCurrentPage(page);
     };
@@ -152,7 +170,6 @@ export default function AdminLogsPage() {
     const handleSort = (field: SortField) => {
         setSort((prev) => {
             if (prev?.field === field) {
-                // Toggle direction
                 return { field, direction: prev.direction === "asc" ? "desc" : "asc" };
             }
             return { field, direction: "desc" };
@@ -181,8 +198,37 @@ export default function AdminLogsPage() {
         }
     };
 
+    const handleDirectionsChange = (directions: CallDirection[]) => {
+        setSelectedDirections(directions.length === 0 ? ["inbound", "outbound", "internal"] : directions);
+        setCurrentPage(1);
+    };
+
+    const handleStatusesChange = (statuses: CallStatus[]) => {
+        setSelectedStatuses(statuses);
+        setCurrentPage(1);
+    };
+
+    const handleDurationChange = (range: { min?: number; max?: number }) => {
+        setDurationMin(range.min);
+        setDurationMax(range.max);
+        setCurrentPage(1);
+    };
+
+    const handleEntityTypeToggle = (entity: EntityType, checked: boolean) => {
+        if (checked) {
+            setSelectedEntityTypes([...selectedEntityTypes, entity]);
+        } else {
+            setSelectedEntityTypes(selectedEntityTypes.filter((e) => e !== entity));
+        }
+        setCurrentPage(1);
+    };
+
+    const handleRowClick = (callHistoryId: string) => {
+        setSelectedCallHistoryId(callHistoryId);
+    };
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-4">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -194,66 +240,64 @@ export default function AdminLogsPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    {/* Entity Type Filter (kept as popover) */}
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button variant="outline" size="sm" className="gap-2">
+                                <Settings2 className="h-4 w-4" />
+                                Types
+                                {selectedEntityTypes.length > 0 && (
+                                    <span className="ml-1 rounded-full bg-primary/10 px-1.5 text-xs font-medium text-primary">
+                                        {selectedEntityTypes.length}
+                                    </span>
+                                )}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-48 p-2" align="end">
+                            <p className="text-xs font-medium text-slate-600 mb-2 px-1">Type d&apos;entité</p>
+                            <div className="space-y-1">
+                                {entityOptions.map((opt) => (
+                                    <div key={opt.value} className="flex items-center gap-2 px-1 py-1">
+                                        <Checkbox
+                                            id={`entity-${opt.value}`}
+                                            checked={selectedEntityTypes.includes(opt.value)}
+                                            onCheckedChange={(checked) => handleEntityTypeToggle(opt.value, checked as boolean)}
+                                        />
+                                        <Label htmlFor={`entity-${opt.value}`} className="text-sm cursor-pointer">
+                                            {opt.label}
+                                        </Label>
+                                    </div>
+                                ))}
+                            </div>
+                        </PopoverContent>
+                    </Popover>
+
                     <ColumnVisibilityToggle
                         visibility={columnVisibility}
                         onChange={setColumnVisibility}
                     />
+
                     <Button
                         variant="outline"
+                        size="sm"
+                        onClick={handleRefresh}
+                        disabled={isLoading}
+                    >
+                        <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+                        Actualiser
+                    </Button>
+
+                    <Button
+                        variant="outline"
+                        size="sm"
                         onClick={handleExport}
                         disabled={isExporting || !data?.logs.length}
                     >
                         <Download className={`h-4 w-4 mr-2 ${isExporting ? "animate-pulse" : ""}`} />
-                        Exporter CSV
+                        CSV
                     </Button>
                 </div>
             </div>
-
-            {/* Filters Card */}
-            <Card className="border-slate-200 shadow-sm">
-                <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                        <CardTitle className="text-base font-medium">Filtres</CardTitle>
-                        <div className="flex items-center gap-4">
-                            {/* Unique calls toggle */}
-                            <div className="flex items-center gap-2">
-                                <Switch
-                                    id="unique-calls"
-                                    checked={uniqueCallsMode}
-                                    onCheckedChange={setUniqueCallsMode}
-                                />
-                                <Label htmlFor="unique-calls" className="text-sm cursor-pointer flex items-center gap-1">
-                                    <Layers className="h-4 w-4" />
-                                    Appels uniques
-                                </Label>
-                            </div>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    {/* Date Range */}
-                    <div className="flex flex-wrap items-end gap-4">
-                        <div>
-                            <Label className="text-sm text-slate-600 mb-1.5 block">Période</Label>
-                            <DateRangePicker
-                                dateRange={dateRange}
-                                onDateRangeChange={handleDateRangeChange}
-                            />
-                        </div>
-                        <Button
-                            variant="outline"
-                            onClick={handleRefresh}
-                            disabled={isLoading}
-                        >
-                            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-                            Actualiser
-                        </Button>
-                    </div>
-
-                    {/* Advanced Filters */}
-                    <AdvancedFilters filters={filters} onChange={handleFiltersChange} />
-                </CardContent>
-            </Card>
 
             {/* Results Info */}
             {data && (
@@ -267,7 +311,7 @@ export default function AdminLogsPage() {
                 </div>
             )}
 
-            {/* Table */}
+            {/* Table with integrated filters */}
             <Card className="border-slate-200 shadow-sm overflow-hidden">
                 <LogsTable
                     logs={data?.logs || []}
@@ -276,6 +320,22 @@ export default function AdminLogsPage() {
                     sort={sort}
                     onSort={handleSort}
                     onViewChain={setSelectedCallHistoryId}
+                    // Filter props
+                    dateRange={dateRange}
+                    onDateRangeChange={handleDateRangeChange}
+                    callerSearch={callerSearch}
+                    onCallerSearchChange={setCallerSearch}
+                    calleeSearch={calleeSearch}
+                    onCalleeSearchChange={setCalleeSearch}
+                    selectedDirections={selectedDirections}
+                    onDirectionsChange={handleDirectionsChange}
+                    selectedStatuses={selectedStatuses}
+                    onStatusesChange={handleStatusesChange}
+                    durationMin={durationMin}
+                    durationMax={durationMax}
+                    onDurationChange={handleDurationChange}
+                    // Row click
+                    onRowClick={handleRowClick}
                 />
                 {data && data.totalPages > 1 && (
                     <Pagination

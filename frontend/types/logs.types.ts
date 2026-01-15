@@ -36,6 +36,8 @@ export interface LogsFilters {
     entityTypes: EntityType[];
     extensionExact?: string;    // Exact match for internal extensions
     externalNumber?: string;    // Partial match for external numbers
+    callerSearch?: string;      // Search on source number/name
+    calleeSearch?: string;      // Search on destination number/name
     durationMin?: number;       // In seconds
     durationMax?: number;
 }
