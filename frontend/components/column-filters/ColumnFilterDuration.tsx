@@ -45,19 +45,37 @@ export function ColumnFilterDuration({
 }: ColumnFilterDurationProps) {
     const [open, setOpen] = React.useState(false);
 
+    // Local state for slider while dragging (so it's responsive)
+    const [localValue, setLocalValue] = React.useState<number[]>([min ?? 0, max ?? DURATION_MAX]);
+
+    // Sync local value when props change (e.g., from URL or external update)
+    React.useEffect(() => {
+        setLocalValue([min ?? 0, max ?? DURATION_MAX]);
+    }, [min, max]);
+
     const hasFilter = min !== undefined || max !== undefined;
 
+    // Called during dragging - update local state only (visual feedback)
     const handleSliderChange = (values: number[]) => {
+        setLocalValue(values);
+    };
+
+    // Called on mouse/touch release - apply the filter
+    const handleSliderCommit = (values: number[]) => {
         const newMin = values[0] === 0 ? undefined : values[0];
         const newMax = values[1] === DURATION_MAX ? undefined : values[1];
         onChange({ min: newMin, max: newMax });
     };
 
     const handlePreset = (preset: typeof DURATION_PRESETS[0]) => {
-        onChange({ min: preset.min || undefined, max: preset.max });
+        const newMin = preset.min || undefined;
+        const newMax = preset.max;
+        setLocalValue([preset.min ?? 0, preset.max ?? DURATION_MAX]);
+        onChange({ min: newMin, max: newMax });
     };
 
     const handleClear = () => {
+        setLocalValue([0, DURATION_MAX]);
         onChange({ min: undefined, max: undefined });
     };
 
@@ -67,8 +85,6 @@ export function ColumnFilterDuration({
         const maxStr = max !== undefined ? formatDuration(max) : "∞";
         return `${minStr} - ${maxStr}`;
     };
-
-    const sliderValue = [min ?? 0, max ?? DURATION_MAX];
 
     return (
         <div className={cn("w-full min-w-[90px]", className)}>
@@ -106,16 +122,17 @@ export function ColumnFilterDuration({
                         {/* Slider */}
                         <div className="px-1">
                             <Slider
-                                value={sliderValue}
+                                value={localValue}
                                 min={0}
                                 max={DURATION_MAX}
                                 step={15}
                                 onValueChange={handleSliderChange}
+                                onValueCommit={handleSliderCommit}
                                 className="w-full"
                             />
                             <div className="flex justify-between text-xs text-slate-500 mt-1">
-                                <span>{formatDuration(sliderValue[0])}</span>
-                                <span>{sliderValue[1] === DURATION_MAX ? "∞" : formatDuration(sliderValue[1])}</span>
+                                <span>{formatDuration(localValue[0])}</span>
+                                <span>{localValue[1] === DURATION_MAX ? "∞" : formatDuration(localValue[1])}</span>
                             </div>
                         </div>
 

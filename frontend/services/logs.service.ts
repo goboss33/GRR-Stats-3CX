@@ -75,6 +75,185 @@ function getDisplayName(
     return "";
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function transformCallToLog(call: any): CallLog {
+    const durationSeconds = call.cdr_answered_at && call.cdr_ended_at
+        ? Math.round((new Date(call.cdr_ended_at).getTime() - new Date(call.cdr_answered_at).getTime()) / 1000)
+        : 0;
+
+    const ringDurationSeconds = call.cdr_started_at && (call.cdr_answered_at || call.cdr_ended_at)
+        ? Math.round(
+            ((call.cdr_answered_at || call.cdr_ended_at)!.getTime() - new Date(call.cdr_started_at).getTime()) / 1000
+        )
+        : 0;
+
+    return {
+        id: call.cdr_id,
+        callHistoryId: call.call_history_id || "",
+        callHistoryIdShort: call.call_history_id?.slice(-4).toUpperCase() || "-",
+        startedAt: call.cdr_started_at?.toISOString() || "",
+        sourceNumber: getDisplayNumber(
+            call.source_dn_number,
+            call.source_participant_phone_number,
+            call.source_presentation
+        ),
+        sourceName: getDisplayName(call.source_participant_name, call.source_dn_name),
+        sourceType: call.source_dn_type || "-",
+        destinationNumber: getDisplayNumber(
+            call.destination_dn_number,
+            call.destination_participant_phone_number,
+            null
+        ),
+        destinationName: getDisplayName(call.destination_participant_name, call.destination_dn_name),
+        destinationType: call.destination_dn_type || "-",
+        direction: determineDirection(call.source_dn_type, call.destination_dn_type),
+        status: determineStatus(call.cdr_answered_at, call.cdr_started_at, call.cdr_ended_at),
+        durationSeconds,
+        durationFormatted: formatDuration(durationSeconds),
+        ringDurationSeconds,
+        trunkDid: call.source_participant_trunk_did || "-",
+        terminationReason: call.termination_reason || "-",
+    };
+}
+
+// Raw SQL query for duration filtering
+async function getCallLogsWithDurationFilter(
+    startDate: Date,
+    endDate: Date,
+    filters: LogsFilters,
+    pageNumber: number,
+    limit: number,
+    skip: number,
+    sort?: LogsSort
+): Promise<CallLogsResponse> {
+    // Build WHERE conditions
+    const whereConditions: string[] = [
+        `cdr_started_at >= '${startDate.toISOString()}'`,
+        `cdr_started_at <= '${endDate.toISOString()}'`,
+        `cdr_answered_at IS NOT NULL`,
+        `cdr_ended_at IS NOT NULL`,
+    ];
+
+    // Duration filter in SQL: EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at))
+    if (filters.durationMin !== undefined) {
+        whereConditions.push(`EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at)) >= ${filters.durationMin}`);
+    }
+    if (filters.durationMax !== undefined) {
+        whereConditions.push(`EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at)) <= ${filters.durationMax}`);
+    }
+
+    // Direction filter
+    if (filters.directions && filters.directions.length > 0 && filters.directions.length < 3) {
+        const dirConditions: string[] = [];
+        if (filters.directions.includes("internal")) {
+            dirConditions.push(`(LOWER(source_dn_type) = 'extension' AND LOWER(destination_dn_type) = 'extension')`);
+        }
+        if (filters.directions.includes("outbound")) {
+            dirConditions.push(`(LOWER(source_dn_type) = 'extension' AND LOWER(destination_dn_type) != 'extension')`);
+        }
+        if (filters.directions.includes("inbound")) {
+            dirConditions.push(`(LOWER(source_dn_type) != 'extension')`);
+        }
+        if (dirConditions.length > 0) {
+            whereConditions.push(`(${dirConditions.join(" OR ")})`);
+        }
+    }
+
+    // Status filter
+    if (filters.statuses && filters.statuses.length > 0 && filters.statuses.length < 3) {
+        if (filters.statuses.includes("answered") && !filters.statuses.includes("missed") && !filters.statuses.includes("abandoned")) {
+            whereConditions.push(`cdr_answered_at IS NOT NULL`);
+        } else if (!filters.statuses.includes("answered")) {
+            whereConditions.push(`cdr_answered_at IS NULL`);
+        }
+    }
+
+    // Caller search
+    if (filters.callerSearch?.trim()) {
+        const search = filters.callerSearch.trim().replace(/'/g, "''");
+        whereConditions.push(`(
+            source_dn_number ILIKE '%${search}%' OR
+            source_participant_phone_number ILIKE '%${search}%' OR
+            source_participant_name ILIKE '%${search}%' OR
+            source_dn_name ILIKE '%${search}%'
+        )`);
+    }
+
+    // Callee search
+    if (filters.calleeSearch?.trim()) {
+        const search = filters.calleeSearch.trim().replace(/'/g, "''");
+        whereConditions.push(`(
+            destination_dn_number ILIKE '%${search}%' OR
+            destination_participant_phone_number ILIKE '%${search}%' OR
+            destination_participant_name ILIKE '%${search}%' OR
+            destination_dn_name ILIKE '%${search}%'
+        )`);
+    }
+
+    const whereClause = whereConditions.join(" AND ");
+
+    // Sort
+    let orderClause = "cdr_started_at DESC";
+    if (sort?.field) {
+        const fieldMap: Record<string, string> = {
+            startedAt: "cdr_started_at",
+            duration: "EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at))",
+            sourceNumber: "source_dn_number",
+            destinationNumber: "destination_dn_number",
+        };
+        const sqlField = fieldMap[sort.field] || "cdr_started_at";
+        orderClause = `${sqlField} ${sort.direction?.toUpperCase() || "DESC"}`;
+    }
+
+    try {
+        // Count query
+        const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
+            `SELECT COUNT(*) as count FROM cdroutput WHERE ${whereClause}`
+        );
+        const totalCount = Number(countResult[0].count);
+
+        // Data query
+        const calls = await prisma.$queryRawUnsafe<any[]>(`
+            SELECT 
+                cdr_id,
+                call_history_id,
+                cdr_started_at,
+                cdr_answered_at,
+                cdr_ended_at,
+                source_dn_number,
+                source_participant_phone_number,
+                source_presentation,
+                source_participant_name,
+                source_dn_name,
+                source_dn_type,
+                source_participant_trunk_did,
+                destination_dn_number,
+                destination_participant_phone_number,
+                destination_participant_name,
+                destination_dn_name,
+                destination_dn_type,
+                termination_reason
+            FROM cdroutput 
+            WHERE ${whereClause}
+            ORDER BY ${orderClause}
+            LIMIT ${limit} OFFSET ${skip}
+        `);
+
+        const logs: CallLog[] = calls.map((call) => transformCallToLog(call));
+        const totalPages = Math.ceil(totalCount / limit);
+
+        return {
+            logs,
+            totalCount,
+            totalPages: totalPages || 1,
+            currentPage: pageNumber,
+        };
+    } catch (error) {
+        console.error("❌ Error in raw SQL query:", error);
+        return { logs: [], totalCount: 0, totalPages: 0, currentPage: 1 };
+    }
+}
+
 // ============================================
 // FILTER BUILDERS
 // ============================================
@@ -228,17 +407,13 @@ export async function getCallLogs(
         });
     }
 
-    // Duration filter
+    // Duration filter - using SQL expressions for computed duration
+    // Duration = (cdr_ended_at - cdr_answered_at) in seconds
+    // We need answered calls for duration filter
     if (filters.durationMin !== undefined || filters.durationMax !== undefined) {
-        // Duration is calculated from answered_at to ended_at
-        // We filter on records that have these values
-        if (filters.durationMin !== undefined && filters.durationMin > 0) {
-            // For minimum duration, we need answered calls
-            conditions.push({ cdr_answered_at: { not: null } });
-        }
-        // Note: Exact duration filtering at DB level is complex since duration 
-        // is computed from timestamps. We'll rely on the fact that longer calls
-        // generally have answered_at set.
+        // Must have answered_at to calculate duration
+        conditions.push({ cdr_answered_at: { not: null } });
+        conditions.push({ cdr_ended_at: { not: null } });
     }
 
     const baseWhere = conditions.length === 1 ? conditions[0] : { AND: conditions };
@@ -258,7 +433,17 @@ export async function getCallLogs(
     }
 
     try {
-        // Always use proper pagination - no post-filtering!
+        // Check if we need raw SQL for duration filtering
+        const hasDurationFilter = filters.durationMin !== undefined || filters.durationMax !== undefined;
+
+        if (hasDurationFilter) {
+            // Use raw SQL for duration filtering (computed field)
+            return await getCallLogsWithDurationFilter(
+                startDate, endDate, filters, pageNumber, limit, skip, sort
+            );
+        }
+
+        // Standard Prisma query when no duration filter
         const [totalCount, calls] = await Promise.all([
             prisma.cdroutput.count({ where: baseWhere }),
             prisma.cdroutput.findMany({
@@ -290,52 +475,14 @@ export async function getCallLogs(
         ]);
 
         // Transform results
-        const logs: CallLog[] = calls.map((call) => {
-            const durationSeconds = call.cdr_answered_at && call.cdr_ended_at
-                ? Math.round((new Date(call.cdr_ended_at).getTime() - new Date(call.cdr_answered_at).getTime()) / 1000)
-                : 0;
-
-            const ringDurationSeconds = call.cdr_started_at && (call.cdr_answered_at || call.cdr_ended_at)
-                ? Math.round(
-                    ((call.cdr_answered_at || call.cdr_ended_at)!.getTime() - new Date(call.cdr_started_at).getTime()) / 1000
-                )
-                : 0;
-
-            return {
-                id: call.cdr_id,
-                callHistoryId: call.call_history_id || "",
-                callHistoryIdShort: call.call_history_id?.slice(-4).toUpperCase() || "-",
-                startedAt: call.cdr_started_at?.toISOString() || "",
-                sourceNumber: getDisplayNumber(
-                    call.source_dn_number,
-                    call.source_participant_phone_number,
-                    call.source_presentation
-                ),
-                sourceName: getDisplayName(call.source_participant_name, call.source_dn_name),
-                sourceType: call.source_dn_type || "-",
-                destinationNumber: getDisplayNumber(
-                    call.destination_dn_number,
-                    call.destination_participant_phone_number,
-                    null
-                ),
-                destinationName: getDisplayName(call.destination_participant_name, call.destination_dn_name),
-                destinationType: call.destination_dn_type || "-",
-                direction: determineDirection(call.source_dn_type, call.destination_dn_type),
-                status: determineStatus(call.cdr_answered_at, call.cdr_started_at, call.cdr_ended_at),
-                durationSeconds,
-                durationFormatted: formatDuration(durationSeconds),
-                ringDurationSeconds,
-                trunkDid: call.source_participant_trunk_did || "-",
-                terminationReason: call.termination_reason || "-",
-            };
-        });
+        const logs: CallLog[] = calls.map((call) => transformCallToLog(call));
 
         const totalPages = Math.ceil(totalCount / limit);
 
         return {
             logs,
             totalCount,
-            totalPages,
+            totalPages: totalPages || 1,
             currentPage: pageNumber,
         };
     } catch (error) {
