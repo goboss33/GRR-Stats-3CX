@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import {
@@ -25,7 +26,6 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 
 import {
     ColumnFilterInput,
@@ -99,19 +99,23 @@ function SortableHeader({
     onSort: (field: SortField) => void;
 }) {
     const isActive = currentSort?.field === field;
-    const Icon = isActive
-        ? currentSort?.direction === "asc"
-            ? ArrowUp
-            : ArrowDown
-        : ArrowUpDown;
+    const direction = isActive ? currentSort?.direction : null;
 
     return (
         <button
             onClick={() => onSort(field)}
-            className="flex items-center gap-1 hover:text-slate-900 transition-colors"
+            className="flex items-center gap-1 hover:text-slate-900 transition-colors text-left w-full"
         >
-            {label}
-            <Icon className={`h-3 w-3 ${isActive ? "text-slate-900" : "text-slate-400"}`} />
+            <span className="truncate">{label}</span>
+            {isActive ? (
+                direction === "asc" ? (
+                    <ArrowUp className="h-3 w-3 text-primary flex-shrink-0" />
+                ) : (
+                    <ArrowDown className="h-3 w-3 text-primary flex-shrink-0" />
+                )
+            ) : (
+                <ArrowUpDown className="h-3 w-3 text-slate-400 flex-shrink-0" />
+            )}
         </button>
     );
 }
@@ -149,8 +153,6 @@ export function LogsTable({
         );
     }
 
-    // Note: We no longer return early for empty logs - we show the header with filters
-
     return (
         <div className="overflow-x-auto">
             <Table>
@@ -158,31 +160,31 @@ export function LogsTable({
                     {/* Row 1: Column Labels + Sort */}
                     <TableRow className="bg-slate-50 hover:bg-slate-50">
                         {columnVisibility.callHistoryId && (
-                            <TableHead className="w-[70px]">ID</TableHead>
+                            <TableHead className="w-16">ID</TableHead>
                         )}
-                        <TableHead className="w-[150px]">
+                        <TableHead className="w-40">
                             <SortableHeader label="Date/Heure" field="startedAt" currentSort={sort} onSort={onSort} />
                         </TableHead>
-                        <TableHead className="min-w-[140px]">
+                        <TableHead>
                             <SortableHeader label="Appelant" field="sourceNumber" currentSort={sort} onSort={onSort} />
                         </TableHead>
-                        <TableHead className="w-[40px] text-center">→</TableHead>
-                        <TableHead className="min-w-[140px]">
+                        <TableHead className="w-10 text-center">→</TableHead>
+                        <TableHead>
                             <SortableHeader label="Appelé" field="destinationNumber" currentSort={sort} onSort={onSort} />
                         </TableHead>
-                        <TableHead className="w-[100px] text-center">Direction</TableHead>
-                        <TableHead className="w-[100px] text-center">Statut</TableHead>
-                        <TableHead className="w-[100px] text-right">
+                        <TableHead className="w-24 text-center">Direction</TableHead>
+                        <TableHead className="w-24 text-center">Statut</TableHead>
+                        <TableHead className="w-20 text-right">
                             <SortableHeader label="Durée" field="duration" currentSort={sort} onSort={onSort} />
                         </TableHead>
                         {columnVisibility.ringDuration && (
-                            <TableHead className="w-[80px] text-right">Sonnerie</TableHead>
+                            <TableHead className="w-20 text-right">Sonnerie</TableHead>
                         )}
                         {columnVisibility.trunkDid && (
-                            <TableHead className="w-[120px]">Trunk DID</TableHead>
+                            <TableHead className="w-28">Trunk DID</TableHead>
                         )}
                         {columnVisibility.terminationReason && (
-                            <TableHead className="w-[120px]">Raison</TableHead>
+                            <TableHead className="w-24">Raison</TableHead>
                         )}
                     </TableRow>
 
@@ -271,9 +273,9 @@ export function LogsTable({
                                         <TableCell className="font-mono text-xs text-slate-500">
                                             <div className="flex items-center gap-1">
                                                 {isExpanded ? (
-                                                    <ChevronDown className="h-3 w-3" />
+                                                    <ChevronDown className="h-3 w-3 flex-shrink-0" />
                                                 ) : (
-                                                    <ChevronRight className="h-3 w-3" />
+                                                    <ChevronRight className="h-3 w-3 flex-shrink-0" />
                                                 )}
                                                 {log.callHistoryIdShort}
                                             </div>
@@ -287,10 +289,10 @@ export function LogsTable({
 
                                     {/* Appelant (2-line) */}
                                     <TableCell>
-                                        <div className="min-w-[120px]">
+                                        <div>
                                             <div className="font-mono font-medium text-sm">{log.sourceNumber}</div>
                                             {log.sourceName && (
-                                                <div className="text-xs text-slate-500 truncate max-w-[150px]">
+                                                <div className="text-xs text-slate-500 truncate max-w-[200px]">
                                                     {log.sourceName}
                                                 </div>
                                             )}
@@ -302,10 +304,10 @@ export function LogsTable({
 
                                     {/* Appelé (2-line) */}
                                     <TableCell>
-                                        <div className="min-w-[120px]">
+                                        <div>
                                             <div className="font-mono font-medium text-sm">{log.destinationNumber}</div>
                                             {log.destinationName && (
-                                                <div className="text-xs text-slate-500 truncate max-w-[150px]">
+                                                <div className="text-xs text-slate-500 truncate max-w-[200px]">
                                                     {log.destinationName}
                                                 </div>
                                             )}
@@ -342,14 +344,14 @@ export function LogsTable({
 
                                     {/* Trunk DID */}
                                     {columnVisibility.trunkDid && (
-                                        <TableCell className="font-mono text-xs text-slate-500">
+                                        <TableCell className="font-mono text-xs text-slate-500 truncate max-w-[120px]">
                                             {log.trunkDid}
                                         </TableCell>
                                     )}
 
                                     {/* Raison */}
                                     {columnVisibility.terminationReason && (
-                                        <TableCell className="text-xs text-slate-500 truncate max-w-[120px]">
+                                        <TableCell className="text-xs text-slate-500 truncate max-w-[100px]">
                                             {log.terminationReason}
                                         </TableCell>
                                     )}

@@ -75,6 +75,70 @@ function getDisplayName(
     return "";
 }
 
+/**
+ * Parse search pattern with wildcard support:
+ * - "110" → exact match
+ * - "*110" → ends with 110
+ * - "110*" → starts with 110
+ * - "*110*" → contains 110
+ * 
+ * Returns: { mode: 'exact' | 'startsWith' | 'endsWith' | 'contains', value: string }
+ */
+function parseSearchPattern(input: string): { mode: 'exact' | 'startsWith' | 'endsWith' | 'contains'; value: string } {
+    const trimmed = input.trim();
+
+    const startsWithWildcard = trimmed.startsWith('*');
+    const endsWithWildcard = trimmed.endsWith('*');
+
+    // Remove wildcards to get the actual value
+    let value = trimmed;
+    if (startsWithWildcard) value = value.slice(1);
+    if (endsWithWildcard) value = value.slice(0, -1);
+
+    if (startsWithWildcard && endsWithWildcard) {
+        return { mode: 'contains', value };
+    } else if (startsWithWildcard) {
+        return { mode: 'endsWith', value };
+    } else if (endsWithWildcard) {
+        return { mode: 'startsWith', value };
+    } else {
+        return { mode: 'exact', value };
+    }
+}
+
+/**
+ * Build Prisma filter condition based on search pattern
+ */
+function buildSearchCondition(field: string, pattern: ReturnType<typeof parseSearchPattern>) {
+    switch (pattern.mode) {
+        case 'exact':
+            return { [field]: { equals: pattern.value, mode: "insensitive" } };
+        case 'startsWith':
+            return { [field]: { startsWith: pattern.value, mode: "insensitive" } };
+        case 'endsWith':
+            return { [field]: { endsWith: pattern.value, mode: "insensitive" } };
+        case 'contains':
+            return { [field]: { contains: pattern.value, mode: "insensitive" } };
+    }
+}
+
+/**
+ * Build SQL LIKE/= condition based on search pattern
+ */
+function buildSqlSearchCondition(field: string, pattern: ReturnType<typeof parseSearchPattern>): string {
+    const escapedValue = pattern.value.replace(/'/g, "''");
+    switch (pattern.mode) {
+        case 'exact':
+            return `LOWER(${field}) = LOWER('${escapedValue}')`;
+        case 'startsWith':
+            return `${field} ILIKE '${escapedValue}%'`;
+        case 'endsWith':
+            return `${field} ILIKE '%${escapedValue}'`;
+        case 'contains':
+            return `${field} ILIKE '%${escapedValue}%'`;
+    }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function transformCallToLog(call: any): CallLog {
     const durationSeconds = call.cdr_answered_at && call.cdr_ended_at
@@ -168,25 +232,25 @@ async function getCallLogsWithDurationFilter(
         }
     }
 
-    // Caller search
+    // Caller search (with wildcard support: 110 = exact, *110 = ends with, 110* = starts with, *110* = contains)
     if (filters.callerSearch?.trim()) {
-        const search = filters.callerSearch.trim().replace(/'/g, "''");
+        const pattern = parseSearchPattern(filters.callerSearch);
         whereConditions.push(`(
-            source_dn_number ILIKE '%${search}%' OR
-            source_participant_phone_number ILIKE '%${search}%' OR
-            source_participant_name ILIKE '%${search}%' OR
-            source_dn_name ILIKE '%${search}%'
+            ${buildSqlSearchCondition('source_dn_number', pattern)} OR
+            ${buildSqlSearchCondition('source_participant_phone_number', pattern)} OR
+            ${buildSqlSearchCondition('source_participant_name', pattern)} OR
+            ${buildSqlSearchCondition('source_dn_name', pattern)}
         )`);
     }
 
-    // Callee search
+    // Callee search (with wildcard support)
     if (filters.calleeSearch?.trim()) {
-        const search = filters.calleeSearch.trim().replace(/'/g, "''");
+        const pattern = parseSearchPattern(filters.calleeSearch);
         whereConditions.push(`(
-            destination_dn_number ILIKE '%${search}%' OR
-            destination_participant_phone_number ILIKE '%${search}%' OR
-            destination_participant_name ILIKE '%${search}%' OR
-            destination_dn_name ILIKE '%${search}%'
+            ${buildSqlSearchCondition('destination_dn_number', pattern)} OR
+            ${buildSqlSearchCondition('destination_participant_phone_number', pattern)} OR
+            ${buildSqlSearchCondition('destination_participant_name', pattern)} OR
+            ${buildSqlSearchCondition('destination_dn_name', pattern)}
         )`);
     }
 
@@ -381,28 +445,28 @@ export async function getCallLogs(
         });
     }
 
-    // Caller search (source number or name)
+    // Caller search (with wildcard support: 110 = exact, *110 = ends with, 110* = starts with, *110* = contains)
     if (filters.callerSearch?.trim()) {
-        const search = filters.callerSearch.trim();
+        const pattern = parseSearchPattern(filters.callerSearch);
         conditions.push({
             OR: [
-                { source_dn_number: { contains: search, mode: "insensitive" } },
-                { source_participant_phone_number: { contains: search, mode: "insensitive" } },
-                { source_participant_name: { contains: search, mode: "insensitive" } },
-                { source_dn_name: { contains: search, mode: "insensitive" } },
+                buildSearchCondition("source_dn_number", pattern),
+                buildSearchCondition("source_participant_phone_number", pattern),
+                buildSearchCondition("source_participant_name", pattern),
+                buildSearchCondition("source_dn_name", pattern),
             ],
         });
     }
 
-    // Callee search (destination number or name)
+    // Callee search (with wildcard support)
     if (filters.calleeSearch?.trim()) {
-        const search = filters.calleeSearch.trim();
+        const pattern = parseSearchPattern(filters.calleeSearch);
         conditions.push({
             OR: [
-                { destination_dn_number: { contains: search, mode: "insensitive" } },
-                { destination_participant_phone_number: { contains: search, mode: "insensitive" } },
-                { destination_participant_name: { contains: search, mode: "insensitive" } },
-                { destination_dn_name: { contains: search, mode: "insensitive" } },
+                buildSearchCondition("destination_dn_number", pattern),
+                buildSearchCondition("destination_participant_phone_number", pattern),
+                buildSearchCondition("destination_participant_name", pattern),
+                buildSearchCondition("destination_dn_name", pattern),
             ],
         });
     }
