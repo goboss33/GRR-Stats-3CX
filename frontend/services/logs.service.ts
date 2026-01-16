@@ -2,14 +2,12 @@
 
 import { prisma } from "@/lib/prisma";
 import {
-    CallLog,
+    AggregatedCallLog,
     CallDirection,
     CallStatus,
-    EntityType,
     LogsFilters,
-    LogsPagination,
     LogsSort,
-    CallLogsResponse,
+    AggregatedCallLogsResponse,
     CallChainSegment,
 } from "@/types/logs.types";
 
@@ -21,7 +19,6 @@ function determineDirection(
     sourceType: string | null,
     destType: string | null
 ): CallDirection {
-    // Case-insensitive comparison
     const srcIsExt = sourceType?.toLowerCase() === "extension";
     const destIsExt = destType?.toLowerCase() === "extension";
     if (srcIsExt && destIsExt) return "internal";
@@ -32,9 +29,14 @@ function determineDirection(
 function determineStatus(
     answeredAt: Date | null,
     startedAt: Date | null,
-    endedAt: Date | null
+    endedAt: Date | null,
+    destType: string | null
 ): CallStatus {
-    if (answeredAt) return "answered";
+    if (answeredAt) {
+        // Check if answered by a human (extension) or by IVR/queue/script
+        const isHumanAnswer = destType?.toLowerCase() === "extension";
+        return isHumanAnswer ? "answered" : "routed";
+    }
     if (startedAt && endedAt) {
         const ringTime = endedAt.getTime() - startedAt.getTime();
         if (ringTime > 5000) return "abandoned";
@@ -43,8 +45,9 @@ function determineStatus(
 }
 
 function formatDuration(seconds: number): string {
+    if (seconds < 0) seconds = 0;
     const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+    const secs = Math.round(seconds % 60);
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
@@ -75,22 +78,10 @@ function getDisplayName(
     return "";
 }
 
-/**
- * Parse search pattern with wildcard support:
- * - "110" → exact match
- * - "*110" → ends with 110
- * - "110*" → starts with 110
- * - "*110*" → contains 110
- * 
- * Returns: { mode: 'exact' | 'startsWith' | 'endsWith' | 'contains', value: string }
- */
 function parseSearchPattern(input: string): { mode: 'exact' | 'startsWith' | 'endsWith' | 'contains'; value: string } {
     const trimmed = input.trim();
-
     const startsWithWildcard = trimmed.startsWith('*');
     const endsWithWildcard = trimmed.endsWith('*');
-
-    // Remove wildcards to get the actual value
     let value = trimmed;
     if (startsWithWildcard) value = value.slice(1);
     if (endsWithWildcard) value = value.slice(0, -1);
@@ -106,25 +97,6 @@ function parseSearchPattern(input: string): { mode: 'exact' | 'startsWith' | 'en
     }
 }
 
-/**
- * Build Prisma filter condition based on search pattern
- */
-function buildSearchCondition(field: string, pattern: ReturnType<typeof parseSearchPattern>) {
-    switch (pattern.mode) {
-        case 'exact':
-            return { [field]: { equals: pattern.value, mode: "insensitive" } };
-        case 'startsWith':
-            return { [field]: { startsWith: pattern.value, mode: "insensitive" } };
-        case 'endsWith':
-            return { [field]: { endsWith: pattern.value, mode: "insensitive" } };
-        case 'contains':
-            return { [field]: { contains: pattern.value, mode: "insensitive" } };
-    }
-}
-
-/**
- * Build SQL LIKE/= condition based on search pattern
- */
 function buildSqlSearchCondition(field: string, pattern: ReturnType<typeof parseSearchPattern>): string {
     const escapedValue = pattern.value.replace(/'/g, "''");
     switch (pattern.mode) {
@@ -139,100 +111,81 @@ function buildSqlSearchCondition(field: string, pattern: ReturnType<typeof parse
     }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function transformCallToLog(call: any): CallLog {
-    const durationSeconds = call.cdr_answered_at && call.cdr_ended_at
-        ? Math.round((new Date(call.cdr_ended_at).getTime() - new Date(call.cdr_answered_at).getTime()) / 1000)
-        : 0;
-
-    const ringDurationSeconds = call.cdr_started_at && (call.cdr_answered_at || call.cdr_ended_at)
-        ? Math.round(
-            ((call.cdr_answered_at || call.cdr_ended_at)!.getTime() - new Date(call.cdr_started_at).getTime()) / 1000
-        )
-        : 0;
-
-    return {
-        id: call.cdr_id,
-        callHistoryId: call.call_history_id || "",
-        callHistoryIdShort: call.call_history_id?.slice(-4).toUpperCase() || "-",
-        startedAt: call.cdr_started_at?.toISOString() || "",
-        sourceNumber: getDisplayNumber(
-            call.source_dn_number,
-            call.source_participant_phone_number,
-            call.source_presentation
-        ),
-        sourceName: getDisplayName(call.source_participant_name, call.source_dn_name),
-        sourceType: call.source_dn_type || "-",
-        destinationNumber: getDisplayNumber(
-            call.destination_dn_number,
-            call.destination_participant_phone_number,
-            null
-        ),
-        destinationName: getDisplayName(call.destination_participant_name, call.destination_dn_name),
-        destinationType: call.destination_dn_type || "-",
-        direction: determineDirection(call.source_dn_type, call.destination_dn_type),
-        status: determineStatus(call.cdr_answered_at, call.cdr_started_at, call.cdr_ended_at),
-        durationSeconds,
-        durationFormatted: formatDuration(durationSeconds),
-        ringDurationSeconds,
-        trunkDid: call.source_participant_trunk_did || "-",
-        terminationReason: call.termination_reason || "-",
-    };
+// Build SQL condition for direction filter (applied on aggregated data)
+function buildSqlDirectionFilter(directions: CallDirection[] | undefined): string {
+    if (!directions || directions.length === 0 || directions.length === 3) {
+        return ''; // No filter needed
+    }
+    const conditions: string[] = [];
+    // Direction is based on: source_dn_type (first segment) and first_dest_type
+    // inbound: source is NOT extension
+    // outbound: source IS extension AND destination is NOT extension
+    // internal: source IS extension AND destination IS extension
+    if (directions.includes('inbound')) {
+        conditions.push("(fs.source_dn_type != 'extension' OR fs.source_dn_type IS NULL)");
+    }
+    if (directions.includes('outbound')) {
+        conditions.push("(fs.source_dn_type = 'extension' AND fs.destination_dn_type != 'extension')");
+    }
+    if (directions.includes('internal')) {
+        conditions.push("(fs.source_dn_type = 'extension' AND fs.destination_dn_type = 'extension')");
+    }
+    return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
 }
 
-// Raw SQL query for duration filtering
-async function getCallLogsWithDurationFilter(
+// Build SQL condition for status filter (applied on aggregated data)
+function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
+    if (!statuses || statuses.length === 0 || statuses.length === 4) {
+        return ''; // No filter needed
+    }
+    const conditions: string[] = [];
+    // Status is based on: last_answered_at and last_dest_type
+    // answered: answered IS NOT NULL AND last_dest_type = 'extension'
+    // routed: answered IS NOT NULL AND last_dest_type != 'extension'
+    // missed: answered IS NULL (with short ring time - approximated)
+    // abandoned: answered IS NULL (with longer ring time - approximated)
+    if (statuses.includes('answered')) {
+        conditions.push("(ls.cdr_answered_at IS NOT NULL AND ls.last_dest_type = 'extension')");
+    }
+    if (statuses.includes('routed')) {
+        conditions.push("(ls.cdr_answered_at IS NOT NULL AND (ls.last_dest_type != 'extension' OR ls.last_dest_type IS NULL))");
+    }
+    if (statuses.includes('missed')) {
+        // Missed = not answered, short ring time (< 5 seconds)
+        conditions.push("(ls.cdr_answered_at IS NULL AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) <= 5)");
+    }
+    if (statuses.includes('abandoned')) {
+        // Abandoned = not answered, longer ring time (> 5 seconds)
+        conditions.push("(ls.cdr_answered_at IS NULL AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 5)");
+    }
+    return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
+}
+
+// ============================================
+// MAIN FUNCTION: GET AGGREGATED CALL LOGS
+// ============================================
+
+export async function getAggregatedCallLogs(
     startDate: Date,
     endDate: Date,
     filters: LogsFilters,
-    pageNumber: number,
-    limit: number,
-    skip: number,
+    pagination: { page: number; pageSize: number },
     sort?: LogsSort
-): Promise<CallLogsResponse> {
-    // Build WHERE conditions
+): Promise<AggregatedCallLogsResponse> {
+    const pageNumber = Math.max(1, pagination.page);
+    const limit = Math.min(100, Math.max(1, pagination.pageSize));
+    const skip = (pageNumber - 1) * limit;
+
+    // Build WHERE conditions for segments
     const whereConditions: string[] = [
         `cdr_started_at >= '${startDate.toISOString()}'`,
         `cdr_started_at <= '${endDate.toISOString()}'`,
-        `cdr_answered_at IS NOT NULL`,
-        `cdr_ended_at IS NOT NULL`,
     ];
 
-    // Duration filter in SQL: EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at))
-    if (filters.durationMin !== undefined) {
-        whereConditions.push(`EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at)) >= ${filters.durationMin}`);
-    }
-    if (filters.durationMax !== undefined) {
-        whereConditions.push(`EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at)) <= ${filters.durationMax}`);
-    }
+    // Direction filter (applied on first segment later via subquery)
+    // Status filter (applied on final status after aggregation)
 
-    // Direction filter
-    if (filters.directions && filters.directions.length > 0 && filters.directions.length < 3) {
-        const dirConditions: string[] = [];
-        if (filters.directions.includes("internal")) {
-            dirConditions.push(`(LOWER(source_dn_type) = 'extension' AND LOWER(destination_dn_type) = 'extension')`);
-        }
-        if (filters.directions.includes("outbound")) {
-            dirConditions.push(`(LOWER(source_dn_type) = 'extension' AND LOWER(destination_dn_type) != 'extension')`);
-        }
-        if (filters.directions.includes("inbound")) {
-            dirConditions.push(`(LOWER(source_dn_type) != 'extension')`);
-        }
-        if (dirConditions.length > 0) {
-            whereConditions.push(`(${dirConditions.join(" OR ")})`);
-        }
-    }
-
-    // Status filter
-    if (filters.statuses && filters.statuses.length > 0 && filters.statuses.length < 3) {
-        if (filters.statuses.includes("answered") && !filters.statuses.includes("missed") && !filters.statuses.includes("abandoned")) {
-            whereConditions.push(`cdr_answered_at IS NOT NULL`);
-        } else if (!filters.statuses.includes("answered")) {
-            whereConditions.push(`cdr_answered_at IS NULL`);
-        }
-    }
-
-    // Caller search (with wildcard support: 110 = exact, *110 = ends with, 110* = starts with, *110* = contains)
+    // Caller search (on first segment fields)
     if (filters.callerSearch?.trim()) {
         const pattern = parseSearchPattern(filters.callerSearch);
         whereConditions.push(`(
@@ -243,7 +196,7 @@ async function getCallLogsWithDurationFilter(
         )`);
     }
 
-    // Callee search (with wildcard support)
+    // Callee search (on last segment fields)
     if (filters.calleeSearch?.trim()) {
         const pattern = parseSearchPattern(filters.calleeSearch);
         whereConditions.push(`(
@@ -254,342 +207,216 @@ async function getCallLogsWithDurationFilter(
         )`);
     }
 
-    // Ring duration filter: (answered_at or ended_at) - started_at
-    if (filters.ringDurationMin !== undefined || filters.ringDurationMax !== undefined) {
-        // Ring time = time between started_at and answered_at (or ended_at if not answered)
-        const ringExpr = `EXTRACT(EPOCH FROM (COALESCE(cdr_answered_at, cdr_ended_at) - cdr_started_at))`;
-        if (filters.ringDurationMin !== undefined) {
-            whereConditions.push(`${ringExpr} >= ${filters.ringDurationMin}`);
-        }
-        if (filters.ringDurationMax !== undefined) {
-            whereConditions.push(`${ringExpr} <= ${filters.ringDurationMax}`);
-        }
+    // Duration filter (total duration)
+    if (filters.durationMin !== undefined) {
+        whereConditions.push(`EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at)) >= ${filters.durationMin}`);
     }
-
-    // Termination reason filter
-    if (filters.terminationReasons && filters.terminationReasons.length > 0) {
-        const reasons = filters.terminationReasons.map(r => `'${r.replace(/'/g, "''")}'`).join(", ");
-        whereConditions.push(`termination_reason IN (${reasons})`);
-    }
-
-    // Trunk DID search (with wildcard support)
-    if (filters.trunkDidSearch?.trim()) {
-        const pattern = parseSearchPattern(filters.trunkDidSearch);
-        whereConditions.push(buildSqlSearchCondition('source_callinfo_trunk_did', pattern));
+    if (filters.durationMax !== undefined) {
+        whereConditions.push(`EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at)) <= ${filters.durationMax}`);
     }
 
     const whereClause = whereConditions.join(" AND ");
 
-    // Sort
-    let orderClause = "cdr_started_at DESC";
-    if (sort?.field) {
-        const fieldMap: Record<string, string> = {
-            startedAt: "cdr_started_at",
-            duration: "EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at))",
-            sourceNumber: "source_dn_number",
-            destinationNumber: "destination_dn_number",
-        };
-        const sqlField = fieldMap[sort.field] || "cdr_started_at";
-        orderClause = `${sqlField} ${sort.direction?.toUpperCase() || "DESC"}`;
-    }
+    // Build aggregated-level filters (applied after CTEs join)
+    const aggregatedWhereConditions: string[] = [];
+    const directionFilter = buildSqlDirectionFilter(filters.directions);
+    if (directionFilter) aggregatedWhereConditions.push(directionFilter);
+    const statusFilter = buildSqlStatusFilter(filters.statuses);
+    if (statusFilter) aggregatedWhereConditions.push(statusFilter);
 
     try {
-        // Count query
-        const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
-            `SELECT COUNT(*) as count FROM cdroutput WHERE ${whereClause}`
-        );
-        const totalCount = Number(countResult[0].count);
-
-        // Data query
-        const calls = await prisma.$queryRawUnsafe<any[]>(`
+        // Step 1: Get distinct call_history_ids with aggregated data
+        const aggregatedQuery = `
+            WITH call_aggregates AS (
+                SELECT 
+                    call_history_id,
+                    COUNT(*) as segment_count,
+                    MIN(cdr_started_at) as first_started_at,
+                    MAX(cdr_ended_at) as last_ended_at,
+                    MIN(cdr_answered_at) as first_answered_at
+                FROM cdroutput
+                WHERE ${whereClause}
+                GROUP BY call_history_id
+            ),
+            first_segments AS (
+                SELECT DISTINCT ON (call_history_id)
+                    call_history_id,
+                    source_dn_number,
+                    source_participant_phone_number,
+                    source_participant_name,
+                    source_dn_name,
+                    source_dn_type,
+                    source_presentation,
+                    destination_dn_number as first_dest_number,
+                    destination_dn_type
+                FROM cdroutput
+                WHERE ${whereClause}
+                ORDER BY call_history_id, cdr_started_at ASC
+            ),
+            last_segments AS (
+                SELECT DISTINCT ON (call_history_id)
+                    call_history_id,
+                    destination_dn_number,
+                    destination_participant_phone_number,
+                    destination_participant_name,
+                    destination_dn_name,
+                    destination_dn_type as last_dest_type,
+                    cdr_answered_at,
+                    cdr_started_at as last_started_at,
+                    cdr_ended_at as last_ended_at,
+                    termination_reason
+                FROM cdroutput
+                WHERE ${whereClause}
+                ORDER BY call_history_id, cdr_started_at DESC
+            )
             SELECT 
-                cdr_id,
-                call_history_id,
-                cdr_started_at,
-                cdr_answered_at,
-                cdr_ended_at,
-                source_dn_number,
-                source_participant_phone_number,
-                source_presentation,
-                source_participant_name,
-                source_dn_name,
-                source_dn_type,
-                source_participant_trunk_did,
-                destination_dn_number,
-                destination_participant_phone_number,
-                destination_participant_name,
-                destination_dn_name,
-                destination_dn_type,
-                termination_reason
-            FROM cdroutput 
-            WHERE ${whereClause}
-            ORDER BY ${orderClause}
+                ca.call_history_id,
+                ca.segment_count,
+                ca.first_started_at,
+                ca.last_ended_at,
+                ca.first_answered_at,
+                fs.source_dn_number,
+                fs.source_participant_phone_number,
+                fs.source_participant_name,
+                fs.source_dn_name,
+                fs.source_dn_type,
+                fs.source_presentation,
+                fs.first_dest_number,
+                fs.destination_dn_type as first_dest_type,
+                ls.destination_dn_number,
+                ls.destination_participant_phone_number,
+                ls.destination_participant_name,
+                ls.destination_dn_name,
+                ls.last_dest_type,
+                ls.cdr_answered_at as last_answered_at,
+                ls.last_started_at,
+                ls.last_ended_at,
+                ls.termination_reason
+            FROM call_aggregates ca
+            JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
+            JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+            ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
+            ORDER BY ca.first_started_at DESC
             LIMIT ${limit} OFFSET ${skip}
-        `);
+        `;
 
-        const logs: CallLog[] = calls.map((call) => transformCallToLog(call));
-        const totalPages = Math.ceil(totalCount / limit);
+        // Count query uses same CTEs and filters to get accurate count
+        const countQuery = `
+            WITH call_aggregates AS (
+                SELECT 
+                    call_history_id,
+                    COUNT(*) as segment_count
+                FROM cdroutput
+                WHERE ${whereClause}
+                GROUP BY call_history_id
+            ),
+            first_segments AS (
+                SELECT DISTINCT ON (call_history_id)
+                    call_history_id,
+                    source_dn_type,
+                    destination_dn_type
+                FROM cdroutput
+                WHERE ${whereClause}
+                ORDER BY call_history_id, cdr_started_at ASC
+            ),
+            last_segments AS (
+                SELECT DISTINCT ON (call_history_id)
+                    call_history_id,
+                    destination_dn_type as last_dest_type,
+                    cdr_answered_at,
+                    cdr_started_at as last_started_at,
+                    cdr_ended_at as last_ended_at
+                FROM cdroutput
+                WHERE ${whereClause}
+                ORDER BY call_history_id, cdr_started_at DESC
+            )
+            SELECT COUNT(*) as total
+            FROM call_aggregates ca
+            JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
+            JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+            ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
+        `;
 
-        return {
-            logs,
-            totalCount,
-            totalPages: totalPages || 1,
-            currentPage: pageNumber,
-        };
-    } catch (error) {
-        console.error("❌ Error in raw SQL query:", error);
-        return { logs: [], totalCount: 0, totalPages: 0, currentPage: 1 };
-    }
-}
-
-// ============================================
-// FILTER BUILDERS
-// ============================================
-
-function buildDirectionFilter(directions: CallDirection[] | undefined) {
-    if (!directions || directions.length === 0 || directions.length === 3) {
-        return {};
-    }
-    const conditions: object[] = [];
-    // Database stores types in lowercase: 'extension', 'provider', etc.
-    if (directions.includes("internal")) {
-        // Internal: extension → extension
-        conditions.push({
-            source_dn_type: "extension",
-            destination_dn_type: "extension"
-        });
-    }
-    if (directions.includes("outbound")) {
-        // Outbound: extension → NOT extension
-        conditions.push({
-            source_dn_type: "extension",
-            NOT: { destination_dn_type: "extension" }
-        });
-    }
-    if (directions.includes("inbound")) {
-        // Inbound: NOT extension → anything
-        conditions.push({
-            NOT: { source_dn_type: "extension" }
-        });
-    }
-    return conditions.length === 1 ? conditions[0] : { OR: conditions };
-}
-
-function buildEntityTypeFilter(entityTypes: EntityType[] | undefined) {
-    if (!entityTypes || entityTypes.length === 0) {
-        return {};
-    }
-    const typeMap: Record<EntityType, string[]> = {
-        extension: ["Extension"],
-        external: ["provider", "Provider"],
-        queue: ["Queue"],
-        ivr: ["script", "Script", "IVR"],
-        script: ["script", "Script"],
-        unknown: ["unknown"],
-    };
-    const dnTypes = entityTypes.flatMap((et) => typeMap[et] || []);
-    if (dnTypes.length === 0) return {};
-    return {
-        OR: [
-            { source_dn_type: { in: dnTypes } },
-            { destination_dn_type: { in: dnTypes } },
-        ],
-    };
-}
-
-// Build status filter at DB level (answered = has answered_at)
-function buildStatusFilter(statuses: CallStatus[] | undefined) {
-    if (!statuses || statuses.length === 0 || statuses.length === 3) {
-        return {};
-    }
-    const conditions: object[] = [];
-    if (statuses.includes("answered")) {
-        conditions.push({ cdr_answered_at: { not: null } });
-    }
-    if (statuses.includes("missed") || statuses.includes("abandoned")) {
-        // Both missed and abandoned have no answered_at
-        conditions.push({ cdr_answered_at: null });
-    }
-    return conditions.length === 1 ? conditions[0] : { OR: conditions };
-}
-
-// ============================================
-// MAIN QUERY (OPTIMIZED)
-// ============================================
-
-export async function getCallLogs(
-    startDate: Date,
-    endDate: Date,
-    filters: LogsFilters,
-    pagination: LogsPagination,
-    sort?: LogsSort
-): Promise<CallLogsResponse> {
-    const pageNumber = Math.max(1, Number(pagination.page) || 1);
-    const limit = Math.max(1, Math.min(100, Number(pagination.pageSize) || 50));
-    const skip = (pageNumber - 1) * limit;
-
-    // Build where clause
-    const conditions: object[] = [
-        { cdr_started_at: { gte: startDate, lte: endDate } },
-    ];
-
-    // Direction filter
-    const dirFilter = buildDirectionFilter(filters.directions);
-    if (Object.keys(dirFilter).length > 0) conditions.push(dirFilter);
-
-    // Entity type filter
-    const entityFilter = buildEntityTypeFilter(filters.entityTypes);
-    if (Object.keys(entityFilter).length > 0) conditions.push(entityFilter);
-
-    // Status filter (now at DB level!)
-    const statusFilter = buildStatusFilter(filters.statuses);
-    if (Object.keys(statusFilter).length > 0) conditions.push(statusFilter);
-
-    // Extension exact match (case-insensitive for dn_type)
-    if (filters.extensionExact?.trim()) {
-        const ext = filters.extensionExact.trim();
-        conditions.push({
-            OR: [
-                // Source is this extension
-                { source_dn_number: ext },
-                // Destination is this extension
-                { destination_dn_number: ext },
-            ],
-        });
-    }
-
-    // External number partial match
-    if (filters.externalNumber?.trim()) {
-        const num = filters.externalNumber.trim();
-        conditions.push({
-            OR: [
-                { source_participant_phone_number: { contains: num, mode: "insensitive" } },
-                { destination_participant_phone_number: { contains: num, mode: "insensitive" } },
-            ],
-        });
-    }
-
-    // Caller search (with wildcard support: 110 = exact, *110 = ends with, 110* = starts with, *110* = contains)
-    if (filters.callerSearch?.trim()) {
-        const pattern = parseSearchPattern(filters.callerSearch);
-        conditions.push({
-            OR: [
-                buildSearchCondition("source_dn_number", pattern),
-                buildSearchCondition("source_participant_phone_number", pattern),
-                buildSearchCondition("source_participant_name", pattern),
-                buildSearchCondition("source_dn_name", pattern),
-            ],
-        });
-    }
-
-    // Callee search (with wildcard support)
-    if (filters.calleeSearch?.trim()) {
-        const pattern = parseSearchPattern(filters.calleeSearch);
-        conditions.push({
-            OR: [
-                buildSearchCondition("destination_dn_number", pattern),
-                buildSearchCondition("destination_participant_phone_number", pattern),
-                buildSearchCondition("destination_participant_name", pattern),
-                buildSearchCondition("destination_dn_name", pattern),
-            ],
-        });
-    }
-
-    // Trunk DID search (with wildcard support)
-    if (filters.trunkDidSearch?.trim()) {
-        const pattern = parseSearchPattern(filters.trunkDidSearch);
-        conditions.push(buildSearchCondition("source_callinfo_trunk_did", pattern));
-    }
-
-    // Duration filter - using SQL expressions for computed duration
-    // Duration = (cdr_ended_at - cdr_answered_at) in seconds
-    // We need answered calls for duration filter
-    if (filters.durationMin !== undefined || filters.durationMax !== undefined) {
-        // Must have answered_at to calculate duration
-        conditions.push({ cdr_answered_at: { not: null } });
-        conditions.push({ cdr_ended_at: { not: null } });
-    }
-
-    const baseWhere = conditions.length === 1 ? conditions[0] : { AND: conditions };
-
-    // Sorting
-    const orderBy: Record<string, "asc" | "desc"> = {};
-    if (sort?.field) {
-        const fieldMap: Record<string, string> = {
-            startedAt: "cdr_started_at",
-            duration: "cdr_ended_at",
-            sourceNumber: "source_dn_number",
-            destinationNumber: "destination_dn_number",
-        };
-        orderBy[fieldMap[sort.field] || "cdr_started_at"] = sort.direction || "desc";
-    } else {
-        orderBy.cdr_started_at = "desc";
-    }
-
-    try {
-        // Check if we need raw SQL for computed field filters
-        const hasDurationFilter = filters.durationMin !== undefined || filters.durationMax !== undefined;
-        const hasRingDurationFilter = filters.ringDurationMin !== undefined || filters.ringDurationMax !== undefined;
-        const hasTerminationFilter = filters.terminationReasons && filters.terminationReasons.length > 0;
-        const needsRawSql = hasDurationFilter || hasRingDurationFilter || hasTerminationFilter;
-
-        if (needsRawSql) {
-            // Use raw SQL for computed field filtering (duration, ring duration, termination reason)
-            return await getCallLogsWithDurationFilter(
-                startDate, endDate, filters, pageNumber, limit, skip, sort
-            );
-        }
-
-        // Standard Prisma query when no computed field filters
-        const [totalCount, calls] = await Promise.all([
-            prisma.cdroutput.count({ where: baseWhere }),
-            prisma.cdroutput.findMany({
-                where: baseWhere,
-                orderBy,
-                skip,
-                take: limit,
-                select: {
-                    cdr_id: true,
-                    call_history_id: true,
-                    cdr_started_at: true,
-                    cdr_answered_at: true,
-                    cdr_ended_at: true,
-                    source_dn_number: true,
-                    source_participant_phone_number: true,
-                    source_presentation: true,
-                    source_participant_name: true,
-                    source_dn_name: true,
-                    source_dn_type: true,
-                    source_participant_trunk_did: true,
-                    destination_dn_number: true,
-                    destination_participant_phone_number: true,
-                    destination_participant_name: true,
-                    destination_dn_name: true,
-                    destination_dn_type: true,
-                    termination_reason: true,
-                },
-            }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const [rawResults, countResult] = await Promise.all([
+            prisma.$queryRawUnsafe<any[]>(aggregatedQuery),
+            prisma.$queryRawUnsafe<{ total: bigint }[]>(countQuery),
         ]);
 
-        // Transform results
-        const logs: CallLog[] = calls.map((call) => transformCallToLog(call));
-
+        const totalCount = Number(countResult[0]?.total || 0);
         const totalPages = Math.ceil(totalCount / limit);
+
+        // Transform results to AggregatedCallLog
+        const logs: AggregatedCallLog[] = rawResults.map((row) => {
+            const firstStarted = row.first_started_at ? new Date(row.first_started_at) : null;
+            const lastEnded = row.last_ended_at ? new Date(row.last_ended_at) : null;
+            const firstAnswered = row.first_answered_at ? new Date(row.first_answered_at) : null;
+            const lastAnswered = row.last_answered_at ? new Date(row.last_answered_at) : null;
+
+            // Total duration = from first start to last end
+            const totalDurationSeconds = firstStarted && lastEnded
+                ? Math.round((lastEnded.getTime() - firstStarted.getTime()) / 1000)
+                : 0;
+
+            // Wait time = time until first answered segment (or total if never answered)
+            const waitTimeSeconds = firstStarted && firstAnswered
+                ? Math.round((firstAnswered.getTime() - firstStarted.getTime()) / 1000)
+                : (firstStarted && lastEnded ? Math.round((lastEnded.getTime() - firstStarted.getTime()) / 1000) : 0);
+
+            // Determine final status from last segment
+            const finalStatus = determineStatus(lastAnswered, row.last_started_at ? new Date(row.last_started_at) : null, lastEnded, row.last_dest_type);
+
+            // Determine direction from first segment
+            const direction = determineDirection(row.source_dn_type, row.first_dest_type);
+
+            // Was transferred if more than 1 segment
+            const wasTransferred = Number(row.segment_count) > 1;
+
+            return {
+                callHistoryId: row.call_history_id,
+                callHistoryIdShort: row.call_history_id?.slice(-4).toUpperCase() || "-",
+                segmentCount: Number(row.segment_count),
+
+                startedAt: row.first_started_at?.toISOString() || "",
+                endedAt: row.last_ended_at?.toISOString() || "",
+                totalDurationSeconds,
+                totalDurationFormatted: formatDuration(totalDurationSeconds),
+                waitTimeSeconds,
+                waitTimeFormatted: formatDuration(waitTimeSeconds),
+
+                callerNumber: getDisplayNumber(row.source_dn_number, row.source_participant_phone_number, row.source_presentation),
+                callerName: getDisplayName(row.source_participant_name, row.source_dn_name) || null,
+
+                calleeNumber: getDisplayNumber(row.destination_dn_number, row.destination_participant_phone_number, null),
+                calleeName: getDisplayName(row.destination_participant_name, row.destination_dn_name) || null,
+
+                direction,
+                finalStatus,
+                wasTransferred,
+            };
+        });
+
+        // No post-query filtering needed - filters are applied in SQL
 
         return {
             logs,
             totalCount,
-            totalPages: totalPages || 1,
+            totalPages,
             currentPage: pageNumber,
         };
     } catch (error) {
-        console.error("❌ Error fetching call logs:", error);
-        return { logs: [], totalCount: 0, totalPages: 0, currentPage: 1 };
+        console.error("❌ Error fetching aggregated call logs:", error);
+        return {
+            logs: [],
+            totalCount: 0,
+            totalPages: 0,
+            currentPage: pageNumber,
+        };
     }
 }
 
 // ============================================
-// CALL CHAIN (for modal)
+// GET CALL CHAIN (for modal - shows all segments)
 // ============================================
 
 export async function getCallChain(callHistoryId: string): Promise<CallChainSegment[]> {
@@ -606,10 +433,10 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
                 cdr_ended_at: true,
                 source_dn_number: true,
                 source_participant_phone_number: true,
-                source_presentation: true,
                 source_participant_name: true,
                 source_dn_name: true,
                 source_dn_type: true,
+                source_presentation: true,
                 destination_dn_number: true,
                 destination_participant_phone_number: true,
                 destination_participant_name: true,
@@ -633,7 +460,7 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
                 destinationNumber: getDisplayNumber(seg.destination_dn_number, seg.destination_participant_phone_number, null),
                 destinationName: getDisplayName(seg.destination_participant_name, seg.destination_dn_name),
                 destinationType: seg.destination_dn_type || "-",
-                status: determineStatus(seg.cdr_answered_at, seg.cdr_started_at, seg.cdr_ended_at),
+                status: determineStatus(seg.cdr_answered_at, seg.cdr_started_at, seg.cdr_ended_at, seg.destination_dn_type),
                 durationFormatted: formatDuration(durationSeconds),
                 terminationReason: seg.termination_reason || "-",
             };
@@ -645,7 +472,7 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
 }
 
 // ============================================
-// CSV EXPORT (limited to 5000 for performance)
+// CSV EXPORT
 // ============================================
 
 export async function exportCallLogsCSV(
@@ -653,10 +480,10 @@ export async function exportCallLogsCSV(
     endDate: Date,
     filters: LogsFilters
 ): Promise<string> {
-    // Limit export to 5000 records for performance
-    const response = await getCallLogs(startDate, endDate, filters, { page: 1, pageSize: 5000 });
+    const response = await getAggregatedCallLogs(startDate, endDate, filters, { page: 1, pageSize: 5000 });
 
     const headers = [
+        "ID",
         "Date/Heure",
         "Appelant",
         "Nom Appelant",
@@ -664,22 +491,25 @@ export async function exportCallLogsCSV(
         "Nom Appelé",
         "Direction",
         "Statut",
-        "Durée",
-        "Trunk DID",
-        "Raison",
+        "Durée Totale",
+        "Temps Attente",
+        "Segments",
+        "Transféré",
     ];
 
     const rows = response.logs.map((log) => [
+        log.callHistoryIdShort,
         log.startedAt,
-        log.sourceNumber,
-        log.sourceName,
-        log.destinationNumber,
-        log.destinationName,
+        log.callerNumber,
+        log.callerName || "",
+        log.calleeNumber,
+        log.calleeName || "",
         log.direction,
-        log.status,
-        log.durationFormatted,
-        log.trunkDid,
-        log.terminationReason,
+        log.finalStatus,
+        log.totalDurationFormatted,
+        log.waitTimeFormatted,
+        log.segmentCount,
+        log.wasTransferred ? "Oui" : "Non",
     ]);
 
     const csvContent = [

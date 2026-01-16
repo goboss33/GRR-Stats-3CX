@@ -2,14 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { RefreshCw, Download, FileText, Settings2 } from "lucide-react";
+import { RefreshCw, Download, FileText, Columns3 } from "lucide-react";
 import { subDays, startOfDay, endOfDay, parseISO } from "date-fns";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LogsTable } from "@/components/logs-table";
 import { Pagination } from "@/components/pagination";
-import { ColumnVisibilityToggle } from "@/components/column-visibility-toggle";
 import { CallChainModal } from "@/components/call-chain-modal";
 import {
     Popover,
@@ -19,35 +18,24 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
-import { getCallLogs, exportCallLogsCSV } from "@/services/logs.service";
+import { getAggregatedCallLogs, exportCallLogsCSV } from "@/services/logs.service";
 import { useDebounce } from "@/lib/use-debounce";
 import type {
-    CallLog,
+    AggregatedCallLog,
     CallDirection,
     CallStatus,
-    EntityType,
     LogsFilters,
     LogsSort,
     SortField,
     ColumnVisibility,
-    CallLogsResponse,
+    AggregatedCallLogsResponse,
 } from "@/types/logs.types";
 
 const PAGE_SIZE = 50;
 
 const defaultColumnVisibility: ColumnVisibility = {
     callHistoryId: true,
-    trunkDid: true,
-    ringDuration: true,
-    terminationReason: true,
 };
-
-const entityOptions: { value: EntityType; label: string }[] = [
-    { value: "extension", label: "Extensions" },
-    { value: "external", label: "Externes" },
-    { value: "queue", label: "Files d'attente" },
-    { value: "ivr", label: "IVR/Scripts" },
-];
 
 export default function AdminLogsPage() {
     const router = useRouter();
@@ -74,45 +62,35 @@ export default function AdminLogsPage() {
     const [sort, setSort] = useState<LogsSort | undefined>(undefined);
     const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(defaultColumnVisibility);
 
-    // Filter states (moved from advanced-filters)
+    // Filter states
     const [selectedDirections, setSelectedDirections] = useState<CallDirection[]>(["inbound", "outbound", "internal"]);
     const [selectedStatuses, setSelectedStatuses] = useState<CallStatus[]>([]);
-    const [selectedEntityTypes, setSelectedEntityTypes] = useState<EntityType[]>([]);
     const [callerSearch, setCallerSearch] = useState("");
     const [calleeSearch, setCalleeSearch] = useState("");
     const [durationMin, setDurationMin] = useState<number | undefined>(undefined);
     const [durationMax, setDurationMax] = useState<number | undefined>(undefined);
-    const [ringDurationMin, setRingDurationMin] = useState<number | undefined>(undefined);
-    const [ringDurationMax, setRingDurationMax] = useState<number | undefined>(undefined);
-    const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
-    const [trunkDidSearch, setTrunkDidSearch] = useState("");
 
     // Data state
-    const [data, setData] = useState<CallLogsResponse | null>(null);
+    const [data, setData] = useState<AggregatedCallLogsResponse | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
 
-    // Modal state - now row click opens modal
+    // Modal state
     const [selectedCallHistoryId, setSelectedCallHistoryId] = useState<string | null>(null);
 
-    // Debounce search inputs (500ms as per PRD)
+    // Debounce search inputs (500ms)
     const debouncedCallerSearch = useDebounce(callerSearch, 500);
     const debouncedCalleeSearch = useDebounce(calleeSearch, 500);
-    const debouncedTrunkDidSearch = useDebounce(trunkDidSearch, 500);
 
     // Build effective filters
     const effectiveFilters: LogsFilters = {
         directions: selectedDirections,
         statuses: selectedStatuses,
-        entityTypes: selectedEntityTypes,
+        entityTypes: [],
         callerSearch: debouncedCallerSearch || undefined,
         calleeSearch: debouncedCalleeSearch || undefined,
-        trunkDidSearch: debouncedTrunkDidSearch || undefined,
         durationMin,
         durationMax,
-        ringDurationMin,
-        ringDurationMax,
-        terminationReasons: selectedReasons.length > 0 ? selectedReasons : undefined,
     };
 
     // Update URL when filters change
@@ -133,7 +111,7 @@ export default function AdminLogsPage() {
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const result = await getCallLogs(
+            const result = await getAggregatedCallLogs(
                 dateRange.startDate,
                 dateRange.endDate,
                 effectiveFilters,
@@ -151,15 +129,10 @@ export default function AdminLogsPage() {
         dateRange.endDate,
         debouncedCallerSearch,
         debouncedCalleeSearch,
-        debouncedTrunkDidSearch,
         selectedDirections,
         selectedStatuses,
-        selectedEntityTypes,
         durationMin,
         durationMax,
-        ringDurationMin,
-        ringDurationMax,
-        selectedReasons,
         currentPage,
         sort
     ]);
@@ -193,19 +166,17 @@ export default function AdminLogsPage() {
         fetchData();
     };
 
-    const handleExport = async () => {
+    const handleExportCSV = async () => {
         setIsExporting(true);
         try {
             const csv = await exportCallLogsCSV(dateRange.startDate, dateRange.endDate, effectiveFilters);
             const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-            const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
-            link.href = url;
-            link.download = `logs_${dateRange.startDate.toISOString().split("T")[0]}_${dateRange.endDate.toISOString().split("T")[0]}.csv`;
+            link.href = URL.createObjectURL(blob);
+            link.download = `logs-appels-${new Date().toISOString().split("T")[0]}.csv`;
             link.click();
-            URL.revokeObjectURL(url);
         } catch (error) {
-            console.error("Export error:", error);
+            console.error("Error exporting CSV:", error);
         } finally {
             setIsExporting(false);
         }
@@ -227,15 +198,6 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
-    const handleEntityTypeToggle = (entity: EntityType, checked: boolean) => {
-        if (checked) {
-            setSelectedEntityTypes([...selectedEntityTypes, entity]);
-        } else {
-            setSelectedEntityTypes(selectedEntityTypes.filter((e) => e !== entity));
-        }
-        setCurrentPage(1);
-    };
-
     const handleRowClick = (callHistoryId: string) => {
         setSelectedCallHistoryId(callHistoryId);
     };
@@ -253,60 +215,52 @@ export default function AdminLogsPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    {/* Entity Type Filter (kept as popover) */}
+                    {/* Column visibility toggle */}
                     <Popover>
                         <PopoverTrigger asChild>
                             <Button variant="outline" size="sm" className="gap-2">
-                                <Settings2 className="h-4 w-4" />
-                                Types
-                                {selectedEntityTypes.length > 0 && (
-                                    <span className="ml-1 rounded-full bg-primary/10 px-1.5 text-xs font-medium text-primary">
-                                        {selectedEntityTypes.length}
-                                    </span>
-                                )}
+                                <Columns3 className="h-4 w-4" />
+                                Colonnes
                             </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-48 p-2" align="end">
-                            <p className="text-xs font-medium text-slate-600 mb-2 px-1">Type d&apos;entité</p>
+                            <p className="text-xs font-medium text-slate-600 mb-2 px-1">Colonnes visibles</p>
                             <div className="space-y-1">
-                                {entityOptions.map((opt) => (
-                                    <div key={opt.value} className="flex items-center gap-2 px-1 py-1">
-                                        <Checkbox
-                                            id={`entity-${opt.value}`}
-                                            checked={selectedEntityTypes.includes(opt.value)}
-                                            onCheckedChange={(checked) => handleEntityTypeToggle(opt.value, checked as boolean)}
-                                        />
-                                        <Label htmlFor={`entity-${opt.value}`} className="text-sm cursor-pointer">
-                                            {opt.label}
-                                        </Label>
-                                    </div>
-                                ))}
+                                <div className="flex items-center gap-2 px-1 py-1">
+                                    <Checkbox
+                                        id="col-id"
+                                        checked={columnVisibility.callHistoryId}
+                                        onCheckedChange={(checked) =>
+                                            setColumnVisibility({ ...columnVisibility, callHistoryId: checked as boolean })
+                                        }
+                                    />
+                                    <Label htmlFor="col-id" className="text-sm cursor-pointer">
+                                        ID
+                                    </Label>
+                                </div>
                             </div>
                         </PopoverContent>
                     </Popover>
-
-                    <ColumnVisibilityToggle
-                        visibility={columnVisibility}
-                        onChange={setColumnVisibility}
-                    />
 
                     <Button
                         variant="outline"
                         size="sm"
                         onClick={handleRefresh}
                         disabled={isLoading}
+                        className="gap-2"
                     >
-                        <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+                        <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
                         Actualiser
                     </Button>
 
                     <Button
                         variant="outline"
                         size="sm"
-                        onClick={handleExport}
-                        disabled={isExporting || !data?.logs.length}
+                        onClick={handleExportCSV}
+                        disabled={isExporting || isLoading}
+                        className="gap-2"
                     >
-                        <Download className={`h-4 w-4 mr-2 ${isExporting ? "animate-pulse" : ""}`} />
+                        <Download className={`h-4 w-4 ${isExporting ? "animate-pulse" : ""}`} />
                         CSV
                     </Button>
                 </div>
@@ -347,16 +301,6 @@ export default function AdminLogsPage() {
                     durationMin={durationMin}
                     durationMax={durationMax}
                     onDurationChange={handleDurationChange}
-                    ringDurationMin={ringDurationMin}
-                    ringDurationMax={ringDurationMax}
-                    onRingDurationChange={({ min, max }) => {
-                        setRingDurationMin(min);
-                        setRingDurationMax(max);
-                    }}
-                    selectedReasons={selectedReasons}
-                    onReasonsChange={setSelectedReasons}
-                    trunkDidSearch={trunkDidSearch}
-                    onTrunkDidSearchChange={setTrunkDidSearch}
                     // Row click
                     onRowClick={handleRowClick}
                 />

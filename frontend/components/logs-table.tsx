@@ -7,11 +7,12 @@ import {
     ArrowDownLeft,
     ArrowUpRight,
     ArrowLeftRight,
+    ArrowRight,
+    Shuffle,
     Phone,
+    PhoneForwarded,
     PhoneOff,
     PhoneMissed,
-    ChevronDown,
-    ChevronRight,
     ArrowUpDown,
     ArrowUp,
     ArrowDown,
@@ -33,13 +34,10 @@ import {
     ColumnFilterDirection,
     ColumnFilterStatus,
     ColumnFilterDuration,
-    ColumnFilterRingDuration,
-    ColumnFilterTerminationReason,
-    TerminationReasonTooltip,
 } from "@/components/column-filters";
 
 import type {
-    CallLog,
+    AggregatedCallLog,
     CallDirection,
     CallStatus,
     ColumnVisibility,
@@ -48,7 +46,7 @@ import type {
 } from "@/types/logs.types";
 
 interface LogsTableProps {
-    logs: CallLog[];
+    logs: AggregatedCallLog[];
     isLoading?: boolean;
     columnVisibility: ColumnVisibility;
     sort?: LogsSort;
@@ -68,18 +66,7 @@ interface LogsTableProps {
     durationMin?: number;
     durationMax?: number;
     onDurationChange: (range: { min?: number; max?: number }) => void;
-    // Ring duration filter
-    ringDurationMin?: number;
-    ringDurationMax?: number;
-    onRingDurationChange: (range: { min?: number; max?: number }) => void;
-    // Termination reason filter
-    selectedReasons: string[];
-    onReasonsChange: (reasons: string[]) => void;
-    // Trunk DID filter
-    trunkDidSearch: string;
-    onTrunkDidSearchChange: (value: string) => void;
-    // Expandable row
-    expandedRowId?: string | null;
+    // Row click
     onRowClick?: (callHistoryId: string) => void;
 }
 
@@ -91,15 +78,38 @@ const directionConfig: Record<CallDirection, { icon: typeof ArrowDownLeft; label
 
 const statusConfig: Record<CallStatus, { icon: typeof Phone; label: string; className: string }> = {
     answered: { icon: Phone, label: "Répondu", className: "bg-emerald-100 text-emerald-700" },
-    missed: { icon: PhoneOff, label: "Manqué", className: "bg-rose-100 text-rose-700" },
-    abandoned: { icon: PhoneMissed, label: "Abandonné", className: "bg-amber-100 text-amber-700" },
+    routed: { icon: PhoneForwarded, label: "Routé", className: "bg-blue-100 text-blue-700" },
+    missed: { icon: PhoneMissed, label: "Manqué", className: "bg-red-100 text-red-700" },
+    abandoned: { icon: PhoneOff, label: "Abandonné", className: "bg-amber-100 text-amber-700" },
 };
 
 function formatDateTime(isoString: string): string {
     if (!isoString) return "-";
-    return format(new Date(isoString), "dd/MM/yyyy HH:mm:ss", { locale: fr });
+    try {
+        const date = new Date(isoString);
+        return format(date, "dd/MM/yyyy HH:mm:ss", { locale: fr });
+    } catch {
+        return "-";
+    }
 }
 
+// Get color for segment count badge
+function getSegmentBadgeColor(count: number): string {
+    if (count === 1) return "bg-emerald-100 text-emerald-700";
+    if (count <= 3) return "bg-yellow-100 text-yellow-700";
+    if (count <= 5) return "bg-orange-100 text-orange-700";
+    return "bg-red-100 text-red-700";
+}
+
+// Get color for wait time
+function getWaitTimeColor(seconds: number): string {
+    if (seconds < 15) return "text-emerald-600";
+    if (seconds < 30) return "text-yellow-600";
+    if (seconds < 60) return "text-orange-600";
+    return "text-red-600";
+}
+
+// Sortable header component
 function SortableHeader({
     label,
     field,
@@ -112,7 +122,7 @@ function SortableHeader({
     onSort: (field: SortField) => void;
 }) {
     const isActive = currentSort?.field === field;
-    const direction = isActive ? currentSort?.direction : null;
+    const direction = isActive ? currentSort.direction : undefined;
 
     return (
         <button
@@ -154,15 +164,7 @@ export function LogsTable({
     durationMin,
     durationMax,
     onDurationChange,
-    ringDurationMin,
-    ringDurationMax,
-    onRingDurationChange,
-    selectedReasons,
-    onReasonsChange,
-    trunkDidSearch,
-    onTrunkDidSearchChange,
-    // Expandable row
-    expandedRowId,
+    // Row click
     onRowClick,
 }: LogsTableProps) {
     if (isLoading) {
@@ -180,7 +182,7 @@ export function LogsTable({
                     {/* Row 1: Column Labels + Sort */}
                     <TableRow className="bg-slate-50 hover:bg-slate-50">
                         {columnVisibility.callHistoryId && (
-                            <TableHead className="w-16">ID</TableHead>
+                            <TableHead className="w-24">ID</TableHead>
                         )}
                         <TableHead className="w-40">
                             <SortableHeader label="Date/Heure" field="startedAt" currentSort={sort} onSort={onSort} />
@@ -188,7 +190,7 @@ export function LogsTable({
                         <TableHead>
                             <SortableHeader label="Appelant" field="sourceNumber" currentSort={sort} onSort={onSort} />
                         </TableHead>
-                        <TableHead className="w-10 text-center">→</TableHead>
+                        <TableHead className="w-10 text-center"></TableHead>
                         <TableHead>
                             <SortableHeader label="Appelé" field="destinationNumber" currentSort={sort} onSort={onSort} />
                         </TableHead>
@@ -197,20 +199,7 @@ export function LogsTable({
                         <TableHead className="w-20 text-right">
                             <SortableHeader label="Durée" field="duration" currentSort={sort} onSort={onSort} />
                         </TableHead>
-                        {columnVisibility.ringDuration && (
-                            <TableHead className="w-20 text-right">Sonnerie</TableHead>
-                        )}
-                        {columnVisibility.trunkDid && (
-                            <TableHead className="w-28">Trunk DID</TableHead>
-                        )}
-                        {columnVisibility.terminationReason && (
-                            <TableHead className="w-28">
-                                <div className="flex items-center gap-1.5">
-                                    <span>Raison</span>
-                                    <TerminationReasonTooltip />
-                                </div>
-                            </TableHead>
-                        )}
+                        <TableHead className="w-20 text-right">Attente</TableHead>
                     </TableRow>
 
                     {/* Row 2: Filter Inputs */}
@@ -258,39 +247,14 @@ export function LogsTable({
                                 onChange={onDurationChange}
                             />
                         </TableHead>
-                        {columnVisibility.ringDuration && (
-                            <TableHead className="py-2">
-                                <ColumnFilterRingDuration
-                                    min={ringDurationMin}
-                                    max={ringDurationMax}
-                                    onChange={onRingDurationChange}
-                                />
-                            </TableHead>
-                        )}
-                        {columnVisibility.trunkDid && (
-                            <TableHead className="py-2">
-                                <ColumnFilterInput
-                                    value={trunkDidSearch}
-                                    onChange={onTrunkDidSearchChange}
-                                    placeholder="Rechercher..."
-                                />
-                            </TableHead>
-                        )}
-                        {columnVisibility.terminationReason && (
-                            <TableHead className="py-2">
-                                <ColumnFilterTerminationReason
-                                    selected={selectedReasons}
-                                    onChange={onReasonsChange}
-                                />
-                            </TableHead>
-                        )}
+                        <TableHead className="py-2"></TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {logs.length === 0 ? (
                         <TableRow>
                             <TableCell
-                                colSpan={20}
+                                colSpan={10}
                                 className="h-48 text-center text-slate-500"
                             >
                                 Aucun appel trouvé pour ces critères
@@ -299,104 +263,100 @@ export function LogsTable({
                     ) : (
                         logs.map((log) => {
                             const dirConfig = directionConfig[log.direction];
-                            const statConfig = statusConfig[log.status];
+                            const statConfig = statusConfig[log.finalStatus];
                             const DirIcon = dirConfig.icon;
                             const StatIcon = statConfig.icon;
-                            const isExpanded = expandedRowId === log.callHistoryId;
 
                             return (
                                 <TableRow
-                                    key={log.id}
-                                    className={`hover:bg-slate-50 cursor-pointer ${isExpanded ? "bg-slate-100" : ""}`}
-                                    onClick={() => log.callHistoryId && onRowClick?.(log.callHistoryId)}
+                                    key={log.callHistoryId}
+                                    className="cursor-pointer hover:bg-slate-50 transition-colors"
+                                    onClick={() => onRowClick?.(log.callHistoryId)}
                                 >
-                                    {/* ID Chaîne */}
+                                    {/* ID with segment badge */}
                                     {columnVisibility.callHistoryId && (
-                                        <TableCell className="font-mono text-xs text-slate-500">
-                                            <div className="flex items-center gap-1">
-                                                {isExpanded ? (
-                                                    <ChevronDown className="h-3 w-3 flex-shrink-0" />
-                                                ) : (
-                                                    <ChevronRight className="h-3 w-3 flex-shrink-0" />
+                                        <TableCell className="font-mono text-xs">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-slate-500">{log.callHistoryIdShort}</span>
+                                                {log.segmentCount > 1 && (
+                                                    <Badge
+                                                        variant="secondary"
+                                                        className={`text-[10px] px-1 py-0 ${getSegmentBadgeColor(log.segmentCount)}`}
+                                                    >
+                                                        {log.segmentCount}
+                                                    </Badge>
                                                 )}
-                                                {log.callHistoryIdShort}
                                             </div>
                                         </TableCell>
                                     )}
 
-                                    {/* Date/Heure */}
-                                    <TableCell className="text-sm whitespace-nowrap">
+                                    {/* Date/Time */}
+                                    <TableCell className="text-sm tabular-nums">
                                         {formatDateTime(log.startedAt)}
                                     </TableCell>
 
-                                    {/* Appelant (2-line) */}
+                                    {/* Caller */}
                                     <TableCell>
-                                        <div>
-                                            <div className="font-mono font-medium text-sm">{log.sourceNumber}</div>
-                                            {log.sourceName && (
-                                                <div className="text-xs text-slate-500 truncate max-w-[200px]">
-                                                    {log.sourceName}
-                                                </div>
+                                        <div className="flex flex-col">
+                                            <span className="font-medium text-sm">{log.callerNumber}</span>
+                                            {log.callerName && (
+                                                <span className="text-xs text-slate-500 truncate max-w-[180px]">
+                                                    {log.callerName}
+                                                </span>
                                             )}
                                         </div>
                                     </TableCell>
 
-                                    {/* Arrow */}
-                                    <TableCell className="text-center text-slate-400">→</TableCell>
+                                    {/* Arrow (direct or transferred) */}
+                                    <TableCell className="text-center">
+                                        {log.wasTransferred ? (
+                                            <span title="Transféré">
+                                                <Shuffle className="h-4 w-4 text-amber-500 mx-auto" />
+                                            </span>
+                                        ) : (
+                                            <ArrowRight className="h-4 w-4 text-slate-400 mx-auto" />
+                                        )}
+                                    </TableCell>
 
-                                    {/* Appelé (2-line) */}
+                                    {/* Callee (final destination) */}
                                     <TableCell>
-                                        <div>
-                                            <div className="font-mono font-medium text-sm">{log.destinationNumber}</div>
-                                            {log.destinationName && (
-                                                <div className="text-xs text-slate-500 truncate max-w-[200px]">
-                                                    {log.destinationName}
-                                                </div>
+                                        <div className="flex flex-col">
+                                            <span className={`font-medium text-sm ${log.finalStatus !== "answered" ? "text-slate-400 italic" : ""}`}>
+                                                {log.calleeNumber}
+                                            </span>
+                                            {log.calleeName && (
+                                                <span className={`text-xs truncate max-w-[180px] ${log.finalStatus !== "answered" ? "text-slate-400 italic" : "text-slate-500"}`}>
+                                                    {log.calleeName}
+                                                </span>
                                             )}
                                         </div>
                                     </TableCell>
 
                                     {/* Direction */}
                                     <TableCell className="text-center">
-                                        <Badge variant="outline" className={`${dirConfig.className} gap-1`}>
+                                        <Badge variant="secondary" className={`gap-1 ${dirConfig.className}`}>
                                             <DirIcon className="h-3 w-3" />
-                                            <span className="hidden sm:inline">{dirConfig.label}</span>
+                                            {dirConfig.label}
                                         </Badge>
                                     </TableCell>
 
-                                    {/* Statut */}
+                                    {/* Status */}
                                     <TableCell className="text-center">
-                                        <Badge variant="outline" className={`${statConfig.className} gap-1`}>
+                                        <Badge variant="secondary" className={`gap-1 ${statConfig.className}`}>
                                             <StatIcon className="h-3 w-3" />
-                                            <span className="hidden sm:inline">{statConfig.label}</span>
+                                            {statConfig.label}
                                         </Badge>
                                     </TableCell>
 
-                                    {/* Durée */}
-                                    <TableCell className="text-right font-mono text-sm">
-                                        {log.durationFormatted}
+                                    {/* Total Duration */}
+                                    <TableCell className="text-right font-mono text-sm tabular-nums">
+                                        {log.totalDurationFormatted}
                                     </TableCell>
 
-                                    {/* Ring Duration */}
-                                    {columnVisibility.ringDuration && (
-                                        <TableCell className="text-right font-mono text-sm text-slate-500">
-                                            {log.ringDurationSeconds}s
-                                        </TableCell>
-                                    )}
-
-                                    {/* Trunk DID */}
-                                    {columnVisibility.trunkDid && (
-                                        <TableCell className="font-mono text-xs text-slate-500 truncate max-w-[120px]">
-                                            {log.trunkDid}
-                                        </TableCell>
-                                    )}
-
-                                    {/* Raison */}
-                                    {columnVisibility.terminationReason && (
-                                        <TableCell className="text-xs text-slate-500 truncate max-w-[100px]">
-                                            {log.terminationReason}
-                                        </TableCell>
-                                    )}
+                                    {/* Wait Time with color */}
+                                    <TableCell className={`text-right font-mono text-sm tabular-nums ${getWaitTimeColor(log.waitTimeSeconds)}`}>
+                                        {log.waitTimeFormatted}
+                                    </TableCell>
                                 </TableRow>
                             );
                         })

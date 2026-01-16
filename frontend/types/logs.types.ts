@@ -1,31 +1,56 @@
 // Types for Call Logs module
 
 export type CallDirection = "inbound" | "outbound" | "internal";
-export type CallStatus = "answered" | "missed" | "abandoned";
+export type CallStatus = "answered" | "routed" | "missed" | "abandoned";
 export type EntityType = "extension" | "external" | "queue" | "ivr" | "script" | "unknown";
 export type SortDirection = "asc" | "desc";
 export type SortField = "startedAt" | "duration" | "sourceNumber" | "destinationNumber";
 
+// Aggregated call log (1 call = 1 row, grouped by call_history_id)
+export interface AggregatedCallLog {
+    callHistoryId: string;
+    callHistoryIdShort: string;
+    segmentCount: number;
+
+    // Timing
+    startedAt: string;
+    endedAt: string;
+    totalDurationSeconds: number;
+    totalDurationFormatted: string;
+    waitTimeSeconds: number;
+    waitTimeFormatted: string;
+
+    // Caller (1er segment)
+    callerNumber: string;
+    callerName: string | null;
+
+    // Callee (dernier segment - destination finale)
+    calleeNumber: string;
+    calleeName: string | null;
+
+    // Status
+    direction: CallDirection;
+    finalStatus: CallStatus;
+    wasTransferred: boolean;
+}
+
+// Legacy: Single segment call log (kept for call chain modal)
 export interface CallLog {
     id: string;
-    callHistoryId: string;       // Full UUID for chain lookup
-    callHistoryIdShort: string;  // Last 4 chars for display
+    callHistoryId: string;
+    callHistoryIdShort: string;
     startedAt: string;
-    // Source (Appelant)
     sourceNumber: string;
     sourceName: string;
     sourceType: string;
-    // Destination (Appelé)
     destinationNumber: string;
     destinationName: string;
     destinationType: string;
-    // Computed fields
     direction: CallDirection;
     status: CallStatus;
     durationSeconds: number;
     durationFormatted: string;
-    ringDurationSeconds: number;  // Time before answer/abandon
-    // Extra info
+    ringDurationSeconds: number;
     trunkDid: string;
     terminationReason: string;
 }
@@ -34,16 +59,12 @@ export interface LogsFilters {
     directions: CallDirection[];
     statuses: CallStatus[];
     entityTypes: EntityType[];
-    extensionExact?: string;    // Exact match for internal extensions
-    externalNumber?: string;    // Partial match for external numbers
-    callerSearch?: string;      // Search on source number/name
-    calleeSearch?: string;      // Search on destination number/name
-    trunkDidSearch?: string;    // Search on trunk DID
-    durationMin?: number;       // In seconds
+    callerSearch?: string;
+    calleeSearch?: string;
+    durationMin?: number;
     durationMax?: number;
-    ringDurationMin?: number;   // Ring duration filter
-    ringDurationMax?: number;
-    terminationReasons?: string[]; // Termination reason filter
+    waitTimeMin?: number;
+    waitTimeMax?: number;
 }
 
 export interface LogsPagination {
@@ -56,6 +77,14 @@ export interface LogsSort {
     direction: SortDirection;
 }
 
+export interface AggregatedCallLogsResponse {
+    logs: AggregatedCallLog[];
+    totalCount: number;
+    totalPages: number;
+    currentPage: number;
+}
+
+// Legacy response type (kept for compatibility)
 export interface CallLogsResponse {
     logs: CallLog[];
     totalCount: number;
@@ -63,11 +92,8 @@ export interface CallLogsResponse {
     currentPage: number;
 }
 
-// Column visibility settings
+// Column visibility settings (simplified)
 export interface ColumnVisibility {
-    trunkDid: boolean;
-    ringDuration: boolean;
-    terminationReason: boolean;
     callHistoryId: boolean;
 }
 
