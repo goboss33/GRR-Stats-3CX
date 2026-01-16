@@ -254,6 +254,30 @@ async function getCallLogsWithDurationFilter(
         )`);
     }
 
+    // Ring duration filter: (answered_at or ended_at) - started_at
+    if (filters.ringDurationMin !== undefined || filters.ringDurationMax !== undefined) {
+        // Ring time = time between started_at and answered_at (or ended_at if not answered)
+        const ringExpr = `EXTRACT(EPOCH FROM (COALESCE(cdr_answered_at, cdr_ended_at) - cdr_started_at))`;
+        if (filters.ringDurationMin !== undefined) {
+            whereConditions.push(`${ringExpr} >= ${filters.ringDurationMin}`);
+        }
+        if (filters.ringDurationMax !== undefined) {
+            whereConditions.push(`${ringExpr} <= ${filters.ringDurationMax}`);
+        }
+    }
+
+    // Termination reason filter
+    if (filters.terminationReasons && filters.terminationReasons.length > 0) {
+        const reasons = filters.terminationReasons.map(r => `'${r.replace(/'/g, "''")}'`).join(", ");
+        whereConditions.push(`termination_reason IN (${reasons})`);
+    }
+
+    // Trunk DID search (with wildcard support)
+    if (filters.trunkDidSearch?.trim()) {
+        const pattern = parseSearchPattern(filters.trunkDidSearch);
+        whereConditions.push(buildSqlSearchCondition('source_callinfo_trunk_did', pattern));
+    }
+
     const whereClause = whereConditions.join(" AND ");
 
     // Sort
@@ -471,6 +495,12 @@ export async function getCallLogs(
         });
     }
 
+    // Trunk DID search (with wildcard support)
+    if (filters.trunkDidSearch?.trim()) {
+        const pattern = parseSearchPattern(filters.trunkDidSearch);
+        conditions.push(buildSearchCondition("source_callinfo_trunk_did", pattern));
+    }
+
     // Duration filter - using SQL expressions for computed duration
     // Duration = (cdr_ended_at - cdr_answered_at) in seconds
     // We need answered calls for duration filter
@@ -497,17 +527,20 @@ export async function getCallLogs(
     }
 
     try {
-        // Check if we need raw SQL for duration filtering
+        // Check if we need raw SQL for computed field filters
         const hasDurationFilter = filters.durationMin !== undefined || filters.durationMax !== undefined;
+        const hasRingDurationFilter = filters.ringDurationMin !== undefined || filters.ringDurationMax !== undefined;
+        const hasTerminationFilter = filters.terminationReasons && filters.terminationReasons.length > 0;
+        const needsRawSql = hasDurationFilter || hasRingDurationFilter || hasTerminationFilter;
 
-        if (hasDurationFilter) {
-            // Use raw SQL for duration filtering (computed field)
+        if (needsRawSql) {
+            // Use raw SQL for computed field filtering (duration, ring duration, termination reason)
             return await getCallLogsWithDurationFilter(
                 startDate, endDate, filters, pageNumber, limit, skip, sort
             );
         }
 
-        // Standard Prisma query when no duration filter
+        // Standard Prisma query when no computed field filters
         const [totalCount, calls] = await Promise.all([
             prisma.cdroutput.count({ where: baseWhere }),
             prisma.cdroutput.findMany({

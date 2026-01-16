@@ -38,8 +38,12 @@ export interface LogsFilters {
     externalNumber?: string;    // Partial match for external numbers
     callerSearch?: string;      // Search on source number/name
     calleeSearch?: string;      // Search on destination number/name
+    trunkDidSearch?: string;    // Search on trunk DID
     durationMin?: number;       // In seconds
     durationMax?: number;
+    ringDurationMin?: number;   // Ring duration filter
+    ringDurationMax?: number;
+    terminationReasons?: string[]; // Termination reason filter
 }
 
 export interface LogsPagination {

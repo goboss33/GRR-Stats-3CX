@@ -33,6 +33,9 @@ import {
     ColumnFilterDirection,
     ColumnFilterStatus,
     ColumnFilterDuration,
+    ColumnFilterRingDuration,
+    ColumnFilterTerminationReason,
+    TerminationReasonTooltip,
 } from "@/components/column-filters";
 
 import type {
@@ -65,6 +68,16 @@ interface LogsTableProps {
     durationMin?: number;
     durationMax?: number;
     onDurationChange: (range: { min?: number; max?: number }) => void;
+    // Ring duration filter
+    ringDurationMin?: number;
+    ringDurationMax?: number;
+    onRingDurationChange: (range: { min?: number; max?: number }) => void;
+    // Termination reason filter
+    selectedReasons: string[];
+    onReasonsChange: (reasons: string[]) => void;
+    // Trunk DID filter
+    trunkDidSearch: string;
+    onTrunkDidSearchChange: (value: string) => void;
     // Expandable row
     expandedRowId?: string | null;
     onRowClick?: (callHistoryId: string) => void;
@@ -141,6 +154,13 @@ export function LogsTable({
     durationMin,
     durationMax,
     onDurationChange,
+    ringDurationMin,
+    ringDurationMax,
+    onRingDurationChange,
+    selectedReasons,
+    onReasonsChange,
+    trunkDidSearch,
+    onTrunkDidSearchChange,
     // Expandable row
     expandedRowId,
     onRowClick,
@@ -184,7 +204,12 @@ export function LogsTable({
                             <TableHead className="w-28">Trunk DID</TableHead>
                         )}
                         {columnVisibility.terminationReason && (
-                            <TableHead className="w-24">Raison</TableHead>
+                            <TableHead className="w-28">
+                                <div className="flex items-center gap-1.5">
+                                    <span>Raison</span>
+                                    <TerminationReasonTooltip />
+                                </div>
+                            </TableHead>
                         )}
                     </TableRow>
 
@@ -234,13 +259,30 @@ export function LogsTable({
                             />
                         </TableHead>
                         {columnVisibility.ringDuration && (
-                            <TableHead className="py-2"></TableHead>
+                            <TableHead className="py-2">
+                                <ColumnFilterRingDuration
+                                    min={ringDurationMin}
+                                    max={ringDurationMax}
+                                    onChange={onRingDurationChange}
+                                />
+                            </TableHead>
                         )}
                         {columnVisibility.trunkDid && (
-                            <TableHead className="py-2"></TableHead>
+                            <TableHead className="py-2">
+                                <ColumnFilterInput
+                                    value={trunkDidSearch}
+                                    onChange={onTrunkDidSearchChange}
+                                    placeholder="Rechercher..."
+                                />
+                            </TableHead>
                         )}
                         {columnVisibility.terminationReason && (
-                            <TableHead className="py-2"></TableHead>
+                            <TableHead className="py-2">
+                                <ColumnFilterTerminationReason
+                                    selected={selectedReasons}
+                                    onChange={onReasonsChange}
+                                />
+                            </TableHead>
                         )}
                     </TableRow>
                 </TableHeader>

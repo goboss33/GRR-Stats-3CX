@@ -37,9 +37,9 @@ const PAGE_SIZE = 50;
 
 const defaultColumnVisibility: ColumnVisibility = {
     callHistoryId: true,
-    trunkDid: false,
-    ringDuration: false,
-    terminationReason: false,
+    trunkDid: true,
+    ringDuration: true,
+    terminationReason: true,
 };
 
 const entityOptions: { value: EntityType; label: string }[] = [
@@ -82,6 +82,10 @@ export default function AdminLogsPage() {
     const [calleeSearch, setCalleeSearch] = useState("");
     const [durationMin, setDurationMin] = useState<number | undefined>(undefined);
     const [durationMax, setDurationMax] = useState<number | undefined>(undefined);
+    const [ringDurationMin, setRingDurationMin] = useState<number | undefined>(undefined);
+    const [ringDurationMax, setRingDurationMax] = useState<number | undefined>(undefined);
+    const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
+    const [trunkDidSearch, setTrunkDidSearch] = useState("");
 
     // Data state
     const [data, setData] = useState<CallLogsResponse | null>(null);
@@ -94,6 +98,7 @@ export default function AdminLogsPage() {
     // Debounce search inputs (500ms as per PRD)
     const debouncedCallerSearch = useDebounce(callerSearch, 500);
     const debouncedCalleeSearch = useDebounce(calleeSearch, 500);
+    const debouncedTrunkDidSearch = useDebounce(trunkDidSearch, 500);
 
     // Build effective filters
     const effectiveFilters: LogsFilters = {
@@ -102,8 +107,12 @@ export default function AdminLogsPage() {
         entityTypes: selectedEntityTypes,
         callerSearch: debouncedCallerSearch || undefined,
         calleeSearch: debouncedCalleeSearch || undefined,
+        trunkDidSearch: debouncedTrunkDidSearch || undefined,
         durationMin,
         durationMax,
+        ringDurationMin,
+        ringDurationMax,
+        terminationReasons: selectedReasons.length > 0 ? selectedReasons : undefined,
     };
 
     // Update URL when filters change
@@ -142,11 +151,15 @@ export default function AdminLogsPage() {
         dateRange.endDate,
         debouncedCallerSearch,
         debouncedCalleeSearch,
+        debouncedTrunkDidSearch,
         selectedDirections,
         selectedStatuses,
         selectedEntityTypes,
         durationMin,
         durationMax,
+        ringDurationMin,
+        ringDurationMax,
+        selectedReasons,
         currentPage,
         sort
     ]);
@@ -334,6 +347,16 @@ export default function AdminLogsPage() {
                     durationMin={durationMin}
                     durationMax={durationMax}
                     onDurationChange={handleDurationChange}
+                    ringDurationMin={ringDurationMin}
+                    ringDurationMax={ringDurationMax}
+                    onRingDurationChange={({ min, max }) => {
+                        setRingDurationMin(min);
+                        setRingDurationMax(max);
+                    }}
+                    selectedReasons={selectedReasons}
+                    onReasonsChange={setSelectedReasons}
+                    trunkDidSearch={trunkDidSearch}
+                    onTrunkDidSearchChange={setTrunkDidSearch}
                     // Row click
                     onRowClick={handleRowClick}
                 />
