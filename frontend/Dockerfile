@@ -8,10 +8,16 @@ RUN apt-get update -y && apt-get install -y openssl ca-certificates
 
 WORKDIR /app
 
-# Copy package files
+# Copie des fichiers de configuration
 COPY package.json package-lock.json* ./
-# On supprime le package-lock pour forcer une résolution propre à Linux si besoin
+
+# 👇 AJOUTEZ CETTE LIGNE ICI 👇
+COPY prisma ./prisma
+
+# On supprime le package-lock pour forcer une résolution propre
 RUN rm -rf package-lock.json
+
+# Installation (Maintenant ça va marcher car le dossier prisma est là !)
 RUN npm install
 
 # Rebuild the source code only when needed
