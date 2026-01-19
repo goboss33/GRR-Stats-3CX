@@ -26,8 +26,8 @@ services:
       - "3000:3000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/callcenter
-      - NEXTAUTH_URL=http://localhost:3000
-      - NEXTAUTH_SECRET=your-production-secret-change-this
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
