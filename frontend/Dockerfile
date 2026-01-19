@@ -1,13 +1,17 @@
 # Production Dockerfile for Next.js Frontend
-FROM node:20-alpine AS base
+FROM node:20-slim AS base
 
 # Install dependencies only when needed
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
+# On remplace apk (Alpine) par apt-get (Debian) et on ajoute OpenSSL pour Prisma
+RUN apt-get update -y && apt-get install -y openssl ca-certificates
+
 WORKDIR /app
 
 # Copy package files
 COPY package.json package-lock.json* ./
+# On supprime le package-lock pour forcer une résolution propre à Linux si besoin
+RUN rm -rf package-lock.json
 RUN npm install
 
 # Rebuild the source code only when needed
