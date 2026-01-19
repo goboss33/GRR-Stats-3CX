@@ -34,20 +34,47 @@ export function ColumnFilterStatus({
     className,
 }: ColumnFilterStatusProps) {
     const [open, setOpen] = React.useState(false);
+    // Local state to track selections while popover is open
+    const [localSelected, setLocalSelected] = React.useState<CallStatus[]>(selected);
+
+    // Sync local state when prop changes (e.g., from external reset)
+    React.useEffect(() => {
+        if (!open) {
+            setLocalSelected(selected);
+        }
+    }, [selected, open]);
+
+    // Apply changes when popover closes
+    const handleOpenChange = (isOpen: boolean) => {
+        if (!isOpen && open) {
+            // Popover is closing - apply the changes
+            const hasChanged =
+                localSelected.length !== selected.length ||
+                !localSelected.every(s => selected.includes(s));
+            if (hasChanged) {
+                onChange(localSelected);
+            }
+        }
+        if (isOpen) {
+            // Popover is opening - sync local state
+            setLocalSelected(selected);
+        }
+        setOpen(isOpen);
+    };
 
     const handleToggle = (status: CallStatus, checked: boolean) => {
         if (checked) {
-            onChange([...selected, status]);
+            setLocalSelected([...localSelected, status]);
         } else {
-            onChange(selected.filter((s) => s !== status));
+            setLocalSelected(localSelected.filter((s) => s !== status));
         }
     };
 
     const handleSelectAll = () => {
-        if (selected.length === statusOptions.length || selected.length === 0) {
-            onChange([]);
+        if (localSelected.length === statusOptions.length || localSelected.length === 0) {
+            setLocalSelected([]);
         } else {
-            onChange(statusOptions.map((o) => o.value));
+            setLocalSelected(statusOptions.map((o) => o.value));
         }
     };
 
@@ -61,11 +88,11 @@ export function ColumnFilterStatus({
         return `${selected.length} sél.`;
     };
 
-    const allSelected = selected.length === 0; // Empty = all
+    const allSelected = localSelected.length === 0; // Empty = all
 
     return (
         <div className={cn("w-full min-w-[80px]", className)}>
-            <Popover open={open} onOpenChange={setOpen}>
+            <Popover open={open} onOpenChange={handleOpenChange}>
                 <PopoverTrigger asChild>
                     <Button
                         variant="outline"
@@ -97,7 +124,7 @@ export function ColumnFilterStatus({
                                 <div key={opt.value} className="flex items-center gap-2 px-1 py-1">
                                     <Checkbox
                                         id={`col-status-${opt.value}`}
-                                        checked={selected.includes(opt.value)}
+                                        checked={localSelected.includes(opt.value)}
                                         onCheckedChange={(checked) => handleToggle(opt.value, checked as boolean)}
                                     />
                                     <Label
@@ -115,3 +142,4 @@ export function ColumnFilterStatus({
         </div>
     );
 }
+

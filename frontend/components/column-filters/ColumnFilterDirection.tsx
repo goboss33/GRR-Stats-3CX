@@ -33,20 +33,47 @@ export function ColumnFilterDirection({
     className,
 }: ColumnFilterDirectionProps) {
     const [open, setOpen] = React.useState(false);
+    // Local state to track selections while popover is open
+    const [localSelected, setLocalSelected] = React.useState<CallDirection[]>(selected);
+
+    // Sync local state when prop changes (e.g., from external reset)
+    React.useEffect(() => {
+        if (!open) {
+            setLocalSelected(selected);
+        }
+    }, [selected, open]);
+
+    // Apply changes when popover closes
+    const handleOpenChange = (isOpen: boolean) => {
+        if (!isOpen && open) {
+            // Popover is closing - apply the changes
+            const hasChanged =
+                localSelected.length !== selected.length ||
+                !localSelected.every(d => selected.includes(d));
+            if (hasChanged) {
+                onChange(localSelected);
+            }
+        }
+        if (isOpen) {
+            // Popover is opening - sync local state
+            setLocalSelected(selected);
+        }
+        setOpen(isOpen);
+    };
 
     const handleToggle = (dir: CallDirection, checked: boolean) => {
         if (checked) {
-            onChange([...selected, dir]);
+            setLocalSelected([...localSelected, dir]);
         } else {
-            onChange(selected.filter((d) => d !== dir));
+            setLocalSelected(localSelected.filter((d) => d !== dir));
         }
     };
 
     const handleSelectAll = () => {
-        if (selected.length === directionOptions.length) {
-            onChange([]);
+        if (localSelected.length === directionOptions.length) {
+            setLocalSelected([]);
         } else {
-            onChange(directionOptions.map((o) => o.value));
+            setLocalSelected(directionOptions.map((o) => o.value));
         }
     };
 
@@ -60,11 +87,11 @@ export function ColumnFilterDirection({
         return `${selected.length} sél.`;
     };
 
-    const allSelected = selected.length === directionOptions.length;
+    const allSelected = localSelected.length === directionOptions.length;
 
     return (
         <div className={cn("w-full min-w-[90px]", className)}>
-            <Popover open={open} onOpenChange={setOpen}>
+            <Popover open={open} onOpenChange={handleOpenChange}>
                 <PopoverTrigger asChild>
                     <Button
                         variant="outline"
@@ -96,7 +123,7 @@ export function ColumnFilterDirection({
                                 <div key={opt.value} className="flex items-center gap-2 px-1 py-1">
                                     <Checkbox
                                         id={`col-dir-${opt.value}`}
-                                        checked={selected.includes(opt.value)}
+                                        checked={localSelected.includes(opt.value)}
                                         onCheckedChange={(checked) => handleToggle(opt.value, checked as boolean)}
                                     />
                                     <Label
@@ -114,3 +141,4 @@ export function ColumnFilterDirection({
         </div>
     );
 }
+

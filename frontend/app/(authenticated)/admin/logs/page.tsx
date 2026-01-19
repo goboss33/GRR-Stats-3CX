@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { LogsTable } from "@/components/logs-table";
 import { Pagination } from "@/components/pagination";
 import { CallChainModal } from "@/components/call-chain-modal";
+import { ActiveFilters } from "@/components/active-filters";
 import {
     Popover,
     PopoverContent,
@@ -202,6 +203,44 @@ export default function AdminLogsPage() {
         setSelectedCallHistoryId(callHistoryId);
     };
 
+    // Handlers for removing individual filters
+    const handleRemoveDirection = (direction: CallDirection) => {
+        const newDirections = selectedDirections.filter(d => d !== direction);
+        setSelectedDirections(newDirections.length === 0 ? ["inbound", "outbound", "internal"] : newDirections);
+        setCurrentPage(1);
+    };
+
+    const handleRemoveStatus = (status: CallStatus) => {
+        setSelectedStatuses(selectedStatuses.filter(s => s !== status));
+        setCurrentPage(1);
+    };
+
+    const handleRemoveCallerSearch = () => {
+        setCallerSearch("");
+        setCurrentPage(1);
+    };
+
+    const handleRemoveCalleeSearch = () => {
+        setCalleeSearch("");
+        setCurrentPage(1);
+    };
+
+    const handleRemoveDuration = () => {
+        setDurationMin(undefined);
+        setDurationMax(undefined);
+        setCurrentPage(1);
+    };
+
+    const handleResetAllFilters = () => {
+        setSelectedDirections(["inbound", "outbound", "internal"]);
+        setSelectedStatuses([]);
+        setCallerSearch("");
+        setCalleeSearch("");
+        setDurationMin(undefined);
+        setDurationMax(undefined);
+        setCurrentPage(1);
+    };
+
     return (
         <div className="space-y-4">
             {/* Header */}
@@ -265,6 +304,18 @@ export default function AdminLogsPage() {
                     </Button>
                 </div>
             </div>
+
+            {/* Active Filters Badges */}
+            <ActiveFilters
+                dateRange={dateRange}
+                filters={effectiveFilters}
+                onRemoveDirection={handleRemoveDirection}
+                onRemoveStatus={handleRemoveStatus}
+                onRemoveCallerSearch={handleRemoveCallerSearch}
+                onRemoveCalleeSearch={handleRemoveCalleeSearch}
+                onRemoveDuration={handleRemoveDuration}
+                onResetAll={handleResetAllFilters}
+            />
 
             {/* Results Info */}
             {data && (
