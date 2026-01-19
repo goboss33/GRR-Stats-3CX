@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { X, ArrowRight, Phone, PhoneOff, PhoneMissed } from "lucide-react";
+import { X, ArrowRight, Phone, PhoneForwarded, PhoneOff, PhoneMissed } from "lucide-react";
 
 import {
     Dialog,
@@ -23,6 +23,7 @@ interface CallChainModalProps {
 
 const statusConfig: Record<CallStatus, { icon: typeof Phone; label: string; className: string }> = {
     answered: { icon: Phone, label: "Répondu", className: "bg-emerald-100 text-emerald-800" },
+    routed: { icon: PhoneForwarded, label: "Routé", className: "bg-blue-100 text-blue-800" },
     missed: { icon: PhoneOff, label: "Manqué", className: "bg-rose-100 text-rose-800" },
     abandoned: { icon: PhoneMissed, label: "Abandonné", className: "bg-amber-100 text-amber-800" },
 };
