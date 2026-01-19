@@ -1,23 +1,23 @@
 # Production Dockerfile for Next.js Frontend
 FROM node:20-slim AS base
 
-# Install dependencies only when needed
-FROM base AS deps
-# On remplace apk (Alpine) par apt-get (Debian) et on ajoute OpenSSL pour Prisma
+# ✅ CORRECTIF : On installe OpenSSL ici pour qu'il soit dispo PARTOUT (y compris en prod)
 RUN apt-get update -y && apt-get install -y openssl ca-certificates
 
+# Install dependencies only when needed
+FROM base AS deps
 WORKDIR /app
 
-# Copie des fichiers de configuration
+# Copy package files
 COPY package.json package-lock.json* ./
 
-# 👇 AJOUTEZ CETTE LIGNE ICI 👇
+# Copie du dossier prisma AVANT l'installation (Crucial !)
 COPY prisma ./prisma
 
-# On supprime le package-lock pour forcer une résolution propre
+# Suppression du lock pour linux
 RUN rm -rf package-lock.json
 
-# Installation (Maintenant ça va marcher car le dossier prisma est là !)
+# Installation
 RUN npm install
 
 # Rebuild the source code only when needed
