@@ -1,8 +1,0 @@
-node_modules
-.next
-.git
-npm-debug.log
-Dockerfile
-Dockerfile.dev
-README.md
-.env.local

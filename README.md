@@ -5,10 +5,11 @@ Application web moderne pour l'analyse des statistiques d'un centre d'appels 3CX
 ## 📋 Stack Technique
 
 - **Frontend** : Next.js 15 (App Router), TypeScript, Tailwind CSS, Shadcn/ui, Lucide React
-- **Backend** : Python 3.11+, FastAPI
 - **Base de données** : PostgreSQL avec Prisma ORM
 - **Authentification** : NextAuth.js v5 (Auth.js)
 - **Infrastructure** : Docker & Docker Compose
+
+> **Note** : Les données CDR sont reçues en temps réel depuis le serveur 3CX.
 
 ## 🚀 Démarrage rapide
 
@@ -40,15 +41,13 @@ Application web moderne pour l'analyse des statistiques d'un centre d'appels 3CX
 
 4. **Accéder à l'application**
    - Frontend : [http://localhost:3000](http://localhost:3000)
-   - Backend API : [http://localhost:8000](http://localhost:8000)
-   - API Docs (Swagger) : [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ## 👤 Utilisateurs de test
 
 | Email | Mot de passe | Rôle | Accès |
 |-------|-------------|------|-------|
-| admin@demo.com | 1234 | Admin | Accès complet (Settings, Upload, Users) |
-| manager@demo.com | 1234 | Superuser | Dashboards globaux |
+| admin@demo.com | 1234 | Admin | Accès complet (Settings, Logs) |
+| manager@demo.com | 1234 | Superuser | Dashboard global |
 | user@demo.com | 1234 | User | Dashboard personnel |
 
 ## 📁 Structure du projet
@@ -58,12 +57,6 @@ GRR-Stats-3CX/
 ├── docker-compose.yml          # Configuration prod
 ├── docker-compose.dev.yml      # Configuration dev (Hot reload)
 ├── README.md
-│
-├── backend/                    # Application FastAPI
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── main.py                 # Point d'entrée
-│   └── app/                    # Logique métier
 │
 └── frontend/                   # Application Next.js
     ├── Dockerfile
@@ -89,10 +82,17 @@ GRR-Stats-3CX/
     │   ├── sidebar.tsx
     │   └── ui/                 # Composants Shadcn
     │
+    ├── hooks/                  # Hooks React
+    │   └── use-debounce.ts
+    │
     ├── lib/                    # Utilitaires
     │   ├── auth.ts             # Configuration NextAuth
     │   ├── prisma.ts
     │   └── utils.ts
+    │
+    ├── services/               # Server Actions
+    │   ├── logs.service.ts
+    │   └── stats.service.ts
     │
     └── prisma/                 # Schéma & Migrations
         ├── schema.prisma
@@ -157,28 +157,7 @@ Copiez `.env.example` vers `.env` et modifiez les valeurs :
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/callcenter"
 NEXTAUTH_URL="http://localhost:3000"
 NEXTAUTH_SECRET="votre-secret-unique"
-BACKEND_URL="http://localhost:8000"
 ```
-
-## 🛣️ Roadmap
-
-### Phase 1 (Actuelle)
-- [x] Architecture Docker
-- [x] Authentification NextAuth
-- [x] Structure Frontend/Backend
-- [x] UI Squelette (Dashboard, Upload, Settings)
-
-### Phase 2 (À venir)
-- [ ] Upload et parsing CSV
-- [ ] Nettoyage des données (Pandas)
-- [ ] Modèles de données complets (Extensions, CallRecords)
-- [ ] API REST pour les statistiques
-
-### Phase 3 (À venir)
-- [ ] Dashboards interactifs avec graphiques
-- [ ] Comparaisons mensuelles
-- [ ] Export PDF/Excel
-- [ ] Microsoft OAuth
 
 ## 📄 Licence
 
