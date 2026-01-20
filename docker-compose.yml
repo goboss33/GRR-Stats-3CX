@@ -30,6 +30,7 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/callcenter
       - NEXTAUTH_URL=${NEXTAUTH_URL}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - AUTH_TRUST_HOST=true
     depends_on:
       postgres:
         condition: service_healthy
