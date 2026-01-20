@@ -79,6 +79,12 @@ model cdroutput {
   main_call_history_id                         String?   @db.Uuid
   source_presentation                          String?   @db.VarChar
   offload_id                                   BigInt?   @ignore
+
+  // 👇 AJOUTEZ CE BLOC À LA FIN DU MODÈLE 👇
+  @@index([cdr_started_at])                         // Pour filtrer par date (rapide)
+  @@index([destination_dn_number])                  // Pour grouper par extension
+  @@index([source_dn_number])                       // Pour chercher qui a appelé
+  @@index([cdr_started_at, destination_dn_number]) // Pour les graphiques combinés
 }
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
