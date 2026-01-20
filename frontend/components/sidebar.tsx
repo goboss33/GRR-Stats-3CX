@@ -9,8 +9,6 @@ import {
     ChevronLeft,
     ChevronRight,
     Phone,
-    BarChart3,
-    Users,
     FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -40,18 +38,7 @@ const navItems: NavItem[] = [
         icon: LayoutDashboard,
         roles: ["ADMIN", "SUPERUSER", "USER"],
     },
-    {
-        label: "Statistiques",
-        href: "/dashboard/stats",
-        icon: BarChart3,
-        roles: ["ADMIN", "SUPERUSER"],
-    },
-    {
-        label: "Utilisateurs",
-        href: "/dashboard/users",
-        icon: Users,
-        roles: ["ADMIN"],
-    },
+
     {
         label: "Logs d'appels",
         href: "/admin/logs",
