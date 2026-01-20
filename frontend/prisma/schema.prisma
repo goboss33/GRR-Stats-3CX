@@ -78,7 +78,7 @@ model cdroutput {
   migrated                                     Boolean?
   main_call_history_id                         String?   @db.Uuid
   source_presentation                          String?   @db.VarChar
-  // offload_id                                BigInt? 
+  offload_id                                   BigInt?   @ignore
 }
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
