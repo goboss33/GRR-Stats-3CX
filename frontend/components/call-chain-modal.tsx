@@ -54,7 +54,7 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
                         <Phone className="h-5 w-5" />
                         Chaîne d&apos;appel
                         <span className="text-sm font-mono text-slate-500">
-                            ...{callHistoryId?.slice(-8)}
+                            {callHistoryId}
                         </span>
                     </DialogTitle>
                 </DialogHeader>

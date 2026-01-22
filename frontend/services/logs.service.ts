@@ -385,10 +385,24 @@ export async function getAggregatedCallLogs(
                 waitTimeFormatted: formatDuration(waitTimeSeconds),
 
                 callerNumber: getDisplayNumber(row.source_dn_number, row.source_participant_phone_number, row.source_presentation),
-                callerName: getDisplayName(row.source_participant_name, row.source_dn_name) || null,
+                // For 'provider' source: 
+                // - If source_participant_name ends with ':' → it's a SDA/rule name, caller is unknown
+                // - If source_participant_name does NOT end with ':' → it's the actual caller's name (recognized employee)
+                callerName: row.source_dn_type?.toLowerCase() === 'provider'
+                    ? (row.source_participant_name && !row.source_participant_name.trim().endsWith(':')
+                        ? getDisplayName(row.source_participant_name, null)
+                        : null)
+                    : (getDisplayName(row.source_participant_name, row.source_dn_name) || null),
 
                 calleeNumber: getDisplayNumber(row.destination_dn_number, row.destination_participant_phone_number, null),
-                calleeName: getDisplayName(row.destination_participant_name, row.destination_dn_name) || null,
+                // For 'provider' source:
+                // - Prefer destination name (queue/extension name)
+                // - Fallback to SDA name ONLY if it ends with ':' (otherwise it's caller's name, not SDA)
+                calleeName: row.source_dn_type?.toLowerCase() === 'provider'
+                    ? (getDisplayName(row.destination_participant_name, row.destination_dn_name)
+                        || (row.source_participant_name?.trim().endsWith(':') ? getDisplayName(row.source_participant_name, null) : null)
+                        || null)
+                    : (getDisplayName(row.destination_participant_name, row.destination_dn_name) || null),
 
                 direction,
                 finalStatus,
@@ -455,10 +469,21 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
                 id: seg.cdr_id,
                 startedAt: seg.cdr_started_at?.toISOString() || "",
                 sourceNumber: getDisplayNumber(seg.source_dn_number, seg.source_participant_phone_number, seg.source_presentation),
-                sourceName: getDisplayName(seg.source_participant_name, seg.source_dn_name),
+                // For 'provider' source:
+                // - If source_participant_name ends with ':' → it's a SDA name, caller is unknown
+                // - If source_participant_name does NOT end with ':' → it's the actual caller's name
+                sourceName: seg.source_dn_type?.toLowerCase() === 'provider'
+                    ? (seg.source_participant_name && !seg.source_participant_name.trim().endsWith(':')
+                        ? getDisplayName(seg.source_participant_name, null)
+                        : "")
+                    : getDisplayName(seg.source_participant_name, seg.source_dn_name),
                 sourceType: seg.source_dn_type || "-",
                 destinationNumber: getDisplayNumber(seg.destination_dn_number, seg.destination_participant_phone_number, null),
-                destinationName: getDisplayName(seg.destination_participant_name, seg.destination_dn_name),
+                // For 'provider' source: prefer destination name, fallback to SDA name only if it ends with ':'
+                destinationName: seg.source_dn_type?.toLowerCase() === 'provider'
+                    ? (getDisplayName(seg.destination_participant_name, seg.destination_dn_name)
+                        || (seg.source_participant_name?.trim().endsWith(':') ? getDisplayName(seg.source_participant_name, null) : ""))
+                    : getDisplayName(seg.destination_participant_name, seg.destination_dn_name),
                 destinationType: seg.destination_dn_type || "-",
                 status: determineStatus(seg.cdr_answered_at, seg.cdr_started_at, seg.cdr_ended_at, seg.destination_dn_type),
                 durationFormatted: formatDuration(durationSeconds),
