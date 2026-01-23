@@ -9,6 +9,7 @@ import {
     LogsSort,
     AggregatedCallLogsResponse,
     CallChainSegment,
+    SegmentCategory,
 } from "@/types/logs.types";
 
 // ============================================
@@ -49,6 +50,86 @@ function determineStatus(
         if (ringTime > 5000) return "abandoned";
     }
     return "missed";
+}
+
+function determineSegmentCategory(
+    terminationReason: string | null,
+    terminationReasonDetails: string | null,
+    creationMethod: string | null,
+    creationForwardReason: string | null,
+    destinationType: string | null,
+    sourceType: string | null,
+    durationSeconds: number,
+    wasAnswered: boolean
+): SegmentCategory {
+    const termReason = terminationReason?.toLowerCase() || "";
+    const termDetails = terminationReasonDetails?.toLowerCase() || "";
+    const createMethod = creationMethod?.toLowerCase() || "";
+    const createForward = creationForwardReason?.toLowerCase() || "";
+    const destType = destinationType?.toLowerCase() || "";
+    const srcType = sourceType?.toLowerCase() || "";
+
+    // Bridge segments
+    if (srcType === "bridge" || destType === "bridge") {
+        return "bridge";
+    }
+
+    // Voicemail segments
+    if (destType === "vmail_console" || destType === "voicemail") {
+        return "voicemail";
+    }
+
+    // IVR/Script segments
+    if (destType === "script" || destType === "ivr") {
+        return "ivr";
+    }
+
+    // Queue segments
+    if (destType === "queue") {
+        return "queue";
+    }
+
+    // Routing segments: ultra-short redirections (system routing)
+    if (termReason === "redirected" && durationSeconds < 1) {
+        return "routing";
+    }
+
+    // Ringing segments: agent polled but didn't answer
+    if (createMethod === "route_to" && createForward === "polling") {
+        if (termReason === "cancelled") {
+            return "ringing";
+        }
+    }
+
+    // Conversation: answered with significant duration
+    if (wasAnswered && destType === "extension" && durationSeconds > 1) {
+        return "conversation";
+    }
+
+    // Transfer segments
+    if (createMethod === "transfer" || createMethod === "divert") {
+        if (wasAnswered && durationSeconds > 1) {
+            return "conversation";
+        }
+        if (termReason === "continued_in") {
+            return "transfer";
+        }
+    }
+
+    // Missed/Rejected segments
+    if (termReason === "rejected" || termDetails === "no_route") {
+        return "missed";
+    }
+    if (!wasAnswered && (termReason === "src_participant_terminated" || termReason === "dst_participant_terminated")) {
+        return "missed";
+    }
+
+    // Fallback based on answered status
+    if (wasAnswered) {
+        return "conversation";
+    }
+
+    return "unknown";
 }
 
 function formatDuration(seconds: number): string {
@@ -150,24 +231,24 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
         return ''; // No filter needed
     }
     const conditions: string[] = [];
-    // Status is based on: last_answered_at and last_dest_type
-    // answered: answered IS NOT NULL AND last_dest_type = 'extension'
-    // routed: answered IS NOT NULL AND last_dest_type != 'extension'
-    // missed: answered IS NULL (with short ring time - approximated)
-    // abandoned: answered IS NULL (with longer ring time - approximated)
+    // Status is based on:
+    // answered: ans.answered_at IS NOT NULL (human answered)
+    // routed: ca.first_answered_at IS NOT NULL AND ans.answered_at IS NULL (IVR/queue answered but no human)
+    // missed: no answer with short ring time
+    // abandoned: no answer with longer ring time
     if (statuses.includes('answered')) {
-        conditions.push("(ls.cdr_answered_at IS NOT NULL AND ls.last_dest_type = 'extension')");
+        conditions.push("(ans.answered_at IS NOT NULL)");
     }
     if (statuses.includes('routed')) {
-        conditions.push("(ls.cdr_answered_at IS NOT NULL AND (ls.last_dest_type != 'extension' OR ls.last_dest_type IS NULL))");
+        conditions.push("(ca.first_answered_at IS NOT NULL AND ans.answered_at IS NULL)");
     }
     if (statuses.includes('missed')) {
         // Missed = not answered, short ring time (< 5 seconds)
-        conditions.push("(ls.cdr_answered_at IS NULL AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) <= 5)");
+        conditions.push("(ca.first_answered_at IS NULL AND EXTRACT(EPOCH FROM (ca.last_ended_at - ca.first_started_at)) <= 5)");
     }
     if (statuses.includes('abandoned')) {
         // Abandoned = not answered, longer ring time (> 5 seconds)
-        conditions.push("(ls.cdr_answered_at IS NULL AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 5)");
+        conditions.push("(ca.first_answered_at IS NULL AND EXTRACT(EPOCH FROM (ca.last_ended_at - ca.first_started_at)) > 5)");
     }
     return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
 }
@@ -280,6 +361,22 @@ export async function getAggregatedCallLogs(
                 FROM cdroutput
                 WHERE ${whereClause}
                 ORDER BY call_history_id, cdr_started_at DESC
+            ),
+            answered_segments AS (
+                SELECT DISTINCT ON (call_history_id)
+                    call_history_id,
+                    destination_dn_number as answered_dest_number,
+                    destination_participant_name as answered_dest_name,
+                    destination_dn_name as answered_dn_name,
+                    destination_dn_type as answered_dest_type,
+                    cdr_answered_at as answered_at,
+                    cdr_ended_at as answered_ended_at,
+                    EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at)) as talk_duration_seconds
+                FROM cdroutput
+                WHERE ${whereClause}
+                  AND cdr_answered_at IS NOT NULL
+                  AND destination_dn_type = 'extension'
+                ORDER BY call_history_id, cdr_answered_at ASC
             )
             SELECT 
                 ca.call_history_id,
@@ -303,10 +400,18 @@ export async function getAggregatedCallLogs(
                 ls.cdr_answered_at as last_answered_at,
                 ls.last_started_at,
                 ls.last_ended_at,
-                ls.termination_reason
+                ls.termination_reason,
+                ans.answered_dest_number,
+                ans.answered_dest_name,
+                ans.answered_dn_name,
+                ans.answered_dest_type,
+                ans.answered_at,
+                ans.answered_ended_at,
+                ans.talk_duration_seconds
             FROM call_aggregates ca
             JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
             JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+            LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
             ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
             ORDER BY ca.first_started_at DESC
             LIMIT ${limit} OFFSET ${skip}
@@ -341,11 +446,22 @@ export async function getAggregatedCallLogs(
                 FROM cdroutput
                 WHERE ${whereClause}
                 ORDER BY call_history_id, cdr_started_at DESC
+            ),
+            answered_segments AS (
+                SELECT DISTINCT ON (call_history_id)
+                    call_history_id,
+                    cdr_answered_at as answered_at
+                FROM cdroutput
+                WHERE ${whereClause}
+                  AND cdr_answered_at IS NOT NULL
+                  AND destination_dn_type = 'extension'
+                ORDER BY call_history_id, cdr_answered_at ASC
             )
             SELECT COUNT(*) as total
             FROM call_aggregates ca
             JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
             JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+            LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
             ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
         `;
 
@@ -363,20 +479,40 @@ export async function getAggregatedCallLogs(
             const firstStarted = row.first_started_at ? new Date(row.first_started_at) : null;
             const lastEnded = row.last_ended_at ? new Date(row.last_ended_at) : null;
             const firstAnswered = row.first_answered_at ? new Date(row.first_answered_at) : null;
-            const lastAnswered = row.last_answered_at ? new Date(row.last_answered_at) : null;
+
+            // Use answered_segment data if available (call was answered by human)
+            const answeredByHuman = row.answered_at ? new Date(row.answered_at) : null;
+            const answeredEndedAt = row.answered_ended_at ? new Date(row.answered_ended_at) : null;
+            const talkDurationSeconds = row.talk_duration_seconds ? Math.round(Number(row.talk_duration_seconds)) : 0;
 
             // Total duration = from first start to last end
             const totalDurationSeconds = firstStarted && lastEnded
                 ? Math.round((lastEnded.getTime() - firstStarted.getTime()) / 1000)
                 : 0;
 
-            // Wait time = time until first answered segment (or total if never answered)
-            const waitTimeSeconds = firstStarted && firstAnswered
-                ? Math.round((firstAnswered.getTime() - firstStarted.getTime()) / 1000)
+            // Wait time = time until answered by human (or first answered segment)
+            const waitTimeSeconds = firstStarted && (answeredByHuman || firstAnswered)
+                ? Math.round(((answeredByHuman || firstAnswered)!.getTime() - firstStarted.getTime()) / 1000)
                 : (firstStarted && lastEnded ? Math.round((lastEnded.getTime() - firstStarted.getTime()) / 1000) : 0);
 
-            // Determine final status from last segment
-            const finalStatus = determineStatus(lastAnswered, row.last_started_at ? new Date(row.last_started_at) : null, lastEnded, row.last_dest_type);
+            // Determine final status - prioritize answered_segment (human answered)
+            let finalStatus: CallStatus;
+            if (answeredByHuman) {
+                // Call was answered by a human (extension)
+                finalStatus = "answered";
+            } else if (firstAnswered) {
+                // Call was answered by IVR/queue/script but not by human
+                finalStatus = "routed";
+            } else {
+                // Call was never answered
+                const lastStarted = row.last_started_at ? new Date(row.last_started_at) : null;
+                if (lastStarted && lastEnded) {
+                    const ringTime = lastEnded.getTime() - lastStarted.getTime();
+                    finalStatus = ringTime > 5000 ? "abandoned" : "missed";
+                } else {
+                    finalStatus = "missed";
+                }
+            }
 
             // Determine direction - check first and last segments for bridge
             const direction = determineDirection(row.source_dn_type, row.first_dest_type, row.last_dest_type);
@@ -391,8 +527,9 @@ export async function getAggregatedCallLogs(
 
                 startedAt: row.first_started_at?.toISOString() || "",
                 endedAt: row.last_ended_at?.toISOString() || "",
-                totalDurationSeconds,
-                totalDurationFormatted: formatDuration(totalDurationSeconds),
+                // Use talk duration for answered calls, otherwise show total duration
+                totalDurationSeconds: answeredByHuman ? talkDurationSeconds : totalDurationSeconds,
+                totalDurationFormatted: formatDuration(answeredByHuman ? talkDurationSeconds : totalDurationSeconds),
                 waitTimeSeconds,
                 waitTimeFormatted: formatDuration(waitTimeSeconds),
 
@@ -469,21 +606,39 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
                 destination_dn_name: true,
                 destination_dn_type: true,
                 termination_reason: true,
+                termination_reason_details: true,
+                creation_method: true,
+                creation_forward_reason: true,
             },
         });
 
         return segments.map((seg) => {
-            const durationSeconds = seg.cdr_answered_at && seg.cdr_ended_at
-                ? Math.round((new Date(seg.cdr_ended_at).getTime() - new Date(seg.cdr_answered_at).getTime()) / 1000)
+            const startedAt = seg.cdr_started_at ? new Date(seg.cdr_started_at) : null;
+            const endedAt = seg.cdr_ended_at ? new Date(seg.cdr_ended_at) : null;
+            const answeredAt = seg.cdr_answered_at ? new Date(seg.cdr_answered_at) : null;
+
+            // Calculate duration in seconds (from start to end)
+            const durationSeconds = startedAt && endedAt
+                ? Math.round((endedAt.getTime() - startedAt.getTime()) / 1000 * 10) / 10
                 : 0;
+
+            // Determine segment category
+            const category = determineSegmentCategory(
+                seg.termination_reason,
+                seg.termination_reason_details,
+                seg.creation_method,
+                seg.creation_forward_reason,
+                seg.destination_dn_type,
+                seg.source_dn_type,
+                durationSeconds,
+                !!answeredAt
+            );
 
             return {
                 id: seg.cdr_id,
                 startedAt: seg.cdr_started_at?.toISOString() || "",
+                answeredAt: answeredAt?.toISOString() || null,
                 sourceNumber: getDisplayNumber(seg.source_dn_number, seg.source_participant_phone_number, seg.source_presentation),
-                // For 'provider' source:
-                // - If source_participant_name ends with ':' → it's a SDA name, caller is unknown
-                // - If source_participant_name does NOT end with ':' → it's the actual caller's name
                 sourceName: seg.source_dn_type?.toLowerCase() === 'provider'
                     ? (seg.source_participant_name && !seg.source_participant_name.trim().endsWith(':')
                         ? getDisplayName(seg.source_participant_name, null)
@@ -491,15 +646,19 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
                     : getDisplayName(seg.source_participant_name, seg.source_dn_name),
                 sourceType: seg.source_dn_type || "-",
                 destinationNumber: getDisplayNumber(seg.destination_dn_number, seg.destination_participant_phone_number, null),
-                // For 'provider' source: prefer destination name, fallback to SDA name only if it ends with ':'
                 destinationName: seg.source_dn_type?.toLowerCase() === 'provider'
                     ? (getDisplayName(seg.destination_participant_name, seg.destination_dn_name)
                         || (seg.source_participant_name?.trim().endsWith(':') ? getDisplayName(seg.source_participant_name, null) : ""))
                     : getDisplayName(seg.destination_participant_name, seg.destination_dn_name),
                 destinationType: seg.destination_dn_type || "-",
                 status: determineStatus(seg.cdr_answered_at, seg.cdr_started_at, seg.cdr_ended_at, seg.destination_dn_type),
-                durationFormatted: formatDuration(durationSeconds),
+                durationSeconds,
+                durationFormatted: formatDuration(Math.round(durationSeconds)),
                 terminationReason: seg.termination_reason || "-",
+                terminationReasonDetails: seg.termination_reason_details || "",
+                creationMethod: seg.creation_method || "-",
+                creationForwardReason: seg.creation_forward_reason || "",
+                category,
             };
         });
     } catch (error) {

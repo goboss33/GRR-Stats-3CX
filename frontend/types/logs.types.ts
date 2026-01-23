@@ -97,10 +97,24 @@ export interface ColumnVisibility {
     callHistoryId: boolean;
 }
 
+// Segment category for display in modal
+export type SegmentCategory =
+    | "routing"      // Ultra-short system routing (<1s, redirected)
+    | "ringing"      // Extension ringing but not answered
+    | "conversation" // Answered call with real interaction
+    | "queue"        // Queue/waiting segment
+    | "voicemail"    // Voicemail segment
+    | "ivr"          // IVR/script interaction
+    | "bridge"       // Bridge (EDIFEA) segment
+    | "transfer"     // Transfer segment
+    | "missed"       // Missed/abandoned/rejected
+    | "unknown";     // Fallback
+
 // For call chain modal
 export interface CallChainSegment {
     id: string;
     startedAt: string;
+    answeredAt: string | null;
     sourceNumber: string;
     sourceName: string;
     sourceType: string;
@@ -108,6 +122,11 @@ export interface CallChainSegment {
     destinationName: string;
     destinationType: string;
     status: CallStatus;
+    durationSeconds: number;
     durationFormatted: string;
     terminationReason: string;
+    terminationReasonDetails: string;
+    creationMethod: string;
+    creationForwardReason: string;
+    category: SegmentCategory;
 }
