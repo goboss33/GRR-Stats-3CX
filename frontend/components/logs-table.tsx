@@ -74,6 +74,7 @@ const directionConfig: Record<CallDirection, { icon: typeof ArrowDownLeft; label
     inbound: { icon: ArrowDownLeft, label: "Entrant", className: "bg-emerald-100 text-emerald-700" },
     outbound: { icon: ArrowUpRight, label: "Sortant", className: "bg-blue-100 text-blue-700" },
     internal: { icon: ArrowLeftRight, label: "Interne", className: "bg-slate-100 text-slate-700" },
+    bridge: { icon: Shuffle, label: "Bridge", className: "bg-purple-100 text-purple-700" },
 };
 
 const statusConfig: Record<CallStatus, { icon: typeof Phone; label: string; className: string }> = {
@@ -254,7 +255,7 @@ export function LogsTable({
                     {logs.length === 0 ? (
                         <TableRow>
                             <TableCell
-                                colSpan={10}
+                                colSpan={11}
                                 className="h-48 text-center text-slate-500"
                             >
                                 Aucun appel trouvé pour ces critères

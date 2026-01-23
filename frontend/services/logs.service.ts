@@ -17,10 +17,17 @@ import {
 
 function determineDirection(
     sourceType: string | null,
-    destType: string | null
+    firstDestType: string | null,
+    lastDestType: string | null
 ): CallDirection {
+    // Bridge calls: if source, first destination, or last destination involves bridge
+    const srcIsBridge = sourceType?.toLowerCase() === "bridge";
+    const firstDestIsBridge = firstDestType?.toLowerCase() === "bridge";
+    const lastDestIsBridge = lastDestType?.toLowerCase() === "bridge";
+    if (srcIsBridge || firstDestIsBridge || lastDestIsBridge) return "bridge";
+
     const srcIsExt = sourceType?.toLowerCase() === "extension";
-    const destIsExt = destType?.toLowerCase() === "extension";
+    const destIsExt = firstDestType?.toLowerCase() === "extension";
     if (srcIsExt && destIsExt) return "internal";
     if (srcIsExt && !destIsExt) return "outbound";
     return "inbound";
@@ -113,19 +120,23 @@ function buildSqlSearchCondition(field: string, pattern: ReturnType<typeof parse
 
 // Build SQL condition for direction filter (applied on aggregated data)
 function buildSqlDirectionFilter(directions: CallDirection[] | undefined): string {
-    if (!directions || directions.length === 0 || directions.length === 3) {
+    if (!directions || directions.length === 0 || directions.length === 4) {
         return ''; // No filter needed
     }
     const conditions: string[] = [];
     // Direction is based on: source_dn_type (first segment) and first_dest_type
-    // inbound: source is NOT extension
-    // outbound: source IS extension AND destination is NOT extension
+    // bridge: source OR destination is bridge
+    // inbound: source is NOT extension (and not bridge)
+    // outbound: source IS extension AND destination is NOT extension (and not bridge)
     // internal: source IS extension AND destination IS extension
+    if (directions.includes('bridge')) {
+        conditions.push("(fs.source_dn_type = 'bridge' OR fs.destination_dn_type = 'bridge' OR ls.last_dest_type = 'bridge')");
+    }
     if (directions.includes('inbound')) {
-        conditions.push("(fs.source_dn_type != 'extension' OR fs.source_dn_type IS NULL)");
+        conditions.push("(fs.source_dn_type != 'extension' AND fs.source_dn_type != 'bridge' AND (ls.last_dest_type != 'bridge' OR ls.last_dest_type IS NULL))");
     }
     if (directions.includes('outbound')) {
-        conditions.push("(fs.source_dn_type = 'extension' AND fs.destination_dn_type != 'extension')");
+        conditions.push("(fs.source_dn_type = 'extension' AND fs.destination_dn_type != 'extension' AND fs.destination_dn_type != 'bridge' AND (ls.last_dest_type != 'bridge' OR ls.last_dest_type IS NULL))");
     }
     if (directions.includes('internal')) {
         conditions.push("(fs.source_dn_type = 'extension' AND fs.destination_dn_type = 'extension')");
@@ -160,6 +171,7 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
     }
     return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
 }
+
 
 // ============================================
 // MAIN FUNCTION: GET AGGREGATED CALL LOGS
@@ -366,8 +378,8 @@ export async function getAggregatedCallLogs(
             // Determine final status from last segment
             const finalStatus = determineStatus(lastAnswered, row.last_started_at ? new Date(row.last_started_at) : null, lastEnded, row.last_dest_type);
 
-            // Determine direction from first segment
-            const direction = determineDirection(row.source_dn_type, row.first_dest_type);
+            // Determine direction - check first and last segments for bridge
+            const direction = determineDirection(row.source_dn_type, row.first_dest_type, row.last_dest_type);
 
             // Was transferred if more than 1 segment
             const wasTransferred = Number(row.segment_count) > 1;

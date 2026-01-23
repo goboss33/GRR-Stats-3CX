@@ -26,6 +26,7 @@ const directionLabels: Record<CallDirection, string> = {
     inbound: "Entrant",
     outbound: "Sortant",
     internal: "Interne",
+    bridge: "Bridge",
 };
 
 const statusLabels: Record<CallStatus, string> = {
@@ -55,8 +56,8 @@ export function ActiveFilters({
         </Badge>
     );
 
-    // Direction filters (only show if not all 3 selected)
-    if (filters.directions && filters.directions.length > 0 && filters.directions.length < 3) {
+    // Direction filters (only show if not all 4 selected)
+    if (filters.directions && filters.directions.length > 0 && filters.directions.length < 4) {
         filters.directions.forEach((dir) => {
             activeFilters.push(
                 <Badge

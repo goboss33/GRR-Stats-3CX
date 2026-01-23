@@ -1,6 +1,6 @@
 // Types for Call Logs module
 
-export type CallDirection = "inbound" | "outbound" | "internal";
+export type CallDirection = "inbound" | "outbound" | "internal" | "bridge";
 export type CallStatus = "answered" | "routed" | "missed" | "abandoned";
 export type EntityType = "extension" | "external" | "queue" | "ivr" | "script" | "unknown";
 export type SortDirection = "asc" | "desc";

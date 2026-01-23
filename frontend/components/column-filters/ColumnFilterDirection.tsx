@@ -25,6 +25,7 @@ const directionOptions: { value: CallDirection; label: string }[] = [
     { value: "inbound", label: "Entrant" },
     { value: "outbound", label: "Sortant" },
     { value: "internal", label: "Interne" },
+    { value: "bridge", label: "Bridge" },
 ];
 
 export function ColumnFilterDirection({
