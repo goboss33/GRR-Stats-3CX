@@ -68,6 +68,9 @@ export interface LogsFilters {
     callerSearch?: string;
     calleeSearch?: string;
     handledBySearch?: string;  // Filter by agent number/name
+    idSearch?: string;         // Filter by call history ID (supports * wildcard)
+    segmentCountMin?: number;  // Min number of segments
+    segmentCountMax?: number;  // Max number of segments
     durationMin?: number;
     durationMax?: number;
     waitTimeMin?: number;
@@ -102,6 +105,7 @@ export interface CallLogsResponse {
 // Column visibility settings (simplified)
 export interface ColumnVisibility {
     callHistoryId: boolean;
+    segmentCount: boolean;
 }
 
 // Segment category for display in modal

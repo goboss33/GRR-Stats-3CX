@@ -36,6 +36,7 @@ const PAGE_SIZE = 50;
 
 const defaultColumnVisibility: ColumnVisibility = {
     callHistoryId: true,
+    segmentCount: true,
 };
 
 export default function AdminLogsPage() {
@@ -69,6 +70,9 @@ export default function AdminLogsPage() {
     const [callerSearch, setCallerSearch] = useState("");
     const [calleeSearch, setCalleeSearch] = useState("");
     const [handledBySearch, setHandledBySearch] = useState("");
+    const [idSearch, setIdSearch] = useState("");
+    const [segmentCountMin, setSegmentCountMin] = useState<number | undefined>(undefined);
+    const [segmentCountMax, setSegmentCountMax] = useState<number | undefined>(undefined);
     const [durationMin, setDurationMin] = useState<number | undefined>(undefined);
     const [durationMax, setDurationMax] = useState<number | undefined>(undefined);
 
@@ -84,6 +88,7 @@ export default function AdminLogsPage() {
     const debouncedCallerSearch = useDebounce(callerSearch, 500);
     const debouncedCalleeSearch = useDebounce(calleeSearch, 500);
     const debouncedHandledBySearch = useDebounce(handledBySearch, 500);
+    const debouncedIdSearch = useDebounce(idSearch, 500);
 
     // Build effective filters
     const effectiveFilters: LogsFilters = {
@@ -93,6 +98,9 @@ export default function AdminLogsPage() {
         callerSearch: debouncedCallerSearch || undefined,
         calleeSearch: debouncedCalleeSearch || undefined,
         handledBySearch: debouncedHandledBySearch || undefined,
+        idSearch: debouncedIdSearch || undefined,
+        segmentCountMin,
+        segmentCountMax,
         durationMin,
         durationMax,
     };
@@ -134,8 +142,11 @@ export default function AdminLogsPage() {
         debouncedCallerSearch,
         debouncedCalleeSearch,
         debouncedHandledBySearch,
+        debouncedIdSearch,
         selectedDirections,
         selectedStatuses,
+        segmentCountMin,
+        segmentCountMax,
         durationMin,
         durationMax,
         currentPage,
@@ -241,6 +252,9 @@ export default function AdminLogsPage() {
         setCallerSearch("");
         setCalleeSearch("");
         setHandledBySearch("");
+        setIdSearch("");
+        setSegmentCountMin(undefined);
+        setSegmentCountMax(undefined);
         setDurationMin(undefined);
         setDurationMax(undefined);
         setCurrentPage(1);
@@ -359,6 +373,17 @@ export default function AdminLogsPage() {
                     onDurationChange={handleDurationChange}
                     handledBySearch={handledBySearch}
                     onHandledBySearchChange={setHandledBySearch}
+                    // ID filter
+                    idSearch={idSearch}
+                    onIdSearchChange={setIdSearch}
+                    // Segment count filter
+                    segmentCountMin={segmentCountMin}
+                    segmentCountMax={segmentCountMax}
+                    onSegmentCountChange={({ min, max }) => {
+                        setSegmentCountMin(min);
+                        setSegmentCountMax(max);
+                        setCurrentPage(1);
+                    }}
                     // Row click
                     onRowClick={handleRowClick}
                 />

@@ -9,6 +9,7 @@ import {
     PhoneOff,
     PhoneMissed,
     ArrowRight,
+    ArrowRightLeft,
     Globe,
     Users,
     Clock,
@@ -261,17 +262,31 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
         return map;
     }, [segments]);
 
-    // Detect if a segment is a "fallback" (transfer to a previously called destination)
+    // Detect if a segment is a "fallback" (automatic redirect to a previously called destination)
     const isFallbackSegment = (seg: CallChainSegment): boolean => {
         // Fallback conditions:
-        // 1. Creation method is 'transfer' (not 'route_to' from queue polling)
-        // 2. Destination was already called earlier in the call
-        // 3. It's an extension (not queue, script, etc.)
+        // 1. Creation method is 'divert' (automatic system redirect, NOT 'transfer' which is agent-initiated)
+        // 2. Forward reason indicates automatic behavior (no_answer, no_destinations, etc.)
+        // 3. Destination was already called earlier in the call
+        // 4. It's an extension (not queue, script, etc.)
         const previouslyCalled = previouslyCalledMap.get(seg.id);
+        const isAutoForward = ['no_answer', 'no_destinations', 'busy', 'timeout'].includes(seg.creationForwardReason?.toLowerCase() || '');
         return (
-            seg.creationMethod === 'transfer' &&
+            seg.creationMethod === 'divert' &&
+            isAutoForward &&
             seg.destinationType?.toLowerCase() === 'extension' &&
             previouslyCalled?.has(seg.destinationNumber) === true
+        );
+    };
+
+    // Detect if a segment is an agent-initiated "transfer"
+    const isTransferSegment = (seg: CallChainSegment): boolean => {
+        // Transfer conditions:
+        // 1. Creation method is 'transfer'
+        // 2. Forward reason is 'none' (agent chose to transfer, not automatic)
+        return (
+            seg.creationMethod === 'transfer' &&
+            (seg.creationForwardReason === 'none' || seg.creationForwardReason === '')
         );
     };
 
@@ -348,6 +363,7 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
 
         // Check for special indicators
         const isFallback = isFallbackSegment(seg);
+        const isTransfer = isTransferSegment(seg);
         const retryCount = retryCountMap.get(seg.id) || 0;
 
         return (
@@ -357,8 +373,14 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
                         {formatTime(seg.startedAt)}
                     </span>
                     <div className="flex items-center gap-1">
+                        {isTransfer && (
+                            <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300" title="Transfert - Appel transféré par un agent">
+                                <ArrowRightLeft className="h-3 w-3 mr-1" />
+                                Transfert
+                            </Badge>
+                        )}
                         {isFallback && (
-                            <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-300" title="Fallback - Retour vers une destination déjà appelée">
+                            <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-300" title="Fallback - Redirection automatique vers une destination déjà appelée">
                                 <RotateCcw className="h-3 w-3 mr-1" />
                                 Fallback
                             </Badge>

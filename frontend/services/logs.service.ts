@@ -308,6 +308,12 @@ export async function getAggregatedCallLogs(
         whereConditions.push(`EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at)) <= ${filters.durationMax}`);
     }
 
+    // ID search filter (on call_history_id)
+    if (filters.idSearch?.trim()) {
+        const pattern = parseSearchPattern(filters.idSearch);
+        whereConditions.push(buildSqlSearchCondition('call_history_id', pattern));
+    }
+
     const whereClause = whereConditions.join(" AND ");
 
     // Build a minimal WHERE clause for answered_segments and handled_by CTEs
@@ -333,6 +339,14 @@ export async function getAggregatedCallLogs(
         aggregatedWhereConditions.push(`(
             hb.agents::text ILIKE '%${searchValue}%'
         )`);
+    }
+
+    // Segment count filter (on aggregated data)
+    if (filters.segmentCountMin !== undefined) {
+        aggregatedWhereConditions.push(`ca.segment_count >= ${filters.segmentCountMin}`);
+    }
+    if (filters.segmentCountMax !== undefined) {
+        aggregatedWhereConditions.push(`ca.segment_count <= ${filters.segmentCountMax}`);
     }
 
     try {

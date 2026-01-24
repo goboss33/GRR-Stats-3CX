@@ -34,6 +34,7 @@ import {
     ColumnFilterDirection,
     ColumnFilterStatus,
     ColumnFilterDuration,
+    ColumnFilterSegmentCount,
 } from "@/components/column-filters";
 
 import type {
@@ -69,6 +70,13 @@ interface LogsTableProps {
     // Handled by filter
     handledBySearch: string;
     onHandledBySearchChange: (value: string) => void;
+    // ID filter (supports * wildcard)
+    idSearch: string;
+    onIdSearchChange: (value: string) => void;
+    // Segment count filter
+    segmentCountMin?: number;
+    segmentCountMax?: number;
+    onSegmentCountChange: (range: { min?: number; max?: number }) => void;
     // Row click
     onRowClick?: (callHistoryId: string) => void;
 }
@@ -171,6 +179,13 @@ export function LogsTable({
     // Handled by
     handledBySearch,
     onHandledBySearchChange,
+    // ID filter
+    idSearch,
+    onIdSearchChange,
+    // Segment count
+    segmentCountMin,
+    segmentCountMax,
+    onSegmentCountChange,
     // Row click
     onRowClick,
 }: LogsTableProps) {
@@ -189,7 +204,10 @@ export function LogsTable({
                     {/* Row 1: Column Labels + Sort */}
                     <TableRow className="bg-slate-50 hover:bg-slate-50">
                         {columnVisibility.callHistoryId && (
-                            <TableHead className="w-24">ID</TableHead>
+                            <TableHead className="w-20">ID</TableHead>
+                        )}
+                        {columnVisibility.segmentCount && (
+                            <TableHead className="w-16 text-center">Seg.</TableHead>
                         )}
                         <TableHead className="w-40">
                             <SortableHeader label="Date/Heure" field="startedAt" currentSort={sort} onSort={onSort} />
@@ -214,7 +232,22 @@ export function LogsTable({
                     {/* Row 2: Filter Inputs */}
                     <TableRow className="bg-slate-50/70 hover:bg-slate-50/70 border-b-2 border-slate-200">
                         {columnVisibility.callHistoryId && (
-                            <TableHead className="py-2"></TableHead>
+                            <TableHead className="py-2">
+                                <ColumnFilterInput
+                                    value={idSearch}
+                                    onChange={onIdSearchChange}
+                                    placeholder="*ID34"
+                                />
+                            </TableHead>
+                        )}
+                        {columnVisibility.segmentCount && (
+                            <TableHead className="py-2">
+                                <ColumnFilterSegmentCount
+                                    min={segmentCountMin}
+                                    max={segmentCountMax}
+                                    onChange={onSegmentCountChange}
+                                />
+                            </TableHead>
                         )}
                         <TableHead className="py-2">
                             <ColumnFilterDateRange
@@ -271,7 +304,7 @@ export function LogsTable({
                     {logs.length === 0 ? (
                         <TableRow>
                             <TableCell
-                                colSpan={12}
+                                colSpan={13}
                                 className="h-48 text-center text-slate-500"
                             >
                                 Aucun appel trouvé pour ces critères
@@ -290,20 +323,22 @@ export function LogsTable({
                                     className="cursor-pointer hover:bg-slate-50 transition-colors"
                                     onClick={() => onRowClick?.(log.callHistoryId)}
                                 >
-                                    {/* ID with segment badge */}
+                                    {/* ID column */}
                                     {columnVisibility.callHistoryId && (
                                         <TableCell className="font-mono text-xs">
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-slate-500">{log.callHistoryIdShort}</span>
-                                                {log.segmentCount > 1 && (
-                                                    <Badge
-                                                        variant="secondary"
-                                                        className={`text-[10px] px-1 py-0 ${getSegmentBadgeColor(log.segmentCount)}`}
-                                                    >
-                                                        {log.segmentCount}
-                                                    </Badge>
-                                                )}
-                                            </div>
+                                            <span className="text-slate-500">{log.callHistoryIdShort}</span>
+                                        </TableCell>
+                                    )}
+
+                                    {/* Segment count column */}
+                                    {columnVisibility.segmentCount && (
+                                        <TableCell className="text-center">
+                                            <Badge
+                                                variant="secondary"
+                                                className={`text-[10px] px-1.5 py-0.5 ${getSegmentBadgeColor(log.segmentCount)}`}
+                                            >
+                                                {log.segmentCount}
+                                            </Badge>
                                         </TableCell>
                                     )}
 
