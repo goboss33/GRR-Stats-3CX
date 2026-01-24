@@ -407,7 +407,7 @@ export async function getAggregatedCallLogs(
                         JSON_BUILD_OBJECT(
                             'number', c.destination_dn_number,
                             'name', COALESCE(c.destination_dn_name, c.destination_participant_name, c.destination_dn_number)
-                        ) ORDER BY c.cdr_answered_at ASC
+                        ) ORDER BY c.cdr_answered_at DESC
                     ) as agents,
                     SUM(EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at))) as total_talk_seconds,
                     COUNT(*) as agent_count
