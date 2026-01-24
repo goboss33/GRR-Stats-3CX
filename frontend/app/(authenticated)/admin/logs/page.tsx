@@ -64,7 +64,7 @@ export default function AdminLogsPage() {
     const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(defaultColumnVisibility);
 
     // Filter states
-    const [selectedDirections, setSelectedDirections] = useState<CallDirection[]>(["inbound", "outbound", "internal", "bridge"]);
+    const [selectedDirections, setSelectedDirections] = useState<CallDirection[]>([]);
     const [selectedStatuses, setSelectedStatuses] = useState<CallStatus[]>([]);
     const [callerSearch, setCallerSearch] = useState("");
     const [calleeSearch, setCalleeSearch] = useState("");
@@ -236,10 +236,11 @@ export default function AdminLogsPage() {
     };
 
     const handleResetAllFilters = () => {
-        setSelectedDirections(["inbound", "outbound", "internal"]);
+        setSelectedDirections([]);
         setSelectedStatuses([]);
         setCallerSearch("");
         setCalleeSearch("");
+        setHandledBySearch("");
         setDurationMin(undefined);
         setDurationMax(undefined);
         setCurrentPage(1);

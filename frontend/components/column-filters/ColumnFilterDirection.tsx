@@ -71,7 +71,7 @@ export function ColumnFilterDirection({
     };
 
     const handleSelectAll = () => {
-        if (localSelected.length === directionOptions.length) {
+        if (localSelected.length === directionOptions.length || localSelected.length === 0) {
             setLocalSelected([]);
         } else {
             setLocalSelected(directionOptions.map((o) => o.value));
@@ -79,7 +79,7 @@ export function ColumnFilterDirection({
     };
 
     const getLabel = () => {
-        if (selected.length === 0 || selected.length === directionOptions.length) {
+        if (selected.length === 0) {
             return "Tout";
         }
         if (selected.length === 1) {
@@ -88,7 +88,7 @@ export function ColumnFilterDirection({
         return `${selected.length} sél.`;
     };
 
-    const allSelected = localSelected.length === directionOptions.length;
+    const allSelected = localSelected.length === 0; // Empty = all
 
     return (
         <div className={cn("w-full min-w-[90px]", className)}>
