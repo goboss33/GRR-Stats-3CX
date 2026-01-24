@@ -310,12 +310,30 @@ export async function getAggregatedCallLogs(
 
     const whereClause = whereConditions.join(" AND ");
 
+    // Build a minimal WHERE clause for answered_segments and handled_by CTEs
+    // These CTEs should NOT include calleeSearch filter because the answered segment
+    // might have a different destination than the first segment that matches the search
+    const dateOnlyWhereClause = [
+        `cdr_started_at >= '${startDate.toISOString()}'`,
+        `cdr_started_at <= '${endDate.toISOString()}'`,
+    ].join(" AND ");
+
     // Build aggregated-level filters (applied after CTEs join)
     const aggregatedWhereConditions: string[] = [];
     const directionFilter = buildSqlDirectionFilter(filters.directions);
     if (directionFilter) aggregatedWhereConditions.push(directionFilter);
     const statusFilter = buildSqlStatusFilter(filters.statuses);
     if (statusFilter) aggregatedWhereConditions.push(statusFilter);
+
+    // Handled by search filter (on handled_by CTE data)
+    if (filters.handledBySearch?.trim()) {
+        const pattern = parseSearchPattern(filters.handledBySearch);
+        const searchValue = pattern.value.replace(/'/g, "''"); // Escape quotes
+        // Search in the JSON array of agents
+        aggregatedWhereConditions.push(`(
+            hb.agents::text ILIKE '%${searchValue}%'
+        )`);
+    }
 
     try {
         // Step 1: Get distinct call_history_ids with aggregated data
@@ -332,19 +350,22 @@ export async function getAggregatedCallLogs(
                 GROUP BY call_history_id
             ),
             first_segments AS (
-                SELECT DISTINCT ON (call_history_id)
-                    call_history_id,
-                    source_dn_number,
-                    source_participant_phone_number,
-                    source_participant_name,
-                    source_dn_name,
-                    source_dn_type,
-                    source_presentation,
-                    destination_dn_number as first_dest_number,
-                    destination_dn_type
-                FROM cdroutput
-                WHERE ${whereClause}
-                ORDER BY call_history_id, cdr_started_at ASC
+                SELECT DISTINCT ON (c.call_history_id)
+                    c.call_history_id,
+                    c.source_dn_number,
+                    c.source_participant_phone_number,
+                    c.source_participant_name,
+                    c.source_dn_name,
+                    c.source_dn_type,
+                    c.source_presentation,
+                    c.destination_dn_number as first_dest_number,
+                    c.destination_participant_name as first_dest_participant_name,
+                    c.destination_dn_name as first_dest_dn_name,
+                    c.destination_dn_type
+                FROM cdroutput c
+                WHERE ${dateOnlyWhereClause}
+                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                ORDER BY c.call_history_id, c.cdr_started_at ASC
             ),
             last_segments AS (
                 SELECT DISTINCT ON (call_history_id)
@@ -363,20 +384,39 @@ export async function getAggregatedCallLogs(
                 ORDER BY call_history_id, cdr_started_at DESC
             ),
             answered_segments AS (
-                SELECT DISTINCT ON (call_history_id)
-                    call_history_id,
-                    destination_dn_number as answered_dest_number,
-                    destination_participant_name as answered_dest_name,
-                    destination_dn_name as answered_dn_name,
-                    destination_dn_type as answered_dest_type,
-                    cdr_answered_at as answered_at,
-                    cdr_ended_at as answered_ended_at,
-                    EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at)) as talk_duration_seconds
-                FROM cdroutput
-                WHERE ${whereClause}
-                  AND cdr_answered_at IS NOT NULL
-                  AND destination_dn_type = 'extension'
-                ORDER BY call_history_id, cdr_answered_at ASC
+                SELECT DISTINCT ON (c.call_history_id)
+                    c.call_history_id,
+                    c.destination_dn_number as answered_dest_number,
+                    c.destination_participant_name as answered_dest_name,
+                    c.destination_dn_name as answered_dn_name,
+                    c.destination_dn_type as answered_dest_type,
+                    c.cdr_answered_at as answered_at,
+                    c.cdr_ended_at as answered_ended_at,
+                    EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) as talk_duration_seconds
+                FROM cdroutput c
+                WHERE ${dateOnlyWhereClause}
+                  AND c.cdr_answered_at IS NOT NULL
+                  AND c.destination_dn_type = 'extension'
+                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                ORDER BY c.call_history_id, c.cdr_answered_at ASC
+            ),
+            handled_by AS (
+                SELECT 
+                    c.call_history_id,
+                    JSON_AGG(
+                        JSON_BUILD_OBJECT(
+                            'number', c.destination_dn_number,
+                            'name', COALESCE(c.destination_dn_name, c.destination_participant_name, c.destination_dn_number)
+                        ) ORDER BY c.cdr_answered_at ASC
+                    ) as agents,
+                    SUM(EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at))) as total_talk_seconds,
+                    COUNT(*) as agent_count
+                FROM cdroutput c
+                WHERE ${dateOnlyWhereClause}
+                  AND c.cdr_answered_at IS NOT NULL
+                  AND c.destination_dn_type = 'extension'
+                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                GROUP BY c.call_history_id
             )
             SELECT 
                 ca.call_history_id,
@@ -391,6 +431,8 @@ export async function getAggregatedCallLogs(
                 fs.source_dn_type,
                 fs.source_presentation,
                 fs.first_dest_number,
+                fs.first_dest_participant_name,
+                fs.first_dest_dn_name,
                 fs.destination_dn_type as first_dest_type,
                 ls.destination_dn_number,
                 ls.destination_participant_phone_number,
@@ -407,11 +449,15 @@ export async function getAggregatedCallLogs(
                 ans.answered_dest_type,
                 ans.answered_at,
                 ans.answered_ended_at,
-                ans.talk_duration_seconds
+                ans.talk_duration_seconds,
+                hb.agents as handled_by_agents,
+                hb.total_talk_seconds as handled_by_total_talk,
+                hb.agent_count as handled_by_count
             FROM call_aggregates ca
             JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
             JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
             LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
+            LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id
             ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
             ORDER BY ca.first_started_at DESC
             LIMIT ${limit} OFFSET ${skip}
@@ -448,14 +494,15 @@ export async function getAggregatedCallLogs(
                 ORDER BY call_history_id, cdr_started_at DESC
             ),
             answered_segments AS (
-                SELECT DISTINCT ON (call_history_id)
-                    call_history_id,
-                    cdr_answered_at as answered_at
-                FROM cdroutput
-                WHERE ${whereClause}
-                  AND cdr_answered_at IS NOT NULL
-                  AND destination_dn_type = 'extension'
-                ORDER BY call_history_id, cdr_answered_at ASC
+                SELECT DISTINCT ON (c.call_history_id)
+                    c.call_history_id,
+                    c.cdr_answered_at as answered_at
+                FROM cdroutput c
+                WHERE ${dateOnlyWhereClause}
+                  AND c.cdr_answered_at IS NOT NULL
+                  AND c.destination_dn_type = 'extension'
+                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                ORDER BY c.call_history_id, c.cdr_answered_at ASC
             )
             SELECT COUNT(*) as total
             FROM call_aggregates ca
@@ -485,6 +532,19 @@ export async function getAggregatedCallLogs(
             const answeredEndedAt = row.answered_ended_at ? new Date(row.answered_ended_at) : null;
             const talkDurationSeconds = row.talk_duration_seconds ? Math.round(Number(row.talk_duration_seconds)) : 0;
 
+            // Parse handled_by_agents - PostgreSQL may return JSON as string
+            let parsedHandledByAgents: Array<{ number: string; name: string }> = [];
+            if (row.handled_by_agents) {
+                try {
+                    parsedHandledByAgents = typeof row.handled_by_agents === 'string'
+                        ? JSON.parse(row.handled_by_agents)
+                        : row.handled_by_agents;
+                } catch {
+                    parsedHandledByAgents = [];
+                }
+            }
+            const parsedHandledByCount = Number(row.handled_by_count || 0);
+
             // Total duration = from first start to last end
             const totalDurationSeconds = firstStarted && lastEnded
                 ? Math.round((lastEnded.getTime() - firstStarted.getTime()) / 1000)
@@ -496,10 +556,24 @@ export async function getAggregatedCallLogs(
                 : (firstStarted && lastEnded ? Math.round((lastEnded.getTime() - firstStarted.getTime()) / 1000) : 0);
 
             // Determine final status - prioritize answered_segment (human answered)
+            // New logic based on final result:
+            // - Traité (answered): someone answered AND call ended normally (not abandoned in queue)
+            // - Abandonné (abandoned): caller hung up while in queue/waiting or call ended after being transferred without resolution
+            // - Manqué (missed): no one ever answered
             let finalStatus: CallStatus;
-            if (answeredByHuman) {
-                // Call was answered by a human (extension)
-                finalStatus = "answered";
+            const termReason = row.termination_reason?.toLowerCase() || "";
+            const hasConversation = answeredByHuman !== null || parsedHandledByAgents.length > 0;
+
+            if (hasConversation) {
+                // Someone had a conversation
+                // Check if call ended properly or was abandoned
+                if (termReason === "src_participant_terminated" && row.last_dest_type === "queue") {
+                    // Caller hung up while in queue after transfer - abandoned
+                    finalStatus = "abandoned";
+                } else {
+                    // Call ended normally after conversation - answered/treated
+                    finalStatus = "answered";
+                }
             } else if (firstAnswered) {
                 // Call was answered by IVR/queue/script but not by human
                 finalStatus = "routed";
@@ -520,6 +594,22 @@ export async function getAggregatedCallLogs(
             // Was transferred if more than 1 segment
             const wasTransferred = Number(row.segment_count) > 1;
 
+            // Process handledBy data - using already parsed values from above
+            const handledByAgents = parsedHandledByAgents;
+            const handledByCount = parsedHandledByCount;
+            const totalTalkSeconds = Math.round(Number(row.handled_by_total_talk || 0));
+
+            // Format display: max 5 agents + "et N autres"
+            let handledByDisplay = "-";
+            if (handledByAgents.length > 0) {
+                const displayAgents = handledByAgents.slice(0, 5);
+                const agentNames = displayAgents.map(a => a.name || a.number);
+                handledByDisplay = agentNames.join(", ");
+                if (handledByCount > 5) {
+                    handledByDisplay += ` (+${handledByCount - 5})`;
+                }
+            }
+
             return {
                 callHistoryId: row.call_history_id,
                 callHistoryIdShort: row.call_history_id?.slice(-4).toUpperCase() || "-",
@@ -528,8 +618,8 @@ export async function getAggregatedCallLogs(
                 startedAt: row.first_started_at?.toISOString() || "",
                 endedAt: row.last_ended_at?.toISOString() || "",
                 // Use talk duration for answered calls, otherwise show total duration
-                totalDurationSeconds: answeredByHuman ? talkDurationSeconds : totalDurationSeconds,
-                totalDurationFormatted: formatDuration(answeredByHuman ? talkDurationSeconds : totalDurationSeconds),
+                totalDurationSeconds: hasConversation ? totalTalkSeconds : totalDurationSeconds,
+                totalDurationFormatted: formatDuration(hasConversation ? totalTalkSeconds : totalDurationSeconds),
                 waitTimeSeconds,
                 waitTimeFormatted: formatDuration(waitTimeSeconds),
 
@@ -543,15 +633,15 @@ export async function getAggregatedCallLogs(
                         : null)
                     : (getDisplayName(row.source_participant_name, row.source_dn_name) || null),
 
-                calleeNumber: getDisplayNumber(row.destination_dn_number, row.destination_participant_phone_number, null),
-                // For 'provider' source:
-                // - Prefer destination name (queue/extension name)
-                // - Fallback to SDA name ONLY if it ends with ':' (otherwise it's caller's name, not SDA)
-                calleeName: row.source_dn_type?.toLowerCase() === 'provider'
-                    ? (getDisplayName(row.destination_participant_name, row.destination_dn_name)
-                        || (row.source_participant_name?.trim().endsWith(':') ? getDisplayName(row.source_participant_name, null) : null)
-                        || null)
-                    : (getDisplayName(row.destination_participant_name, row.destination_dn_name) || null),
+                // Use FIRST destination (initial recipient the caller tried to reach)
+                calleeNumber: row.first_dest_number || "",
+                calleeName: getDisplayName(row.first_dest_participant_name, row.first_dest_dn_name) || null,
+
+                // Handled by data
+                handledBy: handledByAgents,
+                handledByDisplay,
+                totalTalkDurationSeconds: totalTalkSeconds,
+                totalTalkDurationFormatted: formatDuration(totalTalkSeconds),
 
                 direction,
                 finalStatus,

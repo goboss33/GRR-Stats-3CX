@@ -118,7 +118,7 @@ export function ActiveFilters({
                 className="bg-purple-100 text-purple-700 gap-1 px-2 py-1 cursor-pointer hover:bg-purple-200 transition-colors"
                 onClick={onRemoveCalleeSearch}
             >
-                Appelé: "{filters.calleeSearch}"
+                Destinataire: "{filters.calleeSearch}"
                 <X className="h-3 w-3" />
             </Badge>
         );

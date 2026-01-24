@@ -28,6 +28,12 @@ export interface AggregatedCallLog {
     calleeNumber: string;
     calleeName: string | null;
 
+    // Handled by (all agents who had conversation)
+    handledBy: Array<{ number: string; name: string }>;  // All agents with their numbers
+    handledByDisplay: string;  // Formatted for display (max 5 + "et N autres")
+    totalTalkDurationSeconds: number;  // Sum of all conversation durations
+    totalTalkDurationFormatted: string;
+
     // Status
     direction: CallDirection;
     finalStatus: CallStatus;
@@ -61,6 +67,7 @@ export interface LogsFilters {
     entityTypes: EntityType[];
     callerSearch?: string;
     calleeSearch?: string;
+    handledBySearch?: string;  // Filter by agent number/name
     durationMin?: number;
     durationMax?: number;
     waitTimeMin?: number;

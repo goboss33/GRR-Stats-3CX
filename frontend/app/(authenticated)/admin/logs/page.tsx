@@ -68,6 +68,7 @@ export default function AdminLogsPage() {
     const [selectedStatuses, setSelectedStatuses] = useState<CallStatus[]>([]);
     const [callerSearch, setCallerSearch] = useState("");
     const [calleeSearch, setCalleeSearch] = useState("");
+    const [handledBySearch, setHandledBySearch] = useState("");
     const [durationMin, setDurationMin] = useState<number | undefined>(undefined);
     const [durationMax, setDurationMax] = useState<number | undefined>(undefined);
 
@@ -82,6 +83,7 @@ export default function AdminLogsPage() {
     // Debounce search inputs (500ms)
     const debouncedCallerSearch = useDebounce(callerSearch, 500);
     const debouncedCalleeSearch = useDebounce(calleeSearch, 500);
+    const debouncedHandledBySearch = useDebounce(handledBySearch, 500);
 
     // Build effective filters
     const effectiveFilters: LogsFilters = {
@@ -90,6 +92,7 @@ export default function AdminLogsPage() {
         entityTypes: [],
         callerSearch: debouncedCallerSearch || undefined,
         calleeSearch: debouncedCalleeSearch || undefined,
+        handledBySearch: debouncedHandledBySearch || undefined,
         durationMin,
         durationMax,
     };
@@ -130,6 +133,7 @@ export default function AdminLogsPage() {
         dateRange.endDate,
         debouncedCallerSearch,
         debouncedCalleeSearch,
+        debouncedHandledBySearch,
         selectedDirections,
         selectedStatuses,
         durationMin,
@@ -352,6 +356,8 @@ export default function AdminLogsPage() {
                     durationMin={durationMin}
                     durationMax={durationMax}
                     onDurationChange={handleDurationChange}
+                    handledBySearch={handledBySearch}
+                    onHandledBySearchChange={setHandledBySearch}
                     // Row click
                     onRowClick={handleRowClick}
                 />

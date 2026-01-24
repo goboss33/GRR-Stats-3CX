@@ -15,7 +15,9 @@ import {
     Shuffle,
     Bell,
     Voicemail,
-    Radio
+    Radio,
+    RotateCcw,
+    RefreshCw
 } from "lucide-react";
 
 import {
@@ -221,6 +223,94 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
     // Group all segments chronologically (combine ringing)
     const groupedSegments = useMemo(() => groupSegments(segments), [segments]);
 
+    // For each ringing group, find the next conversation segment to identify who answered
+    const getNextAnsweringAgent = (groupIndex: number): string | null => {
+        // Look for the next conversation group after this ringing group
+        for (let i = groupIndex + 1; i < groupedSegments.length; i++) {
+            const nextGroup = groupedSegments[i];
+            if (nextGroup.category === 'conversation' && nextGroup.segments[0]?.answeredAt) {
+                return nextGroup.segments[0].destinationNumber;
+            }
+            // If we hit another ringing group, stop searching
+            if (nextGroup.type === 'ringing_group') {
+                break;
+            }
+        }
+        return null;
+    };
+
+    // Build a map of destinations that were already called before each segment (for fallback detection)
+    // Key: segment id, Value: Set of destination numbers called before this segment
+    const previouslyCalledMap = useMemo(() => {
+        const map = new Map<string, Set<string>>();
+        const calledDestinations = new Set<string>();
+
+        // Sort segments chronologically
+        const sortedSegments = [...segments].sort((a, b) =>
+            new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
+        );
+
+        for (const seg of sortedSegments) {
+            // Store the current set of previously called destinations for this segment
+            map.set(seg.id, new Set(calledDestinations));
+            // Add this destination to the set for future segments
+            if (seg.destinationType?.toLowerCase() === 'extension') {
+                calledDestinations.add(seg.destinationNumber);
+            }
+        }
+        return map;
+    }, [segments]);
+
+    // Detect if a segment is a "fallback" (transfer to a previously called destination)
+    const isFallbackSegment = (seg: CallChainSegment): boolean => {
+        // Fallback conditions:
+        // 1. Creation method is 'transfer' (not 'route_to' from queue polling)
+        // 2. Destination was already called earlier in the call
+        // 3. It's an extension (not queue, script, etc.)
+        const previouslyCalled = previouslyCalledMap.get(seg.id);
+        return (
+            seg.creationMethod === 'transfer' &&
+            seg.destinationType?.toLowerCase() === 'extension' &&
+            previouslyCalled?.has(seg.destinationNumber) === true
+        );
+    };
+
+    // Detect if a segment is a "retry" (busy rejection followed by another attempt to same agent)
+    // Returns the retry count (0 = not a retry, 1 = first retry, 2 = second retry, etc.)
+    const retryCountMap = useMemo(() => {
+        const map = new Map<string, number>();
+        const busyAttempts = new Map<string, number>(); // destinationNumber -> count of busy attempts
+
+        // Sort segments chronologically
+        const sortedSegments = [...segments].sort((a, b) =>
+            new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
+        );
+
+        for (const seg of sortedSegments) {
+            if (seg.destinationType?.toLowerCase() !== 'extension') continue;
+
+            const destNum = seg.destinationNumber;
+            const currentCount = busyAttempts.get(destNum) || 0;
+
+            // If this segment ended with 'busy', increment the counter
+            if (seg.terminationReasonDetails === 'busy' || seg.terminationReason === 'rejected') {
+                busyAttempts.set(destNum, currentCount + 1);
+                // If it's not the first attempt, mark as retry
+                if (currentCount > 0) {
+                    map.set(seg.id, currentCount);
+                }
+            } else if (seg.answeredAt) {
+                // If answered, check if there were previous busy attempts
+                if (currentCount > 0) {
+                    map.set(seg.id, currentCount); // Mark as "finally answered after retries"
+                }
+                // Reset the counter
+                busyAttempts.set(destNum, 0);
+            }
+        }
+        return map;
+    }, [segments]);
+
     const formatTime = (iso: string) => {
         if (!iso) return "-";
         return format(new Date(iso), "HH:mm:ss", { locale: fr });
@@ -256,15 +346,33 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
             durationLabel = "Conversation";
         }
 
+        // Check for special indicators
+        const isFallback = isFallbackSegment(seg);
+        const retryCount = retryCountMap.get(seg.id) || 0;
+
         return (
             <div className="flex-1 bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
                 <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium text-slate-900">
                         {formatTime(seg.startedAt)}
                     </span>
-                    <Badge variant="outline" className={config.className}>
-                        {config.label}
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                        {isFallback && (
+                            <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-300" title="Fallback - Retour vers une destination déjà appelée">
+                                <RotateCcw className="h-3 w-3 mr-1" />
+                                Fallback
+                            </Badge>
+                        )}
+                        {retryCount > 0 && (
+                            <Badge variant="outline" className="bg-violet-100 text-violet-700 border-violet-300" title={`Tentative #${retryCount + 1} - Agent était occupé précédemment`}>
+                                <RefreshCw className="h-3 w-3 mr-1" />
+                                Retry #{retryCount + 1}
+                            </Badge>
+                        )}
+                        <Badge variant="outline" className={config.className}>
+                            {config.label}
+                        </Badge>
+                    </div>
                 </div>
 
                 {/* Source → Destination */}
@@ -299,19 +407,14 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
         );
     };
 
-    const renderRingingGroup = (group: SegmentGroup) => {
+    const renderRingingGroup = (group: SegmentGroup, groupIndex: number) => {
         const config = categoryConfig.ringing;
         const Icon = config.icon;
         const answered = group.answeredSegment;
         const ringDuration = Math.max(...group.segments.filter(s => !s.answeredAt).map(s => s.durationSeconds));
 
-        // Calculate conversation duration if someone answered
-        let talkDuration = 0;
-        if (answered && answered.answeredAt) {
-            const answerTime = new Date(answered.answeredAt).getTime();
-            const endTime = new Date(answered.startedAt).getTime() + (answered.durationSeconds * 1000);
-            talkDuration = Math.round((endTime - answerTime) / 1000);
-        }
+        // Find who answered right after this ringing group
+        const nextAnsweringAgent = getNextAnsweringAgent(groupIndex);
 
         return (
             <div className={`flex-1 bg-white rounded-lg p-4 border shadow-sm ${answered ? 'border-green-300' : 'border-amber-200'}`}>
@@ -339,18 +442,39 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
 
                 <div className="flex flex-wrap gap-1 mb-2">
                     {group.segments.map(seg => {
-                        const isAnswered = seg.answeredAt !== null;
+                        const isAnsweredHere = seg.answeredAt !== null;
+                        // Check if this agent answered right after this ringing group
+                        const answeredNext = !isAnsweredHere && nextAnsweringAgent === seg.destinationNumber;
+                        const showAsSuccess = isAnsweredHere || answeredNext;
+                        // Check if this is a retry (agent was busy before)
+                        const retryCount = retryCountMap.get(seg.id) || 0;
+                        const isBusy = seg.terminationReasonDetails === 'busy';
+
+                        // Determine styling: green for success, violet for busy/retry, orange for elsewhere, amber for others
+                        let badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
+                        if (showAsSuccess) {
+                            badgeClass = 'bg-green-50 text-green-700 border-green-300 font-medium';
+                        } else if (isBusy || retryCount > 0) {
+                            badgeClass = 'bg-violet-50 text-violet-700 border-violet-300';
+                        }
+
                         return (
                             <span
                                 key={seg.id}
-                                className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${isAnswered
-                                    ? 'bg-green-50 text-green-700 border-green-300 font-medium'
-                                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                                    }`}
+                                className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${badgeClass}`}
+                                title={
+                                    answeredNext ? 'A répondu juste après' :
+                                        isBusy ? 'Agent occupé - sera retenté' :
+                                            retryCount > 0 ? `Tentative #${retryCount + 1}` :
+                                                undefined
+                                }
                             >
+                                {isBusy && <RefreshCw className="h-3 w-3 mr-1" />}
                                 {seg.destinationName || seg.destinationNumber}
-                                {isAnswered && <span className="ml-1">✓</span>}
-                                {!isAnswered && seg.terminationReasonDetails === "completed_elsewhere" && (
+                                {isAnsweredHere && <span className="ml-1">✓</span>}
+                                {answeredNext && <span className="ml-1">↩</span>}
+                                {isBusy && <span className="ml-1 text-violet-500">(occupé)</span>}
+                                {!showAsSuccess && !isBusy && seg.terminationReasonDetails === "completed_elsewhere" && (
                                     <span className="ml-1 text-slate-400">(ailleurs)</span>
                                 )}
                             </span>
@@ -418,7 +542,7 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
 
                                         {/* Content */}
                                         {group.type === "ringing_group" ? (
-                                            renderRingingGroup(group)
+                                            renderRingingGroup(group, idx)
                                         ) : (
                                             renderSegment(group.segments[0], false, group.category)
                                         )}

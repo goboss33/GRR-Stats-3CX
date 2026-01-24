@@ -66,6 +66,9 @@ interface LogsTableProps {
     durationMin?: number;
     durationMax?: number;
     onDurationChange: (range: { min?: number; max?: number }) => void;
+    // Handled by filter
+    handledBySearch: string;
+    onHandledBySearchChange: (value: string) => void;
     // Row click
     onRowClick?: (callHistoryId: string) => void;
 }
@@ -165,6 +168,9 @@ export function LogsTable({
     durationMin,
     durationMax,
     onDurationChange,
+    // Handled by
+    handledBySearch,
+    onHandledBySearchChange,
     // Row click
     onRowClick,
 }: LogsTableProps) {
@@ -193,8 +199,10 @@ export function LogsTable({
                         </TableHead>
                         <TableHead className="w-10 text-center"></TableHead>
                         <TableHead>
-                            <SortableHeader label="Appelé" field="destinationNumber" currentSort={sort} onSort={onSort} />
+                            <SortableHeader label="Destinataire" field="destinationNumber" currentSort={sort} onSort={onSort} />
                         </TableHead>
+                        <TableHead className="w-10 text-center"></TableHead>
+                        <TableHead>Traité par</TableHead>
                         <TableHead className="w-24 text-center">Direction</TableHead>
                         <TableHead className="w-24 text-center">Statut</TableHead>
                         <TableHead className="w-20 text-right">
@@ -229,6 +237,14 @@ export function LogsTable({
                                 placeholder="Rechercher..."
                             />
                         </TableHead>
+                        <TableHead className="py-2"></TableHead>
+                        <TableHead className="py-2">
+                            <ColumnFilterInput
+                                value={handledBySearch}
+                                onChange={onHandledBySearchChange}
+                                placeholder="Agent..."
+                            />
+                        </TableHead>
                         <TableHead className="py-2">
                             <ColumnFilterDirection
                                 selected={selectedDirections}
@@ -255,7 +271,7 @@ export function LogsTable({
                     {logs.length === 0 ? (
                         <TableRow>
                             <TableCell
-                                colSpan={11}
+                                colSpan={12}
                                 className="h-48 text-center text-slate-500"
                             >
                                 Aucun appel trouvé pour ces critères
@@ -308,18 +324,12 @@ export function LogsTable({
                                         </div>
                                     </TableCell>
 
-                                    {/* Arrow (direct or transferred) */}
+                                    {/* Empty spacer column */}
                                     <TableCell className="text-center">
-                                        {log.wasTransferred ? (
-                                            <span title="Transféré">
-                                                <Shuffle className="h-4 w-4 text-amber-500 mx-auto" />
-                                            </span>
-                                        ) : (
-                                            <ArrowRight className="h-4 w-4 text-slate-400 mx-auto" />
-                                        )}
+                                        <ArrowRight className="h-4 w-4 text-slate-400 mx-auto" />
                                     </TableCell>
 
-                                    {/* Callee (final destination) */}
+                                    {/* Callee (initial destination) */}
                                     <TableCell>
                                         <div className="flex flex-col">
                                             <span className={`font-medium text-sm ${log.finalStatus !== "answered" ? "text-slate-400 italic" : ""}`}>
@@ -331,6 +341,36 @@ export function LogsTable({
                                                 </span>
                                             )}
                                         </div>
+                                    </TableCell>
+
+                                    {/* Arrow (direct or transferred) - between Destinataire and Traité par */}
+                                    <TableCell className="text-center">
+                                        {log.wasTransferred ? (
+                                            <span title="Transféré">
+                                                <Shuffle className="h-4 w-4 text-amber-500 mx-auto" />
+                                            </span>
+                                        ) : (
+                                            <ArrowRight className="h-4 w-4 text-slate-400 mx-auto" />
+                                        )}
+                                    </TableCell>
+
+                                    {/* Handled By - same format as Appelant/Destinataire */}
+                                    <TableCell>
+                                        {log.handledBy && log.handledBy.length > 0 ? (
+                                            <div className="flex flex-col">
+                                                <span className="font-medium text-sm">
+                                                    {log.handledBy[0].number}
+                                                </span>
+                                                <span className="text-xs text-slate-500 truncate max-w-[180px]">
+                                                    {log.handledBy[0].name || log.handledBy[0].number}
+                                                    {log.handledBy.length > 1 && (
+                                                        <span className="text-slate-400"> +{log.handledBy.length - 1}</span>
+                                                    )}
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <span className="text-xs text-slate-300">-</span>
+                                        )}
                                     </TableCell>
 
                                     {/* Direction */}
