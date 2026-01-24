@@ -139,5 +139,6 @@ export interface CallChainSegment {
     terminationReasonDetails: string;
     creationMethod: string;
     creationForwardReason: string;
+    originatingCdrId: string | null; // Links to the parent segment (e.g., queue) that spawned this
     category: SegmentCategory;
 }

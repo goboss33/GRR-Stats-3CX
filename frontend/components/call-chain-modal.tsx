@@ -140,16 +140,25 @@ function groupSegments(segments: CallChainSegment[]): SegmentGroup[] {
 
         // Check if this is a queue distribution segment
         if (isQueueDistribution(seg)) {
-            // Find all segments that started at the same time (simultaneous ring)
+            // Find all segments that belong to the same queue distribution
+            // They share the same originating_cdr_id (the queue segment)
             const simultaneousSegments: CallChainSegment[] = [];
             let answeredSeg: CallChainSegment | undefined;
+
+            // Get the originating CDR ID - this links all polling segments to their parent queue
+            const originatingId = seg.originatingCdrId;
 
             for (let j = i; j < segments.length; j++) {
                 const other = segments[j];
                 if (processed.has(other.id)) continue;
 
-                // Check if it's part of same distribution (same start time, queue distribution)
-                if (isQueueDistribution(other) && sameTimeWindow(seg.startedAt, other.startedAt)) {
+                // Check if it's part of same distribution:
+                // 1. Same originating_cdr_id (from same queue)
+                // 2. Or same time window (fallback for segments without originatingCdrId)
+                const sameOrigin = originatingId && other.originatingCdrId === originatingId;
+                const sameTime = !originatingId && sameTimeWindow(seg.startedAt, other.startedAt);
+
+                if (isQueueDistribution(other) && (sameOrigin || sameTime)) {
                     simultaneousSegments.push(other);
                     processed.add(other.id);
 

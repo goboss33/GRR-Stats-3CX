@@ -713,6 +713,7 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
                 termination_reason_details: true,
                 creation_method: true,
                 creation_forward_reason: true,
+                originating_cdr_id: true,
             },
         });
 
@@ -762,6 +763,7 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
                 terminationReasonDetails: seg.termination_reason_details || "",
                 creationMethod: seg.creation_method || "-",
                 creationForwardReason: seg.creation_forward_reason || "",
+                originatingCdrId: seg.originating_cdr_id || null,
                 category,
             };
         });
