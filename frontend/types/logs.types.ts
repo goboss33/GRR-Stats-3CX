@@ -1,7 +1,7 @@
 // Types for Call Logs module
 
 export type CallDirection = "inbound" | "outbound" | "internal" | "bridge";
-export type CallStatus = "answered" | "routed" | "missed" | "abandoned";
+export type CallStatus = "answered" | "voicemail" | "abandoned" | "unanswered" | "busy";
 export type EntityType = "extension" | "external" | "queue" | "ivr" | "script" | "unknown";
 export type SortDirection = "asc" | "desc";
 export type SortField = "startedAt" | "duration" | "sourceNumber" | "destinationNumber";

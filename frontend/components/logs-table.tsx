@@ -10,9 +10,10 @@ import {
     ArrowRight,
     Shuffle,
     Phone,
-    PhoneForwarded,
     PhoneOff,
     PhoneMissed,
+    Voicemail,
+    PhoneCall,
     ArrowUpDown,
     ArrowUp,
     ArrowDown,
@@ -90,9 +91,10 @@ const directionConfig: Record<CallDirection, { icon: typeof ArrowDownLeft; label
 
 const statusConfig: Record<CallStatus, { icon: typeof Phone; label: string; className: string }> = {
     answered: { icon: Phone, label: "Répondu", className: "bg-emerald-100 text-emerald-700" },
-    routed: { icon: PhoneForwarded, label: "Routé", className: "bg-blue-100 text-blue-700" },
-    missed: { icon: PhoneMissed, label: "Manqué", className: "bg-red-100 text-red-700" },
+    voicemail: { icon: Voicemail, label: "Messagerie", className: "bg-blue-100 text-blue-700" },
     abandoned: { icon: PhoneOff, label: "Abandonné", className: "bg-amber-100 text-amber-700" },
+    unanswered: { icon: PhoneMissed, label: "Sans réponse", className: "bg-slate-100 text-slate-600" },
+    busy: { icon: PhoneCall, label: "Occupé", className: "bg-red-100 text-red-700" },
 };
 
 function formatDateTime(isoString: string): string {

@@ -31,9 +31,10 @@ const directionLabels: Record<CallDirection, string> = {
 
 const statusLabels: Record<CallStatus, string> = {
     answered: "Répondu",
-    routed: "Routé",
-    missed: "Manqué",
+    voicemail: "Messagerie",
     abandoned: "Abandonné",
+    unanswered: "Sans réponse",
+    busy: "Occupé",
 };
 
 export function ActiveFilters({
@@ -74,12 +75,13 @@ export function ActiveFilters({
     }
 
     // Status filters
-    if (filters.statuses && filters.statuses.length > 0 && filters.statuses.length < 4) {
+    if (filters.statuses && filters.statuses.length > 0 && filters.statuses.length < 5) {
         filters.statuses.forEach((status) => {
             const className = status === "answered" ? "bg-emerald-100 text-emerald-700" :
-                status === "routed" ? "bg-blue-100 text-blue-700" :
-                    status === "missed" ? "bg-red-100 text-red-700" :
-                        "bg-amber-100 text-amber-700";
+                status === "voicemail" ? "bg-blue-100 text-blue-700" :
+                    status === "abandoned" ? "bg-amber-100 text-amber-700" :
+                        status === "busy" ? "bg-red-100 text-red-700" :
+                            "bg-slate-100 text-slate-600";
             activeFilters.push(
                 <Badge
                     key={`status-${status}`}

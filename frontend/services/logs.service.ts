@@ -38,18 +38,32 @@ function determineStatus(
     answeredAt: Date | null,
     startedAt: Date | null,
     endedAt: Date | null,
-    destType: string | null
+    destType: string | null,
+    destEntityType: string | null,
+    terminationReasonDetails: string | null
 ): CallStatus {
+    // Check for voicemail
+    const isVoicemail = destType?.toLowerCase() === 'vmail_console' ||
+        destType?.toLowerCase() === 'voicemail' ||
+        destEntityType?.toLowerCase() === 'voicemail';
+    if (isVoicemail) {
+        return "voicemail";
+    }
+
+    // Check for busy
+    if (terminationReasonDetails?.toLowerCase()?.includes('busy')) {
+        return "busy";
+    }
+
     if (answeredAt) {
         // Check if answered by a human (extension) or by IVR/queue/script
-        const isHumanAnswer = destType?.toLowerCase() === "extension";
-        return isHumanAnswer ? "answered" : "routed";
+        const isHumanAnswer = destType?.toLowerCase() === "extension" &&
+            destEntityType?.toLowerCase() !== "voicemail";
+        return isHumanAnswer ? "answered" : "abandoned"; // If not human, treat as abandoned
     }
-    if (startedAt && endedAt) {
-        const ringTime = endedAt.getTime() - startedAt.getTime();
-        if (ringTime > 5000) return "abandoned";
-    }
-    return "missed";
+
+    // Not answered - unanswered or abandoned
+    return "unanswered";
 }
 
 function determineSegmentCategory(
@@ -58,6 +72,7 @@ function determineSegmentCategory(
     creationMethod: string | null,
     creationForwardReason: string | null,
     destinationType: string | null,
+    destinationEntityType: string | null,
     sourceType: string | null,
     durationSeconds: number,
     wasAnswered: boolean
@@ -67,6 +82,7 @@ function determineSegmentCategory(
     const createMethod = creationMethod?.toLowerCase() || "";
     const createForward = creationForwardReason?.toLowerCase() || "";
     const destType = destinationType?.toLowerCase() || "";
+    const destEntityType = destinationEntityType?.toLowerCase() || "";
     const srcType = sourceType?.toLowerCase() || "";
 
     // Bridge segments
@@ -74,8 +90,8 @@ function determineSegmentCategory(
         return "bridge";
     }
 
-    // Voicemail segments
-    if (destType === "vmail_console" || destType === "voicemail") {
+    // Voicemail segments - check both destination_dn_type AND destination_entity_type
+    if (destType === "vmail_console" || destType === "voicemail" || destEntityType === "voicemail") {
         return "voicemail";
     }
 
@@ -227,28 +243,36 @@ function buildSqlDirectionFilter(directions: CallDirection[] | undefined): strin
 
 // Build SQL condition for status filter (applied on aggregated data)
 function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
-    if (!statuses || statuses.length === 0 || statuses.length === 4) {
+    if (!statuses || statuses.length === 0 || statuses.length === 5) {
         return ''; // No filter needed
     }
     const conditions: string[] = [];
-    // Status is based on:
-    // answered: ans.answered_at IS NOT NULL (human answered)
-    // routed: ca.first_answered_at IS NOT NULL AND ans.answered_at IS NULL (IVR/queue answered but no human)
-    // missed: no answer with short ring time
-    // abandoned: no answer with longer ring time
+    // Status detection logic:
+    // answered: human extension answered (not voicemail entity)
+    // voicemail: last_dest_type or last_dest_entity_type is voicemail
+    // abandoned: caller hung up before human answered (src_participant_terminated and no human)
+    // unanswered: outbound call not answered
+    // busy: termination_reason_details contains 'busy'
+
     if (statuses.includes('answered')) {
-        conditions.push("(ans.answered_at IS NOT NULL)");
+        // Répondu: humain a répondu ET ce n'est pas du voicemail
+        conditions.push("(ans.answered_at IS NOT NULL AND COALESCE(ls.last_dest_entity_type, '') != 'voicemail')");
     }
-    if (statuses.includes('routed')) {
-        conditions.push("(ca.first_answered_at IS NOT NULL AND ans.answered_at IS NULL)");
-    }
-    if (statuses.includes('missed')) {
-        // Missed = not answered, short ring time (< 5 seconds)
-        conditions.push("(ca.first_answered_at IS NULL AND EXTRACT(EPOCH FROM (ca.last_ended_at - ca.first_started_at)) <= 5)");
+    if (statuses.includes('voicemail')) {
+        // Messagerie: le dernier segment est du voicemail
+        conditions.push("(ls.last_dest_type IN ('vmail_console', 'voicemail') OR ls.last_dest_entity_type = 'voicemail')");
     }
     if (statuses.includes('abandoned')) {
-        // Abandoned = not answered, longer ring time (> 5 seconds)
-        conditions.push("(ca.first_answered_at IS NULL AND EXTRACT(EPOCH FROM (ca.last_ended_at - ca.first_started_at)) > 5)");
+        // Abandonné: appel entrant non répondu par un humain
+        conditions.push("(ans.answered_at IS NULL AND COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%' AND fs.source_dn_type = 'provider')");
+    }
+    if (statuses.includes('unanswered')) {
+        // Sans réponse: appel sortant non répondu
+        conditions.push("(ans.answered_at IS NULL AND COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%' AND fs.source_dn_type = 'extension')");
+    }
+    if (statuses.includes('busy')) {
+        // Occupé: le correspondant était occupé
+        conditions.push("(ls.termination_reason_details ILIKE '%busy%')");
     }
     return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
 }
@@ -394,10 +418,12 @@ export async function getAggregatedCallLogs(
                     destination_participant_name,
                     destination_dn_name,
                     destination_dn_type as last_dest_type,
+                    destination_entity_type as last_dest_entity_type,
                     cdr_answered_at,
                     cdr_started_at as last_started_at,
                     cdr_ended_at as last_ended_at,
-                    termination_reason
+                    termination_reason,
+                    termination_reason_details
                 FROM cdroutput
                 WHERE ${whereClause}
                 ORDER BY call_history_id, cdr_started_at DESC
@@ -459,10 +485,12 @@ export async function getAggregatedCallLogs(
                 ls.destination_participant_name,
                 ls.destination_dn_name,
                 ls.last_dest_type,
+                ls.last_dest_entity_type,
                 ls.cdr_answered_at as last_answered_at,
                 ls.last_started_at,
                 ls.last_ended_at,
                 ls.termination_reason,
+                ls.termination_reason_details,
                 ans.answered_dest_number,
                 ans.answered_dest_name,
                 ans.answered_dn_name,
@@ -508,9 +536,12 @@ export async function getAggregatedCallLogs(
                 SELECT DISTINCT ON (call_history_id)
                     call_history_id,
                     destination_dn_type as last_dest_type,
+                    destination_entity_type as last_dest_entity_type,
                     cdr_answered_at,
                     cdr_started_at as last_started_at,
-                    cdr_ended_at as last_ended_at
+                    cdr_ended_at as last_ended_at,
+                    termination_reason,
+                    termination_reason_details
                 FROM cdroutput
                 WHERE ${whereClause}
                 ORDER BY call_history_id, cdr_started_at DESC
@@ -577,37 +608,47 @@ export async function getAggregatedCallLogs(
                 ? Math.round(((answeredByHuman || firstAnswered)!.getTime() - firstStarted.getTime()) / 1000)
                 : (firstStarted && lastEnded ? Math.round((lastEnded.getTime() - firstStarted.getTime()) / 1000) : 0);
 
-            // Determine final status - prioritize answered_segment (human answered)
-            // New logic based on final result:
-            // - Traité (answered): someone answered AND call ended normally (not abandoned in queue)
-            // - Abandonné (abandoned): caller hung up while in queue/waiting or call ended after being transferred without resolution
-            // - Manqué (missed): no one ever answered
+            // Determine final status based on the 5 new statuses:
+            // - answered: A human (extension) had a real conversation (not voicemail)
+            // - voicemail: Call ended on voicemail
+            // - abandoned: Inbound caller hung up before human answered
+            // - unanswered: Outbound call where recipient didn't answer
+            // - busy: Recipient was busy
             let finalStatus: CallStatus;
             const termReason = row.termination_reason?.toLowerCase() || "";
+            const termDetails = row.termination_reason_details?.toLowerCase() || "";
+            const lastDestType = row.last_dest_type?.toLowerCase() || "";
+            const lastDestEntityType = row.last_dest_entity_type?.toLowerCase() || "";
+            const sourceType = row.source_dn_type?.toLowerCase() || "";
             const hasConversation = answeredByHuman !== null || parsedHandledByAgents.length > 0;
 
-            if (hasConversation) {
-                // Someone had a conversation
-                // Check if call ended properly or was abandoned
-                if (termReason === "src_participant_terminated" && row.last_dest_type === "queue") {
-                    // Caller hung up while in queue after transfer - abandoned
+            // Check for voicemail first
+            const isVoicemail = lastDestType === 'vmail_console' ||
+                lastDestType === 'voicemail' ||
+                lastDestEntityType === 'voicemail';
+
+            if (isVoicemail) {
+                finalStatus = "voicemail";
+            } else if (termDetails.includes('busy')) {
+                // Check for busy
+                finalStatus = "busy";
+            } else if (hasConversation) {
+                // Someone had a real conversation with a human
+                // Check if call ended properly or was abandoned in queue after transfer
+                if (termReason === "src_participant_terminated" && lastDestType === "queue") {
                     finalStatus = "abandoned";
                 } else {
-                    // Call ended normally after conversation - answered/treated
                     finalStatus = "answered";
                 }
-            } else if (firstAnswered) {
-                // Call was answered by IVR/queue/script but not by human
-                finalStatus = "routed";
+            } else if (termReason === "src_participant_terminated" && sourceType === "provider") {
+                // Inbound call - caller hung up before getting an answer
+                finalStatus = "abandoned";
+            } else if (sourceType === "extension") {
+                // Outbound call - recipient didn't answer
+                finalStatus = "unanswered";
             } else {
-                // Call was never answered
-                const lastStarted = row.last_started_at ? new Date(row.last_started_at) : null;
-                if (lastStarted && lastEnded) {
-                    const ringTime = lastEnded.getTime() - lastStarted.getTime();
-                    finalStatus = ringTime > 5000 ? "abandoned" : "missed";
-                } else {
-                    finalStatus = "missed";
-                }
+                // Default: inbound call not answered
+                finalStatus = "abandoned";
             }
 
             // Determine direction - check first and last segments for bridge
@@ -717,6 +758,7 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
                 destination_participant_name: true,
                 destination_dn_name: true,
                 destination_dn_type: true,
+                destination_entity_type: true,
                 termination_reason: true,
                 termination_reason_details: true,
                 creation_method: true,
@@ -742,6 +784,7 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
                 seg.creation_method,
                 seg.creation_forward_reason,
                 seg.destination_dn_type,
+                seg.destination_entity_type,
                 seg.source_dn_type,
                 durationSeconds,
                 !!answeredAt
@@ -764,7 +807,14 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
                         || (seg.source_participant_name?.trim().endsWith(':') ? getDisplayName(seg.source_participant_name, null) : ""))
                     : getDisplayName(seg.destination_participant_name, seg.destination_dn_name),
                 destinationType: seg.destination_dn_type || "-",
-                status: determineStatus(seg.cdr_answered_at, seg.cdr_started_at, seg.cdr_ended_at, seg.destination_dn_type),
+                status: determineStatus(
+                    seg.cdr_answered_at,
+                    seg.cdr_started_at,
+                    seg.cdr_ended_at,
+                    seg.destination_dn_type,
+                    seg.destination_entity_type,
+                    seg.termination_reason_details
+                ),
                 durationSeconds,
                 durationFormatted: formatDuration(Math.round(durationSeconds)),
                 terminationReason: seg.termination_reason || "-",
