@@ -132,8 +132,12 @@ function determineSegmentCategory(
         }
     }
 
-    // Missed/Rejected segments
+    // Missed/Rejected/Busy segments
     if (termReason === "rejected" || termDetails === "no_route") {
+        return "missed";
+    }
+    // Busy segments - the recipient was busy
+    if (termDetails.includes("busy")) {
         return "missed";
     }
     if (!wasAnswered && (termReason === "src_participant_terminated" || termReason === "dst_participant_terminated")) {
@@ -271,8 +275,8 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
         conditions.push("(ans.answered_at IS NULL AND COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%' AND fs.source_dn_type = 'extension')");
     }
     if (statuses.includes('busy')) {
-        // Occupé: le correspondant était occupé
-        conditions.push("(ls.termination_reason_details ILIKE '%busy%')");
+        // Occupé: le correspondant était occupé (seulement pour appels SORTANTS)
+        conditions.push("(ls.termination_reason_details ILIKE '%busy%' AND fs.source_dn_type = 'extension')");
     }
     return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
 }
@@ -426,7 +430,7 @@ export async function getAggregatedCallLogs(
                     termination_reason_details
                 FROM cdroutput
                 WHERE ${whereClause}
-                ORDER BY call_history_id, cdr_started_at DESC
+                ORDER BY call_history_id, cdr_ended_at DESC
             ),
             answered_segments AS (
                 SELECT DISTINCT ON (c.call_history_id)
@@ -544,7 +548,7 @@ export async function getAggregatedCallLogs(
                     termination_reason_details
                 FROM cdroutput
                 WHERE ${whereClause}
-                ORDER BY call_history_id, cdr_started_at DESC
+                ORDER BY call_history_id, cdr_ended_at DESC
             ),
             answered_segments AS (
                 SELECT DISTINCT ON (c.call_history_id)
@@ -629,17 +633,17 @@ export async function getAggregatedCallLogs(
 
             if (isVoicemail) {
                 finalStatus = "voicemail";
-            } else if (termDetails.includes('busy')) {
-                // Check for busy
-                finalStatus = "busy";
             } else if (hasConversation) {
-                // Someone had a real conversation with a human
+                // Someone had a real conversation with a human - this takes priority
                 // Check if call ended properly or was abandoned in queue after transfer
                 if (termReason === "src_participant_terminated" && lastDestType === "queue") {
                     finalStatus = "abandoned";
                 } else {
                     finalStatus = "answered";
                 }
+            } else if (termDetails.includes('busy') && sourceType === "extension") {
+                // Busy only for OUTBOUND calls (source is extension)
+                finalStatus = "busy";
             } else if (termReason === "src_participant_terminated" && sourceType === "provider") {
                 // Inbound call - caller hung up before getting an answer
                 finalStatus = "abandoned";
