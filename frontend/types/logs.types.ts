@@ -112,13 +112,15 @@ export interface ColumnVisibility {
 export type SegmentCategory =
     | "routing"      // Ultra-short system routing (<1s, redirected)
     | "ringing"      // Extension ringing but not answered
-    | "conversation" // Answered call with real interaction
+    | "conversation" // Answered call with real interaction (= Répondu)
     | "queue"        // Queue/waiting segment
-    | "voicemail"    // Voicemail segment
+    | "voicemail"    // Voicemail segment (= Messagerie)
     | "ivr"          // IVR/script interaction
     | "bridge"       // Bridge (EDIFEA) segment
     | "transfer"     // Transfer segment
-    | "missed"       // Missed/abandoned/rejected
+    | "abandoned"    // Caller hung up before answer (= Abandonné)
+    | "unanswered"   // Outbound call not answered (= Sans réponse)
+    | "busy"         // Recipient was busy (= Occupé)
     | "unknown";     // Fallback
 
 // For call chain modal

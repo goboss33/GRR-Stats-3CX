@@ -46,7 +46,7 @@ const categoryConfig: Record<SegmentCategory, {
 }> = {
     conversation: {
         icon: Phone,
-        label: "Conversation",
+        label: "Répondu",
         className: "bg-emerald-100 text-emerald-800 border-emerald-200",
         description: "Appel en conversation"
     },
@@ -92,11 +92,23 @@ const categoryConfig: Record<SegmentCategory, {
         className: "bg-teal-100 text-teal-800 border-teal-200",
         description: "Transfert en cours"
     },
-    missed: {
+    abandoned: {
         icon: PhoneOff,
-        label: "Manqué",
-        className: "bg-rose-100 text-rose-800 border-rose-200",
+        label: "Abandonné",
+        className: "bg-amber-100 text-amber-800 border-amber-200",
+        description: "Appelant a raccroché"
+    },
+    unanswered: {
+        icon: PhoneMissed,
+        label: "Sans réponse",
+        className: "bg-slate-100 text-slate-600 border-slate-200",
         description: "Appel non abouti"
+    },
+    busy: {
+        icon: PhoneOff,
+        label: "Occupé",
+        className: "bg-red-100 text-red-800 border-red-200",
+        description: "Correspondant occupé"
     },
     unknown: {
         icon: PhoneMissed,

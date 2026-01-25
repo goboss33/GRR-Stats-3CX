@@ -132,16 +132,27 @@ function determineSegmentCategory(
         }
     }
 
-    // Missed/Rejected/Busy segments
-    if (termReason === "rejected" || termDetails === "no_route") {
-        return "missed";
-    }
     // Busy segments - the recipient was busy
     if (termDetails.includes("busy")) {
-        return "missed";
+        return "busy";
     }
+
+    // Rejected/failed segments
+    if (termReason === "rejected" || termDetails === "no_route") {
+        // Determine if it's outbound (unanswered) or inbound (abandoned)
+        if (srcType === "extension") {
+            return "unanswered";
+        }
+        return "abandoned";
+    }
+
+    // Caller/destination hung up before answer
     if (!wasAnswered && (termReason === "src_participant_terminated" || termReason === "dst_participant_terminated")) {
-        return "missed";
+        // Determine if it's outbound (unanswered) or inbound (abandoned)
+        if (srcType === "extension") {
+            return "unanswered";
+        }
+        return "abandoned";
     }
 
     // Fallback based on answered status
