@@ -96,12 +96,6 @@ const categoryConfig: Record<SegmentCategory, {
         icon: PhoneOff,
         label: "Abandonné",
         className: "bg-amber-100 text-amber-800 border-amber-200",
-        description: "Appelant a raccroché"
-    },
-    unanswered: {
-        icon: PhoneMissed,
-        label: "Sans réponse",
-        className: "bg-slate-100 text-slate-600 border-slate-200",
         description: "Appel non abouti"
     },
     busy: {

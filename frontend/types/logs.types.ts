@@ -1,7 +1,7 @@
 // Types for Call Logs module
 
 export type CallDirection = "inbound" | "outbound" | "internal" | "bridge";
-export type CallStatus = "answered" | "voicemail" | "abandoned" | "unanswered" | "busy";
+export type CallStatus = "answered" | "voicemail" | "abandoned" | "busy";
 export type EntityType = "extension" | "external" | "queue" | "ivr" | "script" | "unknown";
 export type SortDirection = "asc" | "desc";
 export type SortField = "startedAt" | "duration" | "sourceNumber" | "destinationNumber";
@@ -118,8 +118,7 @@ export type SegmentCategory =
     | "ivr"          // IVR/script interaction
     | "bridge"       // Bridge (EDIFEA) segment
     | "transfer"     // Transfer segment
-    | "abandoned"    // Caller hung up before answer (= Abandonné)
-    | "unanswered"   // Outbound call not answered (= Sans réponse)
+    | "abandoned"    // Call not answered (= Abandonné)
     | "busy"         // Recipient was busy (= Occupé)
     | "unknown";     // Fallback
 

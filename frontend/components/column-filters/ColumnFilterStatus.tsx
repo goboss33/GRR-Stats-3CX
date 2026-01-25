@@ -25,7 +25,6 @@ const statusOptions: { value: CallStatus; label: string }[] = [
     { value: "answered", label: "Répondu" },
     { value: "voicemail", label: "Messagerie" },
     { value: "abandoned", label: "Abandonné" },
-    { value: "unanswered", label: "Sans réponse" },
     { value: "busy", label: "Occupé" },
 ];
 

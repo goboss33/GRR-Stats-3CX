@@ -33,7 +33,6 @@ const statusLabels: Record<CallStatus, string> = {
     answered: "Répondu",
     voicemail: "Messagerie",
     abandoned: "Abandonné",
-    unanswered: "Sans réponse",
     busy: "Occupé",
 };
 
