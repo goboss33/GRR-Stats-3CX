@@ -289,15 +289,18 @@ export async function getAggregatedCallLogs(
         )`);
     }
 
-    // Callee search (on last segment fields)
+    // Callee search (on first segment fields - the initial recipient)
+    // NOTE: This filter is applied in the first_segments CTE, not here in whereConditions
+    // because we want to filter on the first destination (recipient), not any segment
+    let calleeSearchCondition = '';
     if (filters.calleeSearch?.trim()) {
         const pattern = parseSearchPattern(filters.calleeSearch);
-        whereConditions.push(`(
+        calleeSearchCondition = `AND (
             ${buildSqlSearchCondition('destination_dn_number', pattern)} OR
             ${buildSqlSearchCondition('destination_participant_phone_number', pattern)} OR
             ${buildSqlSearchCondition('destination_participant_name', pattern)} OR
             ${buildSqlSearchCondition('destination_dn_name', pattern)}
-        )`);
+        )`;
     }
 
     // Duration filter (total duration)
@@ -379,6 +382,7 @@ export async function getAggregatedCallLogs(
                 FROM cdroutput c
                 WHERE ${dateOnlyWhereClause}
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                  ${calleeSearchCondition}
                 ORDER BY c.call_history_id, c.cdr_started_at ASC
             ),
             last_segments AS (
@@ -493,7 +497,9 @@ export async function getAggregatedCallLogs(
                     source_dn_type,
                     destination_dn_type
                 FROM cdroutput
-                WHERE ${whereClause}
+                WHERE ${dateOnlyWhereClause}
+                  AND call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                  ${calleeSearchCondition}
                 ORDER BY call_history_id, cdr_started_at ASC
             ),
             last_segments AS (
