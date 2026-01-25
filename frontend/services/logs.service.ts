@@ -376,6 +376,7 @@ export async function getAggregatedCallLogs(
                     c.source_dn_type,
                     c.source_presentation,
                     c.destination_dn_number as first_dest_number,
+                    c.destination_participant_phone_number as first_dest_participant_phone,
                     c.destination_participant_name as first_dest_participant_name,
                     c.destination_dn_name as first_dest_dn_name,
                     c.destination_dn_type
@@ -449,6 +450,7 @@ export async function getAggregatedCallLogs(
                 fs.source_dn_type,
                 fs.source_presentation,
                 fs.first_dest_number,
+                fs.first_dest_participant_phone,
                 fs.first_dest_participant_name,
                 fs.first_dest_dn_name,
                 fs.destination_dn_type as first_dest_type,
@@ -654,7 +656,7 @@ export async function getAggregatedCallLogs(
                     : (getDisplayName(row.source_participant_name, row.source_dn_name) || null),
 
                 // Use FIRST destination (initial recipient the caller tried to reach)
-                calleeNumber: row.first_dest_number || "",
+                calleeNumber: getDisplayNumber(row.first_dest_number, row.first_dest_participant_phone),
                 calleeName: getDisplayName(row.first_dest_participant_name, row.first_dest_dn_name) || null,
 
                 // Handled by data
