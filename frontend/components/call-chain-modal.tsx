@@ -98,6 +98,12 @@ const categoryConfig: Record<SegmentCategory, {
         className: "bg-amber-100 text-amber-800 border-amber-200",
         description: "Appel non abouti"
     },
+    rejected: {
+        icon: PhoneMissed,
+        label: "Rejeté",
+        className: "bg-rose-100 text-rose-800 border-rose-200",
+        description: "Appel rejeté"
+    },
     busy: {
         icon: PhoneOff,
         label: "Occupé",

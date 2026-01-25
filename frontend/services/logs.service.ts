@@ -105,15 +105,29 @@ function determineSegmentCategory(
         return "queue";
     }
 
-    // Routing segments: ultra-short redirections (system routing)
+    // System routing segments: outbound_rule, inbound_routing, or ultra-short redirections
+    // These are internal system routing, not real call attempts
+    // destType === "unknown" covers outbound_rule and inbound_routing
+    if (destType === "unknown") {
+        return "routing";
+    }
     if (termReason === "redirected" && durationSeconds < 1) {
         return "routing";
     }
 
-    // Ringing segments: agent polled but didn't answer
+    // Ringing segments: agent polled but didn't answer (another agent answered)
+    // Important: cancelled + terminated_by_originator means CALLER hung up, not ringing
     if (createMethod === "route_to" && createForward === "polling") {
         if (termReason === "cancelled") {
-            return "ringing";
+            // Check WHY it was cancelled
+            if (termDetails === "completed_elsewhere" || termDetails === "") {
+                // Empty details or completed_elsewhere = someone else answered
+                return "ringing";
+            }
+            if (termDetails === "terminated_by_originator") {
+                // Caller hung up before getting an answer
+                return "abandoned";
+            }
         }
     }
 
@@ -137,9 +151,14 @@ function determineSegmentCategory(
         return "busy";
     }
 
-    // Rejected/failed segments
-    if (termReason === "rejected" || termDetails === "no_route") {
-        return "abandoned";
+    // Rejected segments - call was explicitly rejected by destination
+    if (termReason === "rejected") {
+        return "rejected";
+    }
+
+    // No route - routing failure
+    if (termDetails === "no_route") {
+        return "routing";
     }
 
     // Caller/destination hung up before answer

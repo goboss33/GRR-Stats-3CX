@@ -110,7 +110,7 @@ export interface ColumnVisibility {
 
 // Segment category for display in modal
 export type SegmentCategory =
-    | "routing"      // Ultra-short system routing (<1s, redirected)
+    | "routing"      // System routing (outbound_rule, inbound_routing, ultra-short redirects)
     | "ringing"      // Extension ringing but not answered
     | "conversation" // Answered call with real interaction (= Répondu)
     | "queue"        // Queue/waiting segment
@@ -119,6 +119,7 @@ export type SegmentCategory =
     | "bridge"       // Bridge (EDIFEA) segment
     | "transfer"     // Transfer segment
     | "abandoned"    // Call not answered (= Abandonné)
+    | "rejected"     // Call rejected by destination (= Rejeté)
     | "busy"         // Recipient was busy (= Occupé)
     | "unknown";     // Fallback
 
