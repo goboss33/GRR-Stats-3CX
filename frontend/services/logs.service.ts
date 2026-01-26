@@ -30,6 +30,13 @@ function determineDirection(
     const srcIsExt = sourceType?.toLowerCase() === "extension";
     const destIsExt = firstDestType?.toLowerCase() === "extension";
     if (srcIsExt && destIsExt) return "internal";
+
+    // Check if destination is an internal system (Queue, IVR, RingGroup, etc.)
+    const internalSystemDestinations = ['queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking'];
+    if (srcIsExt && internalSystemDestinations.includes(firstDestType?.toLowerCase() || '')) {
+        return "internal";
+    }
+
     if (srcIsExt && !destIsExt) return "outbound";
     return "inbound";
 }
@@ -252,6 +259,8 @@ function buildSqlDirectionFilter(directions: CallDirection[] | undefined): strin
     // inbound: source is NOT extension (and not bridge)
     // outbound: source IS extension AND destination is NOT extension (and not bridge)
     // internal: source IS extension AND destination IS extension
+    const internalSystemTypes = "'queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking'";
+
     if (directions.includes('bridge')) {
         conditions.push("(fs.source_dn_type = 'bridge' OR fs.destination_dn_type = 'bridge' OR ls.last_dest_type = 'bridge')");
     }
@@ -259,10 +268,13 @@ function buildSqlDirectionFilter(directions: CallDirection[] | undefined): strin
         conditions.push("(fs.source_dn_type != 'extension' AND fs.source_dn_type != 'bridge' AND (ls.last_dest_type != 'bridge' OR ls.last_dest_type IS NULL))");
     }
     if (directions.includes('outbound')) {
-        conditions.push("(fs.source_dn_type = 'extension' AND fs.destination_dn_type != 'extension' AND fs.destination_dn_type != 'bridge' AND (ls.last_dest_type != 'bridge' OR ls.last_dest_type IS NULL))");
+        // Outbound: extension -> external (previous logic was just != extension)
+        // Now we must ensure destination is NOT one of the internal system types either
+        conditions.push(`(fs.source_dn_type = 'extension' AND fs.destination_dn_type NOT IN ('extension', 'bridge', ${internalSystemTypes}) AND (ls.last_dest_type != 'bridge' OR ls.last_dest_type IS NULL))`);
     }
     if (directions.includes('internal')) {
-        conditions.push("(fs.source_dn_type = 'extension' AND fs.destination_dn_type = 'extension')");
+        // Internal: extension -> extension OR extension -> internal system (queue, ivr, etc)
+        conditions.push(`(fs.source_dn_type = 'extension' AND (fs.destination_dn_type = 'extension' OR fs.destination_dn_type IN (${internalSystemTypes})))`);
     }
     return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
 }
