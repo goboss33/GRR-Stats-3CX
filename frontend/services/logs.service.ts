@@ -357,10 +357,10 @@ export async function getAggregatedCallLogs(
         whereConditions.push(`EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at)) <= ${filters.durationMax}`);
     }
 
-    // ID search filter (on call_history_id)
+    // ID search filter (on call_history_id - cast to text for ILIKE on UUID)
     if (filters.idSearch?.trim()) {
         const pattern = parseSearchPattern(filters.idSearch);
-        whereConditions.push(buildSqlSearchCondition('call_history_id', pattern));
+        whereConditions.push(buildSqlSearchCondition('call_history_id::text', pattern));
     }
 
     const whereClause = whereConditions.join(" AND ");
