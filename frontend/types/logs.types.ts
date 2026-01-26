@@ -144,3 +144,17 @@ export interface CallChainSegment {
     originatingCdrId: string | null; // Links to the parent segment (e.g., queue) that spawned this
     category: SegmentCategory;
 }
+
+export interface QueueMember {
+    agentExtension: string;
+    agentName: string;
+    attemptsCount: number;
+    lastSeenAt: string;
+}
+
+export interface QueueInfo {
+    queueNumber: string;
+    queueName: string;
+    members: QueueMember[];
+    memberCount: number;
+}
