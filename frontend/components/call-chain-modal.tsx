@@ -18,7 +18,8 @@ import {
     Voicemail,
     Radio,
     RotateCcw,
-    RefreshCw
+    RefreshCw,
+    PhoneIncoming
 } from "lucide-react";
 
 import {
@@ -385,6 +386,7 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
         // Check for special indicators
         const isFallback = isFallbackSegment(seg);
         const isTransfer = isTransferSegment(seg);
+        const isPickup = seg.creationMethod === "pickup"; // Call interception via BLF
         const retryCount = retryCountMap.get(seg.id) || 0;
 
         return (
@@ -410,6 +412,12 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
                             <Badge variant="outline" className="bg-violet-100 text-violet-700 border-violet-300" title={`Tentative #${retryCount + 1} - Agent était occupé précédemment`}>
                                 <RefreshCw className="h-3 w-3 mr-1" />
                                 Retry #{retryCount + 1}
+                            </Badge>
+                        )}
+                        {isPickup && (
+                            <Badge variant="outline" className="bg-cyan-100 text-cyan-700 border-cyan-300" title="Interception - Appel capturé via BLF/pickup">
+                                <PhoneIncoming className="h-3 w-3 mr-1" />
+                                Interception
                             </Badge>
                         )}
                         <Badge variant="outline" className={config.className}>
