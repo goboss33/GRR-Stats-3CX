@@ -664,7 +664,24 @@ export async function getAggregatedCallLogs(
             }
             // 3. Answered - last segment was answered with real conversation
             else if (lastSegmentAnswered && lastDurationSeconds > 1) {
-                finalStatus = "answered";
+                // Fix: specific check for system types (Queue, Ring Group, IVR)
+                // These segments often have an 'answered_at' time (system pick up) but should act as Abandoned
+                // unless a real human/extension answered later.
+                const isSystemType = ['queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking'].includes(lastDestType) ||
+                    ['queue', 'ivr'].includes(lastDestEntityType);
+
+                if (isSystemType) {
+                    // It's a system segment. Only consider Answered if we have a record of a human answer (from answered_segments CTE)
+                    // answered_segments CTE filters for destination_dn_type = 'extension'
+                    if (row.answered_at) {
+                        finalStatus = "answered";
+                    } else {
+                        finalStatus = "abandoned";
+                    }
+                } else {
+                    // Standard logic for other types (Extension, External, etc.)
+                    finalStatus = "answered";
+                }
             }
             // 4. Not answered = abandoned (regardless of direction)
             else {
