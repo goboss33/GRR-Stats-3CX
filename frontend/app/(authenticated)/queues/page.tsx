@@ -5,18 +5,16 @@ import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import {
     Users,
-    Search,
     Clock,
     UserCheck,
     UserX,
     AlertCircle,
-    Phone
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { QueueInfo } from "@/types/queues.types";
 import { getQueueMembers } from "@/services/queues.service";
+import { QueueSearchCombobox } from "@/components/queue-search-combobox";
 
 export default function QueuesPage() {
     const [queues, setQueues] = useState<QueueInfo[]>([]);
@@ -69,15 +67,12 @@ export default function QueuesPage() {
                         Vue d'ensemble des agents par file basée sur l'historique d'activité
                     </p>
                 </div>
-                <div className="relative w-full md:w-96">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <Input
-                        placeholder="Rechercher une file ou un agent..."
-                        className="pl-10 h-11 text-base bg-white"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                </div>
+                <QueueSearchCombobox
+                    queues={queues}
+                    value={searchTerm}
+                    onChange={setSearchTerm}
+                    className="w-full md:w-96"
+                />
             </div>
 
             {/* Quick Stats */}
