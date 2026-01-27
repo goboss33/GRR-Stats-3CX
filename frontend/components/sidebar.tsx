@@ -48,9 +48,9 @@ const navItems: NavItem[] = [
     },
     {
         label: "Files d'attente",
-        href: "/admin/queues",
+        href: "/queues",
         icon: Users,
-        roles: ["ADMIN"],
+        roles: ["ADMIN", "SUPERUSER", "USER"],
     },
     {
         label: "Paramètres",
