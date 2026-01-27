@@ -15,8 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { QueueInfo } from "@/types/logs.types";
-import { getQueueMembers } from "@/services/logs.service";
+import { QueueInfo } from "@/types/queues.types";
+import { getQueueMembers } from "@/services/queues.service";
 
 export default function QueuesPage() {
     const [queues, setQueues] = useState<QueueInfo[]>([]);
