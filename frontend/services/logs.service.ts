@@ -347,18 +347,37 @@ export async function getAggregatedCallLogs(
         )`);
     }
 
-    // Callee search (on first segment fields - the initial recipient)
-    // NOTE: This filter is applied in the first_segments CTE, not here in whereConditions
-    // because we want to filter on the first destination (recipient), not any segment
-    let calleeSearchCondition = '';
+    // Callee search - filter calls based on the FIRST segment's destination (what's displayed)
+    // Also includes source_participant_name for SDA name search (e.g., "Direct Teresa Troiano")
+    let calleeFilterCTE = '';
+    let calleeFilterJoin = '';
     if (filters.calleeSearch?.trim()) {
         const pattern = parseSearchPattern(filters.calleeSearch);
-        calleeSearchCondition = `AND (
-            ${buildSqlSearchCondition('destination_dn_number', pattern)} OR
-            ${buildSqlSearchCondition('destination_participant_phone_number', pattern)} OR
-            ${buildSqlSearchCondition('destination_participant_name', pattern)} OR
-            ${buildSqlSearchCondition('destination_dn_name', pattern)}
-        )`;
+        calleeFilterCTE = `,
+            callee_filter AS (
+                SELECT call_history_id
+                FROM (
+                    SELECT DISTINCT ON (call_history_id)
+                        call_history_id,
+                        destination_dn_number,
+                        destination_participant_phone_number,
+                        destination_participant_name,
+                        destination_dn_name,
+                        source_participant_name
+                    FROM cdroutput
+                    WHERE cdr_started_at >= '${startDate.toISOString()}'
+                      AND cdr_started_at <= '${endDate.toISOString()}'
+                    ORDER BY call_history_id, cdr_started_at ASC
+                ) first_dest
+                WHERE (
+                    ${buildSqlSearchCondition('destination_dn_number', pattern)} OR
+                    ${buildSqlSearchCondition('destination_participant_phone_number', pattern)} OR
+                    ${buildSqlSearchCondition('destination_participant_name', pattern)} OR
+                    ${buildSqlSearchCondition('destination_dn_name', pattern)} OR
+                    ${buildSqlSearchCondition('source_participant_name', pattern)}
+                )
+            )`;
+        calleeFilterJoin = 'JOIN callee_filter cf ON ca.call_history_id = cf.call_history_id';
     }
 
     // Duration filter (total duration)
@@ -441,7 +460,6 @@ export async function getAggregatedCallLogs(
                 FROM cdroutput c
                 WHERE ${dateOnlyWhereClause}
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                  ${calleeSearchCondition}
                 ORDER BY c.call_history_id, c.cdr_started_at ASC
             ),
             last_segments AS (
@@ -496,7 +514,7 @@ export async function getAggregatedCallLogs(
                   AND c.destination_dn_type = 'extension'
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                 GROUP BY c.call_history_id
-            )
+            )${calleeFilterCTE}
             SELECT 
                 ca.call_history_id,
                 ca.segment_count,
@@ -540,6 +558,7 @@ export async function getAggregatedCallLogs(
             JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
             LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
             LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id
+            ${calleeFilterJoin}
             ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
             ORDER BY ca.first_started_at DESC
             LIMIT ${limit} OFFSET ${skip}
@@ -563,7 +582,6 @@ export async function getAggregatedCallLogs(
                 FROM cdroutput
                 WHERE ${dateOnlyWhereClause}
                   AND call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                  ${calleeSearchCondition}
                 ORDER BY call_history_id, cdr_started_at ASC
             ),
             last_segments AS (
@@ -590,12 +608,13 @@ export async function getAggregatedCallLogs(
                   AND c.destination_dn_type = 'extension'
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                 ORDER BY c.call_history_id, c.cdr_answered_at ASC
-            )
+            )${calleeFilterCTE}
             SELECT COUNT(*) as total
             FROM call_aggregates ca
             JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
             JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
             LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
+            ${calleeFilterJoin}
             ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
         `;
 
@@ -746,8 +765,12 @@ export async function getAggregatedCallLogs(
                     : (getDisplayName(row.source_participant_name, row.source_dn_name) || null),
 
                 // Use FIRST destination (initial recipient the caller tried to reach)
+                // For inbound calls: if destination name is empty, use SDA name from source_participant_name
                 calleeNumber: getDisplayNumber(row.first_dest_number, row.first_dest_participant_phone),
-                calleeName: getDisplayName(row.first_dest_participant_name, row.first_dest_dn_name) || null,
+                calleeName: row.source_dn_type?.toLowerCase() === 'provider'
+                    ? (getDisplayName(row.first_dest_participant_name, row.first_dest_dn_name)
+                        || (row.source_participant_name?.trim().endsWith(':') ? getDisplayName(row.source_participant_name, null) : null))
+                    : (getDisplayName(row.first_dest_participant_name, row.first_dest_dn_name) || null),
 
                 // Handled by data
                 handledBy: handledByAgents,
