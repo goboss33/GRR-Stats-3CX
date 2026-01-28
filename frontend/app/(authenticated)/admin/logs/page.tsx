@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RefreshCw, Download, FileText, Columns3 } from "lucide-react";
-import { subDays, startOfDay, endOfDay, parseISO } from "date-fns";
+import { subDays, startOfDay, endOfDay, parseISO, format } from "date-fns";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,13 +43,14 @@ export default function AdminLogsPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
 
-    // Parse URL params
+    // Parse URL params for filters
     const getInitialDateRange = () => {
         const startParam = searchParams.get("start");
         const endParam = searchParams.get("end");
         return {
-            startDate: startParam ? parseISO(startParam) : startOfDay(subDays(new Date(), 7)),
-            endDate: endParam ? parseISO(endParam) : endOfDay(new Date()),
+            // Use startOfDay/endOfDay to anchor dates in LOCAL timezone
+            startDate: startParam ? startOfDay(parseISO(startParam)) : startOfDay(subDays(new Date(), 7)),
+            endDate: endParam ? endOfDay(parseISO(endParam)) : endOfDay(new Date()),
         };
     };
 
@@ -58,29 +59,49 @@ export default function AdminLogsPage() {
         return pageParam ? parseInt(pageParam, 10) : 1;
     };
 
+    const getInitialDirections = (): CallDirection[] => {
+        const param = searchParams.get("directions");
+        if (!param) return [];
+        return param.split(",").filter(d => ["inbound", "outbound", "internal", "bridge"].includes(d)) as CallDirection[];
+    };
+
+    const getInitialStatuses = (): CallStatus[] => {
+        const param = searchParams.get("statuses");
+        if (!param) return [];
+        return param.split(",").filter(s => ["answered", "voicemail", "abandoned", "busy"].includes(s)) as CallStatus[];
+    };
+
+    const getInitialNumberParam = (key: string): number | undefined => {
+        const param = searchParams.get(key);
+        if (!param) return undefined;
+        const num = parseInt(param, 10);
+        return isNaN(num) ? undefined : num;
+    };
+
     // Date range state
     const [dateRange, setDateRange] = useState(getInitialDateRange);
     const [currentPage, setCurrentPage] = useState(getInitialPage);
     const [sort, setSort] = useState<LogsSort | undefined>(undefined);
     const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(defaultColumnVisibility);
 
-    // Filter states
-    const [selectedDirections, setSelectedDirections] = useState<CallDirection[]>([]);
-    const [selectedStatuses, setSelectedStatuses] = useState<CallStatus[]>([]);
-    const [callerSearch, setCallerSearch] = useState("");
-    const [calleeSearch, setCalleeSearch] = useState("");
-    const [handledBySearch, setHandledBySearch] = useState("");
-    const [queueSearch, setQueueSearch] = useState("");
-    const [idSearch, setIdSearch] = useState("");
-    const [segmentCountMin, setSegmentCountMin] = useState<number | undefined>(undefined);
-    const [segmentCountMax, setSegmentCountMax] = useState<number | undefined>(undefined);
-    const [durationMin, setDurationMin] = useState<number | undefined>(undefined);
-    const [durationMax, setDurationMax] = useState<number | undefined>(undefined);
+    // Filter states - initialized from URL
+    const [selectedDirections, setSelectedDirections] = useState<CallDirection[]>(getInitialDirections);
+    const [selectedStatuses, setSelectedStatuses] = useState<CallStatus[]>(getInitialStatuses);
+    const [callerSearch, setCallerSearch] = useState(searchParams.get("caller") || "");
+    const [calleeSearch, setCalleeSearch] = useState(searchParams.get("callee") || "");
+    const [handledBySearch, setHandledBySearch] = useState(searchParams.get("handledBy") || "");
+    const [queueSearch, setQueueSearch] = useState(searchParams.get("queue") || "");
+    const [idSearch, setIdSearch] = useState(searchParams.get("id") || "");
+    const [segmentCountMin, setSegmentCountMin] = useState<number | undefined>(() => getInitialNumberParam("segMin"));
+    const [segmentCountMax, setSegmentCountMax] = useState<number | undefined>(() => getInitialNumberParam("segMax"));
+    const [durationMin, setDurationMin] = useState<number | undefined>(() => getInitialNumberParam("durMin"));
+    const [durationMax, setDurationMax] = useState<number | undefined>(() => getInitialNumberParam("durMax"));
 
     // Data state
     const [data, setData] = useState<AggregatedCallLogsResponse | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
+    const [resetCounter, setResetCounter] = useState(0); // Incremented on reset to trigger immediate fetch
 
     // Modal state
     const [selectedCallHistoryId, setSelectedCallHistoryId] = useState<string | null>(null);
@@ -93,34 +114,77 @@ export default function AdminLogsPage() {
     const debouncedIdSearch = useDebounce(idSearch, 500);
 
     // Build effective filters
+    // Key fix: if actual value is empty, use it immediately (for reset case)
+    // Otherwise use debounced value (for typing case)
     const effectiveFilters: LogsFilters = {
         directions: selectedDirections,
         statuses: selectedStatuses,
         entityTypes: [],
-        callerSearch: debouncedCallerSearch || undefined,
-        calleeSearch: debouncedCalleeSearch || undefined,
-        handledBySearch: debouncedHandledBySearch || undefined,
-        queueSearch: debouncedQueueSearch || undefined,
-        idSearch: debouncedIdSearch || undefined,
+        callerSearch: callerSearch === "" ? undefined : (debouncedCallerSearch || undefined),
+        calleeSearch: calleeSearch === "" ? undefined : (debouncedCalleeSearch || undefined),
+        handledBySearch: handledBySearch === "" ? undefined : (debouncedHandledBySearch || undefined),
+        queueSearch: queueSearch === "" ? undefined : (debouncedQueueSearch || undefined),
+        idSearch: idSearch === "" ? undefined : (debouncedIdSearch || undefined),
         segmentCountMin,
         segmentCountMax,
         durationMin,
         durationMax,
     };
 
-    // Update URL when filters change
-    const updateUrl = useCallback(
-        (range: { startDate: Date; endDate: Date }, page: number) => {
-            const params = new URLSearchParams();
-            params.set("start", range.startDate.toISOString().split("T")[0]);
-            params.set("end", range.endDate.toISOString().split("T")[0]);
-            if (page > 1) {
-                params.set("page", page.toString());
-            }
-            router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
-        },
-        [router]
-    );
+    // Update URL when filters change - uses DEBOUNCED values for text search
+    const updateUrl = useCallback(() => {
+        const params = new URLSearchParams();
+
+        // Date range (always present) - use LOCAL date format, not UTC
+        params.set("start", format(dateRange.startDate, "yyyy-MM-dd"));
+        params.set("end", format(dateRange.endDate, "yyyy-MM-dd"));
+
+        // Page (only if > 1)
+        if (currentPage > 1) {
+            params.set("page", currentPage.toString());
+        }
+
+        // Directions (only if filtered, not all 4)
+        if (selectedDirections.length > 0 && selectedDirections.length < 4) {
+            params.set("directions", selectedDirections.join(","));
+        }
+
+        // Statuses (only if filtered)
+        if (selectedStatuses.length > 0) {
+            params.set("statuses", selectedStatuses.join(","));
+        }
+
+        // Text search filters - use DEBOUNCED values
+        if (debouncedCallerSearch.trim()) params.set("caller", debouncedCallerSearch.trim());
+        if (debouncedCalleeSearch.trim()) params.set("callee", debouncedCalleeSearch.trim());
+        if (debouncedHandledBySearch.trim()) params.set("handledBy", debouncedHandledBySearch.trim());
+        if (debouncedQueueSearch.trim()) params.set("queue", debouncedQueueSearch.trim());
+        if (debouncedIdSearch.trim()) params.set("id", debouncedIdSearch.trim());
+
+        // Numeric range filters
+        if (segmentCountMin !== undefined) params.set("segMin", segmentCountMin.toString());
+        if (segmentCountMax !== undefined) params.set("segMax", segmentCountMax.toString());
+        if (durationMin !== undefined) params.set("durMin", durationMin.toString());
+        if (durationMax !== undefined) params.set("durMax", durationMax.toString());
+
+        router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
+    }, [
+        router,
+        dateRange.startDate,
+        dateRange.endDate,
+        currentPage,
+        selectedDirections,
+        selectedStatuses,
+        debouncedCallerSearch,
+        debouncedCalleeSearch,
+        debouncedHandledBySearch,
+        debouncedQueueSearch,
+        debouncedIdSearch,
+        segmentCountMin,
+        segmentCountMax,
+        durationMin,
+        durationMax,
+    ]);
 
     // Fetch data
     const fetchData = useCallback(async () => {
@@ -142,11 +206,14 @@ export default function AdminLogsPage() {
     }, [
         dateRange.startDate,
         dateRange.endDate,
+        // Debounced values for search inputs (preserves typing delay)
         debouncedCallerSearch,
         debouncedCalleeSearch,
         debouncedHandledBySearch,
         debouncedQueueSearch,
         debouncedIdSearch,
+        // Reset counter triggers immediate refetch on reset
+        resetCounter,
         selectedDirections,
         selectedStatuses,
         segmentCountMin,
@@ -157,11 +224,11 @@ export default function AdminLogsPage() {
         sort
     ]);
 
-    // Fetch on filter/page change
+    // Fetch on filter/page change and update URL
     useEffect(() => {
         fetchData();
-        updateUrl(dateRange, currentPage);
-    }, [fetchData, updateUrl, dateRange, currentPage]);
+        updateUrl();
+    }, [fetchData, updateUrl]);
 
     // Handlers
     const handleDateRangeChange = (range: { startDate: Date; endDate: Date }) => {
@@ -244,6 +311,27 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
+    const handleRemoveHandledBySearch = () => {
+        setHandledBySearch("");
+        setCurrentPage(1);
+    };
+
+    const handleRemoveQueueSearch = () => {
+        setQueueSearch("");
+        setCurrentPage(1);
+    };
+
+    const handleRemoveIdSearch = () => {
+        setIdSearch("");
+        setCurrentPage(1);
+    };
+
+    const handleRemoveSegmentCount = () => {
+        setSegmentCountMin(undefined);
+        setSegmentCountMax(undefined);
+        setCurrentPage(1);
+    };
+
     const handleRemoveDuration = () => {
         setDurationMin(undefined);
         setDurationMax(undefined);
@@ -251,17 +339,21 @@ export default function AdminLogsPage() {
     };
 
     const handleResetAllFilters = () => {
+        // Reset all filter states
         setSelectedDirections([]);
         setSelectedStatuses([]);
         setCallerSearch("");
         setCalleeSearch("");
         setHandledBySearch("");
+        setQueueSearch("");
         setIdSearch("");
         setSegmentCountMin(undefined);
         setSegmentCountMax(undefined);
         setDurationMin(undefined);
         setDurationMax(undefined);
         setCurrentPage(1);
+        // Increment reset counter to trigger immediate refetch (bypasses debounce)
+        setResetCounter(c => c + 1);
     };
 
     return (
@@ -336,6 +428,10 @@ export default function AdminLogsPage() {
                 onRemoveStatus={handleRemoveStatus}
                 onRemoveCallerSearch={handleRemoveCallerSearch}
                 onRemoveCalleeSearch={handleRemoveCalleeSearch}
+                onRemoveHandledBySearch={handleRemoveHandledBySearch}
+                onRemoveQueueSearch={handleRemoveQueueSearch}
+                onRemoveIdSearch={handleRemoveIdSearch}
+                onRemoveSegmentCount={handleRemoveSegmentCount}
                 onRemoveDuration={handleRemoveDuration}
                 onResetAll={handleResetAllFilters}
             />
