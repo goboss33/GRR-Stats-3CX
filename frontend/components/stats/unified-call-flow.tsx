@@ -3,6 +3,7 @@
 import { QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Clock } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
 interface UnifiedCallFlowProps {
     kpis: QueueKPIs;
@@ -20,127 +21,143 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlo
         return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
     };
 
-    const getPercentage = (value: number, total: number): string => {
-        if (total === 0) return "0%";
-        return `${Math.round((value / total) * 100)}%`;
+    const getPercentage = (value: number, total: number): number => {
+        if (total === 0) return 0;
+        return Math.round((value / total) * 100);
     };
+
+    const data = [
+        { name: "Répondus", value: kpis.callsAnswered, color: "#10b981" }, // emerald-500
+        { name: "Abandonnés", value: kpis.callsAbandoned, color: "#ef4444" }, // red-500
+        { name: "Redirigés", value: kpis.callsOverflow, color: "#f59e0b" }, // amber-500
+    ].filter(d => d.value > 0);
 
     return (
         <Card className="overflow-hidden">
-            {/* Queue Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-4">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h2 className="text-xl font-bold">{queueName}</h2>
-                        <p className="text-blue-100 text-sm">File {queueNumber}</p>
-                    </div>
-                    <div className="flex items-center gap-2 bg-white/20 rounded-lg px-3 py-1.5">
-                        <Clock className="h-4 w-4" />
-                        <span className="text-sm">Attente moy: <strong>{formatDuration(kpis.avgWaitTimeSeconds)}</strong></span>
-                    </div>
+            {/* Header Compact */}
+            <div className="bg-slate-50 border-b px-6 py-4 flex items-center justify-between">
+                <div>
+                    <h2 className="text-lg font-bold text-slate-800">{queueName}</h2>
+                    <p className="text-slate-500 text-sm">File {queueNumber}</p>
+                </div>
+                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 shadow-sm">
+                    <Clock className="h-4 w-4 text-slate-500" />
+                    <span className="text-sm font-medium text-slate-700">Attente moy: <span className="text-slate-900">{formatDuration(kpis.avgWaitTimeSeconds)}</span></span>
                 </div>
             </div>
 
             <CardContent className="p-6">
-                {/* Flow Diagram - Simplified version without Messagerie */}
-                <div className="space-y-6">
-                    {/* Level 1: Total Entrants */}
-                    <div className="flex justify-center">
-                        <div className="bg-slate-100 border-2 border-slate-300 rounded-xl px-8 py-4 text-center">
-                            <p className="text-sm text-slate-500 font-medium">Appels en file d'attente</p>
-                            <p className="text-4xl font-bold text-slate-900">{totalEntrants}</p>
-                        </div>
-                    </div>
-
-                    {/* Connecting line */}
-                    <div className="flex justify-center">
-                        <div className="w-px h-8 bg-slate-300" />
-                    </div>
-
-                    {/* Level 2: Outcomes */}
-                    <div className="grid grid-cols-3 gap-4">
-                        {/* Répondus */}
-                        <div className="space-y-2">
-                            <div className="bg-emerald-50 border-2 border-emerald-300 rounded-xl p-4 text-center">
-                                <p className="text-sm text-emerald-600 font-medium">✅ Répondus</p>
-                                <p className="text-3xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
-                                <p className="text-sm text-emerald-500 font-medium">
-                                    {getPercentage(kpis.callsAnswered, totalEntrants)}
-                                </p>
-                            </div>
-                            {/* Progress bar */}
-                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                                    style={{ width: getPercentage(kpis.callsAnswered, totalEntrants) }}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                    {/* Colonne Gauche: Donut Chart */}
+                    <div className="col-span-1 md:col-span-4 h-64 relative">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={data}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={60}
+                                    outerRadius={80}
+                                    paddingAngle={2}
+                                    dataKey="value"
+                                    stroke="none"
+                                >
+                                    {data.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                    ))}
+                                </Pie>
+                                <Tooltip
+                                    formatter={(value: any) => [`${value} appels`, '']}
+                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                 />
-                            </div>
+                            </PieChart>
+                        </ResponsiveContainer>
+                        {/* Centre du Donut */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <span className="text-3xl font-bold text-slate-900">{totalEntrants}</span>
+                            <span className="text-xs text-slate-500 uppercase tracking-wide">Total</span>
                         </div>
+                    </div>
 
-                        {/* Abandonnés */}
-                        <div className="space-y-2">
-                            <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 text-center">
-                                <p className="text-sm text-red-600 font-medium">❌ Abandonnés</p>
-                                <p className="text-3xl font-bold text-red-700">{kpis.callsAbandoned}</p>
-                                <p className="text-sm text-red-500 font-medium">
-                                    {getPercentage(kpis.callsAbandoned, totalEntrants)}
-                                </p>
-                                <div className="flex justify-center gap-3 mt-2 text-xs">
-                                    <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded">
-                                        &lt;10s: {kpis.abandonedBefore10s}
-                                    </span>
-                                    <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded">
-                                        ≥10s: {kpis.abandonedAfter10s}
+                    {/* Colonne Droite: Détails */}
+                    <div className="col-span-1 md:col-span-8 space-y-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            {/* Répondus */}
+                            <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-100">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-3 h-3 rounded-full bg-emerald-500" />
+                                        <span className="font-medium text-emerald-900">Répondus</span>
+                                    </div>
+                                    <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                                        {getPercentage(kpis.callsAnswered, totalEntrants)}%
                                     </span>
                                 </div>
+                                <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
                             </div>
-                            {/* Progress bar */}
-                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-red-500 rounded-full transition-all duration-500"
-                                    style={{ width: getPercentage(kpis.callsAbandoned, totalEntrants) }}
-                                />
-                            </div>
-                        </div>
 
-                        {/* Redirigés */}
-                        <div className="space-y-2">
-                            <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 text-center">
-                                <p className="text-sm text-amber-600 font-medium">↗️ Redirigés ailleurs</p>
-                                <p className="text-3xl font-bold text-amber-700">{kpis.callsOverflow}</p>
-                                <p className="text-sm text-amber-500 font-medium">
-                                    {getPercentage(kpis.callsOverflow, totalEntrants)}
-                                </p>
-                            </div>
-                            {/* Progress bar */}
-                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-amber-500 rounded-full transition-all duration-500"
-                                    style={{ width: getPercentage(kpis.callsOverflow, totalEntrants) }}
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Overflow destinations */}
-                    {kpis.overflowDestinations.length > 0 && (
-                        <div className="pt-4 border-t border-slate-200">
-                            <p className="text-sm font-medium text-slate-600 mb-2">Destinations des appels redirigés :</p>
-                            <div className="flex flex-wrap gap-2">
-                                {kpis.overflowDestinations.map((dest) => (
-                                    <span
-                                        key={dest.destination}
-                                        className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-amber-50 text-amber-700 border border-amber-200"
-                                    >
-                                        {dest.destinationName}
-                                        <span className="ml-2 bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full text-xs font-medium">
-                                            {dest.count}
-                                        </span>
+                            {/* Abandonnés */}
+                            <div className="p-4 rounded-xl bg-red-50/50 border border-red-100">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-3 h-3 rounded-full bg-red-500" />
+                                        <span className="font-medium text-red-900">Abandonnés</span>
+                                    </div>
+                                    <span className="text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                                        {getPercentage(kpis.callsAbandoned, totalEntrants)}%
                                     </span>
-                                ))}
+                                </div>
+                                <div className="flex items-end justify-between">
+                                    <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned}</p>
+                                    <div className="text-xs text-red-600 text-right">
+                                        <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
+                                        <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Redirigés */}
+                            <div className="p-4 rounded-xl bg-amber-50/50 border border-amber-100">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-3 h-3 rounded-full bg-amber-500" />
+                                        <span className="font-medium text-amber-900">Redirigés</span>
+                                    </div>
+                                    <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                                        {getPercentage(kpis.callsOverflow, totalEntrants)}%
+                                    </span>
+                                </div>
+                                <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow}</p>
                             </div>
                         </div>
-                    )}
+
+                        {/* Destinations Overflow */}
+                        {kpis.overflowDestinations.length > 0 && (
+                            <div className="pt-4 border-t border-slate-100">
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                                    Top Destinations Redirection
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                    {kpis.overflowDestinations.slice(0, 5).map((dest) => (
+                                        <span
+                                            key={dest.destination}
+                                            className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200"
+                                        >
+                                            {dest.destinationName}
+                                            <span className="ml-1.5 bg-slate-200 text-slate-700 px-1.5 rounded-sm">
+                                                {dest.count}
+                                            </span>
+                                        </span>
+                                    ))}
+                                    {kpis.overflowDestinations.length > 5 && (
+                                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium text-slate-400 border border-dashed border-slate-300">
+                                            +{kpis.overflowDestinations.length - 5} autres
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </CardContent>
         </Card>
