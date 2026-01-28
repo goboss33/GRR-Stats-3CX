@@ -412,12 +412,15 @@ export async function getAggregatedCallLogs(
     if (statusFilter) aggregatedWhereConditions.push(statusFilter);
 
     // Handled by search filter (on handled_by CTE data)
+    // Always use contains mode for consistency with other search columns
     if (filters.handledBySearch?.trim()) {
         const pattern = parseSearchPattern(filters.handledBySearch);
         const searchValue = pattern.value.replace(/'/g, "''"); // Escape quotes
-        // Search in the JSON array of agents
+        // Always wrap with % for contains search (JSON text search needs this)
+        const likePattern = `%${searchValue}%`;
+        // Search in the JSON array of agents (number and name)
         aggregatedWhereConditions.push(`(
-            hb.agents::text ILIKE '%${searchValue}%'
+            hb.agents::text ILIKE '${likePattern}'
         )`);
     }
 
@@ -608,12 +611,29 @@ export async function getAggregatedCallLogs(
                   AND c.destination_dn_type = 'extension'
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                 ORDER BY c.call_history_id, c.cdr_answered_at ASC
+            ),
+            handled_by AS (
+                SELECT 
+                    c.call_history_id,
+                    JSON_AGG(
+                        JSON_BUILD_OBJECT(
+                            'number', c.destination_dn_number,
+                            'name', COALESCE(c.destination_dn_name, c.destination_participant_name, c.destination_dn_number)
+                        ) ORDER BY c.cdr_answered_at DESC
+                    ) as agents
+                FROM cdroutput c
+                WHERE ${dateOnlyWhereClause}
+                  AND c.cdr_answered_at IS NOT NULL
+                  AND c.destination_dn_type = 'extension'
+                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                GROUP BY c.call_history_id
             )${calleeFilterCTE}
             SELECT COUNT(*) as total
             FROM call_aggregates ca
             JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
             JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
             LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
+            LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id
             ${calleeFilterJoin}
             ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
         `;
