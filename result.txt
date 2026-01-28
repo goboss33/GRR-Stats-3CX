@@ -1,401 +1,71 @@
-queue_number|queue_name                                  |agent_extension|agent_name                         |attempts_count|last_seen_at                 |
-------------+--------------------------------------------+---------------+-----------------------------------+--------------+-----------------------------+
-046         |GRR Direction Gérance                       |625            |Hamel, Vincent                     |            23|2026-01-26 11:01:09.477 +0100|
-046         |GRR Direction Gérance                       |696            |Gillieron, Natasha                 |            19|2026-01-26 11:01:26.269 +0100|
-092         |RC PULLY Comptabilité PPE                   |122            |Schneider, Pierre                  |           162|2026-01-22 16:12:50.078 +0100|
-092         |RC PULLY Comptabilité PPE                   |126            |Santos, Miguel                     |           100|2026-01-23 10:44:48.789 +0100|
-093         |RC PULLY Comptabilité Gérance               |121            |Reynard, Johann                    |           286|2026-01-26 10:21:53.115 +0100|
-093         |RC PULLY Comptabilité Gérance               |123            |Fonseca, Catia                     |           155|2026-01-23 15:53:57.715 +0100|
-093         |RC PULLY Comptabilité Gérance               |124            |Gomes, Jorge                       |           271|2026-01-06 11:39:10.821 +0100|
-093         |RC PULLY Comptabilité Gérance               |127            |Cunha, Henrique                    |           314|2026-01-06 11:39:10.822 +0100|
-093         |RC PULLY Comptabilité Gérance               |128            |Quintas, Ana                       |           132|2025-10-31 10:56:07.878 +0100|
-093         |RC PULLY Comptabilité Gérance               |129            |Brunetti, David                    |           382|2026-01-23 15:53:57.722 +0100|
-093         |RC PULLY Comptabilité Gérance               |130            |Gomes, Tania                       |           217|2026-01-26 10:21:46.600 +0100|
-093         |RC PULLY Comptabilité Gérance               |132            |Giorgianni, Kevin                  |           426|2026-01-26 10:21:46.599 +0100|
-094         |RC PULLY Comptabilité Fournisseurs          |124            |Gomes, Jorge                       |            25|2026-01-19 08:23:51.778 +0100|
-094         |RC PULLY Comptabilité Fournisseurs          |125            |Barros, Claudia                    |             1|2025-12-11 16:00:49.412 +0100|
-094         |RC PULLY Comptabilité Fournisseurs          |127            |Cunha, Henrique                    |            37|2026-01-13 11:22:04.989 +0100|
-094         |RC PULLY Comptabilité Fournisseurs          |128            |Quintas, Ana                       |             7|2025-10-31 14:53:04.184 +0100|
-133         |GD Zurich                                   |649            |Bonnet, Philippe                   |            55|2026-01-23 08:47:53.449 +0100|
-134         |BCR  Groupe LocGE                           |226            |Demangeon, Stéphanie               |            38|2026-01-23 11:18:48.029 +0100|
-136         |BCR Groupe Indus                            |226            |Demangeon, Stéphanie               |            17|2026-01-19 11:45:57.541 +0100|
-138         |BCR Groupe Invest                           |263            |Baud-Regard, Adeline               |            28|2026-01-22 11:55:47.555 +0100|
-150         |BCR Groupe Pilotage                         |267            |Gillieron, Natasha                 |            43|2025-12-15 10:38:21.001 +0100|
-160         |BCR Groupe LocVD                            |116            |Flouck, Margaux                    |            43|2026-01-23 16:23:21.220 +0100|
-688         |GRR GENEVE IT                               |334            |Thomas, Yoann                      |          1018|2026-01-26 12:36:38.561 +0100|
-688         |GRR GENEVE IT                               |827            |Maksic, Stevo                      |          1067|2026-01-26 12:46:07.305 +0100|
-688         |GRR GENEVE IT                               |828            |Toro, Christopher                  |          1325|2026-01-26 12:46:07.304 +0100|
-806         |GRR GENEVE Quorum                           |332            |Gayère, Mireille                   |           118|2026-01-23 09:34:21.681 +0100|
-807         |RC NEUCHATEL Gérance                        |251            |Hohweiller, Stéphane               |           356|2026-01-06 14:34:36.284 +0100|
-807         |RC NEUCHATEL Gérance                        |251            |Uebelhart, Yann                    |            83|2026-01-23 14:07:08.546 +0100|
-807         |RC NEUCHATEL Gérance                        |255            |Milosevic, Nebojsa                 |           126|2025-11-06 09:00:54.276 +0100|
-807         |RC NEUCHATEL Gérance                        |256            |Nobile, Emma                       |           181|2026-01-26 10:01:57.989 +0100|
-807         |RC NEUCHATEL Gérance                        |256            |Uebelhart, Yann                    |           547|2026-01-08 14:44:15.075 +0100|
-820         |Groupe BS Lutry Ventes                      |544            |Zaarour Mejbri, Mona               |            24|2026-01-20 15:36:51.517 +0100|
-820         |Groupe BS Lutry Ventes                      |985            |Morgen, Charles                    |             5|2026-01-05 12:51:01.626 +0100|
-838         |Barnes Commercial                           |226            |Demangeon, Stéphanie               |            74|2026-01-19 11:26:46.222 +0100|
-838         |Barnes Commercial                           |263            |Baud-Regard, Adeline               |           335|2026-01-23 10:49:11.916 +0100|
-838         |Barnes Commercial                           |267            |Gillieron, Natasha                 |           165|2025-12-17 11:12:21.332 +0100|
-838         |Barnes Commercial                           |875            |Cardoso, Luisa                     |            83|2026-01-26 09:14:28.513 +0100|
-860         |BS LAUSANNE Ventes                          |530            |Granelli, Ophélie                  |           585|2026-01-26 12:10:56.727 +0100|
-860         |BS LAUSANNE Ventes                          |536            |Mivelaz, Céline                    |           574|2026-01-26 12:10:56.728 +0100|
-869         |GRR Genève Marketing                        |591            |Jean, Alexandra                    |            55|2026-01-21 15:12:11.481 +0100|
-869         |GRR Genève Marketing                        |592            |Cons, Eva                          |            60|2026-01-21 15:12:11.483 +0100|
-869         |GRR Genève Marketing                        |862            |Mazuay, Alexandra                  |            39|2026-01-21 14:13:42.381 +0100|
-884         |GRR GENEVE Gérance GE-G21                   |380            |Cherif, Morgane                    |           931|2026-01-26 11:47:03.261 +0100|
-884         |GRR GENEVE Gérance GE-G21                   |387            |Sahraoui, Hakim                    |           728|2026-01-26 11:36:54.135 +0100|
-884         |GRR GENEVE Gérance GE-G21                   |614            |Talbaux, Alan                      |           740|2026-01-26 11:47:03.259 +0100|
-884         |GRR GENEVE Gérance GE-G21                   |682            |Mukendi, Christia                  |           587|2026-01-26 11:47:03.258 +0100|
-889         |GRR GENEVE PPE 4                            |367            |Nguyen, Françoise                  |           206|2026-01-26 11:03:27.574 +0100|
-889         |GRR GENEVE PPE 4                            |371            |Rguibi-Idrissi, Laura              |           220|2026-01-26 11:03:20.409 +0100|
-889         |GRR GENEVE PPE 4                            |381            |Castro, Christian                  |           286|2026-01-26 11:03:20.408 +0100|
-889         |GRR GENEVE PPE 4                            |623            |Schaller, Veronica                 |           240|2026-01-26 09:53:42.224 +0100|
-890         |BS ZERMATT Ventes                           |232            |Seiler, Simone                     |            20|2026-01-26 11:25:59.775 +0100|
-890         |BS ZERMATT Ventes                           |233            |Reisenbichler, Lisa-Maria          |            17|2026-01-26 11:25:59.774 +0100|
-895         |GRR GENEVE PPE 2                            |374            |Verna, Noah                        |           637|2026-01-23 14:56:42.853 +0100|
-895         |GRR GENEVE PPE 2                            |377            |Raynaud, Céline                    |           513|2026-01-23 14:49:10.801 +0100|
-895         |GRR GENEVE PPE 2                            |617            |Najid, Nadia                       |           490|2026-01-23 14:56:42.852 +0100|
-895         |GRR GENEVE PPE 2                            |837            |Proz, Anthony                      |           521|2026-01-23 14:56:42.851 +0100|
-896         |GRR GENEVE Valorisation Energie et Reno     |383            |Fattaz, David                      |            98|2026-01-26 09:33:41.803 +0100|
-896         |GRR GENEVE Valorisation Energie et Reno     |560            |Barbera, Richard                   |            27|2026-01-26 09:33:41.800 +0100|
-896         |GRR GENEVE Valorisation Energie et Reno     |657            |Schurink, Arthur                   |            38|2026-01-26 09:33:41.802 +0100|
-896         |GRR GENEVE Valorisation Energie et Reno     |844            |Giraud, Jordan                     |           201|2026-01-26 09:33:52.296 +0100|
-897         |GRR GENEVE PPE 3                            |314            |Buvelot, Alexis                    |           662|2026-01-26 11:49:54.932 +0100|
-897         |GRR GENEVE PPE 3                            |608            |Prada, Marina                      |           521|2026-01-26 11:51:54.177 +0100|
-897         |GRR GENEVE PPE 3                            |631            |Lokaj, Ardonat                     |           123|2026-01-26 11:51:54.176 +0100|
-897         |GRR GENEVE PPE 3                            |643            |Martins, Susana                    |           357|2025-12-05 09:11:03.105 +0100|
-897         |GRR GENEVE PPE 3                            |655            |Gaudillère, Corinne                |           510|2026-01-23 11:12:50.965 +0100|
-899         |GRR GENEVE Gérance (Bureau 517)             |385            |Marc, Émilie                       |          1093|2026-01-26 13:04:09.866 +0100|
-899         |GRR GENEVE Gérance (Bureau 517)             |566            |Troiano, Teresa                    |           656|2026-01-26 11:41:32.953 +0100|
-899         |GRR GENEVE Gérance (Bureau 517)             |637            |Adeyemi, Sophie                    |           900|2026-01-26 13:04:09.864 +0100|
-899         |GRR GENEVE Gérance (Bureau 517)             |668            |Alcaraz, Sandra                    |           617|2026-01-26 13:04:09.865 +0100|
-899         |GRR GENEVE Gérance (Bureau 517)             |705            |Bernard, Adrien                    |           107|2025-11-06 14:40:40.901 +0100|
-899         |GRR GENEVE Gérance (Bureau 517)             |705            |Bureau 517, Libre                  |            58|2025-11-17 09:53:35.858 +0100|
-900         |RC PULLY Réception                          |100            |Sequeiros, Lucia                   |          5917|2026-01-26 13:07:57.281 +0100|
-900         |RC PULLY Réception                          |106            |Philipe, Céline                    |          3505|2026-01-26 11:58:38.067 +0100|
-901         |RC VEVEY Gérance                            |148            |Woeffray, Manon                    |          1821|2026-01-26 11:39:28.057 +0100|
-901         |RC VEVEY Gérance                            |149            |Haemmerli, Vanessa                 |          1935|2026-01-26 11:39:28.058 +0100|
-901         |RC VEVEY Gérance                            |159            |Hirt, Mélanie                      |            24|2025-10-09 09:42:00.847 +0200|
-901         |RC VEVEY Gérance                            |192            |Tille, Pauline                     |          1033|2026-01-23 15:58:02.146 +0100|
-901         |RC VEVEY Gérance                            |193            |Hiltbrunner, Marie-Laure           |          1449|2026-01-26 10:53:27.436 +0100|
-901         |RC VEVEY Gérance                            |194            |Steffen, Olivier                   |          1283|2026-01-26 11:39:28.060 +0100|
-901         |RC VEVEY Gérance                            |196            |Masson, Loic                       |           666|2026-01-26 11:39:28.061 +0100|
-901         |RC VEVEY Gérance                            |197            |Conus, Sarah                       |          1084|2026-01-26 11:39:28.062 +0100|
-901         |RC VEVEY Gérance                            |198            |Schouwey, Georges                  |           944|2026-01-26 11:39:28.063 +0100|
-901         |RC VEVEY Gérance                            |199            |Van Hove, Noémie                   |          1692|2026-01-26 11:39:28.065 +0100|
-902         |RC PULLY Comptabilité                       |000            |administrateur (Virtuel Q), Evolink|             3|2025-11-03 10:24:45.893 +0100|
-903         |RC PULLY PPE                                |151            |Carneiro, Carlos                   |           264|2025-12-11 09:36:16.369 +0100|
-903         |RC PULLY PPE                                |152            |Clement, Lola                      |           454|2026-01-26 11:40:57.352 +0100|
-903         |RC PULLY PPE                                |153            |Sinanaj, Mretron                   |            93|2026-01-26 11:40:57.353 +0100|
-903         |RC PULLY PPE                                |154            |Ung, Sandrine                      |           365|2026-01-20 15:37:03.554 +0100|
-904         |RC PULLY Gérance                            |140            |Patera, Naomi                      |           723|2026-01-06 11:31:26.178 +0100|
-904         |RC PULLY Gérance                            |141            |Sidoroff, Alexia                   |            84|2025-10-30 14:02:08.569 +0100|
-904         |RC PULLY Gérance                            |142            |Vilar, Vanessa                     |          1077|2026-01-26 11:04:49.517 +0100|
-904         |RC PULLY Gérance                            |143            |Dos Santos, Dylan                  |           259|2025-12-18 15:54:05.913 +0100|
-904         |RC PULLY Gérance                            |146            |Bory, Luca                         |          1019|2026-01-26 11:04:49.519 +0100|
-904         |RC PULLY Gérance                            |147            |Futa, Marcio                       |           931|2026-01-26 11:04:49.514 +0100|
-905         |RC PULLY Gérance Résidentielle              |183            |Sinanaj, Mretron                   |           899|2026-01-05 15:14:36.062 +0100|
-905         |RC PULLY Gérance Résidentielle              |186            |Hofstetter, Maxime                 |           705|2026-01-26 10:00:34.091 +0100|
-905         |RC PULLY Gérance Résidentielle              |189            |Kind, Gabriela                     |           419|2026-01-26 10:00:34.093 +0100|
-906         |RC PULLY IT                                 |110            |Bossens, Geoffrey                  |           385|2026-01-26 10:58:23.214 +0100|
-906         |RC PULLY IT                                 |111            |Firouzabadi, Parsa                 |           362|2026-01-26 10:58:23.216 +0100|
-910         |RC SION Gérance                             |247            |Batardon, Mathilda                 |           640|2026-01-26 11:52:14.989 +0100|
-910         |RC SION Gérance                             |248            |Rapin, Stéphanie                   |           669|2026-01-26 11:52:14.987 +0100|
-910         |RC SION Gérance                             |442            |Briguet, Karine                    |          1203|2026-01-26 11:52:14.986 +0100|
-910         |RC SION Gérance                             |445            |Molk, Camil                        |          1051|2026-01-26 10:26:39.603 +0100|
-912         |BS VEVEY Ventes                             |983            |Sejdija, Kreshnik                  |             1|2025-10-20 10:05:06.829 +0200|
-912         |BS VEVEY Ventes                             |996            |Benamara, Meriem                   |             1|2025-10-20 10:05:06.827 +0200|
-913         |BS MONTREUX Ventes                          |983            |Sejdija, Kreshnik                  |           394|2026-01-26 11:35:01.707 +0100|
-913         |BS MONTREUX Ventes                          |996            |Benamara, Meriem                   |           358|2026-01-26 11:34:56.701 +0100|
-914         |Private Office                              |544            |Zaarour Mejbri, Mona               |            18|2026-01-26 12:10:36.080 +0100|
-914         |Private Office                              |985            |Morgen, Charles                    |            13|2025-12-23 09:58:56.199 +0100|
-915         |BS MORGES Ventes                            |707            |Haxaire, Pierre-Adrien             |           115|2025-12-15 14:57:33.547 +0100|
-915         |BS MORGES Ventes                            |708            |Morina, Fatlinda                   |           183|2026-01-23 14:23:59.550 +0100|
-915         |BS MORGES Ventes                            |709            |Beutler de Morais, Pierrick        |            37|2026-01-21 09:29:57.088 +0100|
-916         |BS YVERDON Ventes                           |292            |Neiva-Martins, Julien              |            42|2026-01-23 16:17:34.772 +0100|
-916         |BS YVERDON Ventes                           |293            |Garcia, Matteo                     |           180|2025-12-17 09:21:37.352 +0100|
-916         |BS YVERDON Ventes                           |293            |Savioz, Maëlle                     |            30|2026-01-23 16:17:34.770 +0100|
-916         |BS YVERDON Ventes                           |297            |Riccio, Andrea                     |            58|2026-01-23 16:17:34.771 +0100|
-917         |BS FRIBOURG Ventes                          |763            |Grilo Carvalho, Miguel             |           153|2026-01-26 11:50:22.865 +0100|
-917         |BS FRIBOURG Ventes                          |766            |Rosset, Maryline                   |           141|2026-01-26 11:50:22.867 +0100|
-917         |BS FRIBOURG Ventes                          |767            |Barassi, Armando                   |           102|2026-01-26 11:50:22.866 +0100|
-918         |BS SION Ventes                              |431            |Delija, Sejdi                      |             4|2026-01-23 14:22:43.799 +0100|
-918         |BS SION Ventes                              |432            |Ferreira Vaz, Elodie               |           325|2026-01-26 10:40:37.250 +0100|
-918         |BS SION Ventes                              |435            |Touam, Dalila                      |            59|2026-01-12 10:39:16.375 +0100|
-919         |BS CRANS-MONTANA Ventes                     |201            |Dussex, Yannick                    |           465|2026-01-26 11:58:50.644 +0100|
-919         |BS CRANS-MONTANA Ventes                     |202            |Styger, Kim                        |           195|2026-01-26 11:58:50.646 +0100|
-919         |BS CRANS-MONTANA Ventes                     |204            |Burgy, Caroline                    |           341|2026-01-26 11:58:50.645 +0100|
-919         |BS CRANS-MONTANA Ventes                     |205            |d'Andiran, Marc                    |           280|2026-01-26 11:58:50.646 +0100|
-921         |BS NYON Ventes                              |571            |Naudy, Nicolas                     |             9|2026-01-13 15:14:59.980 +0100|
-921         |BS NYON Ventes                              |573            |Henry, Christine                   |           207|2026-01-15 16:33:16.976 +0100|
-921         |BS NYON Ventes                              |574            |Barros, Kevin                      |            77|2026-01-26 10:06:03.171 +0100|
-921         |BS NYON Ventes                              |574            |Derungs, Aymane                    |            14|2025-10-22 16:44:16.059 +0200|
-921         |BS NYON Ventes                              |576            |Batardière, Yann                   |            12|2026-01-12 12:16:28.582 +0100|
-921         |BS NYON Ventes                              |577            |Coutaz, Carole                     |             2|2025-12-01 14:51:12.060 +0100|
-921         |BS NYON Ventes                              |789            |Baeriswyl, Mélina                  |            31|2026-01-23 14:53:10.735 +0100|
-921         |BS NYON Ventes                              |789            |Naudy, Nicolas                     |             3|2025-10-21 08:36:07.889 +0200|
-922         |BS Etang Barnes                             |875            |Cardoso, Luisa                     |           394|2026-01-26 11:29:21.549 +0100|
-922         |BS Etang Barnes                             |876            |Cerino, Oreste                     |            57|2026-01-20 13:33:54.281 +0100|
-923         |BS GENEVE Ventes                            |851            |Caillot, Julie                     |           558|2026-01-26 11:57:33.544 +0100|
-923         |BS GENEVE Ventes                            |863            |Gaucher, Aurélie                   |           648|2026-01-26 11:57:33.545 +0100|
-923         |BS GENEVE Ventes                            |872            |Clivaz, Lucien                     |            59|2025-11-26 09:49:28.222 +0100|
-923         |BS GENEVE Ventes                            |873            |Delli Gatti, Angelina              |           247|2026-01-26 11:57:33.542 +0100|
-923         |BS GENEVE Ventes                            |873            |Hanau, Florianne                   |           311|2025-11-28 09:58:41.915 +0100|
-923         |BS GENEVE Ventes                            |881            |Hanau, Florianne                   |           117|2025-12-12 16:15:05.702 +0100|
-924         |BS MONTREUX Ventes 2                        |208            |Tschannen, David                   |            28|2026-01-21 15:36:13.282 +0100|
-924         |BS MONTREUX Ventes 2                        |983            |Sejdija, Kreshnik                  |            33|2026-01-21 15:35:25.788 +0100|
-924         |BS MONTREUX Ventes 2                        |984            |Wisler, Thomas                     |            16|2025-12-23 14:41:09.177 +0100|
-924         |BS MONTREUX Ventes 2                        |996            |Benamara, Meriem                   |            23|2026-01-21 15:35:12.362 +0100|
-925         |RC FRIBOURG Gérance                         |793            |Thalmann, Karin                    |           432|2026-01-26 11:42:08.254 +0100|
-925         |RC FRIBOURG Gérance                         |795            |Cardoso, Olivier                   |           425|2026-01-26 11:42:08.257 +0100|
-925         |RC FRIBOURG Gérance                         |796            |Dominguez, Carlos                  |           551|2026-01-26 11:42:08.255 +0100|
-925         |RC FRIBOURG Gérance                         |797            |Charrière, Thomas                  |            19|2025-11-11 14:39:03.818 +0100|
-926         |GRR GENEVE PPE 1                            |622            |Besselievre, Alexandra             |           169|2026-01-26 09:13:07.295 +0100|
-926         |GRR GENEVE PPE 1                            |651            |Spaggiari, Gilles                  |           261|2026-01-26 09:16:13.436 +0100|
-926         |GRR GENEVE PPE 1                            |849            |Adeyemi, Paul                      |           157|2025-12-04 16:24:16.004 +0100|
-927         |GD COPPET PPE                               |593            |Cassar, Aurélie                    |            62|2026-01-22 09:17:26.087 +0100|
-927         |GD COPPET PPE                               |781            |Sciboz, Valérie                    |           263|2026-01-23 10:20:53.950 +0100|
-927         |GD COPPET PPE                               |783            |Brack, Lauren                      |            68|2025-11-03 13:39:23.516 +0100|
-927         |GD COPPET PPE                               |788            |Züllig, Carolina                   |           258|2026-01-23 14:39:18.335 +0100|
-928         |GRR GENEVE Comptabilité Copropriétés        |340            |Yahyaoui, Sabra                    |           778|2026-01-26 11:11:24.994 +0100|
-928         |GRR GENEVE Comptabilité Copropriétés        |348            |Lopez Rex, Rosario                 |           431|2025-12-03 11:03:12.883 +0100|
-928         |GRR GENEVE Comptabilité Copropriétés        |351            |Candaes, Nicolas                   |           209|2025-11-03 11:59:16.523 +0100|
-928         |GRR GENEVE Comptabilité Copropriétés        |351            |Capone, Léo                        |            52|2026-01-26 11:11:24.994 +0100|
-928         |GRR GENEVE Comptabilité Copropriétés        |604            |Russo, Enzo                        |           700|2026-01-26 11:11:24.993 +0100|
-928         |GRR GENEVE Comptabilité Copropriétés        |610            |Qazimi, Fitim                      |           772|2026-01-26 11:11:25.000 +0100|
-928         |GRR GENEVE Comptabilité Copropriétés        |618            |Gaddi, Alexandre                   |           841|2026-01-26 11:11:24.991 +0100|
-928         |GRR GENEVE Comptabilité Copropriétés        |636            |Dema, Nathalie                     |           270|2026-01-26 11:11:25.000 +0100|
-928         |GRR GENEVE Comptabilité Copropriétés        |640            |Almeida, Sandra                    |           177|2025-12-10 11:36:42.957 +0100|
-928         |GRR GENEVE Comptabilité Copropriétés        |642            |Lorente, David                     |           788|2026-01-26 11:11:24.992 +0100|
-933         |GD NYON Gérance                             |222            |Grando, Florine                    |           208|2025-11-05 15:47:53.081 +0100|
-933         |GD NYON Gérance                             |224            |Quarta, Sabrina                    |           372|2026-01-26 11:21:22.820 +0100|
-934         |GRR GENEVE Comptabilité Gérance             |337            |Rey, Emilie                        |          1820|2026-01-26 11:42:06.903 +0100|
-934         |GRR GENEVE Comptabilité Gérance             |341            |Costantini, Mikael                 |          1878|2026-01-26 11:42:06.905 +0100|
-934         |GRR GENEVE Comptabilité Gérance             |343            |Bouhechicha, Rachid                |          1823|2026-01-26 11:42:06.902 +0100|
-934         |GRR GENEVE Comptabilité Gérance             |348            |Lopez Rex, Rosario                 |           896|2026-01-26 11:42:06.906 +0100|
-934         |GRR GENEVE Comptabilité Gérance             |356            |Schurter, Rachel                   |          1431|2026-01-26 11:42:06.903 +0100|
-934         |GRR GENEVE Comptabilité Gérance             |359            |Harel, Rémi                        |          1713|2026-01-26 11:42:06.905 +0100|
-934         |GRR GENEVE Comptabilité Gérance             |681            |Palys, Edyta                       |          1344|2026-01-26 11:30:57.003 +0100|
-934         |GRR GENEVE Comptabilité Gérance             |689            |Tavares, Josué                     |          1694|2026-01-26 11:42:06.901 +0100|
-934         |GRR GENEVE Comptabilité Gérance             |805            |Fernandes, Fabio                   |          1724|2026-01-26 11:42:06.906 +0100|
-934         |GRR GENEVE Comptabilité Gérance             |835            |Wessner, Oxana                     |          1427|2026-01-26 11:42:06.901 +0100|
-935         |GRR GENEVE COMPTA Société                   |630            |Mouledous, Nicolas                 |            19|2025-11-20 11:33:58.179 +0100|
-935         |GRR GENEVE Finance                          |630            |Mouledous, Nicolas                 |             4|2026-01-14 11:55:24.601 +0100|
-935         |GRR GENEVE Finance                          |633            |Martins, Catia                     |             8|2026-01-14 15:47:54.932 +0100|
-935         |GRR GENEVE COMPTA Société                   |633            |Martins, Catia                     |            23|2025-11-20 11:33:58.176 +0100|
-935         |GRR GENEVE Finance                          |659            |Dietiker, Sarah                    |             7|2026-01-14 11:55:21.105 +0100|
-935         |GRR GENEVE COMPTA Société                   |659            |Dietiker, Sarah                    |            22|2025-11-26 10:40:12.558 +0100|
-935         |GRR GENEVE COMPTA Société                   |819            |Piferio, Riccardo                  |            16|2025-11-26 10:40:12.559 +0100|
-935         |GRR GENEVE Finance                          |819            |Piferio, Riccardo                  |             6|2026-01-14 15:47:54.933 +0100|
-935         |GRR GENEVE COMPTA Société                   |841            |Lam, Dinh                          |            20|2025-11-26 10:40:12.576 +0100|
-935         |GRR GENEVE Finance                          |841            |Lam, Dinh                          |             2|2025-12-19 09:33:33.883 +0100|
-936         |GRR GENEVE Contentieux                      |321            |Yaya, Hasmahan                     |           756|2026-01-23 15:44:23.818 +0100|
-936         |GRR GENEVE Contentieux                      |362            |Petitpierre, Christianne           |          1039|2026-01-26 11:41:12.804 +0100|
-936         |GRR GENEVE Contentieux                      |545            |Perrin, Mélissa                    |           650|2026-01-26 11:41:12.806 +0100|
-936         |GRR GENEVE Contentieux                      |652            |Summa, Jessica                     |           851|2026-01-23 15:44:23.817 +0100|
-936         |GRR GENEVE Contentieux                      |662            |Nathan, Sabrina                    |            37|2025-10-13 15:29:22.816 +0200|
-937         |GD COPPET Gérance                           |596            |Delaere, Guillaume                 |            17|2026-01-14 09:37:30.877 +0100|
-937         |GD COPPET Gérance                           |787            |Bader, Candice                     |            20|2026-01-14 09:37:26.869 +0100|
-937         |GD COPPET Gérance                           |790            |Schneider, Matthew                 |            18|2026-01-14 09:37:26.869 +0100|
-937         |GD COPPET Gérance                           |794            |Vachez, Christine                  |            19|2026-01-14 09:37:26.870 +0100|
-939         |BS GENEVE Ventes 2                          |863            |Gaucher, Aurélie                   |            14|2026-01-22 12:05:20.247 +0100|
-939         |BS GENEVE Ventes 2                          |874            |Levy, Annabelle                    |            16|2026-01-22 12:05:20.246 +0100|
-940         |RR GENEVE Location                          |344            |Desbiolles, Emmanuelle             |            15|2026-01-19 11:18:01.911 +0100|
-940         |RR GENEVE Location                          |355            |Casas, Dimitri                     |            11|2026-01-12 10:18:49.789 +0100|
-940         |RR GENEVE Location                          |364            |Chautems, Fabrice                  |             7|2025-12-19 14:31:24.935 +0100|
-940         |RR GENEVE Location                          |365            |Valente-Ribeiro, Sara              |            15|2026-01-19 11:18:01.912 +0100|
-942         |GRR GENEVE RH                               |391            |Jeanguenat, Elodie                 |           323|2026-01-23 15:49:15.771 +0100|
-942         |GRR GENEVE RH                               |394            |Villar Guelpa, Leo                 |           325|2026-01-23 15:49:15.770 +0100|
-942         |GRR GENEVE RH                               |605            |Scherrer, Cindy                    |           517|2026-01-23 15:49:15.769 +0100|
-942         |GRR GENEVE RH                               |616            |Fonseca, Vanessa                   |           332|2026-01-23 15:49:15.770 +0100|
-942         |GRR GENEVE RH                               |663            |Feuilloy, Nicolas                  |           317|2026-01-23 15:49:15.771 +0100|
-943         |BS GENEVE Marketing                         |265            |Nabulsi, Kevin                     |           119|2026-01-23 17:26:38.128 +0100|
-943         |BS GENEVE Marketing                         |855            |Claret, Arnaud                     |            22|2025-10-28 11:09:46.956 +0100|
-943         |BS GENEVE Marketing                         |855            |Fatana, Yves                       |            49|2025-12-12 09:34:45.651 +0100|
-943         |BS GENEVE Marketing                         |864            |Clément, Christopher               |            76|2026-01-23 17:26:38.127 +0100|
-943         |BS GENEVE Marketing                         |866            |De Melo, Beatriz                   |            62|2025-12-02 14:30:42.428 +0100|
-944         |GD COPPET Location Résidentielle            |792            |Firinu-Gonthier, Ginette           |            19|2026-01-21 10:09:09.439 +0100|
-944         |GD COPPET Location Résidentielle            |798            |Ismajli, Leona                     |            68|2026-01-23 09:41:56.905 +0100|
-945         |GRR GENEVE Gérance (Bureau 512)             |120            |Frischholz, Raphaël                |            61|2025-12-02 15:27:52.548 +0100|
-945         |GRR GENEVE Gérance (Bureau 512)             |323            |Le Brize, Sandra                   |           224|2025-11-21 14:15:38.775 +0100|
-945         |GRR GENEVE Gérance (Bureau 512)             |609            |Almeida, Brandon                   |           545|2026-01-26 11:30:26.174 +0100|
-945         |GRR GENEVE Gérance (Bureau 512)             |613            |Gomes, Hellen                      |           350|2026-01-26 09:34:35.414 +0100|
-945         |GRR GENEVE Gérance (Bureau 512)             |671            |Garces, Dylan                      |           421|2026-01-26 11:30:26.173 +0100|
-946         |GRR GENEVE Gérance (RDC)                    |624            |Bourloud, Olivier                  |           606|2026-01-23 14:39:20.783 +0100|
-946         |GRR GENEVE Gérance (RDC)                    |626            |Davaux, Julien                     |           196|2025-11-25 15:50:32.753 +0100|
-946         |GRR GENEVE Gérance (RDC)                    |626            |Niazi, Eltija                      |            15|2025-10-27 10:03:53.656 +0100|
-946         |GRR GENEVE Gérance (RDC)                    |647            |Alves, Sandrine                    |           118|2026-01-26 09:45:39.453 +0100|
-946         |GRR GENEVE Gérance (RDC)                    |647            |Libre, Libre                       |            79|2025-12-02 10:11:41.027 +0100|
-946         |GRR GENEVE Gérance (RDC)                    |647            |Pieren, Véronique                  |           400|2025-11-21 11:58:31.921 +0100|
-946         |GRR GENEVE Gérance (RDC)                    |647            |Smith, Gülüstan                    |            27|2025-12-23 15:29:46.578 +0100|
-946         |GRR GENEVE Gérance (RDC)                    |649            |Bonnet, Philippe                   |           822|2026-01-26 09:45:39.451 +0100|
-946         |GRR GENEVE Gérance (RDC)                    |679            |Pereira, Bruno                     |           742|2026-01-26 09:45:39.455 +0100|
-946         |GRR GENEVE Gérance (RDC)                    |808            |Rey, Ludovic                       |           479|2025-12-09 14:55:34.536 +0100|
-946         |GRR GENEVE Gérance (RDC)                    |831            |Vulliet, Sylvie                    |           408|2026-01-26 09:45:39.452 +0100|
-947         |GRR GENEVE Gérance (Bureau 507)             |397            |Djire, Sally                       |          1414|2026-01-26 13:03:10.981 +0100|
-947         |GRR GENEVE Gérance (Bureau 507)             |528            |Scherrer, Corentin                 |          1654|2026-01-26 13:03:10.978 +0100|
-947         |GRR GENEVE Gérance (Bureau 507)             |628            |Dayen, Fabienne                    |          1438|2026-01-26 13:03:10.979 +0100|
-947         |GRR GENEVE Gérance (Bureau 507)             |629            |Currat, Bérangère                  |          1458|2026-01-26 13:03:10.980 +0100|
-947         |GRR GENEVE Gérance (Bureau 507)             |632            |Flühmann, Alain                    |            37|2025-12-03 10:52:27.149 +0100|
-947         |GRR GENEVE Gérance (Bureau 507)             |691            |Eurin, Agnès                       |          1223|2026-01-26 13:03:10.977 +0100|
-947         |GRR GENEVE Gérance (Bureau 507)             |845            |Vesin, Arthur                      |          1494|2026-01-26 13:03:10.980 +0100|
-948         |GRR GENEVE Gérance (Bureau 503)             |635            |Smith, Gülüstan                    |           539|2025-12-09 13:05:01.766 +0100|
-948         |GRR GENEVE Gérance (Bureau 503)             |669            |Brasier, Océane                    |           213|2025-11-06 11:42:56.911 +0100|
-948         |GRR GENEVE Gérance (Bureau 503)             |669            |Clarenc, Guillaume                 |           365|2026-01-26 11:47:06.487 +0100|
-948         |GRR GENEVE Gérance (Bureau 503)             |673            |Ukishima, Stéphanie                |             5|2026-01-22 11:21:05.568 +0100|
-948         |GRR GENEVE Gérance (Bureau 503)             |713            |Muller-Matéo, Johannes             |           455|2026-01-26 11:46:07.774 +0100|
-949         |GRR GENEVE Location Résidentielles          |396            |Giramma, Isabella                  |           118|2026-01-22 09:22:59.481 +0100|
-949         |GRR GENEVE Location Résidentielles          |829            |Konikoff, Stéphanie                |           152|2026-01-26 10:23:54.701 +0100|
-949         |GRR GENEVE Location Résidentielles          |836            |Laffont, Cécile                    |           143|2026-01-26 10:23:54.699 +0100|
-950         |GD COPPET Principal                         |593            |Cassar, Aurélie                    |           130|2026-01-20 11:08:49.216 +0100|
-950         |GD COPPET Principal                         |596            |Delaere, Guillaume                 |           717|2026-01-16 12:00:48.994 +0100|
-950         |GD COPPET Principal                         |781            |Sciboz, Valérie                    |           675|2026-01-16 12:00:48.992 +0100|
-950         |GD COPPET Principal                         |783            |Brack, Lauren                      |           201|2025-11-03 14:15:48.840 +0100|
-950         |GD COPPET Principal                         |787            |Bader, Candice                     |           833|2026-01-16 12:00:48.985 +0100|
-950         |GD COPPET Principal                         |788            |Züllig, Carolina                   |           722|2026-01-16 12:00:48.989 +0100|
-950         |GD COPPET Principal                         |789            |Baeriswyl, Mélina                  |           742|2026-01-26 11:44:06.682 +0100|
-950         |GD COPPET Principal                         |789            |Naudy, Nicolas                     |           146|2025-10-23 10:23:11.722 +0200|
-950         |GD COPPET Principal                         |790            |Schneider, Matthew                 |           606|2026-01-16 12:00:48.987 +0100|
-950         |GD COPPET Principal                         |794            |Vachez, Christine                  |           718|2026-01-16 12:00:48.986 +0100|
-950         |GD COPPET Principal                         |798            |Ismajli, Leona                     |           813|2026-01-16 12:00:48.993 +0100|
-952         |GD COPPET PPE débordement                   |596            |Delaere, Guillaume                 |             7|2026-01-20 09:35:36.701 +0100|
-952         |GD COPPET PPE débordement                   |787            |Bader, Candice                     |             9|2026-01-23 14:39:38.463 +0100|
-952         |GD COPPET PPE débordement                   |789            |Baeriswyl, Mélina                  |            10|2026-01-23 14:39:38.468 +0100|
-952         |GD COPPET PPE débordement                   |790            |Schneider, Matthew                 |             6|2026-01-23 14:39:38.465 +0100|
-952         |GD COPPET PPE débordement                   |792            |Firinu-Gonthier, Ginette           |             4|2026-01-20 10:16:28.211 +0100|
-952         |GD COPPET PPE débordement                   |794            |Vachez, Christine                  |             7|2026-01-23 14:39:38.466 +0100|
-952         |GD COPPET PPE débordement                   |798            |Ismajli, Leona                     |            10|2026-01-23 14:39:38.467 +0100|
-953         |GD COPPET Location Résidentielle débordement|596            |Delaere, Guillaume                 |             2|2026-01-19 10:05:30.711 +0100|
-953         |GD COPPET Location Résidentielle débordement|787            |Bader, Candice                     |             2|2026-01-22 09:54:29.817 +0100|
-953         |GD COPPET Location Résidentielle débordement|789            |Baeriswyl, Mélina                  |             4|2026-01-22 09:54:29.820 +0100|
-953         |GD COPPET Location Résidentielle débordement|790            |Schneider, Matthew                 |             2|2026-01-22 09:54:29.818 +0100|
-953         |GD COPPET Location Résidentielle débordement|794            |Vachez, Christine                  |             3|2026-01-22 09:54:29.819 +0100|
-956         |RC Pully Location Résidentielles            |184            |Tavares, David                     |            14|2026-01-21 13:45:01.642 +0100|
-957         |BS LAUSANNE Ventes 2                        |531            |Legrottaglie, Jean-Marie           |            73|2025-12-09 10:17:04.992 +0100|
-957         |BS LAUSANNE Ventes 2                        |532            |Maklouf, Ryan                      |            73|2025-12-09 10:17:04.994 +0100|
-957         |BS LAUSANNE Ventes 2                        |533            |Mazreku, Enver                     |            44|2025-12-09 10:17:04.991 +0100|
-957         |BS LAUSANNE Ventes 2                        |535            |Mbomba, Dalida                     |            87|2025-12-09 10:17:04.993 +0100|
-958         |RR GENEVE Service Client                    |344            |Desbiolles, Emmanuelle             |         17848|2026-01-26 13:06:14.738 +0100|
-958         |RR GENEVE Service Client                    |355            |Casas, Dimitri                     |         16237|2026-01-26 13:06:16.744 +0100|
-958         |RR GENEVE Service Client                    |364            |Chautems, Fabrice                  |         11346|2026-01-26 13:04:46.707 +0100|
-958         |RR GENEVE Service Client                    |365            |Valente-Ribeiro, Sara              |         19620|2026-01-26 13:05:54.722 +0100|
-958         |RR GENEVE Service Client                    |515            |Cavalcanti Hess, Lucia             |          1527|2026-01-22 11:18:17.306 +0100|
-958         |RR GENEVE Service Client                    |516            |Daiguemorte, Marylène              |           209|2026-01-23 15:55:41.245 +0100|
-958         |RR GENEVE Service Client                    |516            |Guerreiro, Mafalda                 |          4274|2026-01-15 13:05:46.871 +0100|
-959         |BS GENEVE Développement et Promotion        |660            |Nespolo, Yaël                      |             9|2025-12-03 10:41:45.980 +0100|
-959         |BS GENEVE Développement et Promotion        |857            |Villette, Paul-Emile               |            30|2026-01-26 11:52:51.324 +0100|
-959         |BS GENEVE Développement et Promotion        |872            |Clivaz, Lucien                     |            22|2026-01-26 11:52:51.325 +0100|
-959         |BS GENEVE Développement et Promotion        |893            |Bolomey, Mathieu                   |             5|2025-11-24 09:59:13.697 +0100|
-960         |GRR GENEVE Évolution Loyers                 |320            |Gonzalez, Silvia                   |            30|2026-01-21 15:20:08.397 +0100|
-960         |GRR GENEVE Évolution Loyers                 |507            |Delale, Emmanuelle                 |            43|2026-01-23 11:31:02.111 +0100|
-960         |GRR GENEVE Évolution Loyers                 |694            |Silvert, Tennessy                  |            46|2026-01-23 11:19:40.966 +0100|
-960         |GRR GENEVE Évolution Loyers                 |694            |Vintem, Noémie                     |             6|2025-10-17 10:35:13.567 +0200|
-960         |GRR GENEVE Évolution Loyers                 |696            |Gillieron, Natasha                 |             2|2026-01-07 10:29:08.431 +0100|
-960         |GRR GENEVE Évolution Loyers                 |844            |Giraud, Jordan                     |            38|2026-01-07 10:29:08.433 +0100|
-961         |BS NEUCHATEL Ventes                         |241            |Pont, Killian                      |           573|2026-01-26 11:12:43.295 +0100|
-961         |BS NEUCHATEL Ventes                         |242            |Gaschen, Noa                       |           632|2026-01-26 11:12:43.298 +0100|
-961         |BS NEUCHATEL Ventes                         |244            |Gaschen, Patrick                   |            70|2025-11-26 16:48:33.804 +0100|
-961         |BS NEUCHATEL Ventes                         |246            |Petermann, Luc                     |           614|2026-01-26 11:12:43.297 +0100|
-964         |GRR GENEVE Comptabilité Fournisseurs        |345            |Nunez-Garcia, Isabel               |            20|2026-01-09 10:48:41.017 +0100|
-964         |GRR GENEVE Comptabilité Fournisseurs        |346            |Haddad, Cyril                      |             3|2025-12-23 13:33:10.368 +0100|
-964         |GRR GENEVE Comptabilité Fournisseurs        |358            |Gal, Fanny                         |            18|2026-01-09 10:48:41.018 +0100|
-964         |GRR GENEVE Comptabilité Fournisseurs        |638            |Gomes, Sabrina                     |            20|2026-01-09 10:48:41.019 +0100|
-966         |RR GENEVE Compta PPE                        |000            |administrateur (Virtuel Q), Evolink|             2|2025-10-09 09:48:59.098 +0200|
-967         |GRR GENEVE Direction Gérance                |832            |Carrel, Timothée                   |            59|2025-11-24 13:25:12.788 +0100|
-967         |GRR Direction                               |832            |Carrel, Timothée                   |            60|2026-01-26 13:06:40.194 +0100|
-967         |GRR GENEVE Direction Gérance                |848            |Daguenet, Karine                   |            49|2025-11-24 13:25:12.787 +0100|
-967         |GRR Direction                               |848            |Daguenet, Karine                   |            62|2026-01-26 13:06:40.193 +0100|
-968         |GRR GENEVE Gérance (Bureau 511)             |115            |Delaporte, Valentin                |          1262|2026-01-26 13:02:20.398 +0100|
-968         |GRR GENEVE Gérance (Bureau 511)             |520            |Criscione, Salvatore               |          1111|2026-01-26 13:02:20.396 +0100|
-968         |GRR GENEVE Gérance (Bureau 511)             |522            |Balsat, Catherine                  |          1146|2026-01-26 11:45:20.622 +0100|
-968         |GRR GENEVE Gérance (Bureau 511)             |526            |Veloso, Melany                     |           494|2025-12-04 15:39:37.565 +0100|
-968         |GRR GENEVE Gérance (Bureau 511)             |556            |Mustajbegovic, Muhamed             |           833|2026-01-26 13:02:20.397 +0100|
-969         |GRR GENEVE Gérance (Bureau 510)             |384            |Lebre, Nathalie                    |           666|2026-01-26 11:53:20.135 +0100|
-969         |GRR GENEVE Gérance (Bureau 510)             |523            |Dachroune, Ilian                   |           259|2025-12-23 13:47:33.023 +0100|
-969         |GRR GENEVE Gérance (Bureau 510)             |523            |Libre, Libre                       |            12|2025-11-11 10:17:20.224 +0100|
-969         |GRR GENEVE Gérance (Bureau 510)             |525            |Sessolo, Diego                     |           483|2025-12-16 10:43:38.981 +0100|
-969         |GRR GENEVE Gérance (Bureau 510)             |529            |Thévenot, Alice                    |           139|2026-01-26 10:54:26.579 +0100|
-969         |GRR GENEVE Gérance (Bureau 510)             |674            |Quiblier, Nathan                   |           383|2025-12-04 11:22:39.763 +0100|
-969         |GRR GENEVE Gérance (Bureau 510)             |695            |Cerutti, Melodie                   |          1273|2026-01-26 11:53:20.134 +0100|
-970         |GRR GENEVE Gérance (Bureau 520)             |339            |Bureau 520, Libre                  |          1346|2026-01-26 11:27:25.616 +0100|
-970         |GRR GENEVE Gérance (Bureau 520)             |561            |Daveni, Myriam                     |           740|2026-01-26 11:27:25.611 +0100|
-970         |GRR GENEVE Gérance (Bureau 520)             |562            |Dhaoui, Alexandra                  |          1192|2026-01-26 11:27:25.613 +0100|
-970         |GRR GENEVE Gérance (Bureau 520)             |563            |Da Costa, Michael                  |           544|2026-01-26 11:27:25.615 +0100|
-970         |GRR GENEVE Gérance (Bureau 520)             |563            |Pereira Da Costa, Michael          |           428|2025-11-10 13:06:05.509 +0100|
-970         |GRR GENEVE Gérance (Bureau 520)             |564            |Goncalves, Sandrine                |           720|2026-01-26 11:27:25.614 +0100|
-971         |GRR GENEVE Gérance (Bureau 513)             |513            |Bovagne, Audrey                    |          1794|2026-01-26 11:47:46.481 +0100|
-971         |GRR GENEVE Gérance (Bureau 513)             |551            |Arrighi, Pierre-Olivier            |          1727|2026-01-26 11:47:46.488 +0100|
-971         |GRR GENEVE Gérance (Bureau 513)             |551            |Pierre-Olivier, Pierre-Olivier     |            74|2025-10-28 15:37:37.346 +0100|
-971         |GRR GENEVE Gérance (Bureau 513)             |551            |Ribeiro, Gabriel                   |           336|2025-10-24 15:32:10.164 +0200|
-971         |GRR GENEVE Gérance (Bureau 513)             |554            |Pazzini, Léa                       |          2701|2026-01-26 11:47:46.477 +0100|
-971         |GRR GENEVE Gérance (Bureau 513)             |555            |Giovenni, Daniel                   |          1385|2026-01-23 10:55:46.457 +0100|
-971         |GRR GENEVE Gérance (Bureau 513)             |557            |Prod'hom, Carolyn                  |          2464|2026-01-26 11:47:46.495 +0100|
-971         |GRR GENEVE Gérance (Bureau 513)             |558            |Oberson, Elisa                     |          2659|2026-01-26 11:47:46.478 +0100|
-971         |GRR GENEVE Gérance (Bureau 513)             |585            |Huber, Emmanuel                    |          1824|2026-01-26 11:47:46.498 +0100|
-972         |GRR GENEVE Gérance (Bureau 518)             |580            |Ampen, Amelie                      |          1490|2025-11-27 15:57:27.532 +0100|
-972         |GRR GENEVE Gérance (Bureau 518)             |581            |Micali, Alessandro                 |          2587|2026-01-26 11:47:12.713 +0100|
-972         |GRR GENEVE Gérance (Bureau 518)             |582            |Zanella, Raphael                   |          2091|2026-01-26 11:47:12.712 +0100|
-972         |GRR GENEVE Gérance (Bureau 518)             |583            |Ruau, Christelle                   |          1727|2026-01-26 11:47:12.714 +0100|
-972         |GRR GENEVE Gérance (Bureau 518)             |584            |Bessa, Joana                       |           933|2026-01-26 11:47:12.715 +0100|
-972         |GRR GENEVE Gérance (Bureau 518)             |587            |Bernard, Adrien                    |          1383|2026-01-26 11:47:12.716 +0100|
-972         |GRR GENEVE Gérance (Bureau 518)             |650            |Brasier, Océane                    |          1587|2026-01-26 11:47:12.715 +0100|
-972         |GRR GENEVE Gérance (Bureau 518)             |686            |Duval, Roxanne                     |           554|2026-01-26 10:33:35.686 +0100|
-974         |GRR GENEVE Gérance (Bureau 519)             |565            |Bachmann, Gabrielle                |           612|2026-01-26 09:39:50.835 +0100|
-974         |GRR GENEVE Gérance (Bureau 519)             |567            |Yahiaoui, Sioir                    |           779|2026-01-26 11:50:24.580 +0100|
-974         |GRR GENEVE Gérance (Bureau 519)             |568            |Garland, Nora                      |           861|2026-01-26 11:50:24.578 +0100|
-975         |GRR GENEVE Juridique                        |311            |Disch, Stéphane                    |            38|2025-12-19 09:25:00.249 +0100|
-975         |GRR GENEVE Juridique                        |311            |Malvataj, Mateo                    |             1|2026-01-22 09:56:34.198 +0100|
-975         |GRR GENEVE Juridique                        |322            |Schincaglia, Sandrine              |           122|2026-01-22 09:56:34.200 +0100|
-975         |GRR GENEVE Juridique                        |360            |Gonzalez, Maria                    |           132|2026-01-22 09:56:34.201 +0100|
-975         |GRR GENEVE Juridique                        |361            |Dromard Roth, Hannah               |           108|2026-01-22 09:56:34.201 +0100|
-977         |GRR GENEVE Lot Isolés                       |386            |Cot, Manon                         |           133|2025-11-21 11:23:55.208 +0100|
-977         |GRR GENEVE Lots Isolés                      |386            |Cot, Manon                         |           122|2026-01-13 11:42:17.878 +0100|
-977         |GRR GENEVE Lots Isolés                      |388            |Kighelman, Marc                    |           256|2026-01-26 11:11:25.698 +0100|
-977         |GRR GENEVE Lot Isolés                       |388            |Kighelman, Marc                    |           234|2025-11-21 11:23:55.210 +0100|
-977         |GRR GENEVE Lot Isolés                       |389            |Pellerin, Mathieu                  |           210|2025-11-21 11:15:49.422 +0100|
-977         |GRR GENEVE Lots Isolés                      |389            |Pellerin, Mathieu                  |           321|2026-01-26 11:07:29.779 +0100|
-977         |GRR GENEVE Lot Isolés                       |512            |Perisic, Nicolas                   |            79|2025-11-21 11:23:55.211 +0100|
-977         |GRR GENEVE Lots Isolés                      |512            |Perisic, Nicolas                   |           299|2026-01-26 11:11:25.700 +0100|
-978         |GRR Admins IT                               |110            |Bossens, Geoffrey                  |            44|2026-01-26 08:51:56.118 +0100|
-978         |GRR Admins IT                               |330            |Emonin, Yann                       |            68|2026-01-26 08:51:56.115 +0100|
-978         |GRR Admins IT                               |334            |Thomas, Yoann                      |            56|2026-01-26 08:52:44.601 +0100|
-978         |GRR Admins IT                               |664            |Lopes, Luis                        |            67|2026-01-26 08:51:56.116 +0100|
-979         |GRR GENEVE PPE 7                            |375            |El Mokhtary, Sofiane               |           121|2026-01-26 11:31:02.823 +0100|
-979         |GRR GENEVE PPE 7                            |376            |De Luca, Tamara                    |           576|2026-01-26 11:31:02.824 +0100|
-979         |GRR GENEVE PPE 7                            |648            |Raimundo, Joana                    |           588|2026-01-14 14:50:34.725 +0100|
-979         |GRR GENEVE PPE 7                            |842            |Novoa, Juan Manuel                 |           352|2026-01-26 11:31:02.825 +0100|
-980         |GRR GENEVE PPE 6                            |378            |Lapierre, Mélina                   |           368|2026-01-26 11:40:12.714 +0100|
-980         |GRR GENEVE PPE 6                            |379            |Capone, Léo                        |           199|2025-11-24 15:59:42.515 +0100|
-980         |GRR GENEVE PPE 6                            |379            |PPE 6, Libre                       |             6|2025-11-25 09:01:21.407 +0100|
-980         |GRR GENEVE PPE 6                            |699            |Fabregat, Vanessa                  |           265|2026-01-26 11:40:12.713 +0100|
-980         |GRR GENEVE PPE 6                            |834            |Ceccon, Mathieu                    |           353|2025-12-19 13:25:11.727 +0100|
-981         |GRR GENEVE Gérance (Bureau 504)             |384            |Lebre, Nathalie                    |          1003|2025-12-01 09:02:14.875 +0100|
-981         |GRR GENEVE Gérance (Bureau 504)             |615            |Kadmiry, Denis                     |          1219|2026-01-26 13:04:16.012 +0100|
-981         |GRR GENEVE Gérance (Bureau 504)             |627            |Schneider, Déborah                 |          1399|2026-01-26 13:04:16.013 +0100|
-981         |GRR GENEVE Gérance (Bureau 504)             |644            |Higuera, Freddy                    |           952|2026-01-16 14:51:58.498 +0100|
-981         |GRR GENEVE Gérance (Bureau 504)             |661            |Lecoanet, Thomas                   |           616|2026-01-26 11:40:09.689 +0100|
-981         |GRR GENEVE Gérance (Bureau 504)             |686            |Duval, Roxanne                     |           702|2025-11-26 15:56:13.140 +0100|
-981         |GRR GENEVE Gérance (Bureau 504)             |833            |Nazeri, Habibrahman                |          1052|2026-01-26 13:04:16.015 +0100|
-981         |GRR GENEVE Gérance (Bureau 504)             |839            |Schmitz, Béatrice                  |          1355|2026-01-26 13:04:16.014 +0100|
-982         |GRR GENEVE Gérance (Bureau 509)             |000            |administrateur (Virtuel Q), Evolink|             1|2025-10-22 14:08:43.815 +0200|
-991         |GRR GENEVE Service Généraux                 |312            |Rachex, Julie                      |            60|2026-01-23 11:28:56.651 +0100|
-991         |GRR GENEVE Service Généraux                 |328            |Fernandez, Pedro                   |            52|2026-01-23 11:28:56.652 +0100|
-991         |GRR GENEVE Service Généraux                 |690            |Dachroune, Ilian                   |            25|2025-11-06 11:09:20.113 +0100|
-991         |GRR GENEVE Service Généraux                 |690            |Libre, Libre                       |            20|2026-01-05 15:15:41.539 +0100|
-991         |GRR GENEVE Service Généraux                 |690            |SG, Libre                          |            14|2026-01-23 11:28:56.653 +0100|
-991         |GRR GENEVE Service Généraux                 |840            |Barlocher, Marie-José              |            37|2026-01-22 15:59:52.896 +0100|
-993         |RR PULLY Gérance 63                         |139            |Robert-Charrue, Nicole             |          1432|2026-01-22 15:51:22.373 +0100|
-993         |RR PULLY Gérance 63                         |162            |Gerber, Diane                      |          1229|2026-01-23 15:57:49.605 +0100|
-993         |RR PULLY Gérance 63                         |163            |Meylan, Eva                        |          1577|2026-01-26 13:09:25.380 +0100|
-993         |RR PULLY Gérance 63                         |164            |Tschanz, Vincent                   |           935|2026-01-21 13:55:33.447 +0100|
-993         |RR PULLY Gérance 63                         |167            |Beauge, Damien                     |          2241|2026-01-22 15:00:08.539 +0100|
-993         |RR PULLY Gérance 63                         |169            |Lenz, David                        |          1531|2026-01-05 09:17:50.428 +0100|
-993         |RR PULLY Gérance 63                         |174            |Auchère, Guillaume                 |           493|2025-10-30 11:04:18.605 +0100|
-993         |RR PULLY Gérance 63                         |174            |Veseli, Filip                      |           754|2026-01-26 13:09:25.381 +0100|
-993         |RR PULLY Gérance 63                         |177            |Ahmetxhekaj, Merit                 |          2091|2026-01-26 11:48:21.583 +0100|
-994         |GRR GENEVE Accueil Etang RDC                |515            |Cavalcanti Hess, Lucia             |            13|2026-01-09 13:49:40.487 +0100|
-994         |GRR GENEVE Accueil Etang RDC                |516            |Daiguemorte, Marylène              |             2|2026-01-22 11:06:28.609 +0100|
-994         |GRR GENEVE Accueil Etang RDC                |516            |Guerreiro, Mafalda                 |            18|2025-12-23 11:21:48.507 +0100|
-995         |RR PULLY Gérance 65                         |172            |Chaboudez, Alain                   |           199|2026-01-21 15:27:52.758 +0100|
-995         |RR PULLY Gérance 65                         |175            |Mancini, Sarah                     |           178|2026-01-23 15:46:17.867 +0100|
-995         |RR PULLY Gérance 65                         |176            |Fessler, Anais                     |           247|2026-01-23 13:41:31.841 +0100|
+call_history_id                     |queue_count|queues    |
+------------------------------------+-----------+----------+
+00000000-01dc-3821-3410-ce0b000000c3|          2|896 -> 958|
+00000000-01dc-3821-4e14-32f5000000ca|          2|900 -> 905|
+00000000-01dc-3821-8373-4cd5000000d5|          2|900 -> 993|
+00000000-01dc-3822-499f-c01300000101|          2|958 -> 972|
+00000000-01dc-3822-9e3f-cb840000010d|          2|900 -> 905|
+00000000-01dc-3823-04b5-204000000122|          2|900 -> 910|
+00000000-01dc-3823-8b7c-1c6b0000013f|          2|900 -> 901|
+00000000-01dc-3824-513c-ec2d00000164|          2|900 -> 910|
+00000000-01dc-3824-55eb-424500000167|          2|900 -> 910|
+00000000-01dc-3824-fc60-a58d0000018f|          2|900 -> 910|
+
+cdr_id                              |originating_cdr_id                  |cdr_started_at               |cdr_answered_at              |destination_dn_number      |destination_dn_name                    |destination_dn_type|creation_method|creation_forward_reason|termination_reason        |
+------------------------------------+------------------------------------+-----------------------------+-----------------------------+---------------------------+---------------------------------------+-------------------+---------------+-----------------------+--------------------------+
+00000000-01dc-3821-3413-5481000001e8|                                    |2025-10-08 09:00:17.303 +0200|                             |+41223255429               |                                       |unknown            |call_init      |none                   |continued_in              |
+00000000-01dc-3821-3415-eb53000001e9|00000000-01dc-3821-3413-5481000001e8|2025-10-08 09:00:17.320 +0200|                             |383                        |Fattaz, David                          |extension          |divert         |by_did                 |continued_in              |
+00000000-01dc-3821-4692-2083000001f6|00000000-01dc-3821-3415-eb53000001e9|2025-10-08 09:00:48.333 +0200|2025-10-08 09:00:48.365 +0200|896                        |GRR GENEVE Valorisation Energie et Reno|queue              |divert         |no_answer              |continued_in              |
+00000000-01dc-3821-4698-a523000001f7|00000000-01dc-3821-4692-2083000001f6|2025-10-08 09:00:48.375 +0200|                             |844                        |Giraud, Jordan                         |extension          |route_to       |polling                |cancelled                 |
+00000000-01dc-3821-587b-0db400000209|00000000-01dc-3821-4692-2083000001f6|2025-10-08 09:01:18.380 +0200|                             |457                        |Groupe RR Geneve Service Client        |ring_group_ring_all|route_to       |no_answer              |redirected                |
+00000000-01dc-3821-587d-c58e0000020a|00000000-01dc-3821-587b-0db400000209|2025-10-08 09:01:18.398 +0200|2025-10-08 09:01:18.409 +0200|rrgeneve_serviceclient.Main|                                       |script             |divert         |no_destinations        |continued_in              |
+00000000-01dc-3821-58cc-c43b0000020b|00000000-01dc-3821-587d-c58e0000020a|2025-10-08 09:01:18.916 +0200|2025-10-08 09:01:19.003 +0200|958                        |RR GENEVE Service Client               |queue              |transfer       |none                   |continued_in              |
+00000000-01dc-3821-58dd-f1a90000020c|00000000-01dc-3821-58cc-c43b0000020b|2025-10-08 09:01:19.028 +0200|                             |344                        |Desbiolles, Emmanuelle                 |extension          |route_to       |polling                |cancelled                 |
+00000000-01dc-3821-58de-0d200000020d|00000000-01dc-3821-58cc-c43b0000020b|2025-10-08 09:01:19.029 +0200|2025-10-08 09:01:24.039 +0200|355                        |Casas, Dimitri                         |extension          |route_to       |polling                |dst_participant_terminated|
+00000000-01dc-3821-58de-2e570000020e|00000000-01dc-3821-58cc-c43b0000020b|2025-10-08 09:01:19.030 +0200|                             |365                        |Valente-Ribeiro, Sara                  |extension          |route_to       |polling                |cancelled                 |
+00000000-01dc-3821-58de-45210000020f|00000000-01dc-3821-58cc-c43b0000020b|2025-10-08 09:01:19.031 +0200|                             |364                        |Chautems, Fabrice                      |extension          |route_to       |polling                |cancelled                 |
+
+cdr_id                              |originating_cdr_id                  |cdr_started_at               |cdr_answered_at              |destination_dn_number|destination_dn_name           |destination_dn_type|creation_method|creation_forward_reason|termination_reason        |
+------------------------------------+------------------------------------+-----------------------------+-----------------------------+---------------------+------------------------------+-------------------+---------------+-----------------------+--------------------------+
+00000000-01dc-3821-4e15-1dfa000001fb|                                    |2025-10-08 09:01:00.935 +0200|                             |+41219257180         |                              |unknown            |call_init      |none                   |continued_in              |
+00000000-01dc-3821-4e1c-cd2c000001fc|00000000-01dc-3821-4e15-1dfa000001fb|2025-10-08 09:01:00.985 +0200|2025-10-08 09:01:01.022 +0200|rcpullylocation.Main |                              |script             |divert         |by_did                 |continued_in              |
+00000000-01dc-3821-4e70-16e9000001fd|00000000-01dc-3821-4e1c-cd2c000001fc|2025-10-08 09:01:01.531 +0200|2025-10-08 09:01:01.543 +0200|905                  |RC PULLY Gérance Résidentielle|queue              |transfer       |none                   |continued_in              |
+00000000-01dc-3821-4e8b-6104000001fe|00000000-01dc-3821-4e70-16e9000001fd|2025-10-08 09:01:01.710 +0200|                             |183                  |Sinanaj, Mretron              |extension          |route_to       |polling                |cancelled                 |
+00000000-01dc-3821-4e8b-825a000001ff|00000000-01dc-3821-4e70-16e9000001fd|2025-10-08 09:01:01.711 +0200|                             |189                  |Kind, Gabriela                |extension          |route_to       |polling                |cancelled                 |
+00000000-01dc-3821-606e-3c3c00000217|00000000-01dc-3821-4e70-16e9000001fd|2025-10-08 09:01:31.718 +0200|                             |400                  |Groupe RC PULLY Réception     |ring_group_ring_all|route_to       |no_answer              |redirected                |
+00000000-01dc-3821-606e-def000000218|00000000-01dc-3821-606e-3c3c00000217|2025-10-08 09:01:31.722 +0200|2025-10-08 09:01:31.734 +0200|rcpullyreception.Main|                              |script             |divert         |no_destinations        |continued_in              |
+00000000-01dc-3821-6103-c67800000219|00000000-01dc-3821-606e-def000000218|2025-10-08 09:01:32.698 +0200|2025-10-08 09:01:32.783 +0200|900                  |RC PULLY Réception            |queue              |transfer       |none                   |continued_in              |
+00000000-01dc-3821-6115-7fcf0000021a|00000000-01dc-3821-6103-c67800000219|2025-10-08 09:01:32.814 +0200|2025-10-08 09:02:31.387 +0200|100                  |Sequeiros, Lucia              |extension          |route_to       |polling                |src_participant_terminated|
+
+cdr_id                              |originating_cdr_id                  |cdr_started_at               |cdr_answered_at              |destination_dn_number |destination_dn_name       |destination_dn_type|creation_method|creation_forward_reason|termination_reason        |
+------------------------------------+------------------------------------+-----------------------------+-----------------------------+----------------------+--------------------------+-------------------+---------------+-----------------------+--------------------------+
+00000000-01dc-3821-8374-25c20000022b|                                    |2025-10-08 09:02:30.477 +0200|                             |+41219257100          |                          |unknown            |call_init      |none                   |continued_in              |
+00000000-01dc-3821-8376-8d2a0000022c|00000000-01dc-3821-8374-25c20000022b|2025-10-08 09:02:30.493 +0200|2025-10-08 09:02:30.514 +0200|rcpullyreception.Main |                          |script             |divert         |by_did                 |continued_in              |
+00000000-01dc-3821-83c6-fca90000022d|00000000-01dc-3821-8376-8d2a0000022c|2025-10-08 09:02:31.020 +0200|2025-10-08 09:02:31.052 +0200|900                   |RC PULLY Réception        |queue              |transfer       |none                   |continued_in              |
+00000000-01dc-3821-c46a-321e0000027b|00000000-01dc-3821-83c6-fca90000022d|2025-10-08 09:04:19.464 +0200|2025-10-08 09:05:08.981 +0200|100                   |Sequeiros, Lucia          |extension          |route_to       |polling                |continued_in              |
+00000000-01dc-3822-0fe1-4f67000002cb|00000000-01dc-3821-c46a-321e0000027b|2025-10-08 09:06:26.074 +0200|                             |164                   |Tschanz, Vincent          |extension          |transfer       |none                   |redirected                |
+00000000-01dc-3822-0fe9-abc7000002cc|00000000-01dc-3822-0fe1-4f67000002cb|2025-10-08 09:06:26.128 +0200|                             |484                   |Groupe RR Pully Gérance 63|ring_group_ring_all|divert         |forward_all            |redirected                |
+00000000-01dc-3822-0fed-754c000002cd|00000000-01dc-3822-0fe9-abc7000002cc|2025-10-08 09:06:26.153 +0200|2025-10-08 09:06:26.179 +0200|rrpully_gerance63.Main|                          |script             |divert         |no_destinations        |continued_in              |
+00000000-01dc-3822-103f-9325000002ce|00000000-01dc-3822-0fed-754c000002cd|2025-10-08 09:06:26.691 +0200|2025-10-08 09:06:26.713 +0200|993                   |RR PULLY Gérance 63       |queue              |transfer       |none                   |continued_in              |
+00000000-01dc-3822-1047-4af6000002cf|00000000-01dc-3822-103f-9325000002ce|2025-10-08 09:06:26.742 +0200|2025-10-08 09:06:37.893 +0200|139                   |Robert-Charrue, Nicole    |extension          |route_to       |polling                |dst_participant_terminated|
+00000000-01dc-3822-1047-8604000002d0|00000000-01dc-3822-103f-9325000002ce|2025-10-08 09:06:26.743 +0200|                             |169                   |Lenz, David               |extension          |route_to       |polling                |cancelled                 |
+00000000-01dc-3822-1047-c0e1000002d1|00000000-01dc-3822-103f-9325000002ce|2025-10-08 09:06:26.745 +0200|                             |163                   |Meylan, Eva               |extension          |route_to       |polling                |cancelled                 |
+
+call_history_id                     |original_queue_cdr_id               |other_queue_cdr_id                  |other_queue_originating_id          |other_queue_number|other_queue_name        |link_type|
+------------------------------------+------------------------------------+------------------------------------+------------------------------------+------------------+------------------------+---------+
+00000000-01dc-3839-5f08-dfb8000005c8|00000000-01dc-3839-5f5f-c6b600001754|00000000-01dc-3839-719f-6c640000175f|00000000-01dc-3839-7150-c99f0000175e|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-38ea-ca38-573800000c89|00000000-01dc-38ea-ca8f-53aa0000320d|00000000-01dc-38ea-dcd4-619200003220|00000000-01dc-38ea-dc83-fb240000321f|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-38eb-75aa-5f7a00000cac|00000000-01dc-38eb-7603-61230000329b|00000000-01dc-38eb-884a-07a9000032bf|00000000-01dc-38eb-87f5-878f000032be|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-391e-0010-d88000001467|00000000-01dc-391e-a0dd-97d200005320|00000000-01dc-391e-b315-cae300005340|00000000-01dc-391e-b2c5-6e380000533f|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-391e-0010-d88000001467|00000000-01dc-391e-0069-ff140000529c|00000000-01dc-391e-12a6-cd79000052a2|00000000-01dc-391e-1255-6a64000052a1|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-391e-0010-d88000001467|00000000-01dc-391e-0069-ff140000529c|00000000-01dc-391e-b315-cae300005340|00000000-01dc-391e-b2c5-6e380000533f|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-39b7-4177-89d70000184d|00000000-01dc-39b7-41d8-1dfd00006096|00000000-01dc-39b7-541c-4433000060a0|00000000-01dc-39b7-53c1-a42f0000609f|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-39c7-2a95-10a700001b4d|00000000-01dc-39c7-2af8-c8a300006cf8|00000000-01dc-39c7-3d3e-1dea00006cfb|00000000-01dc-39c7-3cea-31ff00006cfa|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-3c13-3cf8-30ab000001a7|00000000-01dc-3c13-3d5d-77df000006d1|00000000-01dc-3c13-4fa2-1085000006dd|00000000-01dc-3c13-4f51-9424000006dc|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-3c24-1c7d-7d590000051b|00000000-01dc-3c24-2f5a-179e000017ef|00000000-01dc-3c24-4191-e72600001811|00000000-01dc-3c24-4143-249500001810|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-3c43-64d9-73d100000975|00000000-01dc-3c43-6535-74ac00002c77|00000000-01dc-3c44-06ee-6c0b00002d16|00000000-01dc-3c44-0695-ab9000002d15|958               |RR GENEVE Service Client|INDIRECT |
+00000000-01dc-3c43-64d9-73d100000975|00000000-01dc-3c43-6535-74ac00002c77|00000000-01dc-3c43-7776-359c00002c90|00000000-01dc-3c43-7727-d5ba00002c8f|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-3cdd-4a8b-f63200000e2b|00000000-01dc-3cdd-4ae5-5f5b00004023|00000000-01dc-3cdd-5d25-354c00004038|00000000-01dc-3cdd-5cd6-816b00004037|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-3d12-6017-4160000017cb|00000000-01dc-3d12-607a-da500000d2f0|00000000-01dc-3d12-72c0-86db0000d30c|00000000-01dc-3d12-7267-f0560000d30b|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-3d11-fd8b-5e4f000017b9|00000000-01dc-3d11-fde0-840d0000d2a8|00000000-01dc-3d12-1017-7c6c0000d2b8|00000000-01dc-3d12-0fc8-83450000d2b7|900               |RC PULLY Réception      |INDIRECT |
+00000000-01dc-3da2-a2e9-621a00001a7d|00000000-01dc-3da2-a33e-876c0000db98|00000000-01dc-3da2-b58b-170b0000dbcd|00000000-01dc-3da2-b530-1ff80000dbcc|900               |RC PULLY Réception      |INDIRECT |

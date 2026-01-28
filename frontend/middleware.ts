@@ -9,7 +9,8 @@ export default auth((req) => {
     const isProtectedRoute =
         nextUrl.pathname.startsWith("/dashboard") ||
         nextUrl.pathname.startsWith("/admin") ||
-        nextUrl.pathname.startsWith("/queues");
+        nextUrl.pathname.startsWith("/queues") ||
+        nextUrl.pathname.startsWith("/statistics");
 
     // Auth routes (login page)
     const isAuthRoute = nextUrl.pathname.startsWith("/login");
