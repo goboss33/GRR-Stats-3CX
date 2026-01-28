@@ -18,6 +18,10 @@ interface ActiveFiltersProps {
     onRemoveStatus: (status: CallStatus) => void;
     onRemoveCallerSearch: () => void;
     onRemoveCalleeSearch: () => void;
+    onRemoveHandledBySearch: () => void;
+    onRemoveQueueSearch: () => void;
+    onRemoveIdSearch: () => void;
+    onRemoveSegmentCount: () => void;
     onRemoveDuration: () => void;
     onResetAll: () => void;
 }
@@ -43,6 +47,10 @@ export function ActiveFilters({
     onRemoveStatus,
     onRemoveCallerSearch,
     onRemoveCalleeSearch,
+    onRemoveHandledBySearch,
+    onRemoveQueueSearch,
+    onRemoveIdSearch,
+    onRemoveSegmentCount,
     onRemoveDuration,
     onResetAll,
 }: ActiveFiltersProps) {
@@ -120,6 +128,71 @@ export function ActiveFilters({
                 onClick={onRemoveCalleeSearch}
             >
                 Destinataire: "{filters.calleeSearch}"
+                <X className="h-3 w-3" />
+            </Badge>
+        );
+    }
+
+    // Handled by search
+    if (filters.handledBySearch?.trim()) {
+        activeFilters.push(
+            <Badge
+                key="handledBy"
+                variant="secondary"
+                className="bg-teal-100 text-teal-700 gap-1 px-2 py-1 cursor-pointer hover:bg-teal-200 transition-colors"
+                onClick={onRemoveHandledBySearch}
+            >
+                Traité par: "{filters.handledBySearch}"
+                <X className="h-3 w-3" />
+            </Badge>
+        );
+    }
+
+    // Queue search
+    if (filters.queueSearch?.trim()) {
+        activeFilters.push(
+            <Badge
+                key="queue"
+                variant="secondary"
+                className="bg-cyan-100 text-cyan-700 gap-1 px-2 py-1 cursor-pointer hover:bg-cyan-200 transition-colors"
+                onClick={onRemoveQueueSearch}
+            >
+                Queue: "{filters.queueSearch}"
+                <X className="h-3 w-3" />
+            </Badge>
+        );
+    }
+
+    // ID search
+    if (filters.idSearch?.trim()) {
+        activeFilters.push(
+            <Badge
+                key="id"
+                variant="secondary"
+                className="bg-gray-100 text-gray-700 gap-1 px-2 py-1 cursor-pointer hover:bg-gray-200 transition-colors"
+                onClick={onRemoveIdSearch}
+            >
+                ID: "{filters.idSearch}"
+                <X className="h-3 w-3" />
+            </Badge>
+        );
+    }
+
+    // Segment count filter
+    if (filters.segmentCountMin !== undefined || filters.segmentCountMax !== undefined) {
+        const segmentLabel = filters.segmentCountMin !== undefined && filters.segmentCountMax !== undefined
+            ? `${filters.segmentCountMin} - ${filters.segmentCountMax}`
+            : filters.segmentCountMin !== undefined
+                ? `≥ ${filters.segmentCountMin}`
+                : `≤ ${filters.segmentCountMax}`;
+        activeFilters.push(
+            <Badge
+                key="segmentCount"
+                variant="secondary"
+                className="bg-indigo-100 text-indigo-700 gap-1 px-2 py-1 cursor-pointer hover:bg-indigo-200 transition-colors"
+                onClick={onRemoveSegmentCount}
+            >
+                Segments: {segmentLabel}
                 <X className="h-3 w-3" />
             </Badge>
         );

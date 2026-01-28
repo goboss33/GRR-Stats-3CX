@@ -38,6 +38,10 @@ export interface AggregatedCallLog {
     direction: CallDirection;
     finalStatus: CallStatus;
     wasTransferred: boolean;
+
+    // Queues that the call passed through
+    queues: Array<{ number: string; name: string }>;
+    queuesDisplay: string;  // Formatted for display
 }
 
 // Legacy: Single segment call log (kept for call chain modal)
@@ -68,6 +72,7 @@ export interface LogsFilters {
     callerSearch?: string;
     calleeSearch?: string;
     handledBySearch?: string;  // Filter by agent number/name
+    queueSearch?: string;      // Filter by queue number/name
     idSearch?: string;         // Filter by call history ID (supports * wildcard)
     segmentCountMin?: number;  // Min number of segments
     segmentCountMax?: number;  // Max number of segments

@@ -424,6 +424,19 @@ export async function getAggregatedCallLogs(
         )`);
     }
 
+    // Queue search filter (on call_queues CTE data)
+    // Always use contains mode for consistency with other search columns
+    if (filters.queueSearch?.trim()) {
+        const pattern = parseSearchPattern(filters.queueSearch);
+        const searchValue = pattern.value.replace(/'/g, "''"); // Escape quotes
+        // Always wrap with % for contains search (JSON text search needs this)
+        const likePattern = `%${searchValue}%`;
+        // Search in the JSON array of queues (number and name)
+        aggregatedWhereConditions.push(`(
+            cq.queues::text ILIKE '${likePattern}'
+        )`);
+    }
+
     // Segment count filter (on aggregated data)
     if (filters.segmentCountMin !== undefined) {
         aggregatedWhereConditions.push(`ca.segment_count >= ${filters.segmentCountMin}`);
@@ -517,6 +530,28 @@ export async function getAggregatedCallLogs(
                   AND c.destination_dn_type = 'extension'
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                 GROUP BY c.call_history_id
+            ),
+            call_queues AS (
+                SELECT 
+                    dq.call_history_id,
+                    JSON_AGG(
+                        JSON_BUILD_OBJECT(
+                            'number', dq.destination_dn_number,
+                            'name', dq.queue_name
+                        )
+                    ) as queues,
+                    COUNT(*) as queue_count
+                FROM (
+                    SELECT DISTINCT 
+                        c.call_history_id,
+                        c.destination_dn_number,
+                        COALESCE(c.destination_dn_name, c.destination_dn_number) as queue_name
+                    FROM cdroutput c
+                    WHERE ${dateOnlyWhereClause}
+                      AND c.destination_dn_type = 'queue'
+                      AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                ) dq
+                GROUP BY dq.call_history_id
             )${calleeFilterCTE}
             SELECT 
                 ca.call_history_id,
@@ -555,19 +590,75 @@ export async function getAggregatedCallLogs(
                 ans.talk_duration_seconds,
                 hb.agents as handled_by_agents,
                 hb.total_talk_seconds as handled_by_total_talk,
-                hb.agent_count as handled_by_count
+                hb.agent_count as handled_by_count,
+                cq.queues as call_queues,
+                cq.queue_count
             FROM call_aggregates ca
             JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
             JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
             LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
             LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id
+            LEFT JOIN call_queues cq ON ca.call_history_id = cq.call_history_id
             ${calleeFilterJoin}
             ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
             ORDER BY ca.first_started_at DESC
             LIMIT ${limit} OFFSET ${skip}
         `;
 
-        // Count query uses same CTEs and filters to get accurate count
+        // Count query - optimize by only including expensive CTEs when filtering on them
+        const needsHandledBy = !!filters.handledBySearch?.trim();
+        const needsCallQueues = !!filters.queueSearch?.trim();
+
+        // Build conditional CTEs for count query
+        const handledByCTEForCount = needsHandledBy ? `,
+            handled_by AS (
+                SELECT 
+                    c.call_history_id,
+                    JSON_AGG(
+                        JSON_BUILD_OBJECT(
+                            'number', c.destination_dn_number,
+                            'name', COALESCE(c.destination_dn_name, c.destination_participant_name, c.destination_dn_number)
+                        ) ORDER BY c.cdr_answered_at DESC
+                    ) as agents
+                FROM cdroutput c
+                WHERE ${dateOnlyWhereClause}
+                  AND c.cdr_answered_at IS NOT NULL
+                  AND c.destination_dn_type = 'extension'
+                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                GROUP BY c.call_history_id
+            )` : '';
+
+        const callQueuesCTEForCount = needsCallQueues ? `,
+            call_queues AS (
+                SELECT 
+                    dq.call_history_id,
+                    JSON_AGG(
+                        JSON_BUILD_OBJECT(
+                            'number', dq.destination_dn_number,
+                            'name', dq.queue_name
+                        )
+                    ) as queues
+                FROM (
+                    SELECT DISTINCT 
+                        c.call_history_id,
+                        c.destination_dn_number,
+                        COALESCE(c.destination_dn_name, c.destination_dn_number) as queue_name
+                    FROM cdroutput c
+                    WHERE ${dateOnlyWhereClause}
+                      AND c.destination_dn_type = 'queue'
+                      AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                ) dq
+                GROUP BY dq.call_history_id
+            )` : '';
+
+        // Build conditional JOINs for count query
+        const handledByJoinForCount = needsHandledBy
+            ? 'LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id'
+            : '';
+        const callQueuesJoinForCount = needsCallQueues
+            ? 'LEFT JOIN call_queues cq ON ca.call_history_id = cq.call_history_id'
+            : '';
+
         const countQuery = `
             WITH call_aggregates AS (
                 SELECT 
@@ -611,29 +702,14 @@ export async function getAggregatedCallLogs(
                   AND c.destination_dn_type = 'extension'
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                 ORDER BY c.call_history_id, c.cdr_answered_at ASC
-            ),
-            handled_by AS (
-                SELECT 
-                    c.call_history_id,
-                    JSON_AGG(
-                        JSON_BUILD_OBJECT(
-                            'number', c.destination_dn_number,
-                            'name', COALESCE(c.destination_dn_name, c.destination_participant_name, c.destination_dn_number)
-                        ) ORDER BY c.cdr_answered_at DESC
-                    ) as agents
-                FROM cdroutput c
-                WHERE ${dateOnlyWhereClause}
-                  AND c.cdr_answered_at IS NOT NULL
-                  AND c.destination_dn_type = 'extension'
-                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                GROUP BY c.call_history_id
-            )${calleeFilterCTE}
+            )${handledByCTEForCount}${callQueuesCTEForCount}${calleeFilterCTE}
             SELECT COUNT(*) as total
             FROM call_aggregates ca
             JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
             JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
             LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
-            LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id
+            ${handledByJoinForCount}
+            ${callQueuesJoinForCount}
             ${calleeFilterJoin}
             ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
         `;
@@ -801,6 +877,32 @@ export async function getAggregatedCallLogs(
                 direction,
                 finalStatus,
                 wasTransferred,
+
+                // Queues data - parse from JSON
+                queues: (() => {
+                    if (!row.call_queues) return [];
+                    try {
+                        const parsed = typeof row.call_queues === 'string'
+                            ? JSON.parse(row.call_queues)
+                            : row.call_queues;
+                        return Array.isArray(parsed) ? parsed : [];
+                    } catch {
+                        return [];
+                    }
+                })(),
+                queuesDisplay: (() => {
+                    if (!row.call_queues) return "-";
+                    try {
+                        const parsed = typeof row.call_queues === 'string'
+                            ? JSON.parse(row.call_queues)
+                            : row.call_queues;
+                        if (!Array.isArray(parsed) || parsed.length === 0) return "-";
+                        const queueNames = parsed.map((q: { number: string; name: string }) => q.name || q.number);
+                        return queueNames.join(", ");
+                    } catch {
+                        return "-";
+                    }
+                })(),
             };
         });
 

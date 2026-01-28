@@ -71,6 +71,9 @@ interface LogsTableProps {
     // Handled by filter
     handledBySearch: string;
     onHandledBySearchChange: (value: string) => void;
+    // Queue filter
+    queueSearch: string;
+    onQueueSearchChange: (value: string) => void;
     // ID filter (supports * wildcard)
     idSearch: string;
     onIdSearchChange: (value: string) => void;
@@ -180,6 +183,9 @@ export function LogsTable({
     // Handled by
     handledBySearch,
     onHandledBySearchChange,
+    // Queue filter
+    queueSearch,
+    onQueueSearchChange,
     // ID filter
     idSearch,
     onIdSearchChange,
@@ -222,6 +228,7 @@ export function LogsTable({
                         </TableHead>
                         <TableHead className="w-10 text-center"></TableHead>
                         <TableHead>Traité par</TableHead>
+                        <TableHead>Queue(s)</TableHead>
                         <TableHead className="w-24 text-center">Direction</TableHead>
                         <TableHead className="w-24 text-center">Statut</TableHead>
                         <TableHead className="w-20 text-right">
@@ -277,6 +284,13 @@ export function LogsTable({
                                 value={handledBySearch}
                                 onChange={onHandledBySearchChange}
                                 placeholder="Agent..."
+                            />
+                        </TableHead>
+                        <TableHead className="py-2">
+                            <ColumnFilterInput
+                                value={queueSearch}
+                                onChange={onQueueSearchChange}
+                                placeholder="Queue..."
                             />
                         </TableHead>
                         <TableHead className="py-2">
@@ -401,6 +415,25 @@ export function LogsTable({
                                                     {log.handledBy[0].name || log.handledBy[0].number}
                                                     {log.handledBy.length > 1 && (
                                                         <span className="text-slate-400"> +{log.handledBy.length - 1}</span>
+                                                    )}
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <span className="text-xs text-slate-300">-</span>
+                                        )}
+                                    </TableCell>
+
+                                    {/* Queue(s) */}
+                                    <TableCell>
+                                        {log.queues && log.queues.length > 0 ? (
+                                            <div className="flex flex-col">
+                                                <span className="font-medium text-sm">
+                                                    {log.queues[0].number}
+                                                </span>
+                                                <span className="text-xs text-slate-500 truncate max-w-[180px]">
+                                                    {log.queues[0].name || log.queues[0].number}
+                                                    {log.queues.length > 1 && (
+                                                        <span className="text-slate-400"> +{log.queues.length - 1}</span>
                                                     )}
                                                 </span>
                                             </div>

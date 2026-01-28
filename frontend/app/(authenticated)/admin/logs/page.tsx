@@ -70,6 +70,7 @@ export default function AdminLogsPage() {
     const [callerSearch, setCallerSearch] = useState("");
     const [calleeSearch, setCalleeSearch] = useState("");
     const [handledBySearch, setHandledBySearch] = useState("");
+    const [queueSearch, setQueueSearch] = useState("");
     const [idSearch, setIdSearch] = useState("");
     const [segmentCountMin, setSegmentCountMin] = useState<number | undefined>(undefined);
     const [segmentCountMax, setSegmentCountMax] = useState<number | undefined>(undefined);
@@ -88,6 +89,7 @@ export default function AdminLogsPage() {
     const debouncedCallerSearch = useDebounce(callerSearch, 500);
     const debouncedCalleeSearch = useDebounce(calleeSearch, 500);
     const debouncedHandledBySearch = useDebounce(handledBySearch, 500);
+    const debouncedQueueSearch = useDebounce(queueSearch, 500);
     const debouncedIdSearch = useDebounce(idSearch, 500);
 
     // Build effective filters
@@ -98,6 +100,7 @@ export default function AdminLogsPage() {
         callerSearch: debouncedCallerSearch || undefined,
         calleeSearch: debouncedCalleeSearch || undefined,
         handledBySearch: debouncedHandledBySearch || undefined,
+        queueSearch: debouncedQueueSearch || undefined,
         idSearch: debouncedIdSearch || undefined,
         segmentCountMin,
         segmentCountMax,
@@ -142,6 +145,7 @@ export default function AdminLogsPage() {
         debouncedCallerSearch,
         debouncedCalleeSearch,
         debouncedHandledBySearch,
+        debouncedQueueSearch,
         debouncedIdSearch,
         selectedDirections,
         selectedStatuses,
@@ -373,6 +377,8 @@ export default function AdminLogsPage() {
                     onDurationChange={handleDurationChange}
                     handledBySearch={handledBySearch}
                     onHandledBySearchChange={setHandledBySearch}
+                    queueSearch={queueSearch}
+                    onQueueSearchChange={setQueueSearch}
                     // ID filter
                     idSearch={idSearch}
                     onIdSearchChange={setIdSearch}
