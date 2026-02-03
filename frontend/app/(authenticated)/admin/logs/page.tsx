@@ -20,7 +20,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
 import { getAggregatedCallLogs, exportCallLogsCSV } from "@/services/logs.service";
+import { getQueueMembers } from "@/services/queues.service";
 import { useDebounce } from "@/lib/use-debounce";
+import type { QueueInfo } from "@/types/queues.types";
 import type {
     AggregatedCallLog,
     CallDirection,
@@ -90,7 +92,7 @@ export default function AdminLogsPage() {
     const [callerSearch, setCallerSearch] = useState(searchParams.get("caller") || "");
     const [calleeSearch, setCalleeSearch] = useState(searchParams.get("callee") || "");
     const [handledBySearch, setHandledBySearch] = useState(searchParams.get("handledBy") || "");
-    const [queueSearch, setQueueSearch] = useState(searchParams.get("queue") || "");
+    const [selectedQueueNumber, setSelectedQueueNumber] = useState<string | null>(searchParams.get("queue") || null);
     const [idSearch, setIdSearch] = useState(searchParams.get("id") || "");
     const [segmentCountMin, setSegmentCountMin] = useState<number | undefined>(() => getInitialNumberParam("segMin"));
     const [segmentCountMax, setSegmentCountMax] = useState<number | undefined>(() => getInitialNumberParam("segMax"));
@@ -106,11 +108,13 @@ export default function AdminLogsPage() {
     // Modal state
     const [selectedCallHistoryId, setSelectedCallHistoryId] = useState<string | null>(null);
 
+    // Queues state for filter
+    const [queues, setQueues] = useState<QueueInfo[]>([]);
+
     // Debounce search inputs (500ms)
     const debouncedCallerSearch = useDebounce(callerSearch, 500);
     const debouncedCalleeSearch = useDebounce(calleeSearch, 500);
     const debouncedHandledBySearch = useDebounce(handledBySearch, 500);
-    const debouncedQueueSearch = useDebounce(queueSearch, 500);
     const debouncedIdSearch = useDebounce(idSearch, 500);
 
     // Build effective filters
@@ -123,7 +127,7 @@ export default function AdminLogsPage() {
         callerSearch: callerSearch === "" ? undefined : (debouncedCallerSearch || undefined),
         calleeSearch: calleeSearch === "" ? undefined : (debouncedCalleeSearch || undefined),
         handledBySearch: handledBySearch === "" ? undefined : (debouncedHandledBySearch || undefined),
-        queueSearch: queueSearch === "" ? undefined : (debouncedQueueSearch || undefined),
+        queueSearch: selectedQueueNumber || undefined,
         idSearch: idSearch === "" ? undefined : (debouncedIdSearch || undefined),
         segmentCountMin,
         segmentCountMax,
@@ -158,7 +162,7 @@ export default function AdminLogsPage() {
         if (debouncedCallerSearch.trim()) params.set("caller", debouncedCallerSearch.trim());
         if (debouncedCalleeSearch.trim()) params.set("callee", debouncedCalleeSearch.trim());
         if (debouncedHandledBySearch.trim()) params.set("handledBy", debouncedHandledBySearch.trim());
-        if (debouncedQueueSearch.trim()) params.set("queue", debouncedQueueSearch.trim());
+        if (selectedQueueNumber) params.set("queue", selectedQueueNumber);
         if (debouncedIdSearch.trim()) params.set("id", debouncedIdSearch.trim());
 
         // Numeric range filters
@@ -178,7 +182,7 @@ export default function AdminLogsPage() {
         debouncedCallerSearch,
         debouncedCalleeSearch,
         debouncedHandledBySearch,
-        debouncedQueueSearch,
+        selectedQueueNumber,
         debouncedIdSearch,
         segmentCountMin,
         segmentCountMax,
@@ -210,7 +214,7 @@ export default function AdminLogsPage() {
         debouncedCallerSearch,
         debouncedCalleeSearch,
         debouncedHandledBySearch,
-        debouncedQueueSearch,
+        selectedQueueNumber,
         debouncedIdSearch,
         // Reset counter triggers immediate refetch on reset
         resetCounter,
@@ -229,6 +233,19 @@ export default function AdminLogsPage() {
         fetchData();
         updateUrl();
     }, [fetchData, updateUrl]);
+
+    // Load queues for filter dropdown
+    useEffect(() => {
+        const loadQueues = async () => {
+            try {
+                const queueList = await getQueueMembers();
+                setQueues(queueList);
+            } catch (error) {
+                console.error("Error loading queues:", error);
+            }
+        };
+        loadQueues();
+    }, []);
 
     // Handlers
     const handleDateRangeChange = (range: { startDate: Date; endDate: Date }) => {
@@ -317,7 +334,7 @@ export default function AdminLogsPage() {
     };
 
     const handleRemoveQueueSearch = () => {
-        setQueueSearch("");
+        setSelectedQueueNumber(null);
         setCurrentPage(1);
     };
 
@@ -345,7 +362,7 @@ export default function AdminLogsPage() {
         setCallerSearch("");
         setCalleeSearch("");
         setHandledBySearch("");
-        setQueueSearch("");
+        setSelectedQueueNumber(null);
         setIdSearch("");
         setSegmentCountMin(undefined);
         setSegmentCountMax(undefined);
@@ -473,8 +490,12 @@ export default function AdminLogsPage() {
                     onDurationChange={handleDurationChange}
                     handledBySearch={handledBySearch}
                     onHandledBySearchChange={setHandledBySearch}
-                    queueSearch={queueSearch}
-                    onQueueSearchChange={setQueueSearch}
+                    queues={queues}
+                    selectedQueueNumber={selectedQueueNumber}
+                    onQueueSelect={(qn) => {
+                        setSelectedQueueNumber(qn);
+                        setCurrentPage(1);
+                    }}
                     // ID filter
                     idSearch={idSearch}
                     onIdSearchChange={setIdSearch}

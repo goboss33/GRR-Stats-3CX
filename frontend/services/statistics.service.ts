@@ -94,24 +94,32 @@ async function getQueueKPIs(
     // They share the same call_history_id but go through scripts/ring_groups in between.
 
     const result = await prisma.$queryRaw<any[]>`
-        WITH queue_entries AS (
-            -- All entries into this queue
-            SELECT cdr_id, call_history_id, cdr_started_at, cdr_ended_at
+        -- REFACTORED: Count by unique call_history_id (DRY - aligned with logs.service.ts)
+        -- This ensures statistics match the logs count (e.g., 673 instead of 751)
+        WITH unique_queue_calls AS (
+            -- One record per unique call (call_history_id)
+            -- Takes the FIRST entry into this queue if multiple entries exist
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                cdr_id,
+                cdr_started_at,
+                cdr_ended_at
             FROM cdroutput
             WHERE destination_dn_number = ${queueNumber}
               AND destination_dn_type = 'queue'
               AND cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_started_at ASC
         ),
         outcomes AS (
             SELECT 
-                qe.cdr_id,
-                qe.call_history_id,
-                qe.cdr_started_at,
-                qe.cdr_ended_at,
+                uqc.cdr_id,
+                uqc.call_history_id,
+                uqc.cdr_started_at,
+                uqc.cdr_ended_at,
                 -- Answered by an agent from THIS queue?
                 MAX(CASE 
-                    WHEN ans.originating_cdr_id = qe.cdr_id 
+                    WHEN ans.originating_cdr_id = uqc.cdr_id 
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
                     THEN 1 ELSE 0 END) as answered_here,
@@ -119,27 +127,27 @@ async function getQueueKPIs(
                 MAX(CASE 
                     WHEN other_q.destination_dn_type = 'queue'
                          AND other_q.destination_dn_number != ${queueNumber}
-                         AND other_q.cdr_started_at > qe.cdr_started_at
+                         AND other_q.cdr_started_at > uqc.cdr_started_at
                     THEN 1 ELSE 0 END) as forwarded_to_other_queue,
                 -- Wait time (time before answer by agent from this queue)
                 MIN(CASE 
-                    WHEN ans.originating_cdr_id = qe.cdr_id 
+                    WHEN ans.originating_cdr_id = uqc.cdr_id 
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
-                    THEN EXTRACT(EPOCH FROM (ans.cdr_answered_at - qe.cdr_started_at))
+                    THEN EXTRACT(EPOCH FROM (ans.cdr_answered_at - uqc.cdr_started_at))
                     ELSE NULL END) as wait_time_seconds,
                 -- Talk time
                 MAX(CASE 
-                    WHEN ans.originating_cdr_id = qe.cdr_id 
+                    WHEN ans.originating_cdr_id = uqc.cdr_id 
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
                     THEN EXTRACT(EPOCH FROM (ans.cdr_ended_at - ans.cdr_answered_at)) 
                     ELSE 0 END) as talk_time_seconds
-            FROM queue_entries qe
-            LEFT JOIN cdroutput ans ON ans.originating_cdr_id = qe.cdr_id
-            LEFT JOIN cdroutput other_q ON other_q.call_history_id = qe.call_history_id
-                                       AND other_q.cdr_started_at > qe.cdr_started_at
-            GROUP BY qe.cdr_id, qe.call_history_id, qe.cdr_started_at, qe.cdr_ended_at
+            FROM unique_queue_calls uqc
+            LEFT JOIN cdroutput ans ON ans.originating_cdr_id = uqc.cdr_id
+            LEFT JOIN cdroutput other_q ON other_q.call_history_id = uqc.call_history_id
+                                       AND other_q.cdr_started_at > uqc.cdr_started_at
+            GROUP BY uqc.cdr_id, uqc.call_history_id, uqc.cdr_started_at, uqc.cdr_ended_at
         ),
         final_outcomes AS (
             SELECT 
@@ -175,32 +183,37 @@ async function getQueueKPIs(
 
     // Get overflow destinations - only FIRST destination per overflow call
     const overflowDests = await prisma.$queryRaw<any[]>`
-        WITH queue_entries AS (
-            SELECT cdr_id, call_history_id, cdr_started_at
+        -- REFACTORED: Count by unique call_history_id (aligned with main KPIs query)
+        WITH unique_queue_calls AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                cdr_id,
+                cdr_started_at
             FROM cdroutput
             WHERE destination_dn_number = ${queueNumber}
               AND destination_dn_type = 'queue'
               AND cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_started_at ASC
         ),
         queue_with_answer_status AS (
             SELECT 
-                qe.cdr_id,
-                qe.call_history_id,
-                qe.cdr_started_at,
+                uqc.cdr_id,
+                uqc.call_history_id,
+                uqc.cdr_started_at,
                 MAX(CASE 
-                    WHEN ans.originating_cdr_id = qe.cdr_id 
+                    WHEN ans.originating_cdr_id = uqc.cdr_id 
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
                     THEN 1 ELSE 0 END) as answered_here
-            FROM queue_entries qe
-            LEFT JOIN cdroutput ans ON ans.originating_cdr_id = qe.cdr_id
-            GROUP BY qe.cdr_id, qe.call_history_id, qe.cdr_started_at
+            FROM unique_queue_calls uqc
+            LEFT JOIN cdroutput ans ON ans.originating_cdr_id = uqc.cdr_id
+            GROUP BY uqc.cdr_id, uqc.call_history_id, uqc.cdr_started_at
         ),
         first_overflow_destination AS (
             -- For each overflow call, get only the FIRST other queue it went to
-            SELECT DISTINCT ON (qas.cdr_id)
-                qas.cdr_id,
+            SELECT DISTINCT ON (qas.call_history_id)
+                qas.call_history_id,
                 other_q.destination_dn_number as destination,
                 other_q.destination_dn_name as destination_name
             FROM queue_with_answer_status qas
@@ -209,7 +222,7 @@ async function getQueueKPIs(
                                   AND other_q.destination_dn_number != ${queueNumber}
                                   AND other_q.cdr_started_at > qas.cdr_started_at
             WHERE qas.answered_here = 0
-            ORDER BY qas.cdr_id, other_q.cdr_started_at ASC
+            ORDER BY qas.call_history_id, other_q.cdr_started_at ASC
         )
         SELECT 
             destination,
@@ -350,29 +363,32 @@ async function getDailyTrend(
     endDate: Date
 ): Promise<DailyTrend[]> {
     const result = await prisma.$queryRaw<any[]>`
-        WITH queue_calls AS (
-            SELECT 
-                q.cdr_id,
-                DATE(q.cdr_started_at) as call_date
-            FROM cdroutput q
-            WHERE q.destination_dn_number = ${queueNumber}
-              AND q.destination_dn_type = 'queue'
-              AND q.cdr_started_at >= ${startDate}
-              AND q.cdr_started_at <= ${endDate}
+        -- REFACTORED: Count by unique call_history_id (aligned with KPIs)
+        WITH unique_queue_calls AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                cdr_id,
+                DATE(cdr_started_at) as call_date
+            FROM cdroutput
+            WHERE destination_dn_number = ${queueNumber}
+              AND destination_dn_type = 'queue'
+              AND cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_started_at ASC
         ),
         daily_stats AS (
             SELECT 
-                qc.call_date,
-                COUNT(DISTINCT qc.cdr_id) as received,
+                uqc.call_date,
+                COUNT(DISTINCT uqc.call_history_id) as received,
                 COUNT(DISTINCT CASE WHEN c.cdr_answered_at IS NOT NULL 
                                     AND c.destination_dn_type = 'extension'
-                               THEN qc.cdr_id END) as answered,
+                               THEN uqc.call_history_id END) as answered,
                 COUNT(DISTINCT CASE WHEN c.termination_reason_details = 'terminated_by_originator'
                                     AND c.cdr_answered_at IS NULL
-                               THEN qc.cdr_id END) as abandoned
-            FROM queue_calls qc
-            LEFT JOIN cdroutput c ON c.originating_cdr_id = qc.cdr_id
-            GROUP BY qc.call_date
+                               THEN uqc.call_history_id END) as abandoned
+            FROM unique_queue_calls uqc
+            LEFT JOIN cdroutput c ON c.originating_cdr_id = uqc.cdr_id
+            GROUP BY uqc.call_date
         )
         SELECT * FROM daily_stats ORDER BY call_date;
     `;
@@ -396,29 +412,32 @@ async function getHourlyTrend(
     endDate: Date
 ): Promise<HourlyTrend[]> {
     const result = await prisma.$queryRaw<any[]>`
-        WITH queue_calls AS (
-            SELECT 
-                q.cdr_id,
-                EXTRACT(HOUR FROM q.cdr_started_at) as call_hour
-            FROM cdroutput q
-            WHERE q.destination_dn_number = ${queueNumber}
-              AND q.destination_dn_type = 'queue'
-              AND q.cdr_started_at >= ${startDate}
-              AND q.cdr_started_at <= ${endDate}
+        -- REFACTORED: Count by unique call_history_id (aligned with KPIs)
+        WITH unique_queue_calls AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                cdr_id,
+                EXTRACT(HOUR FROM cdr_started_at) as call_hour
+            FROM cdroutput
+            WHERE destination_dn_number = ${queueNumber}
+              AND destination_dn_type = 'queue'
+              AND cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_started_at ASC
         ),
         hourly_stats AS (
             SELECT 
-                qc.call_hour,
-                COUNT(DISTINCT qc.cdr_id) as received,
+                uqc.call_hour,
+                COUNT(DISTINCT uqc.call_history_id) as received,
                 COUNT(DISTINCT CASE WHEN c.cdr_answered_at IS NOT NULL 
                                     AND c.destination_dn_type = 'extension'
-                               THEN qc.cdr_id END) as answered,
+                               THEN uqc.call_history_id END) as answered,
                 COUNT(DISTINCT CASE WHEN c.termination_reason_details = 'terminated_by_originator'
                                     AND c.cdr_answered_at IS NULL
-                               THEN qc.cdr_id END) as abandoned
-            FROM queue_calls qc
-            LEFT JOIN cdroutput c ON c.originating_cdr_id = qc.cdr_id
-            GROUP BY qc.call_hour
+                               THEN uqc.call_history_id END) as abandoned
+            FROM unique_queue_calls uqc
+            LEFT JOIN cdroutput c ON c.originating_cdr_id = uqc.cdr_id
+            GROUP BY uqc.call_hour
         )
         SELECT * FROM hourly_stats ORDER BY call_hour;
     `;

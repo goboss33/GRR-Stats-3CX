@@ -4,3 +4,4 @@ export { ColumnFilterDirection } from "./ColumnFilterDirection";
 export { ColumnFilterStatus } from "./ColumnFilterStatus";
 export { ColumnFilterDuration } from "./ColumnFilterDuration";
 export { ColumnFilterSegmentCount } from "./ColumnFilterSegmentCount";
+export { ColumnFilterQueue } from "./ColumnFilterQueue";

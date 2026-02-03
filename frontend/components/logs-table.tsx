@@ -36,7 +36,9 @@ import {
     ColumnFilterStatus,
     ColumnFilterDuration,
     ColumnFilterSegmentCount,
+    ColumnFilterQueue,
 } from "@/components/column-filters";
+import { QueueInfo } from "@/types/queues.types";
 
 import type {
     AggregatedCallLog,
@@ -72,8 +74,9 @@ interface LogsTableProps {
     handledBySearch: string;
     onHandledBySearchChange: (value: string) => void;
     // Queue filter
-    queueSearch: string;
-    onQueueSearchChange: (value: string) => void;
+    queues: QueueInfo[];
+    selectedQueueNumber: string | null;
+    onQueueSelect: (queueNumber: string | null) => void;
     // ID filter (supports * wildcard)
     idSearch: string;
     onIdSearchChange: (value: string) => void;
@@ -184,8 +187,9 @@ export function LogsTable({
     handledBySearch,
     onHandledBySearchChange,
     // Queue filter
-    queueSearch,
-    onQueueSearchChange,
+    queues,
+    selectedQueueNumber,
+    onQueueSelect,
     // ID filter
     idSearch,
     onIdSearchChange,
@@ -287,9 +291,10 @@ export function LogsTable({
                             />
                         </TableHead>
                         <TableHead className="py-2">
-                            <ColumnFilterInput
-                                value={queueSearch}
-                                onChange={onQueueSearchChange}
+                            <ColumnFilterQueue
+                                queues={queues}
+                                selectedQueueNumber={selectedQueueNumber}
+                                onSelect={onQueueSelect}
                                 placeholder="Queue..."
                             />
                         </TableHead>
