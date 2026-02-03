@@ -286,11 +286,17 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
         return ''; // No filter needed
     }
     const conditions: string[] = [];
-    // Status detection logic (aligned with determineSegmentCategory):
+
+    // Status detection logic - MUST MATCH the finalStatus logic in getAggregatedCallLogs:
     // 1. voicemail: last_dest_type or last_dest_entity_type is voicemail
     // 2. busy: termination_reason_details contains 'busy'
-    // 3. answered: last segment was answered (ls.cdr_answered_at IS NOT NULL)
-    // 4. abandoned: call not answered (merged unanswered into this)
+    // 3. answered: for system types (queue, ring_group, etc.), requires ans.answered_at
+    //              for other types, requires ls.cdr_answered_at AND duration > 1s
+    // 4. abandoned: not answered (for system types: answered by system but no human answer)
+
+    // System types that need special handling
+    const systemTypes = "'queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking'";
+    const systemEntityTypes = "'queue', 'ivr'";
 
     if (statuses.includes('voicemail')) {
         // Messagerie: le dernier segment est du voicemail
@@ -301,12 +307,48 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
         conditions.push("(ls.termination_reason_details ILIKE '%busy%')");
     }
     if (statuses.includes('answered')) {
-        // Répondu: dernier segment répondu (pas voicemail, pas busy) ET durée > 1s
-        conditions.push("(ls.cdr_answered_at IS NOT NULL AND COALESCE(ls.last_dest_entity_type, '') NOT IN ('voicemail') AND COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%' AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1)");
+        // Répondu: 
+        // - Pour les types système: ans.answered_at doit exister (un humain a répondu)
+        // - Pour les autres types: ls.cdr_answered_at ET durée > 1s
+        conditions.push(`(
+            COALESCE(ls.last_dest_entity_type, '') NOT IN ('voicemail') 
+            AND COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%'
+            AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail')
+            AND (
+                -- System types: need human answer (from answered_segments)
+                (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
+                AND ans.answered_at IS NOT NULL
+                OR
+                -- Non-system types: standard logic
+                (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
+                AND ls.cdr_answered_at IS NOT NULL 
+                AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
+            )
+        )`);
     }
     if (statuses.includes('abandoned')) {
-        // Abandonné: appel non répondu (entrant OU sortant)
-        conditions.push("(ls.cdr_answered_at IS NULL AND COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%' AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail') AND COALESCE(ls.last_dest_entity_type, '') != 'voicemail')");
+        // Abandonné:
+        // - Pour les types système: le système a répondu mais aucun humain n'a répondu (ans.answered_at IS NULL)
+        // - Pour les autres types: ls.cdr_answered_at IS NULL ou durée <= 1s
+        conditions.push(`(
+            COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%' 
+            AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail') 
+            AND COALESCE(ls.last_dest_entity_type, '') != 'voicemail'
+            AND (
+                -- System types: answered by system but no human answer
+                (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
+                AND ls.cdr_answered_at IS NOT NULL
+                AND ans.answered_at IS NULL
+                OR
+                -- System types: not even answered by system
+                (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
+                AND ls.cdr_answered_at IS NULL
+                OR
+                -- Non-system types: not answered or very short
+                (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
+                AND (ls.cdr_answered_at IS NULL OR EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) <= 1)
+            )
+        )`);
     }
     return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
 }
