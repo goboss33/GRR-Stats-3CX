@@ -13,25 +13,25 @@ import {
 
 interface AgentPerformanceTableProps {
     agents: AgentStats[];
+    totalQueueCalls: number;
 }
 
-type SortField = "name" | "callsReceived" | "attempts" | "answered" | "transferred" | "answerRate" | "availabilityRate" | "avgHandlingTimeSeconds" | "totalHandlingTimeSeconds";
+type SortField = "name" | "callsReceived" | "availabilityRate" | "answered" | "transferred" | "answerRate" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds";
 type SortDirection = "asc" | "desc";
 
-// Tooltips for each column header
+// Column order: Agent, Appels reçus, Taux dispo, Répondus, Transférés, Taux rép, Durée totale, Durée moyenne
 const columnTooltips: Record<string, string> = {
     name: "Nom de l'agent et numéro d'extension",
-    callsReceived: "Nombre d'appels uniques de la queue pour lesquels le téléphone de l'agent a sonné",
-    attempts: "Nombre total de sollicitations (sonneries). Un même appel peut faire sonner un agent plusieurs fois si re-polled",
+    callsReceived: "Nombre d'appels uniques de la queue pour lesquels le téléphone de l'agent a sonné, sur le total des appels de la queue",
+    availabilityRate: "Taux de disponibilité : pourcentage des appels de la queue pour lesquels l'agent était disponible (pas en ligne, pas en pause)",
     answered: "Nombre d'appels de la queue auxquels l'agent a effectivement répondu",
-    transferred: "Appels répondus par l'agent puis transférés activement vers un autre agent ou une autre queue",
+    transferred: "Appels répondus par l'agent puis transférés vers quelqu'un en dehors de cette queue",
     answerRate: "Taux de réponse : Répondus / Appels reçus. Indique l'efficacité de l'agent à décrocher quand sollicité",
-    availabilityRate: "Taux de disponibilité : Appels reçus / Total appels queue. Indique pour quel pourcentage des appels l'agent était disponible (pas en ligne, pas en pause)",
-    avgHandlingTimeSeconds: "Durée moyenne de conversation par appel répondu",
     totalHandlingTimeSeconds: "Durée totale cumulée passée en conversation sur la période",
+    avgHandlingTimeSeconds: "Durée moyenne de conversation par appel répondu",
 };
 
-export function AgentPerformanceTable({ agents }: AgentPerformanceTableProps) {
+export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerformanceTableProps) {
     const [sortField, setSortField] = useState<SortField>("answered");
     const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
@@ -93,12 +93,11 @@ export function AgentPerformanceTable({ agents }: AgentPerformanceTableProps) {
     const totals = agents.reduce(
         (acc, agent) => ({
             callsReceived: acc.callsReceived + agent.callsReceived,
-            attempts: acc.attempts + agent.attempts,
             answered: acc.answered + agent.answered,
             transferred: acc.transferred + agent.transferred,
             totalHandlingTimeSeconds: acc.totalHandlingTimeSeconds + agent.totalHandlingTimeSeconds,
         }),
-        { callsReceived: 0, attempts: 0, answered: 0, transferred: 0, totalHandlingTimeSeconds: 0 }
+        { callsReceived: 0, answered: 0, transferred: 0, totalHandlingTimeSeconds: 0 }
     );
     const totalAnswerRate = totals.callsReceived > 0 ? Math.round((totals.answered / totals.callsReceived) * 100) : 0;
     const totalAvgHandling = totals.answered > 0 ? Math.round(totals.totalHandlingTimeSeconds / totals.answered) : 0;
@@ -160,13 +159,12 @@ export function AgentPerformanceTable({ agents }: AgentPerformanceTableProps) {
                                 <tr>
                                     <SortHeader field="name" label="Agent" />
                                     <SortHeader field="callsReceived" label="Appels reçus" />
-                                    <SortHeader field="attempts" label="Sollicitations" />
+                                    <SortHeader field="availabilityRate" label="Taux dispo." />
                                     <SortHeader field="answered" label="Répondus" />
                                     <SortHeader field="transferred" label="Transférés" />
                                     <SortHeader field="answerRate" label="Taux rép." />
-                                    <SortHeader field="availabilityRate" label="Taux dispo." />
-                                    <SortHeader field="avgHandlingTimeSeconds" label="Durée moy." />
                                     <SortHeader field="totalHandlingTimeSeconds" label="Durée totale" />
+                                    <SortHeader field="avgHandlingTimeSeconds" label="Durée moy." />
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -178,12 +176,19 @@ export function AgentPerformanceTable({ agents }: AgentPerformanceTableProps) {
                                                 <p className="text-xs text-slate-500">Ext. {agent.extension}</p>
                                             </div>
                                         </td>
-                                        <td className="px-3 py-3 text-slate-700">{agent.callsReceived}</td>
-                                        <td className="px-3 py-3 text-slate-500 text-sm">{agent.attempts}</td>
+                                        <td className="px-3 py-3">
+                                            <span className="font-semibold text-slate-900">{agent.callsReceived}</span>
+                                            <span className="text-slate-400 text-sm">/{totalQueueCalls}</span>
+                                        </td>
+                                        <td className="px-3 py-3">
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getAvailabilityColor(agent.availabilityRate)}`}>
+                                                {agent.availabilityRate}%
+                                            </span>
+                                        </td>
                                         <td className="px-3 py-3 font-semibold text-slate-900">{agent.answered}</td>
                                         <td className="px-3 py-3">
                                             {agent.transferred > 0 ? (
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700">
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-50 text-purple-700">
                                                     {agent.transferred}
                                                 </span>
                                             ) : (
@@ -195,16 +200,11 @@ export function AgentPerformanceTable({ agents }: AgentPerformanceTableProps) {
                                                 {agent.answerRate}%
                                             </span>
                                         </td>
-                                        <td className="px-3 py-3">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getAvailabilityColor(agent.availabilityRate)}`}>
-                                                {agent.availabilityRate}%
-                                            </span>
+                                        <td className="px-3 py-3 text-slate-700">
+                                            {formatDurationHMS(agent.totalHandlingTimeSeconds)}
                                         </td>
                                         <td className="px-3 py-3 text-slate-700">
                                             {formatDuration(agent.avgHandlingTimeSeconds)}
-                                        </td>
-                                        <td className="px-3 py-3 text-slate-700">
-                                            {formatDurationHMS(agent.totalHandlingTimeSeconds)}
                                         </td>
                                     </tr>
                                 ))}
@@ -213,8 +213,11 @@ export function AgentPerformanceTable({ agents }: AgentPerformanceTableProps) {
                             <tfoot className="bg-slate-100 border-t-2 border-slate-300">
                                 <tr className="font-semibold">
                                     <td className="px-3 py-3 text-slate-800">TOTAL</td>
-                                    <td className="px-3 py-3 text-slate-800">{totals.callsReceived}</td>
-                                    <td className="px-3 py-3 text-slate-600 text-sm">{totals.attempts}</td>
+                                    <td className="px-3 py-3">
+                                        <span className="text-slate-800">{totals.callsReceived}</span>
+                                        <span className="text-slate-400 text-sm">/{totalQueueCalls}</span>
+                                    </td>
+                                    <td className="px-3 py-3 text-slate-400">—</td>
                                     <td className="px-3 py-3 text-slate-900">{totals.answered}</td>
                                     <td className="px-3 py-3 text-slate-800">{totals.transferred}</td>
                                     <td className="px-3 py-3">
@@ -222,12 +225,11 @@ export function AgentPerformanceTable({ agents }: AgentPerformanceTableProps) {
                                             {totalAnswerRate}%
                                         </span>
                                     </td>
-                                    <td className="px-3 py-3 text-slate-400">—</td>
-                                    <td className="px-3 py-3 text-slate-800">
-                                        {formatDuration(totalAvgHandling)}
-                                    </td>
                                     <td className="px-3 py-3 text-slate-800">
                                         {formatDurationHMS(totals.totalHandlingTimeSeconds)}
+                                    </td>
+                                    <td className="px-3 py-3 text-slate-800">
+                                        {formatDuration(totalAvgHandling)}
                                     </td>
                                 </tr>
                             </tfoot>

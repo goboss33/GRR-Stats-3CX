@@ -356,21 +356,33 @@ async function getAgentStats(
               AND cdr_started_at <= ${endDate}
             ORDER BY call_history_id, cdr_started_at ASC
         ),
+        queue_agents AS (
+            -- All extensions that are agents of this queue
+            SELECT DISTINCT c.destination_dn_number as extension
+            FROM unique_queue_calls uqc
+            JOIN cdroutput c ON c.originating_cdr_id = uqc.cdr_id
+            WHERE c.destination_dn_type = 'extension'
+              AND c.cdr_answered_at IS NOT NULL
+        ),
         agent_activity AS (
             SELECT 
                 c.destination_dn_number as extension,
                 c.destination_dn_name as name,
-                -- Sollicitations: total times phone rang (polling)
-                COUNT(CASE WHEN c.creation_forward_reason = 'polling' THEN 1 END) as attempts,
                 -- Appels reçus: unique calls where phone rang
                 COUNT(DISTINCT CASE WHEN c.creation_forward_reason = 'polling' THEN qc.call_history_id END) as calls_received,
                 -- Calls answered from queue
                 COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL 
                            AND c.creation_forward_reason = 'polling'
                       THEN 1 END) as answered,
-                -- Answered then transferred out
+                -- Transferred EXTERNALLY (destination NOT in queue agents, and NOT a technical entry)
                 COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL
                            AND c.termination_reason = 'continued_in'
+                           AND EXISTS (
+                               SELECT 1 FROM cdroutput dest
+                               WHERE dest.cdr_id = c.continued_in_cdr_id
+                                 AND dest.destination_dn_type IN ('extension', 'queue')
+                                 AND dest.destination_dn_number NOT IN (SELECT extension FROM queue_agents)
+                           )
                       THEN 1 END) as transferred,
                 -- Avg handling time (only for answered calls)
                 AVG(CASE WHEN c.cdr_answered_at IS NOT NULL 
@@ -386,7 +398,6 @@ async function getAgentStats(
         SELECT 
             extension,
             name,
-            attempts,
             calls_received,
             answered,
             transferred,
@@ -398,7 +409,6 @@ async function getAgentStats(
     `;
 
     return result.map((row: any) => {
-        const attempts = Number(row.attempts || 0);
         const callsReceived = Number(row.calls_received || 0);
         const answered = Number(row.answered || 0);
         const transferred = Number(row.transferred || 0);
@@ -407,7 +417,7 @@ async function getAgentStats(
             extension: row.extension,
             name: row.name || row.extension,
             callsReceived,
-            attempts,
+            attempts: 0, // deprecated, kept for type compat
             answered,
             transferred,
             answerRate: callsReceived > 0 ? Math.round((answered / callsReceived) * 100) : 0,
