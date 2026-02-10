@@ -250,6 +250,7 @@ async function getQueueKPIs(
     }));
 
     // Get transfer destinations (answered then transferred by agent)
+    // Only show transfers OUTSIDE the queue (exclude queue member agents + technical destinations)
     const transferDests = await prisma.$queryRaw<any[]>`
         WITH unique_queue_calls AS (
             SELECT DISTINCT ON (call_history_id)
@@ -262,6 +263,14 @@ async function getQueueKPIs(
               AND cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
             ORDER BY call_history_id, cdr_started_at ASC
+        ),
+        queue_agents AS (
+            -- Get all extensions that are agents of this queue
+            SELECT DISTINCT c.destination_dn_number as extension
+            FROM unique_queue_calls uqc
+            JOIN cdroutput c ON c.originating_cdr_id = uqc.cdr_id
+            WHERE c.destination_dn_type = 'extension'
+              AND c.cdr_answered_at IS NOT NULL
         ),
         agent_transferred AS (
             -- Find agents who answered from this queue and then transferred
@@ -276,12 +285,15 @@ async function getQueueKPIs(
         ),
         transfer_destinations AS (
             -- Follow continued_in_cdr_id to find the transfer destination
+            -- Exclude queue member agents and technical destinations
             SELECT
                 dest.destination_dn_number as destination,
                 dest.destination_dn_name as destination_name,
                 dest.destination_dn_type as destination_type
             FROM agent_transferred at_
             JOIN cdroutput dest ON dest.cdr_id = at_.continued_in_cdr_id
+            WHERE dest.destination_dn_type IN ('extension', 'queue')
+              AND dest.destination_dn_number NOT IN (SELECT extension FROM queue_agents)
         )
         SELECT 
             destination,
@@ -293,19 +305,22 @@ async function getQueueKPIs(
         ORDER BY count DESC;
     `;
 
-    const transferDestinations: TransferDestination[] = transferDests.map((d) => ({
+    const transferDestinations: TransferDestination[] = transferDests.map((d: any) => ({
         destination: d.destination,
         destinationName: d.destination_name || d.destination,
         destinationType: d.destination_type || 'unknown',
         count: Number(d.count),
     }));
 
+    // Compute external transfer count from filtered destinations
+    const externalTransferCount = transferDestinations.reduce((sum, d) => sum + d.count, 0);
+
     const totalCalls = Number(row.total_calls || 0);
 
     return {
         callsReceived: totalCalls,
         callsAnswered: Number(row.answered || 0),
-        callsAnsweredAndTransferred: Number(row.answered_and_transferred || 0),
+        callsAnsweredAndTransferred: externalTransferCount,
         callsAbandoned: Number(row.abandoned || 0),
         abandonedBefore10s: Number(row.abandoned_before_10s || 0),
         abandonedAfter10s: Number(row.abandoned_after_10s || 0),
@@ -328,20 +343,27 @@ async function getAgentStats(
     totalQueueCalls: number
 ): Promise<AgentStats[]> {
     const result = await prisma.$queryRaw<any[]>`
-        WITH queue_calls AS (
-            SELECT q.cdr_id, q.call_history_id
-            FROM cdroutput q
-            WHERE q.destination_dn_number = ${queueNumber}
-              AND q.destination_dn_type = 'queue'
-              AND q.cdr_started_at >= ${startDate}
-              AND q.cdr_started_at <= ${endDate}
+        WITH unique_queue_calls AS (
+            -- Aligned with KPIs: DISTINCT ON call_history_id to avoid double-counting
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                cdr_id,
+                cdr_started_at
+            FROM cdroutput
+            WHERE destination_dn_number = ${queueNumber}
+              AND destination_dn_type = 'queue'
+              AND cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_started_at ASC
         ),
         agent_activity AS (
             SELECT 
                 c.destination_dn_number as extension,
                 c.destination_dn_name as name,
-                -- Total attempts from queue (agent's phone rang)
+                -- Sollicitations: total times phone rang (polling)
                 COUNT(CASE WHEN c.creation_forward_reason = 'polling' THEN 1 END) as attempts,
+                -- Appels reçus: unique calls where phone rang
+                COUNT(DISTINCT CASE WHEN c.creation_forward_reason = 'polling' THEN qc.call_history_id END) as calls_received,
                 -- Calls answered from queue
                 COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL 
                            AND c.creation_forward_reason = 'polling'
@@ -356,7 +378,7 @@ async function getAgentStats(
                 -- Total handling time
                 SUM(CASE WHEN c.cdr_answered_at IS NOT NULL 
                     THEN EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) ELSE 0 END) as total_handling_time
-            FROM queue_calls qc
+            FROM unique_queue_calls qc
             JOIN cdroutput c ON c.originating_cdr_id = qc.cdr_id
             WHERE c.destination_dn_type = 'extension'
             GROUP BY c.destination_dn_number, c.destination_dn_name
@@ -365,6 +387,7 @@ async function getAgentStats(
             extension,
             name,
             attempts,
+            calls_received,
             answered,
             transferred,
             avg_handling_time,
@@ -374,19 +397,21 @@ async function getAgentStats(
         ORDER BY answered DESC;
     `;
 
-    return result.map((row) => {
+    return result.map((row: any) => {
         const attempts = Number(row.attempts || 0);
+        const callsReceived = Number(row.calls_received || 0);
         const answered = Number(row.answered || 0);
         const transferred = Number(row.transferred || 0);
 
         return {
             extension: row.extension,
             name: row.name || row.extension,
+            callsReceived,
             attempts,
             answered,
             transferred,
-            answerRate: attempts > 0 ? Math.round((answered / attempts) * 100) : 0,
-            availabilityRate: totalQueueCalls > 0 ? Math.round((attempts / totalQueueCalls) * 100) : 0,
+            answerRate: callsReceived > 0 ? Math.round((answered / callsReceived) * 100) : 0,
+            availabilityRate: totalQueueCalls > 0 ? Math.round((callsReceived / totalQueueCalls) * 100) : 0,
             avgHandlingTimeSeconds: Math.round(Number(row.avg_handling_time || 0)),
             totalHandlingTimeSeconds: Math.round(Number(row.total_handling_time || 0)),
         };

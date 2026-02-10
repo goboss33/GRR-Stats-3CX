@@ -31,11 +31,12 @@ export interface TransferDestination {
 export interface AgentStats {
     extension: string;
     name: string;
-    attempts: number;               // Nombre de tentatives (sonneries via queue)
-    answered: number;               // Appels répondus via la queue
-    transferred: number;            // Appels répondus puis transférés
-    answerRate: number;              // answered / attempts (%)
-    availabilityRate: number;        // attempts / totalQueueCalls (%)
+    callsReceived: number;           // Appels uniques reçus (DISTINCT call_history_id)
+    attempts: number;                // Sollicitations (total sonneries via queue)
+    answered: number;                // Appels répondus via la queue
+    transferred: number;             // Appels répondus puis transférés
+    answerRate: number;              // answered / callsReceived (%)
+    availabilityRate: number;        // callsReceived / totalQueueCalls (%)
     avgHandlingTimeSeconds: number;
     totalHandlingTimeSeconds: number; // Durée totale au tel
 }
