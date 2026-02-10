@@ -3,7 +3,7 @@
 export interface QueueKPIs {
     callsReceived: number;        // Appels entrant dans la queue (hors voicemail)
     callsAnswered: number;        // Répondus par un agent
-    callsAnsweredAndTransferred: number; // Répondus puis transférés (sous-ensemble de callsAnswered)
+    callsAnsweredAndTransferred: number; // Répondus puis transférés hors queue (sous-ensemble de callsAnswered)
     callsAbandoned: number;       // Abandonnés total
     abandonedBefore10s: number;   // Abandonnés < 10s
     abandonedAfter10s: number;    // Abandonnés >= 10s
@@ -31,14 +31,18 @@ export interface TransferDestination {
 export interface AgentStats {
     extension: string;
     name: string;
-    callsReceived: number;           // Appels uniques reçus (DISTINCT call_history_id)
-    attempts: number;                // Sollicitations (total sonneries via queue)
+    // Queue stats
+    callsReceived: number;           // Appels uniques queue où le tel a sonné (DISTINCT call_history_id)
     answered: number;                // Appels répondus via la queue
-    transferred: number;             // Appels répondus puis transférés
-    answerRate: number;              // answered / callsReceived (%)
-    availabilityRate: number;        // callsReceived / totalQueueCalls (%)
-    avgHandlingTimeSeconds: number;
-    totalHandlingTimeSeconds: number; // Durée totale au tel
+    transferred: number;             // Appels transférés hors queue après réponse
+    // Direct stats
+    directReceived: number;          // Appels directs reçus
+    directAnswered: number;          // Appels directs répondus
+    directTalkTimeSeconds: number;   // Durée tel directs
+    // Computed metrics
+    answerRate: number;              // GLOBAL: (answered + directAnswered) / (callsReceived + directReceived) (%)
+    avgHandlingTimeSeconds: number;  // Moyenne combinée queue + direct
+    totalHandlingTimeSeconds: number; // Durée totale tel queue + direct
 }
 
 export interface DailyTrend {

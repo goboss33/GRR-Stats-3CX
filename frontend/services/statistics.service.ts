@@ -357,24 +357,23 @@ async function getAgentStats(
             ORDER BY call_history_id, cdr_started_at ASC
         ),
         queue_agents AS (
-            -- All extensions that are agents of this queue
+            -- All extensions that were polled by this queue
             SELECT DISTINCT c.destination_dn_number as extension
             FROM unique_queue_calls uqc
             JOIN cdroutput c ON c.originating_cdr_id = uqc.cdr_id
             WHERE c.destination_dn_type = 'extension'
-              AND c.cdr_answered_at IS NOT NULL
         ),
         agent_activity AS (
             SELECT 
                 c.destination_dn_number as extension,
                 c.destination_dn_name as name,
-                -- Appels reçus: unique calls where phone rang
+                -- Appels reçus queue: unique calls where phone rang
                 COUNT(DISTINCT CASE WHEN c.creation_forward_reason = 'polling' THEN qc.call_history_id END) as calls_received,
                 -- Calls answered from queue
                 COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL 
                            AND c.creation_forward_reason = 'polling'
                       THEN 1 END) as answered,
-                -- Transferred EXTERNALLY (destination NOT in queue agents, and NOT a technical entry)
+                -- Transferred EXTERNALLY (destination NOT in queue agents)
                 COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL
                            AND c.termination_reason = 'continued_in'
                            AND EXISTS (
@@ -384,46 +383,78 @@ async function getAgentStats(
                                  AND dest.destination_dn_number NOT IN (SELECT extension FROM queue_agents)
                            )
                       THEN 1 END) as transferred,
-                -- Avg handling time (only for answered calls)
+                -- Queue handling time (only answered)
                 AVG(CASE WHEN c.cdr_answered_at IS NOT NULL 
                     THEN EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) ELSE NULL END) as avg_handling_time,
-                -- Total handling time
                 SUM(CASE WHEN c.cdr_answered_at IS NOT NULL 
                     THEN EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) ELSE 0 END) as total_handling_time
             FROM unique_queue_calls qc
             JOIN cdroutput c ON c.originating_cdr_id = qc.cdr_id
             WHERE c.destination_dn_type = 'extension'
             GROUP BY c.destination_dn_number, c.destination_dn_name
+        ),
+        direct_calls AS (
+            -- Appels directs (non-queue) reçus par les agents de cette queue sur la même période
+            SELECT 
+                c.destination_dn_number as extension,
+                COUNT(*) as direct_received,
+                COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL THEN 1 END) as direct_answered,
+                SUM(CASE WHEN c.cdr_answered_at IS NOT NULL 
+                    THEN EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) ELSE 0 END) as direct_talk_time
+            FROM cdroutput c
+            WHERE c.destination_dn_type = 'extension'
+              AND c.destination_dn_number IN (SELECT extension FROM queue_agents)
+              AND c.cdr_started_at >= ${startDate}
+              AND c.cdr_started_at <= ${endDate}
+              AND (c.creation_forward_reason IS DISTINCT FROM 'polling')
+              AND NOT EXISTS (
+                  -- Exclude calls that originated from this queue (avoid counting queue sub-legs)
+                  SELECT 1 FROM unique_queue_calls uqc
+                  WHERE uqc.cdr_id = c.originating_cdr_id
+              )
+            GROUP BY c.destination_dn_number
         )
         SELECT 
-            extension,
-            name,
-            calls_received,
-            answered,
-            transferred,
-            avg_handling_time,
-            total_handling_time
-        FROM agent_activity
-        WHERE answered > 0
-        ORDER BY answered DESC;
+            aa.extension,
+            aa.name,
+            aa.calls_received,
+            aa.answered,
+            aa.transferred,
+            aa.avg_handling_time,
+            aa.total_handling_time,
+            COALESCE(dc.direct_received, 0) as direct_received,
+            COALESCE(dc.direct_answered, 0) as direct_answered,
+            COALESCE(dc.direct_talk_time, 0) as direct_talk_time
+        FROM agent_activity aa
+        LEFT JOIN direct_calls dc ON dc.extension = aa.extension
+        WHERE aa.answered > 0 OR COALESCE(dc.direct_answered, 0) > 0
+        ORDER BY aa.answered DESC;
     `;
 
     return result.map((row: any) => {
         const callsReceived = Number(row.calls_received || 0);
         const answered = Number(row.answered || 0);
         const transferred = Number(row.transferred || 0);
+        const directReceived = Number(row.direct_received || 0);
+        const directAnswered = Number(row.direct_answered || 0);
+        const directTalkTime = Math.round(Number(row.direct_talk_time || 0));
+        const queueTalkTime = Math.round(Number(row.total_handling_time || 0));
+
+        const totalReceived = callsReceived + directReceived;
+        const totalAnswered = answered + directAnswered;
 
         return {
             extension: row.extension,
             name: row.name || row.extension,
             callsReceived,
-            attempts: 0, // deprecated, kept for type compat
             answered,
             transferred,
-            answerRate: callsReceived > 0 ? Math.round((answered / callsReceived) * 100) : 0,
-            availabilityRate: totalQueueCalls > 0 ? Math.round((callsReceived / totalQueueCalls) * 100) : 0,
-            avgHandlingTimeSeconds: Math.round(Number(row.avg_handling_time || 0)),
-            totalHandlingTimeSeconds: Math.round(Number(row.total_handling_time || 0)),
+            directReceived,
+            directAnswered,
+            directTalkTimeSeconds: directTalkTime,
+            answerRate: totalReceived > 0 ? Math.round((totalAnswered / totalReceived) * 100) : 0,
+            avgHandlingTimeSeconds: totalAnswered > 0 ? Math.round((queueTalkTime + directTalkTime) / totalAnswered) : 0,
+            totalHandlingTimeSeconds: queueTalkTime + directTalkTime,
         };
     });
 }
