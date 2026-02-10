@@ -3,7 +3,7 @@
 import { AgentStats } from "@/types/statistics.types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, ArrowUpDown, Info } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
     Tooltip,
     TooltipContent,
@@ -16,22 +16,60 @@ interface AgentPerformanceTableProps {
     totalQueueCalls: number;
 }
 
-type SortField = "name" | "answered" | "directAnswered" | "answerRate" | "transferred" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds";
+type SortField = "name" | "answered" | "directAnswered" | "transferred" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds" | "score";
 type SortDirection = "asc" | "desc";
 
 const columnTooltips: Record<string, string> = {
     name: "Nom de l'agent, extension, et jauge de charge visuelle (vert = queue, bleu = directs)",
     answered: "Appels répondus via la queue / total d'appels entrés dans la queue",
     directAnswered: "Appels directs répondus / appels directs reçus par l'agent",
-    answerRate: "Taux de réponse global : (répondus queue + répondus directs) / (reçus queue + reçus directs)",
     transferred: "Appels répondus puis transférés vers quelqu'un en dehors de cette queue",
     totalHandlingTimeSeconds: "Durée totale cumulée en conversation (queue + directs)",
     avgHandlingTimeSeconds: "Durée moyenne de conversation par appel répondu (queue + directs)",
+    score: "Score de performance (0–100). Basé sur : 60% volume d'appels traités par rapport à la moyenne de l'équipe + 40% taux de décroché sur les appels directs. Plus le score est élevé, plus l'agent est performant.",
 };
 
+// Compute performance score for an agent
+function computeScore(agent: AgentStats, avgTotalCalls: number): number {
+    const totalCalls = agent.answered + agent.directAnswered;
+
+    // Volume component (60%): relative to team average, capped at 60
+    const volumeScore = avgTotalCalls > 0
+        ? Math.min((totalCalls / avgTotalCalls) * 60, 60)
+        : 0;
+
+    // Reactivity component (40%) : direct pickup rate. If no directs received, full score.
+    const reactivityScore = agent.directReceived > 0
+        ? (agent.directAnswered / agent.directReceived) * 40
+        : 40;
+
+    return Math.round(volumeScore + reactivityScore);
+}
+
+function getScoreColor(score: number): string {
+    if (score >= 70) return "text-emerald-700 bg-emerald-50 border-emerald-200";
+    if (score >= 40) return "text-amber-700 bg-amber-50 border-amber-200";
+    return "text-red-700 bg-red-50 border-red-200";
+}
+
 export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerformanceTableProps) {
-    const [sortField, setSortField] = useState<SortField>("answered");
+    const [sortField, setSortField] = useState<SortField>("score");
     const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+
+    // Average total calls per agent (for score calculation)
+    const avgTotalCalls = useMemo(() => {
+        if (agents.length === 0) return 0;
+        const totalAll = agents.reduce((sum, a) => sum + a.answered + a.directAnswered, 0);
+        return totalAll / agents.length;
+    }, [agents]);
+
+    // Compute scores for all agents
+    const agentsWithScores = useMemo(() => {
+        return agents.map(agent => ({
+            ...agent,
+            score: computeScore(agent, avgTotalCalls),
+        }));
+    }, [agents, avgTotalCalls]);
 
     const handleSort = (field: SortField) => {
         if (sortField === field) {
@@ -42,7 +80,7 @@ export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerforma
         }
     };
 
-    const sortedAgents = [...agents].sort((a, b) => {
+    const sortedAgents = [...agentsWithScores].sort((a, b) => {
         const aVal = a[sortField];
         const bVal = b[sortField];
 
@@ -68,23 +106,17 @@ export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerforma
         if (seconds < 60) return `${seconds}s`;
         const hours = Math.floor(seconds / 3600);
         const mins = Math.floor((seconds % 3600) / 60);
-        const secs = seconds % 60;
         if (hours > 0) {
             return `${hours}h ${mins}m`;
         }
+        const secs = seconds % 60;
         return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
-    };
-
-    const getAnswerRateColor = (rate: number): string => {
-        if (rate >= 70) return "text-emerald-600 bg-emerald-50";
-        if (rate >= 40) return "text-amber-600 bg-amber-50";
-        return "text-red-600 bg-red-50";
     };
 
     // Max total calls across all agents (for relative bar width)
     const maxTotalCalls = Math.max(
         ...agents.map(a => a.answered + a.directAnswered),
-        1 // avoid division by 0
+        1
     );
 
     // Compute totals
@@ -99,9 +131,6 @@ export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerforma
         }),
         { answered: 0, directAnswered: 0, directReceived: 0, transferred: 0, totalHandlingTimeSeconds: 0, callsReceived: 0 }
     );
-    const totalGlobalRate = (totals.callsReceived + totals.directReceived) > 0
-        ? Math.round(((totals.answered + totals.directAnswered) / (totals.callsReceived + totals.directReceived)) * 100)
-        : 0;
     const totalAvgHandling = (totals.answered + totals.directAnswered) > 0
         ? Math.round(totals.totalHandlingTimeSeconds / (totals.answered + totals.directAnswered))
         : 0;
@@ -205,10 +234,10 @@ export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerforma
                                     <SortHeader field="name" label="Agent" />
                                     <SortHeader field="answered" label="Queue" />
                                     <SortHeader field="directAnswered" label="Directs" />
-                                    <SortHeader field="answerRate" label="Taux rép." />
                                     <SortHeader field="transferred" label="Transférés" />
                                     <SortHeader field="totalHandlingTimeSeconds" label="Durée totale" />
                                     <SortHeader field="avgHandlingTimeSeconds" label="Durée moy." />
+                                    <SortHeader field="score" label="Score" />
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -230,11 +259,6 @@ export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerforma
                                             <span className="text-slate-400 text-sm">/{agent.directReceived}</span>
                                         </td>
                                         <td className="px-3 py-3">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getAnswerRateColor(agent.answerRate)}`}>
-                                                {agent.answerRate}%
-                                            </span>
-                                        </td>
-                                        <td className="px-3 py-3">
                                             {agent.transferred > 0 ? (
                                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-50 text-purple-700">
                                                     {agent.transferred}
@@ -248,6 +272,11 @@ export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerforma
                                         </td>
                                         <td className="px-3 py-3 text-slate-700">
                                             {formatDuration(agent.avgHandlingTimeSeconds)}
+                                        </td>
+                                        <td className="px-3 py-3">
+                                            <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-sm font-bold border ${getScoreColor(agent.score)}`}>
+                                                {agent.score}
+                                            </span>
                                         </td>
                                     </tr>
                                 ))}
@@ -264,11 +293,6 @@ export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerforma
                                         <span className="text-blue-700">{totals.directAnswered}</span>
                                         <span className="text-slate-400 text-sm">/{totals.directReceived}</span>
                                     </td>
-                                    <td className="px-3 py-3">
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getAnswerRateColor(totalGlobalRate)}`}>
-                                            {totalGlobalRate}%
-                                        </span>
-                                    </td>
                                     <td className="px-3 py-3 text-slate-800">{totals.transferred}</td>
                                     <td className="px-3 py-3 text-slate-800">
                                         {formatDurationHMS(totals.totalHandlingTimeSeconds)}
@@ -276,6 +300,7 @@ export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerforma
                                     <td className="px-3 py-3 text-slate-800">
                                         {formatDuration(totalAvgHandling)}
                                     </td>
+                                    <td className="px-3 py-3 text-slate-400">—</td>
                                 </tr>
                             </tfoot>
                         </table>
