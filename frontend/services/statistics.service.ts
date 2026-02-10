@@ -8,6 +8,7 @@ import {
     DailyTrend,
     HourlyTrend,
     OverflowDestination,
+    TransferDestination,
 } from "@/types/statistics.types";
 import { QueueInfo } from "@/types/queues.types";
 
@@ -54,8 +55,8 @@ export async function getQueueStatistics(
     // Get KPIs
     const kpis = await getQueueKPIs(queueNumber, startDate, endDate);
 
-    // Get agent stats
-    const agents = await getAgentStats(queueNumber, startDate, endDate);
+    // Get agent stats (pass totalQueueCalls for availability rate calculation)
+    const agents = await getAgentStats(queueNumber, startDate, endDate, kpis.callsReceived);
 
     // Get daily trend
     const dailyTrend = await getDailyTrend(queueNumber, startDate, endDate);
@@ -89,6 +90,7 @@ async function getQueueKPIs(
     // - ANSWERED: Agent with originating_cdr_id = this queue's cdr_id AND cdr_answered_at IS NOT NULL
     // - OVERFLOW: Another queue in same call_history_id with cdr_started_at > this queue's cdr_started_at
     // - ABANDONED: Neither answered nor overflowed
+    // - ANSWERED_AND_TRANSFERRED: Answered by agent AND agent's segment has termination_reason = 'continued_in'
     //
     // KEY INSIGHT: Overflow queues are NOT direct children (originating_cdr_id).
     // They share the same call_history_id but go through scripts/ring_groups in between.
@@ -123,6 +125,13 @@ async function getQueueKPIs(
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
                     THEN 1 ELSE 0 END) as answered_here,
+                -- Answered AND then transferred by the agent?
+                MAX(CASE 
+                    WHEN ans.originating_cdr_id = uqc.cdr_id 
+                         AND ans.destination_dn_type = 'extension'
+                         AND ans.cdr_answered_at IS NOT NULL
+                         AND ans.termination_reason = 'continued_in'
+                    THEN 1 ELSE 0 END) as answered_and_transferred,
                 -- Forwarded to another queue? (via call_history_id, not originating_cdr_id)
                 MAX(CASE 
                     WHEN other_q.destination_dn_type = 'queue'
@@ -157,6 +166,7 @@ async function getQueueKPIs(
                 cdr_ended_at,
                 wait_time_seconds,
                 talk_time_seconds,
+                answered_and_transferred,
                 -- Determine SINGLE outcome: answered > overflow > abandoned
                 CASE 
                     WHEN answered_here = 1 THEN 'answered'
@@ -170,6 +180,7 @@ async function getQueueKPIs(
         SELECT 
             COUNT(*) as total_calls,
             SUM(CASE WHEN outcome = 'answered' THEN 1 ELSE 0 END) as answered,
+            SUM(CASE WHEN outcome = 'answered' AND answered_and_transferred = 1 THEN 1 ELSE 0 END) as answered_and_transferred,
             SUM(CASE WHEN outcome = 'abandoned' THEN 1 ELSE 0 END) as abandoned,
             SUM(CASE WHEN outcome = 'abandoned' AND time_in_queue < 10 THEN 1 ELSE 0 END) as abandoned_before_10s,
             SUM(CASE WHEN outcome = 'abandoned' AND time_in_queue >= 10 THEN 1 ELSE 0 END) as abandoned_after_10s,
@@ -183,7 +194,6 @@ async function getQueueKPIs(
 
     // Get overflow destinations - only FIRST destination per overflow call
     const overflowDests = await prisma.$queryRaw<any[]>`
-        -- REFACTORED: Count by unique call_history_id (aligned with main KPIs query)
         WITH unique_queue_calls AS (
             SELECT DISTINCT ON (call_history_id)
                 call_history_id,
@@ -239,17 +249,70 @@ async function getQueueKPIs(
         count: Number(d.count),
     }));
 
+    // Get transfer destinations (answered then transferred by agent)
+    const transferDests = await prisma.$queryRaw<any[]>`
+        WITH unique_queue_calls AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                cdr_id,
+                cdr_started_at
+            FROM cdroutput
+            WHERE destination_dn_number = ${queueNumber}
+              AND destination_dn_type = 'queue'
+              AND cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_started_at ASC
+        ),
+        agent_transferred AS (
+            -- Find agents who answered from this queue and then transferred
+            SELECT 
+                ans.cdr_id as agent_cdr_id,
+                ans.continued_in_cdr_id
+            FROM unique_queue_calls uqc
+            JOIN cdroutput ans ON ans.originating_cdr_id = uqc.cdr_id
+                              AND ans.destination_dn_type = 'extension'
+                              AND ans.cdr_answered_at IS NOT NULL
+                              AND ans.termination_reason = 'continued_in'
+        ),
+        transfer_destinations AS (
+            -- Follow continued_in_cdr_id to find the transfer destination
+            SELECT
+                dest.destination_dn_number as destination,
+                dest.destination_dn_name as destination_name,
+                dest.destination_dn_type as destination_type
+            FROM agent_transferred at_
+            JOIN cdroutput dest ON dest.cdr_id = at_.continued_in_cdr_id
+        )
+        SELECT 
+            destination,
+            destination_name,
+            destination_type,
+            COUNT(*) as count
+        FROM transfer_destinations
+        GROUP BY destination, destination_name, destination_type
+        ORDER BY count DESC;
+    `;
+
+    const transferDestinations: TransferDestination[] = transferDests.map((d) => ({
+        destination: d.destination,
+        destinationName: d.destination_name || d.destination,
+        destinationType: d.destination_type || 'unknown',
+        count: Number(d.count),
+    }));
+
     const totalCalls = Number(row.total_calls || 0);
 
     return {
         callsReceived: totalCalls,
         callsAnswered: Number(row.answered || 0),
+        callsAnsweredAndTransferred: Number(row.answered_and_transferred || 0),
         callsAbandoned: Number(row.abandoned || 0),
         abandonedBefore10s: Number(row.abandoned_before_10s || 0),
         abandonedAfter10s: Number(row.abandoned_after_10s || 0),
         callsToVoicemail: 0,
         callsOverflow: Number(row.overflow || 0),
         overflowDestinations,
+        transferDestinations,
         avgWaitTimeSeconds: Math.round(Number(row.avg_wait_time || 0)),
         avgTalkTimeSeconds: Math.round(Number(row.avg_talk_time || 0)),
     };
@@ -261,7 +324,8 @@ async function getQueueKPIs(
 async function getAgentStats(
     queueNumber: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    totalQueueCalls: number
 ): Promise<AgentStats[]> {
     const result = await prisma.$queryRaw<any[]>`
         WITH queue_calls AS (
@@ -276,19 +340,22 @@ async function getAgentStats(
             SELECT 
                 c.destination_dn_number as extension,
                 c.destination_dn_name as name,
-                -- Calls from queue (answered)
+                -- Total attempts from queue (agent's phone rang)
+                COUNT(CASE WHEN c.creation_forward_reason = 'polling' THEN 1 END) as attempts,
+                -- Calls answered from queue
                 COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL 
                            AND c.creation_forward_reason = 'polling'
-                      THEN 1 END) as calls_from_queue,
-                -- Total attempts from queue
-                COUNT(CASE WHEN c.creation_forward_reason = 'polling' THEN 1 END) as attempts_from_queue,
-                -- Transferred out
-                COUNT(CASE WHEN c.termination_reason = 'continued_in' THEN 1 END) as transferred,
-                -- Intercepted (pickup)
-                COUNT(CASE WHEN c.creation_method = 'pickup' THEN 1 END) as intercepted,
-                -- Avg handling time
+                      THEN 1 END) as answered,
+                -- Answered then transferred out
+                COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL
+                           AND c.termination_reason = 'continued_in'
+                      THEN 1 END) as transferred,
+                -- Avg handling time (only for answered calls)
                 AVG(CASE WHEN c.cdr_answered_at IS NOT NULL 
-                    THEN EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) ELSE NULL END) as avg_handling_time
+                    THEN EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) ELSE NULL END) as avg_handling_time,
+                -- Total handling time
+                SUM(CASE WHEN c.cdr_answered_at IS NOT NULL 
+                    THEN EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) ELSE 0 END) as total_handling_time
             FROM queue_calls qc
             JOIN cdroutput c ON c.originating_cdr_id = qc.cdr_id
             WHERE c.destination_dn_type = 'extension'
@@ -297,59 +364,31 @@ async function getAgentStats(
         SELECT 
             extension,
             name,
-            calls_from_queue,
-            attempts_from_queue,
+            attempts,
+            answered,
             transferred,
-            intercepted,
-            avg_handling_time
+            avg_handling_time,
+            total_handling_time
         FROM agent_activity
-        WHERE calls_from_queue > 0 OR intercepted > 0
-        ORDER BY calls_from_queue DESC;
+        WHERE answered > 0
+        ORDER BY answered DESC;
     `;
 
-    // Get direct calls for these agents in the same period
-    const extensions = result.map((r) => r.extension);
-
-    let directCallsMap: Map<string, number> = new Map();
-    if (extensions.length > 0) {
-        const directResult = await prisma.$queryRaw<any[]>`
-            SELECT 
-                destination_dn_number as extension,
-                COUNT(*) as direct_calls
-            FROM cdroutput
-            WHERE destination_dn_number = ANY(${extensions})
-              AND destination_dn_type = 'extension'
-              AND cdr_answered_at IS NOT NULL
-              AND cdr_started_at >= ${startDate}
-              AND cdr_started_at <= ${endDate}
-              AND (originating_cdr_id IS NULL 
-                   OR originating_cdr_id NOT IN (
-                       SELECT cdr_id FROM cdroutput WHERE destination_dn_type = 'queue'
-                   ))
-            GROUP BY destination_dn_number;
-        `;
-        directResult.forEach((r) => {
-            directCallsMap.set(r.extension, Number(r.direct_calls));
-        });
-    }
-
     return result.map((row) => {
-        const callsFromQueue = Number(row.calls_from_queue || 0);
-        const attempts = Number(row.attempts_from_queue || 0);
-        const directCalls = directCallsMap.get(row.extension) || 0;
-        const totalAnswered = callsFromQueue + directCalls;
-        const totalAttempts = attempts + directCalls;
+        const attempts = Number(row.attempts || 0);
+        const answered = Number(row.answered || 0);
+        const transferred = Number(row.transferred || 0);
 
         return {
             extension: row.extension,
             name: row.name || row.extension,
-            callsFromQueue,
-            callsDirect: directCalls,
-            callsIntercepted: Number(row.intercepted || 0),
-            callsTransferred: Number(row.transferred || 0),
-            totalAnswered,
-            answerRate: totalAttempts > 0 ? Math.round((totalAnswered / totalAttempts) * 100) : 0,
+            attempts,
+            answered,
+            transferred,
+            answerRate: attempts > 0 ? Math.round((answered / attempts) * 100) : 0,
+            availabilityRate: totalQueueCalls > 0 ? Math.round((attempts / totalQueueCalls) * 100) : 0,
             avgHandlingTimeSeconds: Math.round(Number(row.avg_handling_time || 0)),
+            totalHandlingTimeSeconds: Math.round(Number(row.total_handling_time || 0)),
         };
     });
 }

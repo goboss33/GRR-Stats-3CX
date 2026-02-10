@@ -3,12 +3,14 @@
 export interface QueueKPIs {
     callsReceived: number;        // Appels entrant dans la queue (hors voicemail)
     callsAnswered: number;        // Répondus par un agent
+    callsAnsweredAndTransferred: number; // Répondus puis transférés (sous-ensemble de callsAnswered)
     callsAbandoned: number;       // Abandonnés total
     abandonedBefore10s: number;   // Abandonnés < 10s
     abandonedAfter10s: number;    // Abandonnés >= 10s
     callsToVoicemail: number;     // Messagerie vocale (exclus des reçus)
-    callsOverflow: number;        // Repartis ailleurs
+    callsOverflow: number;        // Repartis ailleurs (débordement automatique)
     overflowDestinations: OverflowDestination[];
+    transferDestinations: TransferDestination[];  // Destinations des transferts actifs
     avgWaitTimeSeconds: number;
     avgTalkTimeSeconds: number;
 }
@@ -19,16 +21,23 @@ export interface OverflowDestination {
     count: number;
 }
 
+export interface TransferDestination {
+    destination: string;         // numéro
+    destinationName: string;     // nom
+    destinationType: string;     // 'extension' | 'queue' | autre
+    count: number;
+}
+
 export interface AgentStats {
     extension: string;
     name: string;
-    callsFromQueue: number;       // Appels via la queue
-    callsDirect: number;          // Appels directs
-    callsIntercepted: number;     // Appels interceptés (pickup)
-    callsTransferred: number;     // Appels transférés
-    totalAnswered: number;
-    answerRate: number;           // % de réponse (0-100)
+    attempts: number;               // Nombre de tentatives (sonneries via queue)
+    answered: number;               // Appels répondus via la queue
+    transferred: number;            // Appels répondus puis transférés
+    answerRate: number;              // answered / attempts (%)
+    availabilityRate: number;        // attempts / totalQueueCalls (%)
     avgHandlingTimeSeconds: number;
+    totalHandlingTimeSeconds: number; // Durée totale au tel
 }
 
 export interface DailyTrend {

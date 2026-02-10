@@ -26,11 +26,17 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlo
         return Math.round((value / total) * 100);
     };
 
+    const answeredNotTransferred = kpis.callsAnswered - kpis.callsAnsweredAndTransferred;
+
     const data = [
-        { name: "Répondus", value: kpis.callsAnswered, color: "#10b981" }, // emerald-500
+        { name: "Répondus", value: answeredNotTransferred, color: "#10b981" }, // emerald-500
+        { name: "Répondus (transférés)", value: kpis.callsAnsweredAndTransferred, color: "#10b981" }, // same green, will use pattern
         { name: "Abandonnés", value: kpis.callsAbandoned, color: "#ef4444" }, // red-500
         { name: "Redirigés", value: kpis.callsOverflow, color: "#f59e0b" }, // amber-500
     ].filter(d => d.value > 0);
+
+    // Unique pattern ID to avoid SVG conflicts
+    const patternId = "hatchPattern";
 
     return (
         <Card className="overflow-hidden">
@@ -52,6 +58,13 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlo
                     <div className="col-span-1 md:col-span-4 h-64 relative">
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
+                                {/* SVG Pattern definition for hatched green */}
+                                <defs>
+                                    <pattern id={patternId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                                        <rect width="6" height="6" fill="#10b981" />
+                                        <line x1="0" y1="0" x2="0" y2="6" stroke="white" strokeWidth="2" />
+                                    </pattern>
+                                </defs>
                                 <Pie
                                     data={data}
                                     cx="50%"
@@ -63,11 +76,14 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlo
                                     stroke="none"
                                 >
                                     {data.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                        <Cell
+                                            key={`cell-${index}`}
+                                            fill={entry.name === "Répondus (transférés)" ? `url(#${patternId})` : entry.color}
+                                        />
                                     ))}
                                 </Pie>
                                 <Tooltip
-                                    formatter={(value: any) => [`${value} appels`, '']}
+                                    formatter={(value: number) => [`${value} appels`, '']}
                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                 />
                             </PieChart>
@@ -93,7 +109,14 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlo
                                         {getPercentage(kpis.callsAnswered, totalEntrants)}%
                                     </span>
                                 </div>
-                                <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
+                                <div className="flex items-end justify-between">
+                                    <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
+                                    {kpis.callsAnsweredAndTransferred > 0 && (
+                                        <div className="text-xs text-emerald-600 text-right">
+                                            <div>dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong></div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Abandonnés */}
@@ -141,10 +164,11 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlo
                                     {kpis.overflowDestinations.slice(0, 5).map((dest) => (
                                         <span
                                             key={dest.destination}
-                                            className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200"
+                                            className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200"
                                         >
+                                            <span className="w-2 h-2 rounded-full bg-amber-500 mr-1.5" />
                                             {dest.destinationName}
-                                            <span className="ml-1.5 bg-slate-200 text-slate-700 px-1.5 rounded-sm">
+                                            <span className="ml-1.5 bg-amber-100 text-amber-800 px-1.5 rounded-sm">
                                                 {dest.count}
                                             </span>
                                         </span>
@@ -152,6 +176,46 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlo
                                     {kpis.overflowDestinations.length > 5 && (
                                         <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium text-slate-400 border border-dashed border-slate-300">
                                             +{kpis.overflowDestinations.length - 5} autres
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Destinations Transfert */}
+                        {kpis.transferDestinations.length > 0 && (
+                            <div className={`pt-4 ${kpis.overflowDestinations.length > 0 ? '' : 'border-t border-slate-100'}`}>
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                                    Top Destinations Transfert
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                    {kpis.transferDestinations.slice(0, 5).map((dest) => {
+                                        const isQueue = dest.destinationType === 'queue';
+                                        const badgeColor = isQueue
+                                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                            : 'bg-violet-50 text-violet-700 border-violet-200';
+                                        const dotColor = isQueue ? 'bg-amber-500' : 'bg-violet-500';
+                                        const countColor = isQueue
+                                            ? 'bg-amber-100 text-amber-800'
+                                            : 'bg-violet-100 text-violet-800';
+                                        const prefix = isQueue ? 'Queue' : 'Ext.';
+
+                                        return (
+                                            <span
+                                                key={`${dest.destinationType}-${dest.destination}`}
+                                                className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium ${badgeColor} border`}
+                                            >
+                                                <span className={`w-2 h-2 rounded-full ${dotColor} mr-1.5`} />
+                                                {prefix}: {dest.destination} - {dest.destinationName}
+                                                <span className={`ml-1.5 ${countColor} px-1.5 rounded-sm`}>
+                                                    {dest.count}
+                                                </span>
+                                            </span>
+                                        );
+                                    })}
+                                    {kpis.transferDestinations.length > 5 && (
+                                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium text-slate-400 border border-dashed border-slate-300">
+                                            +{kpis.transferDestinations.length - 5} autres
                                         </span>
                                     )}
                                 </div>
