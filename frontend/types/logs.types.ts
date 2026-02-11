@@ -92,6 +92,7 @@ export interface LogsFilters {
     durationMax?: number;
     waitTimeMin?: number;
     waitTimeMax?: number;
+    journeyTypes?: JourneyStepType[];  // Filter by journey step types (Parcours column)
 }
 
 export interface LogsPagination {

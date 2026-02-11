@@ -487,6 +487,17 @@ export async function getAggregatedCallLogs(
         aggregatedWhereConditions.push(`ca.segment_count <= ${filters.segmentCountMax}`);
     }
 
+    // Journey type filter (on call_journey CTE data)
+    if (filters.journeyTypes && filters.journeyTypes.length > 0) {
+        const validTypes = ['direct', 'queue', 'transfer', 'ring_group', 'ivr'];
+        const safeTypes = filters.journeyTypes.filter(t => validTypes.includes(t));
+        if (safeTypes.length > 0) {
+            // Filter calls that have at least one step matching any of the selected types
+            const typesConditions = safeTypes.map(t => `cj.journey::text ILIKE '%"type":"${t}"%'`).join(' OR ');
+            aggregatedWhereConditions.push(`(${typesConditions})`);
+        }
+    }
+
     try {
         // Step 1: Get distinct call_history_ids with aggregated data
         const aggregatedQuery = `
@@ -702,6 +713,7 @@ export async function getAggregatedCallLogs(
         // Count query - optimize by only including expensive CTEs when filtering on them
         const needsHandledBy = !!filters.handledBySearch?.trim();
         const needsCallQueues = !!filters.queueSearch?.trim();
+        const needsCallJourney = !!(filters.journeyTypes && filters.journeyTypes.length > 0);
 
         // Build conditional CTEs for count query
         const handledByCTEForCount = needsHandledBy ? `,
@@ -753,6 +765,48 @@ export async function getAggregatedCallLogs(
             ? 'LEFT JOIN call_queues cq ON ca.call_history_id = cq.call_history_id'
             : '';
 
+        // Build conditional call_journey CTE and JOIN for count query
+        const callJourneyCTEForCount = needsCallJourney ? `,
+            call_journey AS (
+                SELECT 
+                    j.call_history_id,
+                    JSON_AGG(
+                        JSON_BUILD_OBJECT(
+                            'type', j.step_type,
+                            'label', j.step_label,
+                            'detail', j.step_detail
+                        ) ORDER BY j.step_order
+                    ) as journey
+                FROM (
+                    SELECT
+                        c.call_history_id,
+                        c.cdr_started_at as step_order,
+                        CASE 
+                            WHEN c.destination_dn_type = 'queue' THEN 'queue'
+                            WHEN c.creation_method = 'transfer' AND c.destination_dn_type = 'extension' THEN 'transfer'
+                            WHEN c.destination_dn_type IN ('ring_group', 'ring_group_ring_all') THEN 'ring_group'
+                            WHEN c.destination_dn_type IN ('ivr', 'process') THEN 'ivr'
+                            ELSE 'direct'
+                        END as step_type,
+                        c.destination_dn_number as step_label,
+                        COALESCE(c.destination_dn_name, c.destination_dn_number) as step_detail
+                    FROM cdroutput c
+                    WHERE ${dateOnlyWhereClause}
+                      AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                      AND c.destination_dn_type IN ('queue', 'extension', 'ring_group', 'ring_group_ring_all', 'ivr', 'process')
+                      AND (c.creation_forward_reason IS DISTINCT FROM 'polling')
+                      AND NOT (
+                          c.cdr_answered_at IS NULL 
+                          AND c.destination_dn_type = 'extension'
+                          AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
+                      )
+                ) j
+                GROUP BY j.call_history_id
+            )` : '';
+        const callJourneyJoinForCount = needsCallJourney
+            ? 'LEFT JOIN call_journey cj ON ca.call_history_id = cj.call_history_id'
+            : '';
+
         const countQuery = `
             WITH call_aggregates AS (
                 SELECT 
@@ -796,7 +850,7 @@ export async function getAggregatedCallLogs(
                   AND c.destination_dn_type = 'extension'
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                 ORDER BY c.call_history_id, c.cdr_answered_at ASC
-            )${handledByCTEForCount}${callQueuesCTEForCount}${calleeFilterCTE}
+            )${handledByCTEForCount}${callQueuesCTEForCount}${callJourneyCTEForCount}${calleeFilterCTE}
             SELECT COUNT(*) as total
             FROM call_aggregates ca
             JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
@@ -804,6 +858,7 @@ export async function getAggregatedCallLogs(
             LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
             ${handledByJoinForCount}
             ${callQueuesJoinForCount}
+            ${callJourneyJoinForCount}
             ${calleeFilterJoin}
             ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
         `;

@@ -99,7 +99,12 @@ export default function AdminLogsPage() {
     const [segmentCountMax, setSegmentCountMax] = useState<number | undefined>(() => getInitialNumberParam("segMax"));
     const [durationMin, setDurationMin] = useState<number | undefined>(() => getInitialNumberParam("durMin"));
     const [durationMax, setDurationMax] = useState<number | undefined>(() => getInitialNumberParam("durMax"));
-    const [selectedJourneyTypes, setSelectedJourneyTypes] = useState<JourneyStepType[]>([]);
+    const [selectedJourneyTypes, setSelectedJourneyTypes] = useState<JourneyStepType[]>(() => {
+        const param = searchParams.get("journey");
+        if (!param) return [];
+        const validTypes: JourneyStepType[] = ['direct', 'queue', 'transfer', 'ring_group', 'ivr'];
+        return param.split(",").filter(t => validTypes.includes(t as JourneyStepType)) as JourneyStepType[];
+    });
 
     // Data state
     const [data, setData] = useState<AggregatedCallLogsResponse | null>(null);
@@ -135,6 +140,7 @@ export default function AdminLogsPage() {
         segmentCountMax,
         durationMin,
         durationMax,
+        journeyTypes: selectedJourneyTypes.length > 0 ? selectedJourneyTypes : undefined,
     };
 
     // Update URL when filters change - uses DEBOUNCED values for text search
@@ -173,6 +179,11 @@ export default function AdminLogsPage() {
         if (durationMin !== undefined) params.set("durMin", durationMin.toString());
         if (durationMax !== undefined) params.set("durMax", durationMax.toString());
 
+        // Journey types
+        if (selectedJourneyTypes.length > 0) {
+            params.set("journey", selectedJourneyTypes.join(","));
+        }
+
         router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
     }, [
         router,
@@ -190,6 +201,7 @@ export default function AdminLogsPage() {
         segmentCountMax,
         durationMin,
         durationMax,
+        selectedJourneyTypes,
     ]);
 
     // Fetch data
@@ -227,7 +239,8 @@ export default function AdminLogsPage() {
         durationMin,
         durationMax,
         currentPage,
-        sort
+        sort,
+        selectedJourneyTypes
     ]);
 
     // Fetch on filter/page change and update URL
@@ -362,6 +375,11 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
+    const handleRemoveJourneyType = (type: JourneyStepType) => {
+        setSelectedJourneyTypes(selectedJourneyTypes.filter(t => t !== type));
+        setCurrentPage(1);
+    };
+
     const handleResetAllFilters = () => {
         // Reset all filter states
         setSelectedDirections([]);
@@ -458,6 +476,7 @@ export default function AdminLogsPage() {
                 onRemoveIdSearch={handleRemoveIdSearch}
                 onRemoveSegmentCount={handleRemoveSegmentCount}
                 onRemoveDuration={handleRemoveDuration}
+                onRemoveJourneyType={handleRemoveJourneyType}
                 onResetAll={handleResetAllFilters}
             />
 
@@ -476,13 +495,7 @@ export default function AdminLogsPage() {
             {/* Table with integrated filters */}
             <Card className="border-slate-200 shadow-sm overflow-hidden">
                 <LogsTable
-                    logs={(() => {
-                        const allLogs = data?.logs || [];
-                        if (selectedJourneyTypes.length === 0) return allLogs;
-                        return allLogs.filter(log =>
-                            log.journey?.some(step => selectedJourneyTypes.includes(step.type))
-                        );
-                    })()}
+                    logs={data?.logs || []}
                     isLoading={isLoading}
                     columnVisibility={columnVisibility}
                     sort={sort}

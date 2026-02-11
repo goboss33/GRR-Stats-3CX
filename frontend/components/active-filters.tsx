@@ -8,7 +8,7 @@ import { fr } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-import type { CallDirection, CallStatus, LogsFilters } from "@/types/logs.types";
+import type { CallDirection, CallStatus, JourneyStepType, LogsFilters } from "@/types/logs.types";
 
 interface ActiveFiltersProps {
     dateRange: { startDate: Date; endDate: Date };
@@ -23,6 +23,7 @@ interface ActiveFiltersProps {
     onRemoveIdSearch: () => void;
     onRemoveSegmentCount: () => void;
     onRemoveDuration: () => void;
+    onRemoveJourneyType: (type: JourneyStepType) => void;
     onResetAll: () => void;
 }
 
@@ -52,6 +53,7 @@ export function ActiveFilters({
     onRemoveIdSearch,
     onRemoveSegmentCount,
     onRemoveDuration,
+    onRemoveJourneyType,
     onResetAll,
 }: ActiveFiltersProps) {
     const activeFilters: React.ReactNode[] = [];
@@ -216,6 +218,31 @@ export function ActiveFilters({
                 <X className="h-3 w-3" />
             </Badge>
         );
+    }
+
+    // Journey type filters
+    const journeyTypeLabels: Record<JourneyStepType, { icon: string; label: string }> = {
+        direct: { icon: "📞", label: "Direct" },
+        queue: { icon: "🔄", label: "Queue" },
+        transfer: { icon: "↗️", label: "Transfert" },
+        ring_group: { icon: "👥", label: "Ring Group" },
+        ivr: { icon: "🤖", label: "IVR" },
+    };
+    if (filters.journeyTypes && filters.journeyTypes.length > 0) {
+        filters.journeyTypes.forEach((type) => {
+            const config = journeyTypeLabels[type];
+            activeFilters.push(
+                <Badge
+                    key={`journey-${type}`}
+                    variant="secondary"
+                    className="bg-violet-100 text-violet-700 gap-1 px-2 py-1 cursor-pointer hover:bg-violet-200 transition-colors"
+                    onClick={() => onRemoveJourneyType(type)}
+                >
+                    {config.icon} {config.label}
+                    <X className="h-3 w-3" />
+                </Badge>
+            );
+        });
     }
 
     // Count removable filters (excluding date range)
