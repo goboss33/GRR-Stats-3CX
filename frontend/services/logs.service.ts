@@ -493,7 +493,8 @@ export async function getAggregatedCallLogs(
         const safeTypes = filters.journeyTypes.filter(t => validTypes.includes(t));
         if (safeTypes.length > 0) {
             // Filter calls that have at least one step matching any of the selected types
-            const typesConditions = safeTypes.map(t => `cj.journey::text ILIKE '%"type":"${t}"%'`).join(' OR ');
+            // Use jsonb @> containment operator for proper JSON matching
+            const typesConditions = safeTypes.map(t => `cj.journey::jsonb @> '[{"type":"${t}"}]'::jsonb`).join(' OR ');
             aggregatedWhereConditions.push(`(${typesConditions})`);
         }
     }
