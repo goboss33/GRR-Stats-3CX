@@ -489,13 +489,21 @@ export async function getAggregatedCallLogs(
 
     // Journey type filter (on call_journey CTE data)
     if (filters.journeyTypes && filters.journeyTypes.length > 0) {
-        const validTypes = ['direct', 'queue', 'transfer', 'ring_group', 'ivr'];
+        const validTypes = ['direct', 'queue', 'transfer', 'ring_group', 'ivr', 'script'];
         const safeTypes = filters.journeyTypes.filter(t => validTypes.includes(t));
         if (safeTypes.length > 0) {
-            // Filter calls that have at least one step matching any of the selected types
-            // Use jsonb @> containment operator for proper JSON matching
-            const typesConditions = safeTypes.map(t => `cj.journey::jsonb @> '[{"type":"${t}"}]'::jsonb`).join(' OR ');
-            aggregatedWhereConditions.push(`(${typesConditions})`);
+            const matchMode = filters.journeyMatchMode || 'or';
+            // Map 'script' to 'ivr' for SQL matching (scripts are stored as 'ivr' type in journey)
+            const sqlTypes = safeTypes.map(t => t === 'script' ? 'ivr' : t);
+            const uniqueSqlTypes = [...new Set(sqlTypes)];
+            const typesConditions = uniqueSqlTypes.map(t => `cj.journey::jsonb @> '[{"type":"${t}"}]'::jsonb`);
+            if (matchMode === 'and') {
+                // AND mode: all selected types must be present in the journey
+                aggregatedWhereConditions.push(`(${typesConditions.join(' AND ')})`);
+            } else {
+                // OR mode (default): at least one selected type matches
+                aggregatedWhereConditions.push(`(${typesConditions.join(' OR ')})`);
+            }
         }
     }
 
@@ -625,27 +633,27 @@ export async function getAggregatedCallLogs(
                             WHEN c.destination_dn_type = 'queue' THEN 'queue'
                             WHEN c.creation_method = 'transfer' AND c.destination_dn_type = 'extension' THEN 'transfer'
                             WHEN c.destination_dn_type IN ('ring_group', 'ring_group_ring_all') THEN 'ring_group'
-                            WHEN c.destination_dn_type IN ('ivr', 'process') THEN 'ivr'
+                            WHEN c.destination_dn_type IN ('ivr', 'process', 'script') THEN 'ivr'
                             ELSE 'direct'
                         END as step_type,
                         CASE 
                             WHEN c.destination_dn_type = 'queue' THEN c.destination_dn_number
                             WHEN c.creation_method = 'transfer' AND c.destination_dn_type = 'extension' THEN c.destination_dn_number
                             WHEN c.destination_dn_type IN ('ring_group', 'ring_group_ring_all') THEN c.destination_dn_number
-                            WHEN c.destination_dn_type IN ('ivr', 'process') THEN 'IVR'
+                            WHEN c.destination_dn_type IN ('ivr', 'process', 'script') THEN 'IVR'
                             ELSE c.destination_dn_number
                         END as step_label,
                         CASE 
                             WHEN c.destination_dn_type = 'queue' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
                             WHEN c.creation_method = 'transfer' AND c.destination_dn_type = 'extension' THEN 'Transfert → ' || COALESCE(c.destination_dn_name, c.destination_dn_number)
                             WHEN c.destination_dn_type IN ('ring_group', 'ring_group_ring_all') THEN COALESCE(c.destination_dn_name, 'Ring Group ' || c.destination_dn_number)
-                            WHEN c.destination_dn_type IN ('ivr', 'process') THEN COALESCE(c.destination_dn_name, 'IVR')
+                            WHEN c.destination_dn_type IN ('ivr', 'process', 'script') THEN COALESCE(c.destination_dn_name, 'IVR')
                             ELSE COALESCE(c.destination_dn_name, c.destination_dn_number)
                         END as step_detail
                     FROM cdroutput c
                     WHERE ${dateOnlyWhereClause}
                       AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                      AND c.destination_dn_type IN ('queue', 'extension', 'ring_group', 'ring_group_ring_all', 'ivr', 'process')
+                      AND c.destination_dn_type IN ('queue', 'extension', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'script')
                       -- Exclude polling legs (queue ringing agents)
                       AND (c.creation_forward_reason IS DISTINCT FROM 'polling')
                       -- Exclude ultra-short routing segments (< 1s, not answered)

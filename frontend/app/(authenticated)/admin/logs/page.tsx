@@ -33,6 +33,7 @@ import type {
     ColumnVisibility,
     AggregatedCallLogsResponse,
     JourneyStepType,
+    JourneyMatchMode,
 } from "@/types/logs.types";
 
 const PAGE_SIZE = 50;
@@ -105,6 +106,10 @@ export default function AdminLogsPage() {
         const validTypes: JourneyStepType[] = ['direct', 'queue', 'transfer', 'ring_group', 'ivr'];
         return param.split(",").filter(t => validTypes.includes(t as JourneyStepType)) as JourneyStepType[];
     });
+    const [journeyMatchMode, setJourneyMatchMode] = useState<JourneyMatchMode>(() => {
+        const param = searchParams.get("journeyMode");
+        return param === 'and' ? 'and' : 'or';
+    });
 
     // Data state
     const [data, setData] = useState<AggregatedCallLogsResponse | null>(null);
@@ -141,6 +146,7 @@ export default function AdminLogsPage() {
         durationMin,
         durationMax,
         journeyTypes: selectedJourneyTypes.length > 0 ? selectedJourneyTypes : undefined,
+        journeyMatchMode: journeyMatchMode,
     };
 
     // Update URL when filters change - uses DEBOUNCED values for text search
@@ -182,6 +188,9 @@ export default function AdminLogsPage() {
         // Journey types
         if (selectedJourneyTypes.length > 0) {
             params.set("journey", selectedJourneyTypes.join(","));
+            if (journeyMatchMode === 'and') {
+                params.set("journeyMode", "and");
+            }
         }
 
         router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
@@ -202,6 +211,7 @@ export default function AdminLogsPage() {
         durationMin,
         durationMax,
         selectedJourneyTypes,
+        journeyMatchMode,
     ]);
 
     // Fetch data
@@ -240,7 +250,8 @@ export default function AdminLogsPage() {
         durationMax,
         currentPage,
         sort,
-        selectedJourneyTypes
+        selectedJourneyTypes,
+        journeyMatchMode
     ]);
 
     // Fetch on filter/page change and update URL
@@ -394,6 +405,7 @@ export default function AdminLogsPage() {
         setDurationMin(undefined);
         setDurationMax(undefined);
         setSelectedJourneyTypes([]);
+        setJourneyMatchMode('or');
         setCurrentPage(1);
         // Increment reset counter to trigger immediate refetch (bypasses debounce)
         setResetCounter(c => c + 1);
@@ -537,6 +549,11 @@ export default function AdminLogsPage() {
                     // Journey filter
                     selectedJourneyTypes={selectedJourneyTypes}
                     onJourneyTypesChange={handleJourneyTypesChange}
+                    journeyMatchMode={journeyMatchMode}
+                    onJourneyMatchModeChange={(mode) => {
+                        setJourneyMatchMode(mode);
+                        setCurrentPage(1);
+                    }}
                     // Row click
                     onRowClick={handleRowClick}
                 />

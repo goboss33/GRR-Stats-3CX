@@ -8,6 +8,7 @@ export type SortField = "startedAt" | "duration" | "sourceNumber" | "destination
 
 // Journey step types for the "Parcours" column
 export type JourneyStepType = "direct" | "queue" | "transfer" | "ring_group" | "ivr";
+export type JourneyMatchMode = "or" | "and";
 
 export interface JourneyStep {
     type: JourneyStepType;
@@ -93,6 +94,7 @@ export interface LogsFilters {
     waitTimeMin?: number;
     waitTimeMax?: number;
     journeyTypes?: JourneyStepType[];  // Filter by journey step types (Parcours column)
+    journeyMatchMode?: JourneyMatchMode;  // 'or' (default) = any type matches, 'and' = all types must be present
 }
 
 export interface LogsPagination {

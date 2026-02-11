@@ -55,6 +55,7 @@ import type {
     SortField,
     LogsSort,
     JourneyStepType,
+    JourneyMatchMode,
 } from "@/types/logs.types";
 
 interface LogsTableProps {
@@ -95,6 +96,8 @@ interface LogsTableProps {
     // Journey filter
     selectedJourneyTypes: JourneyStepType[];
     onJourneyTypesChange: (types: JourneyStepType[]) => void;
+    journeyMatchMode: JourneyMatchMode;
+    onJourneyMatchModeChange: (mode: JourneyMatchMode) => void;
     // Row click
     onRowClick?: (callHistoryId: string) => void;
 }
@@ -220,6 +223,8 @@ export function LogsTable({
     // Journey filter
     selectedJourneyTypes,
     onJourneyTypesChange,
+    journeyMatchMode,
+    onJourneyMatchModeChange,
     // Row click
     onRowClick,
 }: LogsTableProps) {
@@ -256,6 +261,7 @@ export function LogsTable({
                             </TableHead>
                             <TableHead className="w-10 text-center"></TableHead>
                             <TableHead>Traité par</TableHead>
+                            <TableHead>Queue(s)</TableHead>
                             <TableHead>Parcours</TableHead>
                             <TableHead className="w-24 text-center">Direction</TableHead>
                             <TableHead className="w-24 text-center">Statut</TableHead>
@@ -315,9 +321,18 @@ export function LogsTable({
                                 />
                             </TableHead>
                             <TableHead className="py-2">
+                                <ColumnFilterQueue
+                                    queues={queues}
+                                    selectedQueueNumber={selectedQueueNumber}
+                                    onSelect={onQueueSelect}
+                                />
+                            </TableHead>
+                            <TableHead className="py-2">
                                 <ColumnFilterJourney
                                     selected={selectedJourneyTypes}
                                     onChange={onJourneyTypesChange}
+                                    matchMode={journeyMatchMode}
+                                    onMatchModeChange={onJourneyMatchModeChange}
                                 />
                             </TableHead>
                             <TableHead className="py-2">
@@ -444,6 +459,24 @@ export function LogsTable({
                                                             <span className="text-slate-400"> +{log.handledBy.length - 1}</span>
                                                         )}
                                                     </span>
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-slate-300">-</span>
+                                            )}
+                                        </TableCell>
+
+                                        {/* Queue(s) */}
+                                        <TableCell>
+                                            {log.queues && log.queues.length > 0 ? (
+                                                <div className="flex flex-col gap-0.5">
+                                                    {log.queues.slice(0, 2).map((q, idx) => (
+                                                        <span key={idx} className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 truncate max-w-[140px]" title={q.name}>
+                                                            {q.name || q.number}
+                                                        </span>
+                                                    ))}
+                                                    {log.queues.length > 2 && (
+                                                        <span className="text-[10px] text-slate-400">+{log.queues.length - 2}</span>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <span className="text-xs text-slate-300">-</span>

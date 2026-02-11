@@ -13,11 +13,13 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover";
 
-import type { JourneyStepType } from "@/types/logs.types";
+import type { JourneyStepType, JourneyMatchMode } from "@/types/logs.types";
 
 interface ColumnFilterJourneyProps {
     selected: JourneyStepType[];
     onChange: (types: JourneyStepType[]) => void;
+    matchMode: JourneyMatchMode;
+    onMatchModeChange: (mode: JourneyMatchMode) => void;
     className?: string;
 }
 
@@ -32,28 +34,37 @@ const journeyOptions: { value: JourneyStepType; label: string; icon: string }[] 
 export function ColumnFilterJourney({
     selected,
     onChange,
+    matchMode,
+    onMatchModeChange,
     className,
 }: ColumnFilterJourneyProps) {
     const [open, setOpen] = React.useState(false);
     const [localSelected, setLocalSelected] = React.useState<JourneyStepType[]>(selected);
+    const [localMatchMode, setLocalMatchMode] = React.useState<JourneyMatchMode>(matchMode);
 
     React.useEffect(() => {
         if (!open) {
             setLocalSelected(selected);
+            setLocalMatchMode(matchMode);
         }
-    }, [selected, open]);
+    }, [selected, matchMode, open]);
 
     const handleOpenChange = (isOpen: boolean) => {
         if (!isOpen && open) {
-            const hasChanged =
+            const hasTypesChanged =
                 localSelected.length !== selected.length ||
                 !localSelected.every(t => selected.includes(t));
-            if (hasChanged) {
+            const hasModeChanged = localMatchMode !== matchMode;
+            if (hasTypesChanged) {
                 onChange(localSelected);
+            }
+            if (hasModeChanged) {
+                onMatchModeChange(localMatchMode);
             }
         }
         if (isOpen) {
             setLocalSelected(selected);
+            setLocalMatchMode(matchMode);
         }
         setOpen(isOpen);
     };
@@ -100,7 +111,7 @@ export function ColumnFilterJourney({
                         <ChevronDown className="ml-1 h-3 w-3 text-slate-500" />
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-44 p-2" align="start">
+                <PopoverContent className="w-48 p-2" align="start">
                     <div className="space-y-2">
                         {/* Select All */}
                         <div
@@ -134,6 +145,46 @@ export function ColumnFilterJourney({
                                 </div>
                             ))}
                         </div>
+
+                        {/* OU/ET toggle - only show when multiple types selected */}
+                        {localSelected.length >= 2 && (
+                            <div className="border-t border-slate-100 pt-2">
+                                <div className="flex items-center justify-between px-1">
+                                    <span className="text-xs text-slate-500">Mode :</span>
+                                    <div className="flex rounded-md border border-slate-200 overflow-hidden">
+                                        <button
+                                            type="button"
+                                            className={cn(
+                                                "px-2.5 py-1 text-xs font-medium transition-colors",
+                                                localMatchMode === "or"
+                                                    ? "bg-blue-500 text-white"
+                                                    : "bg-white text-slate-600 hover:bg-slate-50"
+                                            )}
+                                            onClick={() => setLocalMatchMode("or")}
+                                        >
+                                            OU
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={cn(
+                                                "px-2.5 py-1 text-xs font-medium transition-colors border-l border-slate-200",
+                                                localMatchMode === "and"
+                                                    ? "bg-blue-500 text-white"
+                                                    : "bg-white text-slate-600 hover:bg-slate-50"
+                                            )}
+                                            onClick={() => setLocalMatchMode("and")}
+                                        >
+                                            ET
+                                        </button>
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-slate-400 px-1 mt-1">
+                                    {localMatchMode === "or"
+                                        ? "Au moins un type sélectionné"
+                                        : "Tous les types sélectionnés"}
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </PopoverContent>
             </Popover>
