@@ -5,3 +5,4 @@ export { ColumnFilterStatus } from "./ColumnFilterStatus";
 export { ColumnFilterDuration } from "./ColumnFilterDuration";
 export { ColumnFilterSegmentCount } from "./ColumnFilterSegmentCount";
 export { ColumnFilterQueue } from "./ColumnFilterQueue";
+export { ColumnFilterJourney } from "./ColumnFilterJourney";

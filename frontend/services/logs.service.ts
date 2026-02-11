@@ -594,6 +594,56 @@ export async function getAggregatedCallLogs(
                       AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                 ) dq
                 GROUP BY dq.call_history_id
+            ),
+            call_journey AS (
+                SELECT 
+                    j.call_history_id,
+                    JSON_AGG(
+                        JSON_BUILD_OBJECT(
+                            'type', j.step_type,
+                            'label', j.step_label,
+                            'detail', j.step_detail
+                        ) ORDER BY j.step_order
+                    ) as journey
+                FROM (
+                    SELECT
+                        c.call_history_id,
+                        c.cdr_started_at as step_order,
+                        CASE 
+                            WHEN c.destination_dn_type = 'queue' THEN 'queue'
+                            WHEN c.creation_method = 'transfer' AND c.destination_dn_type = 'extension' THEN 'transfer'
+                            WHEN c.destination_dn_type IN ('ring_group', 'ring_group_ring_all') THEN 'ring_group'
+                            WHEN c.destination_dn_type IN ('ivr', 'process') THEN 'ivr'
+                            ELSE 'direct'
+                        END as step_type,
+                        CASE 
+                            WHEN c.destination_dn_type = 'queue' THEN c.destination_dn_number
+                            WHEN c.creation_method = 'transfer' AND c.destination_dn_type = 'extension' THEN c.destination_dn_number
+                            WHEN c.destination_dn_type IN ('ring_group', 'ring_group_ring_all') THEN c.destination_dn_number
+                            WHEN c.destination_dn_type IN ('ivr', 'process') THEN 'IVR'
+                            ELSE c.destination_dn_number
+                        END as step_label,
+                        CASE 
+                            WHEN c.destination_dn_type = 'queue' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
+                            WHEN c.creation_method = 'transfer' AND c.destination_dn_type = 'extension' THEN 'Transfert → ' || COALESCE(c.destination_dn_name, c.destination_dn_number)
+                            WHEN c.destination_dn_type IN ('ring_group', 'ring_group_ring_all') THEN COALESCE(c.destination_dn_name, 'Ring Group ' || c.destination_dn_number)
+                            WHEN c.destination_dn_type IN ('ivr', 'process') THEN COALESCE(c.destination_dn_name, 'IVR')
+                            ELSE COALESCE(c.destination_dn_name, c.destination_dn_number)
+                        END as step_detail
+                    FROM cdroutput c
+                    WHERE ${dateOnlyWhereClause}
+                      AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                      AND c.destination_dn_type IN ('queue', 'extension', 'ring_group', 'ring_group_ring_all', 'ivr', 'process')
+                      -- Exclude polling legs (queue ringing agents)
+                      AND (c.creation_forward_reason IS DISTINCT FROM 'polling')
+                      -- Exclude ultra-short routing segments (< 1s, not answered)
+                      AND NOT (
+                          c.cdr_answered_at IS NULL 
+                          AND c.destination_dn_type = 'extension'
+                          AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
+                      )
+                ) j
+                GROUP BY j.call_history_id
             )${calleeFilterCTE}
             SELECT 
                 ca.call_history_id,
@@ -634,13 +684,15 @@ export async function getAggregatedCallLogs(
                 hb.total_talk_seconds as handled_by_total_talk,
                 hb.agent_count as handled_by_count,
                 cq.queues as call_queues,
-                cq.queue_count
+                cq.queue_count,
+                cj.journey as call_journey
             FROM call_aggregates ca
             JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
             JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
             LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
             LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id
             LEFT JOIN call_queues cq ON ca.call_history_id = cq.call_history_id
+            LEFT JOIN call_journey cj ON ca.call_history_id = cj.call_history_id
             ${calleeFilterJoin}
             ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
             ORDER BY ca.first_started_at DESC
@@ -943,6 +995,19 @@ export async function getAggregatedCallLogs(
                         return queueNames.join(", ");
                     } catch {
                         return "-";
+                    }
+                })(),
+
+                // Journey steps for "Parcours" column
+                journey: (() => {
+                    if (!row.call_journey) return [];
+                    try {
+                        const parsed = typeof row.call_journey === 'string'
+                            ? JSON.parse(row.call_journey)
+                            : row.call_journey;
+                        return Array.isArray(parsed) ? parsed : [];
+                    } catch {
+                        return [];
                     }
                 })(),
             };

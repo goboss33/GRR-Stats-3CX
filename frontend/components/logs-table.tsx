@@ -28,6 +28,12 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import {
+    Tooltip,
+    TooltipTrigger,
+    TooltipContent,
+    TooltipProvider,
+} from "@/components/ui/tooltip";
 
 import {
     ColumnFilterInput,
@@ -37,6 +43,7 @@ import {
     ColumnFilterDuration,
     ColumnFilterSegmentCount,
     ColumnFilterQueue,
+    ColumnFilterJourney,
 } from "@/components/column-filters";
 import { QueueInfo } from "@/types/queues.types";
 
@@ -47,6 +54,7 @@ import type {
     ColumnVisibility,
     SortField,
     LogsSort,
+    JourneyStepType,
 } from "@/types/logs.types";
 
 interface LogsTableProps {
@@ -84,6 +92,9 @@ interface LogsTableProps {
     segmentCountMin?: number;
     segmentCountMax?: number;
     onSegmentCountChange: (range: { min?: number; max?: number }) => void;
+    // Journey filter
+    selectedJourneyTypes: JourneyStepType[];
+    onJourneyTypesChange: (types: JourneyStepType[]) => void;
     // Row click
     onRowClick?: (callHistoryId: string) => void;
 }
@@ -100,6 +111,15 @@ const statusConfig: Record<CallStatus, { icon: typeof Phone; label: string; clas
     voicemail: { icon: Voicemail, label: "Messagerie", className: "bg-blue-100 text-blue-700" },
     abandoned: { icon: PhoneOff, label: "Abandonné", className: "bg-amber-100 text-amber-700" },
     busy: { icon: PhoneCall, label: "Occupé", className: "bg-red-100 text-red-700" },
+};
+
+// Journey step icon & style config
+const journeyStepConfig: Record<JourneyStepType, { icon: string; className: string }> = {
+    direct: { icon: "📞", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+    queue: { icon: "🔄", className: "bg-blue-50 text-blue-700 border-blue-200" },
+    transfer: { icon: "↗️", className: "bg-orange-50 text-orange-700 border-orange-200" },
+    ring_group: { icon: "👥", className: "bg-purple-50 text-purple-700 border-purple-200" },
+    ivr: { icon: "🤖", className: "bg-slate-50 text-slate-600 border-slate-200" },
 };
 
 function formatDateTime(isoString: string): string {
@@ -197,6 +217,9 @@ export function LogsTable({
     segmentCountMin,
     segmentCountMax,
     onSegmentCountChange,
+    // Journey filter
+    selectedJourneyTypes,
+    onJourneyTypesChange,
     // Row click
     onRowClick,
 }: LogsTableProps) {
@@ -209,275 +232,288 @@ export function LogsTable({
     }
 
     return (
-        <div className="overflow-x-auto">
-            <Table>
-                <TableHeader>
-                    {/* Row 1: Column Labels + Sort */}
-                    <TableRow className="bg-slate-50 hover:bg-slate-50">
-                        {columnVisibility.callHistoryId && (
-                            <TableHead className="w-20">ID</TableHead>
-                        )}
-                        {columnVisibility.segmentCount && (
-                            <TableHead className="w-16 text-center">Seg.</TableHead>
-                        )}
-                        <TableHead className="w-40">
-                            <SortableHeader label="Date/Heure" field="startedAt" currentSort={sort} onSort={onSort} />
-                        </TableHead>
-                        <TableHead>
-                            <SortableHeader label="Appelant" field="sourceNumber" currentSort={sort} onSort={onSort} />
-                        </TableHead>
-                        <TableHead className="w-10 text-center"></TableHead>
-                        <TableHead>
-                            <SortableHeader label="Destinataire" field="destinationNumber" currentSort={sort} onSort={onSort} />
-                        </TableHead>
-                        <TableHead className="w-10 text-center"></TableHead>
-                        <TableHead>Traité par</TableHead>
-                        <TableHead>Queue(s)</TableHead>
-                        <TableHead className="w-24 text-center">Direction</TableHead>
-                        <TableHead className="w-24 text-center">Statut</TableHead>
-                        <TableHead className="w-20 text-right">
-                            <SortableHeader label="Durée" field="duration" currentSort={sort} onSort={onSort} />
-                        </TableHead>
-                        <TableHead className="w-20 text-right">Attente</TableHead>
-                    </TableRow>
+        <TooltipProvider delayDuration={0}>
+            <div className="overflow-x-auto">
+                <Table>
+                    <TableHeader>
+                        {/* Row 1: Column Labels + Sort */}
+                        <TableRow className="bg-slate-50 hover:bg-slate-50">
+                            {columnVisibility.callHistoryId && (
+                                <TableHead className="w-20">ID</TableHead>
+                            )}
+                            {columnVisibility.segmentCount && (
+                                <TableHead className="w-16 text-center">Seg.</TableHead>
+                            )}
+                            <TableHead className="w-40">
+                                <SortableHeader label="Date/Heure" field="startedAt" currentSort={sort} onSort={onSort} />
+                            </TableHead>
+                            <TableHead>
+                                <SortableHeader label="Appelant" field="sourceNumber" currentSort={sort} onSort={onSort} />
+                            </TableHead>
+                            <TableHead className="w-10 text-center"></TableHead>
+                            <TableHead>
+                                <SortableHeader label="Destinataire" field="destinationNumber" currentSort={sort} onSort={onSort} />
+                            </TableHead>
+                            <TableHead className="w-10 text-center"></TableHead>
+                            <TableHead>Traité par</TableHead>
+                            <TableHead>Parcours</TableHead>
+                            <TableHead className="w-24 text-center">Direction</TableHead>
+                            <TableHead className="w-24 text-center">Statut</TableHead>
+                            <TableHead className="w-20 text-right">
+                                <SortableHeader label="Durée" field="duration" currentSort={sort} onSort={onSort} />
+                            </TableHead>
+                            <TableHead className="w-20 text-right">Attente</TableHead>
+                        </TableRow>
 
-                    {/* Row 2: Filter Inputs */}
-                    <TableRow className="bg-slate-50/70 hover:bg-slate-50/70 border-b-2 border-slate-200">
-                        {columnVisibility.callHistoryId && (
+                        {/* Row 2: Filter Inputs */}
+                        <TableRow className="bg-slate-50/70 hover:bg-slate-50/70 border-b-2 border-slate-200">
+                            {columnVisibility.callHistoryId && (
+                                <TableHead className="py-2">
+                                    <ColumnFilterInput
+                                        value={idSearch}
+                                        onChange={onIdSearchChange}
+                                        placeholder="*ID34"
+                                    />
+                                </TableHead>
+                            )}
+                            {columnVisibility.segmentCount && (
+                                <TableHead className="py-2">
+                                    <ColumnFilterSegmentCount
+                                        min={segmentCountMin}
+                                        max={segmentCountMax}
+                                        onChange={onSegmentCountChange}
+                                    />
+                                </TableHead>
+                            )}
+                            <TableHead className="py-2">
+                                <ColumnFilterDateRange
+                                    dateRange={dateRange}
+                                    onDateRangeChange={onDateRangeChange}
+                                />
+                            </TableHead>
                             <TableHead className="py-2">
                                 <ColumnFilterInput
-                                    value={idSearch}
-                                    onChange={onIdSearchChange}
-                                    placeholder="*ID34"
+                                    value={callerSearch}
+                                    onChange={onCallerSearchChange}
+                                    placeholder="Rechercher..."
                                 />
                             </TableHead>
-                        )}
-                        {columnVisibility.segmentCount && (
+                            <TableHead className="py-2"></TableHead>
                             <TableHead className="py-2">
-                                <ColumnFilterSegmentCount
-                                    min={segmentCountMin}
-                                    max={segmentCountMax}
-                                    onChange={onSegmentCountChange}
+                                <ColumnFilterInput
+                                    value={calleeSearch}
+                                    onChange={onCalleeSearchChange}
+                                    placeholder="Rechercher..."
                                 />
                             </TableHead>
-                        )}
-                        <TableHead className="py-2">
-                            <ColumnFilterDateRange
-                                dateRange={dateRange}
-                                onDateRangeChange={onDateRangeChange}
-                            />
-                        </TableHead>
-                        <TableHead className="py-2">
-                            <ColumnFilterInput
-                                value={callerSearch}
-                                onChange={onCallerSearchChange}
-                                placeholder="Rechercher..."
-                            />
-                        </TableHead>
-                        <TableHead className="py-2"></TableHead>
-                        <TableHead className="py-2">
-                            <ColumnFilterInput
-                                value={calleeSearch}
-                                onChange={onCalleeSearchChange}
-                                placeholder="Rechercher..."
-                            />
-                        </TableHead>
-                        <TableHead className="py-2"></TableHead>
-                        <TableHead className="py-2">
-                            <ColumnFilterInput
-                                value={handledBySearch}
-                                onChange={onHandledBySearchChange}
-                                placeholder="Agent..."
-                            />
-                        </TableHead>
-                        <TableHead className="py-2">
-                            <ColumnFilterQueue
-                                queues={queues}
-                                selectedQueueNumber={selectedQueueNumber}
-                                onSelect={onQueueSelect}
-                                placeholder="Queue..."
-                            />
-                        </TableHead>
-                        <TableHead className="py-2">
-                            <ColumnFilterDirection
-                                selected={selectedDirections}
-                                onChange={onDirectionsChange}
-                            />
-                        </TableHead>
-                        <TableHead className="py-2">
-                            <ColumnFilterStatus
-                                selected={selectedStatuses}
-                                onChange={onStatusesChange}
-                            />
-                        </TableHead>
-                        <TableHead className="py-2">
-                            <ColumnFilterDuration
-                                min={durationMin}
-                                max={durationMax}
-                                onChange={onDurationChange}
-                            />
-                        </TableHead>
-                        <TableHead className="py-2"></TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {logs.length === 0 ? (
-                        <TableRow>
-                            <TableCell
-                                colSpan={13}
-                                className="h-48 text-center text-slate-500"
-                            >
-                                Aucun appel trouvé pour ces critères
-                            </TableCell>
+                            <TableHead className="py-2"></TableHead>
+                            <TableHead className="py-2">
+                                <ColumnFilterInput
+                                    value={handledBySearch}
+                                    onChange={onHandledBySearchChange}
+                                    placeholder="Agent..."
+                                />
+                            </TableHead>
+                            <TableHead className="py-2">
+                                <ColumnFilterJourney
+                                    selected={selectedJourneyTypes}
+                                    onChange={onJourneyTypesChange}
+                                />
+                            </TableHead>
+                            <TableHead className="py-2">
+                                <ColumnFilterDirection
+                                    selected={selectedDirections}
+                                    onChange={onDirectionsChange}
+                                />
+                            </TableHead>
+                            <TableHead className="py-2">
+                                <ColumnFilterStatus
+                                    selected={selectedStatuses}
+                                    onChange={onStatusesChange}
+                                />
+                            </TableHead>
+                            <TableHead className="py-2">
+                                <ColumnFilterDuration
+                                    min={durationMin}
+                                    max={durationMax}
+                                    onChange={onDurationChange}
+                                />
+                            </TableHead>
+                            <TableHead className="py-2"></TableHead>
                         </TableRow>
-                    ) : (
-                        logs.map((log) => {
-                            const dirConfig = directionConfig[log.direction];
-                            const statConfig = statusConfig[log.finalStatus];
-                            const DirIcon = dirConfig.icon;
-                            const StatIcon = statConfig.icon;
-
-                            return (
-                                <TableRow
-                                    key={log.callHistoryId}
-                                    className="cursor-pointer hover:bg-slate-50 transition-colors"
-                                    onClick={() => onRowClick?.(log.callHistoryId)}
+                    </TableHeader>
+                    <TableBody>
+                        {logs.length === 0 ? (
+                            <TableRow>
+                                <TableCell
+                                    colSpan={13}
+                                    className="h-48 text-center text-slate-500"
                                 >
-                                    {/* ID column */}
-                                    {columnVisibility.callHistoryId && (
-                                        <TableCell className="font-mono text-xs">
-                                            <span className="text-slate-500">{log.callHistoryIdShort}</span>
-                                        </TableCell>
-                                    )}
+                                    Aucun appel trouvé pour ces critères
+                                </TableCell>
+                            </TableRow>
+                        ) : (
+                            logs.map((log) => {
+                                const dirConfig = directionConfig[log.direction];
+                                const statConfig = statusConfig[log.finalStatus];
+                                const DirIcon = dirConfig.icon;
+                                const StatIcon = statConfig.icon;
 
-                                    {/* Segment count column */}
-                                    {columnVisibility.segmentCount && (
+                                return (
+                                    <TableRow
+                                        key={log.callHistoryId}
+                                        className="cursor-pointer hover:bg-slate-50 transition-colors"
+                                        onClick={() => onRowClick?.(log.callHistoryId)}
+                                    >
+                                        {/* ID column */}
+                                        {columnVisibility.callHistoryId && (
+                                            <TableCell className="font-mono text-xs">
+                                                <span className="text-slate-500">{log.callHistoryIdShort}</span>
+                                            </TableCell>
+                                        )}
+
+                                        {/* Segment count column */}
+                                        {columnVisibility.segmentCount && (
+                                            <TableCell className="text-center">
+                                                <Badge
+                                                    variant="secondary"
+                                                    className={`text-[10px] px-1.5 py-0.5 ${getSegmentBadgeColor(log.segmentCount)}`}
+                                                >
+                                                    {log.segmentCount}
+                                                </Badge>
+                                            </TableCell>
+                                        )}
+
+                                        {/* Date/Time */}
+                                        <TableCell className="text-sm tabular-nums">
+                                            {formatDateTime(log.startedAt)}
+                                        </TableCell>
+
+                                        {/* Caller */}
+                                        <TableCell>
+                                            <div className="flex flex-col">
+                                                <span className="font-medium text-sm">{log.callerNumber}</span>
+                                                {log.callerName && (
+                                                    <span className="text-xs text-slate-500 truncate max-w-[180px]">
+                                                        {log.callerName}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </TableCell>
+
+                                        {/* Empty spacer column */}
                                         <TableCell className="text-center">
-                                            <Badge
-                                                variant="secondary"
-                                                className={`text-[10px] px-1.5 py-0.5 ${getSegmentBadgeColor(log.segmentCount)}`}
-                                            >
-                                                {log.segmentCount}
+                                            <ArrowRight className="h-4 w-4 text-slate-400 mx-auto" />
+                                        </TableCell>
+
+                                        {/* Callee (initial destination) */}
+                                        <TableCell>
+                                            <div className="flex flex-col">
+                                                <span className={`font-medium text-sm ${log.finalStatus !== "answered" ? "text-slate-400 italic" : ""}`}>
+                                                    {log.calleeNumber}
+                                                </span>
+                                                {log.calleeName && (
+                                                    <span className={`text-xs truncate max-w-[180px] ${log.finalStatus !== "answered" ? "text-slate-400 italic" : "text-slate-500"}`}>
+                                                        {log.calleeName}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </TableCell>
+
+                                        {/* Arrow (direct or transferred) - between Destinataire and Traité par */}
+                                        <TableCell className="text-center">
+                                            {log.wasTransferred ? (
+                                                <span title="Transféré">
+                                                    <Shuffle className="h-4 w-4 text-amber-500 mx-auto" />
+                                                </span>
+                                            ) : (
+                                                <ArrowRight className="h-4 w-4 text-slate-400 mx-auto" />
+                                            )}
+                                        </TableCell>
+
+                                        {/* Handled By - same format as Appelant/Destinataire */}
+                                        <TableCell>
+                                            {log.handledBy && log.handledBy.length > 0 ? (
+                                                <div className="flex flex-col">
+                                                    <span className="font-medium text-sm">
+                                                        {log.handledBy[0].number}
+                                                    </span>
+                                                    <span className="text-xs text-slate-500 truncate max-w-[180px]">
+                                                        {log.handledBy[0].name || log.handledBy[0].number}
+                                                        {log.handledBy.length > 1 && (
+                                                            <span className="text-slate-400"> +{log.handledBy.length - 1}</span>
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-slate-300">-</span>
+                                            )}
+                                        </TableCell>
+
+                                        {/* Parcours (Journey) */}
+                                        <TableCell>
+                                            {log.journey && log.journey.length > 0 ? (
+                                                <div className="flex items-center gap-0.5">
+                                                    {log.journey.map((step, idx) => {
+                                                        const config = journeyStepConfig[step.type] || journeyStepConfig.direct;
+                                                        return (
+                                                            <React.Fragment key={idx}>
+                                                                {idx > 0 && (
+                                                                    <span className="text-slate-300 text-xs mx-0.5">→</span>
+                                                                )}
+                                                                <Tooltip>
+                                                                    <TooltipTrigger asChild>
+                                                                        <span
+                                                                            className={`inline-flex items-center justify-center w-6 h-6 rounded border text-xs cursor-default ${config.className}`}
+                                                                        >
+                                                                            {config.icon}
+                                                                        </span>
+                                                                    </TooltipTrigger>
+                                                                    <TooltipContent side="top" className="text-xs max-w-[200px]">
+                                                                        {step.detail}
+                                                                    </TooltipContent>
+                                                                </Tooltip>
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-slate-300">-</span>
+                                            )}
+                                        </TableCell>
+
+                                        {/* Direction */}
+                                        <TableCell className="text-center">
+                                            <Badge variant="secondary" className={`gap-1 ${dirConfig.className}`}>
+                                                <DirIcon className="h-3 w-3" />
+                                                {dirConfig.label}
                                             </Badge>
                                         </TableCell>
-                                    )}
 
-                                    {/* Date/Time */}
-                                    <TableCell className="text-sm tabular-nums">
-                                        {formatDateTime(log.startedAt)}
-                                    </TableCell>
+                                        {/* Status */}
+                                        <TableCell className="text-center">
+                                            <Badge variant="secondary" className={`gap-1 ${statConfig.className}`}>
+                                                <StatIcon className="h-3 w-3" />
+                                                {statConfig.label}
+                                            </Badge>
+                                        </TableCell>
 
-                                    {/* Caller */}
-                                    <TableCell>
-                                        <div className="flex flex-col">
-                                            <span className="font-medium text-sm">{log.callerNumber}</span>
-                                            {log.callerName && (
-                                                <span className="text-xs text-slate-500 truncate max-w-[180px]">
-                                                    {log.callerName}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </TableCell>
+                                        {/* Total Duration */}
+                                        <TableCell className="text-right font-mono text-sm tabular-nums">
+                                            {log.totalDurationFormatted}
+                                        </TableCell>
 
-                                    {/* Empty spacer column */}
-                                    <TableCell className="text-center">
-                                        <ArrowRight className="h-4 w-4 text-slate-400 mx-auto" />
-                                    </TableCell>
-
-                                    {/* Callee (initial destination) */}
-                                    <TableCell>
-                                        <div className="flex flex-col">
-                                            <span className={`font-medium text-sm ${log.finalStatus !== "answered" ? "text-slate-400 italic" : ""}`}>
-                                                {log.calleeNumber}
-                                            </span>
-                                            {log.calleeName && (
-                                                <span className={`text-xs truncate max-w-[180px] ${log.finalStatus !== "answered" ? "text-slate-400 italic" : "text-slate-500"}`}>
-                                                    {log.calleeName}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </TableCell>
-
-                                    {/* Arrow (direct or transferred) - between Destinataire and Traité par */}
-                                    <TableCell className="text-center">
-                                        {log.wasTransferred ? (
-                                            <span title="Transféré">
-                                                <Shuffle className="h-4 w-4 text-amber-500 mx-auto" />
-                                            </span>
-                                        ) : (
-                                            <ArrowRight className="h-4 w-4 text-slate-400 mx-auto" />
-                                        )}
-                                    </TableCell>
-
-                                    {/* Handled By - same format as Appelant/Destinataire */}
-                                    <TableCell>
-                                        {log.handledBy && log.handledBy.length > 0 ? (
-                                            <div className="flex flex-col">
-                                                <span className="font-medium text-sm">
-                                                    {log.handledBy[0].number}
-                                                </span>
-                                                <span className="text-xs text-slate-500 truncate max-w-[180px]">
-                                                    {log.handledBy[0].name || log.handledBy[0].number}
-                                                    {log.handledBy.length > 1 && (
-                                                        <span className="text-slate-400"> +{log.handledBy.length - 1}</span>
-                                                    )}
-                                                </span>
-                                            </div>
-                                        ) : (
-                                            <span className="text-xs text-slate-300">-</span>
-                                        )}
-                                    </TableCell>
-
-                                    {/* Queue(s) */}
-                                    <TableCell>
-                                        {log.queues && log.queues.length > 0 ? (
-                                            <div className="flex flex-col">
-                                                <span className="font-medium text-sm">
-                                                    {log.queues[0].number}
-                                                </span>
-                                                <span className="text-xs text-slate-500 truncate max-w-[180px]">
-                                                    {log.queues[0].name || log.queues[0].number}
-                                                    {log.queues.length > 1 && (
-                                                        <span className="text-slate-400"> +{log.queues.length - 1}</span>
-                                                    )}
-                                                </span>
-                                            </div>
-                                        ) : (
-                                            <span className="text-xs text-slate-300">-</span>
-                                        )}
-                                    </TableCell>
-
-                                    {/* Direction */}
-                                    <TableCell className="text-center">
-                                        <Badge variant="secondary" className={`gap-1 ${dirConfig.className}`}>
-                                            <DirIcon className="h-3 w-3" />
-                                            {dirConfig.label}
-                                        </Badge>
-                                    </TableCell>
-
-                                    {/* Status */}
-                                    <TableCell className="text-center">
-                                        <Badge variant="secondary" className={`gap-1 ${statConfig.className}`}>
-                                            <StatIcon className="h-3 w-3" />
-                                            {statConfig.label}
-                                        </Badge>
-                                    </TableCell>
-
-                                    {/* Total Duration */}
-                                    <TableCell className="text-right font-mono text-sm tabular-nums">
-                                        {log.totalDurationFormatted}
-                                    </TableCell>
-
-                                    {/* Wait Time with color */}
-                                    <TableCell className={`text-right font-mono text-sm tabular-nums ${getWaitTimeColor(log.waitTimeSeconds)}`}>
-                                        {log.waitTimeFormatted}
-                                    </TableCell>
-                                </TableRow>
-                            );
-                        })
-                    )}
-                </TableBody>
-            </Table>
-        </div>
+                                        {/* Wait Time with color */}
+                                        <TableCell className={`text-right font-mono text-sm tabular-nums ${getWaitTimeColor(log.waitTimeSeconds)}`}>
+                                            {log.waitTimeFormatted}
+                                        </TableCell>
+                                    </TableRow>
+                                );
+                            })
+                        )}
+                    </TableBody>
+                </Table>
+            </div>
+        </TooltipProvider>
     );
 }

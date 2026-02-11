@@ -6,6 +6,15 @@ export type EntityType = "extension" | "external" | "queue" | "ivr" | "script" |
 export type SortDirection = "asc" | "desc";
 export type SortField = "startedAt" | "duration" | "sourceNumber" | "destinationNumber";
 
+// Journey step types for the "Parcours" column
+export type JourneyStepType = "direct" | "queue" | "transfer" | "ring_group" | "ivr";
+
+export interface JourneyStep {
+    type: JourneyStepType;
+    label: string;   // Short label (e.g., "Queue 905")
+    detail: string;  // Full detail for tooltip (e.g., "Queue 905 — Gérance")
+}
+
 // Aggregated call log (1 call = 1 row, grouped by call_history_id)
 export interface AggregatedCallLog {
     callHistoryId: string;
@@ -42,6 +51,9 @@ export interface AggregatedCallLog {
     // Queues that the call passed through
     queues: Array<{ number: string; name: string }>;
     queuesDisplay: string;  // Formatted for display
+
+    // Journey steps for "Parcours" column
+    journey: JourneyStep[];
 }
 
 // Legacy: Single segment call log (kept for call chain modal)

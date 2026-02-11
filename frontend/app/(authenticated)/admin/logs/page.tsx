@@ -32,6 +32,7 @@ import type {
     SortField,
     ColumnVisibility,
     AggregatedCallLogsResponse,
+    JourneyStepType,
 } from "@/types/logs.types";
 
 const PAGE_SIZE = 50;
@@ -98,6 +99,7 @@ export default function AdminLogsPage() {
     const [segmentCountMax, setSegmentCountMax] = useState<number | undefined>(() => getInitialNumberParam("segMax"));
     const [durationMin, setDurationMin] = useState<number | undefined>(() => getInitialNumberParam("durMin"));
     const [durationMax, setDurationMax] = useState<number | undefined>(() => getInitialNumberParam("durMax"));
+    const [selectedJourneyTypes, setSelectedJourneyTypes] = useState<JourneyStepType[]>([]);
 
     // Data state
     const [data, setData] = useState<AggregatedCallLogsResponse | null>(null);
@@ -355,6 +357,11 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
+    const handleJourneyTypesChange = (types: JourneyStepType[]) => {
+        setSelectedJourneyTypes(types);
+        setCurrentPage(1);
+    };
+
     const handleResetAllFilters = () => {
         // Reset all filter states
         setSelectedDirections([]);
@@ -368,6 +375,7 @@ export default function AdminLogsPage() {
         setSegmentCountMax(undefined);
         setDurationMin(undefined);
         setDurationMax(undefined);
+        setSelectedJourneyTypes([]);
         setCurrentPage(1);
         // Increment reset counter to trigger immediate refetch (bypasses debounce)
         setResetCounter(c => c + 1);
@@ -468,7 +476,13 @@ export default function AdminLogsPage() {
             {/* Table with integrated filters */}
             <Card className="border-slate-200 shadow-sm overflow-hidden">
                 <LogsTable
-                    logs={data?.logs || []}
+                    logs={(() => {
+                        const allLogs = data?.logs || [];
+                        if (selectedJourneyTypes.length === 0) return allLogs;
+                        return allLogs.filter(log =>
+                            log.journey?.some(step => selectedJourneyTypes.includes(step.type))
+                        );
+                    })()}
                     isLoading={isLoading}
                     columnVisibility={columnVisibility}
                     sort={sort}
@@ -507,6 +521,9 @@ export default function AdminLogsPage() {
                         setSegmentCountMax(max);
                         setCurrentPage(1);
                     }}
+                    // Journey filter
+                    selectedJourneyTypes={selectedJourneyTypes}
+                    onJourneyTypesChange={handleJourneyTypesChange}
                     // Row click
                     onRowClick={handleRowClick}
                 />
