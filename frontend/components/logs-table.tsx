@@ -519,7 +519,15 @@ export function LogsTable({
                                                                         </span>
                                                                     </TooltipTrigger>
                                                                     <TooltipContent side="top" className="text-xs max-w-[200px]">
-                                                                        {step.detail}
+                                                                        <div className="flex flex-col gap-1">
+                                                                            <span>{step.detail}</span>
+                                                                            {step.agent && (
+                                                                                <div className="flex items-center gap-1 text-green-600 font-medium">
+                                                                                    <Phone className="w-3 h-3" />
+                                                                                    <span>{step.agent}</span>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
                                                                     </TooltipContent>
                                                                 </Tooltip>
                                                             </React.Fragment>
