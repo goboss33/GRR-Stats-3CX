@@ -16,6 +16,7 @@ export interface JourneyStep {
     label: string;   // Short label (e.g., "Queue 905")
     detail: string;  // Full detail for tooltip (e.g., "Queue 905 — Gérance")
     result: JourneyStepResult;  // Outcome: answered, not_answered, busy, voicemail
+    agent?: string;  // Name of the agent who answered (for queue steps)
 }
 
 // Aggregated call log (1 call = 1 row, grouped by call_history_id)

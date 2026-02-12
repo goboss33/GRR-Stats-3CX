@@ -632,7 +632,8 @@ export async function getAggregatedCallLogs(
                             'type', j.step_type,
                             'label', j.step_label,
                             'detail', j.step_detail,
-                            'result', j.step_result
+                            'result', j.step_result,
+                            'agent', j.agent_name
                         ) ORDER BY j.step_order
                     ) as journey
                 FROM (
@@ -651,14 +652,10 @@ export async function getAggregatedCallLogs(
                         END as step_label,
                         CASE 
                             WHEN c.destination_entity_type = 'voicemail' THEN 'Messagerie ' || COALESCE(c.destination_dn_name, c.destination_dn_number)
-                            WHEN c.destination_dn_type = 'queue' THEN 
-                                COALESCE(c.destination_dn_name, c.destination_dn_number) || 
-                                CASE 
-                                    WHEN qo.agent_name IS NOT NULL THEN ' (répondu par ' || COALESCE(qo.agent_name, qo.agent_number) || ')'
-                                    ELSE '' 
-                                END
+                            WHEN c.destination_dn_type = 'queue' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
                             ELSE COALESCE(c.destination_dn_name, c.destination_dn_number)
                         END as step_detail,
+                        COALESCE(qo.agent_name, qo.agent_number) as agent_name,
                         CASE 
                             WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
                             WHEN c.destination_dn_type = 'queue' THEN
@@ -827,7 +824,8 @@ export async function getAggregatedCallLogs(
                             'type', j.step_type,
                             'label', j.step_label,
                             'detail', j.step_detail,
-                            'result', j.step_result
+                            'result', j.step_result,
+                            'agent', j.agent_name
                         ) ORDER BY j.step_order
                     ) as journey
                 FROM (
@@ -840,11 +838,8 @@ export async function getAggregatedCallLogs(
                             ELSE 'direct'
                         END as step_type,
                         c.destination_dn_number as step_label,
-                        COALESCE(c.destination_dn_name, c.destination_dn_number) || 
-                        CASE 
-                            WHEN qo.agent_name IS NOT NULL THEN ' (répondu par ' || COALESCE(qo.agent_name, qo.agent_number) || ')'
-                            ELSE '' 
-                        END as step_detail,
+                        COALESCE(c.destination_dn_name, c.destination_dn_number) as step_detail,
+                        COALESCE(qo.agent_name, qo.agent_number) as agent_name,
                         CASE 
                             WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
                             WHEN c.destination_dn_type = 'queue' THEN
