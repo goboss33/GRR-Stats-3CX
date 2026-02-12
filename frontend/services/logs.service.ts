@@ -613,13 +613,16 @@ export async function getAggregatedCallLogs(
                 GROUP BY dq.call_history_id
             ),
             queue_outcome AS (
-                SELECT DISTINCT
-                    p.originating_cdr_id
+                SELECT DISTINCT ON (p.originating_cdr_id)
+                    p.originating_cdr_id,
+                    p.destination_dn_name as agent_name,
+                    p.destination_dn_number as agent_number
                 FROM cdroutput p
                 WHERE ${dateOnlyWhereClause}
                   AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                   AND p.creation_forward_reason = 'polling'
                   AND p.cdr_answered_at IS NOT NULL
+                ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC
             ),
             call_journey AS (
                 SELECT 
@@ -648,7 +651,12 @@ export async function getAggregatedCallLogs(
                         END as step_label,
                         CASE 
                             WHEN c.destination_entity_type = 'voicemail' THEN 'Messagerie ' || COALESCE(c.destination_dn_name, c.destination_dn_number)
-                            WHEN c.destination_dn_type = 'queue' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
+                            WHEN c.destination_dn_type = 'queue' THEN 
+                                COALESCE(c.destination_dn_name, c.destination_dn_number) || 
+                                CASE 
+                                    WHEN qo.agent_name IS NOT NULL THEN ' (répondu par ' || COALESCE(qo.agent_name, qo.agent_number) || ')'
+                                    ELSE '' 
+                                END
                             ELSE COALESCE(c.destination_dn_name, c.destination_dn_number)
                         END as step_detail,
                         CASE 
@@ -676,9 +684,12 @@ export async function getAggregatedCallLogs(
                               c.destination_dn_type = 'extension'
                               AND c.destination_entity_type != 'voicemail'
                               AND c.creation_forward_reason IS DISTINCT FROM 'polling'
-                              AND NOT (
-                                  c.cdr_answered_at IS NULL 
-                                  AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
+                              AND (
+                                  c.creation_forward_reason = 'by_did'
+                                  OR NOT (
+                                      c.cdr_answered_at IS NULL 
+                                      AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
+                                  )
                               )
                           )
                       )
@@ -797,13 +808,16 @@ export async function getAggregatedCallLogs(
         // Build conditional call_journey CTE and JOIN for count query
         const callJourneyCTEForCount = needsCallJourney ? `,
             queue_outcome AS (
-                SELECT DISTINCT
-                    p.originating_cdr_id
+                SELECT DISTINCT ON (p.originating_cdr_id)
+                    p.originating_cdr_id,
+                    p.destination_dn_name as agent_name,
+                    p.destination_dn_number as agent_number
                 FROM cdroutput p
                 WHERE ${dateOnlyWhereClause}
                   AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                   AND p.creation_forward_reason = 'polling'
                   AND p.cdr_answered_at IS NOT NULL
+                ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC
             ),
             call_journey AS (
                 SELECT 
@@ -826,7 +840,11 @@ export async function getAggregatedCallLogs(
                             ELSE 'direct'
                         END as step_type,
                         c.destination_dn_number as step_label,
-                        COALESCE(c.destination_dn_name, c.destination_dn_number) as step_detail,
+                        COALESCE(c.destination_dn_name, c.destination_dn_number) || 
+                        CASE 
+                            WHEN qo.agent_name IS NOT NULL THEN ' (répondu par ' || COALESCE(qo.agent_name, qo.agent_number) || ')'
+                            ELSE '' 
+                        END as step_detail,
                         CASE 
                             WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
                             WHEN c.destination_dn_type = 'queue' THEN
@@ -852,9 +870,12 @@ export async function getAggregatedCallLogs(
                               c.destination_dn_type = 'extension'
                               AND c.destination_entity_type != 'voicemail'
                               AND c.creation_forward_reason IS DISTINCT FROM 'polling'
-                              AND NOT (
-                                  c.cdr_answered_at IS NULL 
-                                  AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
+                              AND (
+                                  c.creation_forward_reason = 'by_did'
+                                  OR NOT (
+                                      c.cdr_answered_at IS NULL 
+                                      AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
+                                  )
                               )
                           )
                       )
