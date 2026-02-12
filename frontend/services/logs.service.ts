@@ -510,10 +510,17 @@ export async function getAggregatedCallLogs(
         const queueNum = filters.journeyQueueNumber.replace(/'/g, "''"); // SQL escape
         const result = filters.journeyQueueResult;
 
-        // Step 1: Filter by queue number and result
-        aggregatedWhereConditions.push(
-            `cj.journey::jsonb @> '[{"type":"queue", "label":"${queueNum}", "result":"${result}"}]'::jsonb`
-        );
+        // Step 1: Filter by queue number and result using EXIST + jsonb_array_elements
+        // More reliable than JSONB containment operator
+        aggregatedWhereConditions.push(`
+            EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(cj.journey) elem
+                WHERE elem->>'type' = 'queue'
+                  AND elem->>'label' = '${queueNum}'
+                  AND elem->>'result' = '${result}'
+            )
+        `);
 
         // Step 2: If hasMultipleQueues is specified, filter by queue count
         if (filters.hasMultipleQueues !== undefined) {
