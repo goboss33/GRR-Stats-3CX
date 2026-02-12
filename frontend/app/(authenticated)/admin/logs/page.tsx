@@ -39,6 +39,9 @@ import type {
 
 const PAGE_SIZE = 50;
 
+// Queue-specific result types for UI (maps to backend JourneyStepResult + hasMultipleQueues)
+type QueueResultType = "answered" | "abandoned" | "redirected";
+
 const defaultColumnVisibility: ColumnVisibility = {
     callHistoryId: true,
     segmentCount: true,
@@ -140,6 +143,10 @@ export default function AdminLogsPage() {
     const [hasMultipleQueues, setHasMultipleQueues] = useState<boolean | undefined>(
         () => getInitialHasMultipleQueues()
     );
+
+    // UI-level state for queue-specific journey filters (maps to backend state)
+    const [uiJourneyQueueNumber, setUiJourneyQueueNumber] = useState<string | null>(null);
+    const [uiJourneyQueueResults, setUiJourneyQueueResults] = useState<QueueResultType[]>([]);
 
     // Data state
     const [data, setData] = useState<AggregatedCallLogsResponse | null>(null);
@@ -308,25 +315,50 @@ export default function AdminLogsPage() {
 
     // Sync queue-specific journey filters with URL params
     useEffect(() => {
-        setJourneyQueueNumber(searchParams.get("journeyQueue") || undefined);
+        const queueParam = searchParams.get("journeyQueue");
         const resultParam = searchParams.get("journeyResult");
+        const multiQueuesParam = searchParams.get("multiQueues");
+
+        // Update backend state
+        setJourneyQueueNumber(queueParam || undefined);
+
+        let backendResult: JourneyStepResult | undefined;
         if (resultParam) {
             const validResults: JourneyStepResult[] = ['answered', 'not_answered', 'busy', 'voicemail'];
-            setJourneyQueueResult(validResults.includes(resultParam as JourneyStepResult)
+            backendResult = validResults.includes(resultParam as JourneyStepResult)
                 ? resultParam as JourneyStepResult
-                : undefined
-            );
+                : undefined;
+            setJourneyQueueResult(backendResult);
         } else {
             setJourneyQueueResult(undefined);
         }
-        const multiQueuesParam = searchParams.get("multiQueues");
+
+        let backendMultiQueues: boolean | undefined;
         if (multiQueuesParam === "true") {
+            backendMultiQueues = true;
             setHasMultipleQueues(true);
         } else if (multiQueuesParam === "false") {
+            backendMultiQueues = false;
             setHasMultipleQueues(false);
         } else {
             setHasMultipleQueues(undefined);
         }
+
+        // Sync UI state from backend state
+        setUiJourneyQueueNumber(queueParam || null);
+
+        // Convert backend types to UI types
+        const uiResults: QueueResultType[] = [];
+        if (backendResult === 'answered') {
+            uiResults.push('answered');
+        } else if (backendResult === 'not_answered') {
+            if (backendMultiQueues === false) {
+                uiResults.push('abandoned');
+            } else if (backendMultiQueues === true) {
+                uiResults.push('redirected');
+            }
+        }
+        setUiJourneyQueueResults(uiResults);
     }, [searchParams]);
 
     // Load queues for filter dropdown
@@ -452,6 +484,44 @@ export default function AdminLogsPage() {
 
     const handleJourneyTypesChange = (types: JourneyStepType[]) => {
         setSelectedJourneyTypes(types);
+        setCurrentPage(1);
+    };
+
+    // Handlers to convert between UI and backend types for queue-specific journey filters
+    const handleJourneyQueueNumberChange = (queueNumber: string | null) => {
+        setUiJourneyQueueNumber(queueNumber);
+        setJourneyQueueNumber(queueNumber || undefined);
+        setCurrentPage(1);
+
+        // Clear results when queue is cleared
+        if (!queueNumber) {
+            setUiJourneyQueueResults([]);
+            setJourneyQueueResult(undefined);
+            setHasMultipleQueues(undefined);
+        }
+    };
+
+    const handleJourneyQueueResultsChange = (results: QueueResultType[]) => {
+        setUiJourneyQueueResults(results);
+
+        // Convert UI types to backend types
+        if (results.length === 0) {
+            setJourneyQueueResult(undefined);
+            setHasMultipleQueues(undefined);
+        } else if (results.includes('answered')) {
+            // Répondus: answered in this queue
+            setJourneyQueueResult('answered');
+            setHasMultipleQueues(undefined);
+        } else if (results.includes('abandoned')) {
+            // Abandonnés: not answered AND single queue
+            setJourneyQueueResult('not_answered');
+            setHasMultipleQueues(false);
+        } else if (results.includes('redirected')) {
+            // Redirigés: not answered AND multiple queues
+            setJourneyQueueResult('not_answered');
+            setHasMultipleQueues(true);
+        }
+
         setCurrentPage(1);
     };
 
@@ -635,6 +705,11 @@ export default function AdminLogsPage() {
                         setJourneyMatchMode(mode);
                         setCurrentPage(1);
                     }}
+                    // Queue-specific journey filters
+                    journeyQueueNumber={uiJourneyQueueNumber}
+                    onJourneyQueueNumberChange={handleJourneyQueueNumberChange}
+                    journeyQueueResults={uiJourneyQueueResults}
+                    onJourneyQueueResultsChange={handleJourneyQueueResultsChange}
                     // Row click
                     onRowClick={handleRowClick}
                 />

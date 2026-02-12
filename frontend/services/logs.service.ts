@@ -781,7 +781,7 @@ export async function getAggregatedCallLogs(
         // Count query - optimize by only including expensive CTEs when filtering on them
         const needsHandledBy = !!filters.handledBySearch?.trim();
         const needsCallQueues = !!filters.queueSearch?.trim();
-        const needsCallJourney = !!(filters.journeyTypes && filters.journeyTypes.length > 0);
+        const needsCallJourney = !!((filters.journeyTypes && filters.journeyTypes.length > 0) || filters.journeyQueueNumber);
 
         // Build conditional CTEs for count query
         const handledByCTEForCount = needsHandledBy ? `,

@@ -12,14 +12,25 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
+import { QueueAgentPicker } from "@/components/queue-agent-picker";
 
 import type { JourneyStepType, JourneyMatchMode } from "@/types/logs.types";
+import type { QueueInfo } from "@/types/queues.types";
+
+// Queue-specific result types for UI
+type QueueResultType = "answered" | "abandoned" | "redirected";
 
 interface ColumnFilterJourneyProps {
     selected: JourneyStepType[];
     onChange: (types: JourneyStepType[]) => void;
     matchMode: JourneyMatchMode;
     onMatchModeChange: (mode: JourneyMatchMode) => void;
+    // Queue-specific filters (new)
+    queues?: QueueInfo[];
+    queueNumber?: string | null;
+    onQueueNumberChange?: (queueNumber: string | null) => void;
+    queueResults?: QueueResultType[];
+    onQueueResultsChange?: (results: QueueResultType[]) => void;
     className?: string;
 }
 
@@ -29,40 +40,69 @@ const journeyOptions: { value: JourneyStepType; label: string; icon: string }[] 
     { value: "voicemail", label: "Messagerie", icon: "📫" },
 ];
 
+const queueResultOptions: { value: QueueResultType; label: string; color: string }[] = [
+    { value: "answered", label: "Répondu", color: "text-emerald-700" },
+    { value: "abandoned", label: "Abandonné", color: "text-red-700" },
+    { value: "redirected", label: "Redirigé", color: "text-amber-700" },
+];
+
 export function ColumnFilterJourney({
     selected,
     onChange,
     matchMode,
     onMatchModeChange,
+    queues,
+    queueNumber,
+    onQueueNumberChange,
+    queueResults,
+    onQueueResultsChange,
     className,
 }: ColumnFilterJourneyProps) {
     const [open, setOpen] = React.useState(false);
     const [localSelected, setLocalSelected] = React.useState<JourneyStepType[]>(selected);
     const [localMatchMode, setLocalMatchMode] = React.useState<JourneyMatchMode>(matchMode);
+    const [localQueueNumber, setLocalQueueNumber] = React.useState<string | null>(queueNumber ?? null);
+    const [localQueueResults, setLocalQueueResults] = React.useState<QueueResultType[]>(queueResults ?? []);
 
     React.useEffect(() => {
         if (!open) {
             setLocalSelected(selected);
             setLocalMatchMode(matchMode);
+            setLocalQueueNumber(queueNumber ?? null);
+            setLocalQueueResults(queueResults ?? []);
         }
-    }, [selected, matchMode, open]);
+    }, [selected, matchMode, queueNumber, queueResults, open]);
 
     const handleOpenChange = (isOpen: boolean) => {
         if (!isOpen && open) {
+            // Commit changes on close
             const hasTypesChanged =
                 localSelected.length !== selected.length ||
                 !localSelected.every(t => selected.includes(t));
             const hasModeChanged = localMatchMode !== matchMode;
+            const hasQueueNumberChanged = localQueueNumber !== (queueNumber ?? null);
+            const hasQueueResultsChanged =
+                (localQueueResults ?? []).length !== (queueResults ?? []).length ||
+                !(localQueueResults ?? []).every(r => (queueResults ?? []).includes(r));
+
             if (hasTypesChanged) {
                 onChange(localSelected);
             }
             if (hasModeChanged) {
                 onMatchModeChange(localMatchMode);
             }
+            if (hasQueueNumberChanged && onQueueNumberChange) {
+                onQueueNumberChange(localQueueNumber);
+            }
+            if (hasQueueResultsChanged && onQueueResultsChange) {
+                onQueueResultsChange(localQueueResults);
+            }
         }
         if (isOpen) {
             setLocalSelected(selected);
             setLocalMatchMode(matchMode);
+            setLocalQueueNumber(queueNumber ?? null);
+            setLocalQueueResults(queueResults ?? []);
         }
         setOpen(isOpen);
     };
@@ -143,6 +183,63 @@ export function ColumnFilterJourney({
                                 </div>
                             ))}
                         </div>
+
+                        {/* Queue-specific filters - only show when Queue is selected */}
+                        {localSelected.includes("queue") && queues && onQueueNumberChange && onQueueResultsChange && (
+                            <div className="border-t border-slate-100 pt-2 space-y-2">
+                                <div className="px-1">
+                                    <Label className="text-xs text-slate-500 mb-1.5 block">Queue :</Label>
+                                    <QueueAgentPicker
+                                        queues={queues}
+                                        agents={[]}
+                                        selectedItem={localQueueNumber ? {
+                                            type: 'queue' as const,
+                                            queueNumber: localQueueNumber,
+                                            queueName: queues.find(q => q.number === localQueueNumber)?.name || localQueueNumber
+                                        } : null}
+                                        onSelect={(item) => {
+                                            if (item && item.type === 'queue') {
+                                                setLocalQueueNumber(item.queueNumber);
+                                            } else {
+                                                setLocalQueueNumber(null);
+                                            }
+                                        }}
+                                        show="queues"
+                                        size="compact"
+                                        placeholder="Toutes les queues"
+                                    />
+                                </div>
+
+                                {localQueueNumber && (
+                                    <div className="px-1">
+                                        <Label className="text-xs text-slate-500 mb-1.5 block">Résultat :</Label>
+                                        <div className="space-y-1">
+                                            {queueResultOptions.map((opt) => (
+                                                <div key={opt.value} className="flex items-center gap-2">
+                                                    <Checkbox
+                                                        id={`queue-result-${opt.value}`}
+                                                        checked={localQueueResults.includes(opt.value)}
+                                                        onCheckedChange={(checked) => {
+                                                            if (checked) {
+                                                                setLocalQueueResults([...localQueueResults, opt.value]);
+                                                            } else {
+                                                                setLocalQueueResults(localQueueResults.filter(r => r !== opt.value));
+                                                            }
+                                                        }}
+                                                    />
+                                                    <Label
+                                                        htmlFor={`queue-result-${opt.value}`}
+                                                        className={cn("text-sm cursor-pointer flex-1 font-medium", opt.color)}
+                                                    >
+                                                        {opt.label}
+                                                    </Label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* OU/ET toggle - only show when multiple types selected */}
                         {localSelected.length >= 2 && (

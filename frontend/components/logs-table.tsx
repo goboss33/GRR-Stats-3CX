@@ -100,6 +100,11 @@ interface LogsTableProps {
     onJourneyTypesChange: (types: JourneyStepType[]) => void;
     journeyMatchMode: JourneyMatchMode;
     onJourneyMatchModeChange: (mode: JourneyMatchMode) => void;
+    // Queue-specific journey filters
+    journeyQueueNumber?: string | null;
+    onJourneyQueueNumberChange?: (queueNumber: string | null) => void;
+    journeyQueueResults?: ("answered" | "abandoned" | "redirected")[];
+    onJourneyQueueResultsChange?: (results: ("answered" | "abandoned" | "redirected")[]) => void;
     // Row click
     onRowClick?: (callHistoryId: string) => void;
 }
@@ -241,6 +246,11 @@ export function LogsTable({
     onJourneyTypesChange,
     journeyMatchMode,
     onJourneyMatchModeChange,
+    // Queue-specific journey filters
+    journeyQueueNumber,
+    onJourneyQueueNumberChange,
+    journeyQueueResults,
+    onJourneyQueueResultsChange,
     // Row click
     onRowClick,
 }: LogsTableProps) {
@@ -349,6 +359,11 @@ export function LogsTable({
                                     onChange={onJourneyTypesChange}
                                     matchMode={journeyMatchMode}
                                     onMatchModeChange={onJourneyMatchModeChange}
+                                    queues={queues}
+                                    queueNumber={journeyQueueNumber ?? null}
+                                    onQueueNumberChange={onJourneyQueueNumberChange}
+                                    queueResults={journeyQueueResults}
+                                    onQueueResultsChange={onJourneyQueueResultsChange}
                                 />
                             </TableHead>
                             <TableHead className="py-2">
