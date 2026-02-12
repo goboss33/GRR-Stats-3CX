@@ -293,7 +293,11 @@ export default function AdminLogsPage() {
         currentPage,
         sort,
         selectedJourneyTypes,
-        journeyMatchMode
+        journeyMatchMode,
+        // Queue-specific journey filters (for clickable KPIs)
+        journeyQueueNumber,
+        journeyQueueResult,
+        hasMultipleQueues,
     ]);
 
     // Fetch on filter/page change and update URL
@@ -301,6 +305,29 @@ export default function AdminLogsPage() {
         fetchData();
         updateUrl();
     }, [fetchData, updateUrl]);
+
+    // Sync queue-specific journey filters with URL params
+    useEffect(() => {
+        setJourneyQueueNumber(searchParams.get("journeyQueue") || undefined);
+        const resultParam = searchParams.get("journeyResult");
+        if (resultParam) {
+            const validResults: JourneyStepResult[] = ['answered', 'not_answered', 'busy', 'voicemail'];
+            setJourneyQueueResult(validResults.includes(resultParam as JourneyStepResult)
+                ? resultParam as JourneyStepResult
+                : undefined
+            );
+        } else {
+            setJourneyQueueResult(undefined);
+        }
+        const multiQueuesParam = searchParams.get("multiQueues");
+        if (multiQueuesParam === "true") {
+            setHasMultipleQueues(true);
+        } else if (multiQueuesParam === "false") {
+            setHasMultipleQueues(false);
+        } else {
+            setHasMultipleQueues(undefined);
+        }
+    }, [searchParams]);
 
     // Load queues for filter dropdown
     useEffect(() => {
