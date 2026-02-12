@@ -25,10 +25,8 @@ interface ColumnFilterJourneyProps {
 
 const journeyOptions: { value: JourneyStepType; label: string; icon: string }[] = [
     { value: "direct", label: "Direct", icon: "📞" },
-    { value: "queue", label: "Queue", icon: "🔄" },
-    { value: "transfer", label: "Transfert", icon: "↗️" },
-    { value: "ring_group", label: "Ring Group", icon: "👥" },
-    { value: "ivr", label: "IVR", icon: "🤖" },
+    { value: "queue", label: "Queue", icon: "👥" },
+    { value: "voicemail", label: "Messagerie", icon: "📫" },
 ];
 
 export function ColumnFilterJourney({

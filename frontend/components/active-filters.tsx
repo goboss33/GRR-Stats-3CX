@@ -223,10 +223,8 @@ export function ActiveFilters({
     // Journey type filters
     const journeyTypeLabels: Record<JourneyStepType, { icon: string; label: string }> = {
         direct: { icon: "📞", label: "Direct" },
-        queue: { icon: "🔄", label: "Queue" },
-        transfer: { icon: "↗️", label: "Transfert" },
-        ring_group: { icon: "👥", label: "Ring Group" },
-        ivr: { icon: "🤖", label: "IVR" },
+        queue: { icon: "👥", label: "Queue" },
+        voicemail: { icon: "📫", label: "Messagerie" },
     };
     if (filters.journeyTypes && filters.journeyTypes.length > 0) {
         filters.journeyTypes.forEach((type) => {

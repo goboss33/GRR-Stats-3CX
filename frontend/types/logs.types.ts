@@ -7,13 +7,15 @@ export type SortDirection = "asc" | "desc";
 export type SortField = "startedAt" | "duration" | "sourceNumber" | "destinationNumber";
 
 // Journey step types for the "Parcours" column
-export type JourneyStepType = "direct" | "queue" | "transfer" | "ring_group" | "ivr";
+export type JourneyStepType = "direct" | "queue" | "voicemail";
+export type JourneyStepResult = "answered" | "not_answered" | "busy" | "voicemail";
 export type JourneyMatchMode = "or" | "and";
 
 export interface JourneyStep {
     type: JourneyStepType;
     label: string;   // Short label (e.g., "Queue 905")
     detail: string;  // Full detail for tooltip (e.g., "Queue 905 — Gérance")
+    result: JourneyStepResult;  // Outcome: answered, not_answered, busy, voicemail
 }
 
 // Aggregated call log (1 call = 1 row, grouped by call_history_id)

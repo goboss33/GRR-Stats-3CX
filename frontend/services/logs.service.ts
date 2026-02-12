@@ -489,14 +489,11 @@ export async function getAggregatedCallLogs(
 
     // Journey type filter (on call_journey CTE data)
     if (filters.journeyTypes && filters.journeyTypes.length > 0) {
-        const validTypes = ['direct', 'queue', 'transfer', 'ring_group', 'ivr', 'script'];
+        const validTypes = ['direct', 'queue', 'voicemail'];
         const safeTypes = filters.journeyTypes.filter(t => validTypes.includes(t));
         if (safeTypes.length > 0) {
             const matchMode = filters.journeyMatchMode || 'or';
-            // Map 'script' to 'ivr' for SQL matching (scripts are stored as 'ivr' type in journey)
-            const sqlTypes = safeTypes.map(t => t === 'script' ? 'ivr' : t);
-            const uniqueSqlTypes = [...new Set(sqlTypes)];
-            const typesConditions = uniqueSqlTypes.map(t => `cj.journey::jsonb @> '[{"type":"${t}"}]'::jsonb`);
+            const typesConditions = safeTypes.map(t => `cj.journey::jsonb @> '[{"type":"${t}"}]'::jsonb`);
             if (matchMode === 'and') {
                 // AND mode: all selected types must be present in the journey
                 aggregatedWhereConditions.push(`(${typesConditions.join(' AND ')})`);
@@ -622,7 +619,8 @@ export async function getAggregatedCallLogs(
                         JSON_BUILD_OBJECT(
                             'type', j.step_type,
                             'label', j.step_label,
-                            'detail', j.step_detail
+                            'detail', j.step_detail,
+                            'result', j.step_result
                         ) ORDER BY j.step_order
                     ) as journey
                 FROM (
@@ -630,37 +628,55 @@ export async function getAggregatedCallLogs(
                         c.call_history_id,
                         c.cdr_started_at as step_order,
                         CASE 
+                            WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
                             WHEN c.destination_dn_type = 'queue' THEN 'queue'
-                            WHEN c.creation_method = 'transfer' AND c.destination_dn_type = 'extension' THEN 'transfer'
-                            WHEN c.destination_dn_type IN ('ring_group', 'ring_group_ring_all') THEN 'ring_group'
-                            WHEN c.destination_dn_type IN ('ivr', 'process', 'script') THEN 'ivr'
                             ELSE 'direct'
                         END as step_type,
                         CASE 
+                            WHEN c.destination_entity_type = 'voicemail' THEN c.destination_dn_number
                             WHEN c.destination_dn_type = 'queue' THEN c.destination_dn_number
-                            WHEN c.creation_method = 'transfer' AND c.destination_dn_type = 'extension' THEN c.destination_dn_number
-                            WHEN c.destination_dn_type IN ('ring_group', 'ring_group_ring_all') THEN c.destination_dn_number
-                            WHEN c.destination_dn_type IN ('ivr', 'process', 'script') THEN 'IVR'
                             ELSE c.destination_dn_number
                         END as step_label,
                         CASE 
+                            WHEN c.destination_entity_type = 'voicemail' THEN 'Messagerie ' || COALESCE(c.destination_dn_name, c.destination_dn_number)
                             WHEN c.destination_dn_type = 'queue' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
-                            WHEN c.creation_method = 'transfer' AND c.destination_dn_type = 'extension' THEN 'Transfert → ' || COALESCE(c.destination_dn_name, c.destination_dn_number)
-                            WHEN c.destination_dn_type IN ('ring_group', 'ring_group_ring_all') THEN COALESCE(c.destination_dn_name, 'Ring Group ' || c.destination_dn_number)
-                            WHEN c.destination_dn_type IN ('ivr', 'process', 'script') THEN COALESCE(c.destination_dn_name, 'IVR')
                             ELSE COALESCE(c.destination_dn_name, c.destination_dn_number)
-                        END as step_detail
+                        END as step_detail,
+                        CASE 
+                            WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
+                            WHEN c.destination_dn_type = 'queue' THEN
+                                CASE 
+                                    WHEN EXISTS (
+                                        SELECT 1 FROM cdroutput p
+                                        WHERE p.call_history_id = c.call_history_id
+                                          AND p.creation_forward_reason = 'polling'
+                                          AND p.originating_cdr_id = c.cdr_id
+                                          AND p.cdr_answered_at IS NOT NULL
+                                    ) THEN 'answered'
+                                    ELSE 'not_answered'
+                                END
+                            ELSE
+                                CASE
+                                    WHEN c.cdr_answered_at IS NOT NULL THEN 'answered'
+                                    WHEN c.termination_reason_details = 'busy' THEN 'busy'
+                                    ELSE 'not_answered'
+                                END
+                        END as step_result
                     FROM cdroutput c
                     WHERE ${dateOnlyWhereClause}
                       AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                      AND c.destination_dn_type IN ('queue', 'extension', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'script')
-                      -- Exclude polling legs (queue ringing agents)
-                      AND (c.creation_forward_reason IS DISTINCT FROM 'polling')
-                      -- Exclude ultra-short routing segments (< 1s, not answered)
-                      AND NOT (
-                          c.cdr_answered_at IS NULL 
-                          AND c.destination_dn_type = 'extension'
-                          AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
+                      AND (
+                          c.destination_entity_type = 'voicemail'
+                          OR c.destination_dn_type = 'queue'
+                          OR (
+                              c.destination_dn_type = 'extension'
+                              AND c.destination_entity_type != 'voicemail'
+                              AND c.creation_forward_reason IS DISTINCT FROM 'polling'
+                              AND NOT (
+                                  c.cdr_answered_at IS NULL 
+                                  AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
+                              )
+                          )
                       )
                 ) j
                 GROUP BY j.call_history_id
@@ -783,7 +799,8 @@ export async function getAggregatedCallLogs(
                         JSON_BUILD_OBJECT(
                             'type', j.step_type,
                             'label', j.step_label,
-                            'detail', j.step_detail
+                            'detail', j.step_detail,
+                            'result', j.step_result
                         ) ORDER BY j.step_order
                     ) as journey
                 FROM (
@@ -791,23 +808,47 @@ export async function getAggregatedCallLogs(
                         c.call_history_id,
                         c.cdr_started_at as step_order,
                         CASE 
+                            WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
                             WHEN c.destination_dn_type = 'queue' THEN 'queue'
-                            WHEN c.creation_method = 'transfer' AND c.destination_dn_type = 'extension' THEN 'transfer'
-                            WHEN c.destination_dn_type IN ('ring_group', 'ring_group_ring_all') THEN 'ring_group'
-                            WHEN c.destination_dn_type IN ('ivr', 'process') THEN 'ivr'
                             ELSE 'direct'
                         END as step_type,
                         c.destination_dn_number as step_label,
-                        COALESCE(c.destination_dn_name, c.destination_dn_number) as step_detail
+                        COALESCE(c.destination_dn_name, c.destination_dn_number) as step_detail,
+                        CASE 
+                            WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
+                            WHEN c.destination_dn_type = 'queue' THEN
+                                CASE 
+                                    WHEN EXISTS (
+                                        SELECT 1 FROM cdroutput p
+                                        WHERE p.call_history_id = c.call_history_id
+                                          AND p.creation_forward_reason = 'polling'
+                                          AND p.originating_cdr_id = c.cdr_id
+                                          AND p.cdr_answered_at IS NOT NULL
+                                    ) THEN 'answered'
+                                    ELSE 'not_answered'
+                                END
+                            ELSE
+                                CASE
+                                    WHEN c.cdr_answered_at IS NOT NULL THEN 'answered'
+                                    WHEN c.termination_reason_details = 'busy' THEN 'busy'
+                                    ELSE 'not_answered'
+                                END
+                        END as step_result
                     FROM cdroutput c
                     WHERE ${dateOnlyWhereClause}
                       AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                      AND c.destination_dn_type IN ('queue', 'extension', 'ring_group', 'ring_group_ring_all', 'ivr', 'process')
-                      AND (c.creation_forward_reason IS DISTINCT FROM 'polling')
-                      AND NOT (
-                          c.cdr_answered_at IS NULL 
-                          AND c.destination_dn_type = 'extension'
-                          AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
+                      AND (
+                          c.destination_entity_type = 'voicemail'
+                          OR c.destination_dn_type = 'queue'
+                          OR (
+                              c.destination_dn_type = 'extension'
+                              AND c.destination_entity_type != 'voicemail'
+                              AND c.creation_forward_reason IS DISTINCT FROM 'polling'
+                              AND NOT (
+                                  c.cdr_answered_at IS NULL 
+                                  AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
+                              )
+                          )
                       )
                 ) j
                 GROUP BY j.call_history_id

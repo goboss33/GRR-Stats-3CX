@@ -55,6 +55,8 @@ import type {
     SortField,
     LogsSort,
     JourneyStepType,
+    JourneyStepResult,
+    JourneyStep,
     JourneyMatchMode,
 } from "@/types/logs.types";
 
@@ -116,14 +118,28 @@ const statusConfig: Record<CallStatus, { icon: typeof Phone; label: string; clas
     busy: { icon: PhoneCall, label: "Occupé", className: "bg-red-100 text-red-700" },
 };
 
-// Journey step icon & style config
-const journeyStepConfig: Record<JourneyStepType, { icon: string; className: string }> = {
-    direct: { icon: "📞", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-    queue: { icon: "🔄", className: "bg-blue-50 text-blue-700 border-blue-200" },
-    transfer: { icon: "↗️", className: "bg-orange-50 text-orange-700 border-orange-200" },
-    ring_group: { icon: "👥", className: "bg-purple-50 text-purple-700 border-purple-200" },
-    ivr: { icon: "🤖", className: "bg-slate-50 text-slate-600 border-slate-200" },
-};
+// Journey step icon & style config — dynamic based on result
+function getJourneyStepStyle(step: JourneyStep): { icon: string; className: string } {
+    switch (step.type) {
+        case 'direct':
+            switch (step.result) {
+                case 'answered': return { icon: '📞', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+                case 'busy': return { icon: '📞', className: 'bg-red-50 text-red-600 border-red-200' };
+                case 'not_answered':
+                default: return { icon: '📞', className: 'bg-slate-50 text-slate-500 border-slate-200' };
+            }
+        case 'queue':
+            switch (step.result) {
+                case 'answered': return { icon: '👥', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+                case 'not_answered':
+                default: return { icon: '👥', className: 'bg-orange-50 text-orange-600 border-orange-200' };
+            }
+        case 'voicemail':
+            return { icon: '📫', className: 'bg-purple-50 text-purple-600 border-purple-200' };
+        default:
+            return { icon: '❓', className: 'bg-slate-50 text-slate-500 border-slate-200' };
+    }
+}
 
 function formatDateTime(isoString: string): string {
     if (!isoString) return "-";
@@ -488,7 +504,7 @@ export function LogsTable({
                                             {log.journey && log.journey.length > 0 ? (
                                                 <div className="flex items-center gap-0.5">
                                                     {log.journey.map((step, idx) => {
-                                                        const config = journeyStepConfig[step.type] || journeyStepConfig.direct;
+                                                        const config = getJourneyStepStyle(step);
                                                         return (
                                                             <React.Fragment key={idx}>
                                                                 {idx > 0 && (

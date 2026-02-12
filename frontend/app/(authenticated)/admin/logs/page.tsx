@@ -103,7 +103,7 @@ export default function AdminLogsPage() {
     const [selectedJourneyTypes, setSelectedJourneyTypes] = useState<JourneyStepType[]>(() => {
         const param = searchParams.get("journey");
         if (!param) return [];
-        const validTypes: JourneyStepType[] = ['direct', 'queue', 'transfer', 'ring_group', 'ivr'];
+        const validTypes: JourneyStepType[] = ['direct', 'queue', 'voicemail'];
         return param.split(",").filter(t => validTypes.includes(t as JourneyStepType)) as JourneyStepType[];
     });
     const [journeyMatchMode, setJourneyMatchMode] = useState<JourneyMatchMode>(() => {
