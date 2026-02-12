@@ -24,6 +24,7 @@ interface ActiveFiltersProps {
     onRemoveSegmentCount: () => void;
     onRemoveDuration: () => void;
     onRemoveJourneyType: (type: JourneyStepType) => void;
+    onRemoveJourneyQueueFilter?: () => void;  // For queue-specific journey filters
     onResetAll: () => void;
 }
 
@@ -54,6 +55,7 @@ export function ActiveFilters({
     onRemoveSegmentCount,
     onRemoveDuration,
     onRemoveJourneyType,
+    onRemoveJourneyQueueFilter,
     onResetAll,
 }: ActiveFiltersProps) {
     const activeFilters: React.ReactNode[] = [];
@@ -241,6 +243,32 @@ export function ActiveFilters({
                 </Badge>
             );
         });
+    }
+
+    // Queue-specific journey filter (for clickable KPIs)
+    if (filters.journeyQueueNumber && filters.journeyQueueResult && onRemoveJourneyQueueFilter) {
+        let outcomeLabel = '';
+        if (filters.journeyQueueResult === 'answered') {
+            outcomeLabel = 'Répondus';
+        } else if (filters.journeyQueueResult === 'not_answered' && filters.hasMultipleQueues === false) {
+            outcomeLabel = 'Abandonnés';
+        } else if (filters.journeyQueueResult === 'not_answered' && filters.hasMultipleQueues === true) {
+            outcomeLabel = 'Redirigés';
+        } else {
+            outcomeLabel = 'Non répondus';
+        }
+
+        activeFilters.push(
+            <Badge
+                key="journey-queue"
+                variant="secondary"
+                className="bg-emerald-100 text-emerald-700 gap-1 px-2 py-1 cursor-pointer hover:bg-emerald-200 transition-colors font-semibold"
+                onClick={onRemoveJourneyQueueFilter}
+            >
+                Queue {filters.journeyQueueNumber}: {outcomeLabel}
+                <X className="h-3 w-3" />
+            </Badge>
+        );
     }
 
     // Count removable filters (excluding date range)

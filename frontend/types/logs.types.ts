@@ -98,6 +98,10 @@ export interface LogsFilters {
     waitTimeMax?: number;
     journeyTypes?: JourneyStepType[];  // Filter by journey step types (Parcours column)
     journeyMatchMode?: JourneyMatchMode;  // 'or' (default) = any type matches, 'and' = all types must be present
+    // Queue-specific journey filters (for clickable KPIs)
+    journeyQueueNumber?: string;           // Filter to specific queue number
+    journeyQueueResult?: JourneyStepResult; // Filter by result in that queue (answered/not_answered)
+    hasMultipleQueues?: boolean;           // True = multiple queues (overflow), False = single queue only (abandoned)
 }
 
 export interface LogsPagination {

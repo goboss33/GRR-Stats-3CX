@@ -33,6 +33,7 @@ import type {
     ColumnVisibility,
     AggregatedCallLogsResponse,
     JourneyStepType,
+    JourneyStepResult,
     JourneyMatchMode,
 } from "@/types/logs.types";
 
@@ -111,6 +112,35 @@ export default function AdminLogsPage() {
         return param === 'and' ? 'and' : 'or';
     });
 
+    // Queue-specific journey filter states (for clickable KPIs)
+    const getInitialJourneyQueueNumber = () => searchParams.get("journeyQueue") || undefined;
+
+    const getInitialJourneyQueueResult = (): JourneyStepResult | undefined => {
+        const param = searchParams.get("journeyResult");
+        if (!param) return undefined;
+        const validResults: JourneyStepResult[] = ['answered', 'not_answered', 'busy', 'voicemail'];
+        return validResults.includes(param as JourneyStepResult)
+            ? param as JourneyStepResult
+            : undefined;
+    };
+
+    const getInitialHasMultipleQueues = (): boolean | undefined => {
+        const param = searchParams.get("multiQueues");
+        if (param === "true") return true;
+        if (param === "false") return false;
+        return undefined;
+    };
+
+    const [journeyQueueNumber, setJourneyQueueNumber] = useState<string | undefined>(
+        () => getInitialJourneyQueueNumber()
+    );
+    const [journeyQueueResult, setJourneyQueueResult] = useState<JourneyStepResult | undefined>(
+        () => getInitialJourneyQueueResult()
+    );
+    const [hasMultipleQueues, setHasMultipleQueues] = useState<boolean | undefined>(
+        () => getInitialHasMultipleQueues()
+    );
+
     // Data state
     const [data, setData] = useState<AggregatedCallLogsResponse | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -147,6 +177,10 @@ export default function AdminLogsPage() {
         durationMax,
         journeyTypes: selectedJourneyTypes.length > 0 ? selectedJourneyTypes : undefined,
         journeyMatchMode: journeyMatchMode,
+        // Queue-specific journey filters (for clickable KPIs)
+        journeyQueueNumber: journeyQueueNumber,
+        journeyQueueResult: journeyQueueResult,
+        hasMultipleQueues: hasMultipleQueues,
     };
 
     // Update URL when filters change - uses DEBOUNCED values for text search
@@ -193,6 +227,11 @@ export default function AdminLogsPage() {
             }
         }
 
+        // Queue-specific journey filters (for clickable KPIs)
+        if (journeyQueueNumber) params.set("journeyQueue", journeyQueueNumber);
+        if (journeyQueueResult) params.set("journeyResult", journeyQueueResult);
+        if (hasMultipleQueues !== undefined) params.set("multiQueues", String(hasMultipleQueues));
+
         router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
     }, [
         router,
@@ -212,6 +251,9 @@ export default function AdminLogsPage() {
         durationMax,
         selectedJourneyTypes,
         journeyMatchMode,
+        journeyQueueNumber,
+        journeyQueueResult,
+        hasMultipleQueues,
     ]);
 
     // Fetch data
@@ -391,6 +433,13 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
+    const handleRemoveJourneyQueueFilter = () => {
+        setJourneyQueueNumber(undefined);
+        setJourneyQueueResult(undefined);
+        setHasMultipleQueues(undefined);
+        setCurrentPage(1);
+    };
+
     const handleResetAllFilters = () => {
         // Reset all filter states
         setSelectedDirections([]);
@@ -406,6 +455,10 @@ export default function AdminLogsPage() {
         setDurationMax(undefined);
         setSelectedJourneyTypes([]);
         setJourneyMatchMode('or');
+        // Reset queue-specific journey filters
+        setJourneyQueueNumber(undefined);
+        setJourneyQueueResult(undefined);
+        setHasMultipleQueues(undefined);
         setCurrentPage(1);
         // Increment reset counter to trigger immediate refetch (bypasses debounce)
         setResetCounter(c => c + 1);
@@ -489,6 +542,7 @@ export default function AdminLogsPage() {
                 onRemoveSegmentCount={handleRemoveSegmentCount}
                 onRemoveDuration={handleRemoveDuration}
                 onRemoveJourneyType={handleRemoveJourneyType}
+                onRemoveJourneyQueueFilter={handleRemoveJourneyQueueFilter}
                 onResetAll={handleResetAllFilters}
             />
 

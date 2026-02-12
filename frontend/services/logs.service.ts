@@ -504,6 +504,37 @@ export async function getAggregatedCallLogs(
         }
     }
 
+    // Queue-specific journey filter (exact match with statistics logic)
+    // Used for clickable KPI cards to filter by queue outcome
+    if (filters.journeyQueueNumber && filters.journeyQueueResult) {
+        const queueNum = filters.journeyQueueNumber.replace(/'/g, "''"); // SQL escape
+        const result = filters.journeyQueueResult;
+
+        // Step 1: Filter by queue number and result
+        aggregatedWhereConditions.push(
+            `cj.journey::jsonb @> '[{"type":"queue", "label":"${queueNum}", "result":"${result}"}]'::jsonb`
+        );
+
+        // Step 2: If hasMultipleQueues is specified, filter by queue count
+        if (filters.hasMultipleQueues !== undefined) {
+            if (filters.hasMultipleQueues === true) {
+                // Multiple queues: count distinct queue labels > 1 (overflow case)
+                aggregatedWhereConditions.push(`
+                    (SELECT COUNT(DISTINCT elem->>'label')
+                     FROM jsonb_array_elements(cj.journey) elem
+                     WHERE elem->>'type' = 'queue') > 1
+                `);
+            } else {
+                // Single queue only: count distinct queue labels = 1 (abandoned case)
+                aggregatedWhereConditions.push(`
+                    (SELECT COUNT(DISTINCT elem->>'label')
+                     FROM jsonb_array_elements(cj.journey) elem
+                     WHERE elem->>'type' = 'queue') = 1
+                `);
+            }
+        }
+    }
+
     try {
         // Step 1: Get distinct call_history_ids with aggregated data
         const aggregatedQuery = `

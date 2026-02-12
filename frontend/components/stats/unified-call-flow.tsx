@@ -1,18 +1,52 @@
 "use client";
 
+import Link from "next/link";
 import { QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent } from "@/components/ui/card";
-import { Clock } from "lucide-react";
+import { Clock, ExternalLink } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { format } from "date-fns";
 
 interface UnifiedCallFlowProps {
     kpis: QueueKPIs;
     queueName: string;
     queueNumber: string;
+    dateRange?: { startDate: Date; endDate: Date }; // For building filter URLs
 }
 
-export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlowProps) {
+export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: UnifiedCallFlowProps) {
     const totalEntrants = kpis.callsReceived;
+
+    // Helper to build logs URL with filters (exact match with statistics logic)
+    const buildLogsUrl = (outcome: 'answered' | 'abandoned' | 'overflow'): string | undefined => {
+        if (!dateRange) return undefined;
+
+        const params = new URLSearchParams({
+            start: format(dateRange.startDate, 'yyyy-MM-dd'),
+            end: format(dateRange.endDate, 'yyyy-MM-dd'),
+            journeyQueue: queueNumber,
+        });
+
+        // Map KPI outcome to journey result and queue count filter
+        // This EXACTLY replicates the statistics.service.ts logic
+        if (outcome === 'answered') {
+            // Répondus: calls answered in THIS queue
+            params.set('journeyResult', 'answered');
+            // No hasMultipleQueues filter - we don't care if there are other queues
+        } else if (outcome === 'abandoned') {
+            // Abandonnés: calls not answered in THIS queue AND no other queues
+            params.set('journeyResult', 'not_answered');
+            params.set('multiQueues', 'false'); // Single queue only
+        } else if (outcome === 'overflow') {
+            // Redirigés: calls not answered in THIS queue AND went to other queues
+            params.set('journeyResult', 'not_answered');
+            params.set('multiQueues', 'true'); // Multiple queues
+        }
+
+        return `/admin/logs?${params.toString()}`;
+    };
+
+    const isClickable = !!dateRange;
 
     const formatDuration = (seconds: number): string => {
         if (seconds < 60) return `${seconds}s`;
@@ -98,60 +132,136 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlo
                     {/* Colonne Droite: Détails */}
                     <div className="col-span-1 md:col-span-8 space-y-6">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            {/* Répondus */}
-                            <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-100">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-3 h-3 rounded-full bg-emerald-500" />
-                                        <span className="font-medium text-emerald-900">Répondus</span>
-                                    </div>
-                                    <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                                        {getPercentage(kpis.callsAnswered, totalEntrants)}%
-                                    </span>
-                                </div>
-                                <div className="flex items-end justify-between">
-                                    <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
-                                    {kpis.callsAnsweredAndTransferred > 0 && (
-                                        <div className="text-xs text-emerald-600 text-right">
-                                            <div>dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong></div>
+                            {/* Répondus - Clickable */}
+                            {isClickable ? (
+                                <Link
+                                    href={buildLogsUrl('answered') || '#'}
+                                    className="block p-4 rounded-xl bg-emerald-50/50 border border-emerald-100 transition-all hover:shadow-md hover:border-emerald-200 cursor-pointer group"
+                                >
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-emerald-500 group-hover:scale-110 transition-transform" />
+                                            <span className="font-medium text-emerald-900 group-hover:underline">Répondus</span>
                                         </div>
-                                    )}
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                                                {getPercentage(kpis.callsAnswered, totalEntrants)}%
+                                            </span>
+                                            <ExternalLink className="h-3 w-3 text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-end justify-between">
+                                        <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
+                                        {kpis.callsAnsweredAndTransferred > 0 && (
+                                            <div className="text-xs text-emerald-600 text-right">
+                                                <div>dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong></div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </Link>
+                            ) : (
+                                <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-100">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-emerald-500" />
+                                            <span className="font-medium text-emerald-900">Répondus</span>
+                                        </div>
+                                        <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                                            {getPercentage(kpis.callsAnswered, totalEntrants)}%
+                                        </span>
+                                    </div>
+                                    <div className="flex items-end justify-between">
+                                        <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
+                                        {kpis.callsAnsweredAndTransferred > 0 && (
+                                            <div className="text-xs text-emerald-600 text-right">
+                                                <div>dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong></div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
-                            {/* Abandonnés */}
-                            <div className="p-4 rounded-xl bg-red-50/50 border border-red-100">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-3 h-3 rounded-full bg-red-500" />
-                                        <span className="font-medium text-red-900">Abandonnés</span>
+                            {/* Abandonnés - Clickable */}
+                            {isClickable ? (
+                                <Link
+                                    href={buildLogsUrl('abandoned') || '#'}
+                                    className="block p-4 rounded-xl bg-red-50/50 border border-red-100 transition-all hover:shadow-md hover:border-red-200 cursor-pointer group"
+                                >
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-red-500 group-hover:scale-110 transition-transform" />
+                                            <span className="font-medium text-red-900 group-hover:underline">Abandonnés</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                                                {getPercentage(kpis.callsAbandoned, totalEntrants)}%
+                                            </span>
+                                            <ExternalLink className="h-3 w-3 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </div>
                                     </div>
-                                    <span className="text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-                                        {getPercentage(kpis.callsAbandoned, totalEntrants)}%
-                                    </span>
-                                </div>
-                                <div className="flex items-end justify-between">
-                                    <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned}</p>
-                                    <div className="text-xs text-red-600 text-right">
-                                        <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
-                                        <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>
+                                    <div className="flex items-end justify-between">
+                                        <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned}</p>
+                                        <div className="text-xs text-red-600 text-right">
+                                            <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
+                                            <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>
+                                        </div>
+                                    </div>
+                                </Link>
+                            ) : (
+                                <div className="p-4 rounded-xl bg-red-50/50 border border-red-100">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-red-500" />
+                                            <span className="font-medium text-red-900">Abandonnés</span>
+                                        </div>
+                                        <span className="text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                                            {getPercentage(kpis.callsAbandoned, totalEntrants)}%
+                                        </span>
+                                    </div>
+                                    <div className="flex items-end justify-between">
+                                        <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned}</p>
+                                        <div className="text-xs text-red-600 text-right">
+                                            <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
+                                            <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
 
-                            {/* Redirigés */}
-                            <div className="p-4 rounded-xl bg-amber-50/50 border border-amber-100">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-3 h-3 rounded-full bg-amber-500" />
-                                        <span className="font-medium text-amber-900">Redirigés</span>
+                            {/* Redirigés - Clickable */}
+                            {isClickable ? (
+                                <Link
+                                    href={buildLogsUrl('overflow') || '#'}
+                                    className="block p-4 rounded-xl bg-amber-50/50 border border-amber-100 transition-all hover:shadow-md hover:border-amber-200 cursor-pointer group"
+                                >
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-amber-500 group-hover:scale-110 transition-transform" />
+                                            <span className="font-medium text-amber-900 group-hover:underline">Redirigés</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                                                {getPercentage(kpis.callsOverflow, totalEntrants)}%
+                                            </span>
+                                            <ExternalLink className="h-3 w-3 text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </div>
                                     </div>
-                                    <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                                        {getPercentage(kpis.callsOverflow, totalEntrants)}%
-                                    </span>
+                                    <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow}</p>
+                                </Link>
+                            ) : (
+                                <div className="p-4 rounded-xl bg-amber-50/50 border border-amber-100">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-amber-500" />
+                                            <span className="font-medium text-amber-900">Redirigés</span>
+                                        </div>
+                                        <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                                            {getPercentage(kpis.callsOverflow, totalEntrants)}%
+                                        </span>
+                                    </div>
+                                    <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow}</p>
                                 </div>
-                                <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow}</p>
-                            </div>
+                            )}
                         </div>
 
                         {/* Destinations Overflow */}
