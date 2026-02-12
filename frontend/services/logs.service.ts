@@ -612,6 +612,15 @@ export async function getAggregatedCallLogs(
                 ) dq
                 GROUP BY dq.call_history_id
             ),
+            queue_outcome AS (
+                SELECT DISTINCT
+                    p.originating_cdr_id
+                FROM cdroutput p
+                WHERE ${dateOnlyWhereClause}
+                  AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                  AND p.creation_forward_reason = 'polling'
+                  AND p.cdr_answered_at IS NOT NULL
+            ),
             call_journey AS (
                 SELECT 
                     j.call_history_id,
@@ -646,13 +655,7 @@ export async function getAggregatedCallLogs(
                             WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
                             WHEN c.destination_dn_type = 'queue' THEN
                                 CASE 
-                                    WHEN EXISTS (
-                                        SELECT 1 FROM cdroutput p
-                                        WHERE p.call_history_id = c.call_history_id
-                                          AND p.creation_forward_reason = 'polling'
-                                          AND p.originating_cdr_id = c.cdr_id
-                                          AND p.cdr_answered_at IS NOT NULL
-                                    ) THEN 'answered'
+                                    WHEN qo.originating_cdr_id IS NOT NULL THEN 'answered'
                                     ELSE 'not_answered'
                                 END
                             ELSE
@@ -663,6 +666,7 @@ export async function getAggregatedCallLogs(
                                 END
                         END as step_result
                     FROM cdroutput c
+                    LEFT JOIN queue_outcome qo ON c.cdr_id = qo.originating_cdr_id
                     WHERE ${dateOnlyWhereClause}
                       AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                       AND (
@@ -792,6 +796,15 @@ export async function getAggregatedCallLogs(
 
         // Build conditional call_journey CTE and JOIN for count query
         const callJourneyCTEForCount = needsCallJourney ? `,
+            queue_outcome AS (
+                SELECT DISTINCT
+                    p.originating_cdr_id
+                FROM cdroutput p
+                WHERE ${dateOnlyWhereClause}
+                  AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                  AND p.creation_forward_reason = 'polling'
+                  AND p.cdr_answered_at IS NOT NULL
+            ),
             call_journey AS (
                 SELECT 
                     j.call_history_id,
@@ -818,13 +831,7 @@ export async function getAggregatedCallLogs(
                             WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
                             WHEN c.destination_dn_type = 'queue' THEN
                                 CASE 
-                                    WHEN EXISTS (
-                                        SELECT 1 FROM cdroutput p
-                                        WHERE p.call_history_id = c.call_history_id
-                                          AND p.creation_forward_reason = 'polling'
-                                          AND p.originating_cdr_id = c.cdr_id
-                                          AND p.cdr_answered_at IS NOT NULL
-                                    ) THEN 'answered'
+                                    WHEN qo.originating_cdr_id IS NOT NULL THEN 'answered'
                                     ELSE 'not_answered'
                                 END
                             ELSE
@@ -835,6 +842,7 @@ export async function getAggregatedCallLogs(
                                 END
                         END as step_result
                     FROM cdroutput c
+                    LEFT JOIN queue_outcome qo ON c.cdr_id = qo.originating_cdr_id
                     WHERE ${dateOnlyWhereClause}
                       AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                       AND (
