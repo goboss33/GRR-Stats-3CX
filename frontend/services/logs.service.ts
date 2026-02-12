@@ -516,20 +516,37 @@ export async function getAggregatedCallLogs(
         );
 
         // Step 2: If hasMultipleQueues is specified, filter by queue count
+        // CRITICAL: Match statistics logic exactly - count only queues that appear AFTER this queue
+        // Statistics use: other_q.cdr_started_at > uqc.cdr_started_at
+        // Journey is chronologically ordered, so we use array index to determine "after"
         if (filters.hasMultipleQueues !== undefined) {
             if (filters.hasMultipleQueues === true) {
-                // Multiple queues: count distinct queue labels > 1 (overflow case)
+                // Redirigés (overflow): OTHER queues exist AFTER this queue in the journey
                 aggregatedWhereConditions.push(`
                     (SELECT COUNT(DISTINCT elem->>'label')
-                     FROM jsonb_array_elements(cj.journey) elem
-                     WHERE elem->>'type' = 'queue') > 1
+                     FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx)
+                     WHERE elem->>'type' = 'queue'
+                       AND elem->>'label' != '${queueNum}'
+                       AND idx > (
+                           SELECT MIN(idx2)
+                           FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t2(elem2, idx2)
+                           WHERE elem2->>'type' = 'queue' AND elem2->>'label' = '${queueNum}'
+                       )
+                    ) > 0
                 `);
             } else {
-                // Single queue only: count distinct queue labels = 1 (abandoned case)
+                // Abandonnés: NO other queues exist AFTER this queue in the journey
                 aggregatedWhereConditions.push(`
                     (SELECT COUNT(DISTINCT elem->>'label')
-                     FROM jsonb_array_elements(cj.journey) elem
-                     WHERE elem->>'type' = 'queue') = 1
+                     FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx)
+                     WHERE elem->>'type' = 'queue'
+                       AND elem->>'label' != '${queueNum}'
+                       AND idx > (
+                           SELECT MIN(idx2)
+                           FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t2(elem2, idx2)
+                           WHERE elem2->>'type' = 'queue' AND elem2->>'label' = '${queueNum}'
+                       )
+                    ) = 0
                 `);
             }
         }
