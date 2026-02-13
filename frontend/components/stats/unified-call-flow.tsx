@@ -112,7 +112,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
                     {/* Colonne Gauche: Quality Bar + Donut */}
                     <div className="col-span-1 md:col-span-4">
-                        <div className="flex items-center justify-evenly">
+                        <div className="flex items-center gap-8 px-8">
                             {/* Quality Bar - LEFT - Vertical segmented bar with gradient */}
                             <div className="flex items-center gap-3">
                                 {/* Vertical segmented bar */}
