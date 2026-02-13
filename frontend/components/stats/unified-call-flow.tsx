@@ -112,7 +112,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
                     {/* Colonne Gauche: Quality Bar + Donut */}
                     <div className="col-span-1 md:col-span-4">
-                        <div className="flex items-center gap-6">
+                        <div className="flex items-center justify-evenly">
                             {/* Quality Bar - LEFT - Vertical segmented bar with gradient */}
                             <div className="flex items-center gap-3">
                                 {/* Vertical segmented bar */}
@@ -122,16 +122,16 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                         const currentPercentage = Math.round((uniqueCalls / totalPassages) * 100);
                                         const isFilled = currentPercentage >= segmentThreshold;
 
-                                        // Calculate gradient color: Rouge 0-15%, Orange 15-35%, Vert 35-100%
+                                        // Calculate gradient color: Rouge 0-15%, Orange 15-25%, Vert 25-100%
                                         const getSegmentColor = (idx: number) => {
                                             const position = (idx + 1) / 10; // 0.1 to 1.0
                                             if (position <= 0.15) return '#ef4444'; // red-500 (0-15%)
-                                            if (position <= 0.35) return '#f97316'; // orange-500 (15-35%)
-                                            // Gradient vert de 35% à 100%
-                                            if (position <= 0.5) return '#fb923c'; // orange-400 → transition
-                                            if (position <= 0.65) return '#fbbf24'; // amber-400
-                                            if (position <= 0.8) return '#a3e635'; // lime-400
-                                            if (position <= 0.9) return '#4ade80'; // green-400
+                                            if (position <= 0.25) return '#f97316'; // orange-500 (15-25%)
+                                            // Gradient vert de 25% à 100%
+                                            if (position <= 0.4) return '#fb923c'; // orange-400 → transition
+                                            if (position <= 0.55) return '#fbbf24'; // amber-400
+                                            if (position <= 0.7) return '#a3e635'; // lime-400
+                                            if (position <= 0.85) return '#4ade80'; // green-400
                                             return '#22c55e'; // green-500 (top)
                                         };
 
@@ -150,32 +150,33 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                 </div>
 
                                 {/* Label and info */}
-                                <div className="flex flex-col justify-center">
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div className="cursor-help">
-                                                <div className="text-2xl font-bold text-slate-700">
-                                                    {Math.round((uniqueCalls / totalPassages) * 100)}%
-                                                </div>
-                                                <div className="text-[10px] text-slate-500 uppercase tracking-wider">
-                                                    Qualité
-                                                </div>
-                                            </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="right" className="max-w-xs">
-                                            <div className="space-y-1 text-xs">
-                                                <p><strong>Taux d'appels uniques:</strong> {uniqueCalls} / {totalPassages} = {Math.round((uniqueCalls / totalPassages) * 100)}%</p>
-                                                <p className="text-slate-400 mt-2 pt-2 border-t">
-                                                    Plus ce taux est élevé, moins il y a de passages multiples (ping-pong)
-                                                </p>
-                                                <div className="mt-2 pt-2 border-t space-y-0.5">
-                                                    <p className="text-slate-400 text-[10px]">
-                                                        {pingPongCount} appels avec ping-pong ({pingPongPercentage}%)
+                                <div className="flex flex-col justify-center gap-1">
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="text-2xl font-bold text-slate-700">
+                                            {Math.round((uniqueCalls / totalPassages) * 100)}%
+                                        </div>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Info className="h-4 w-4 text-slate-400 cursor-help hover:text-slate-600 transition-colors flex-shrink-0" />
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right" className="max-w-xs">
+                                                <div className="space-y-1 text-xs">
+                                                    <p><strong>Taux d'appels uniques:</strong> {uniqueCalls} / {totalPassages} = {Math.round((uniqueCalls / totalPassages) * 100)}%</p>
+                                                    <p className="text-slate-400 mt-2 pt-2 border-t">
+                                                        Plus ce taux est élevé, moins il y a de passages multiples (ping-pong)
                                                     </p>
+                                                    <div className="mt-2 pt-2 border-t space-y-0.5">
+                                                        <p className="text-slate-400 text-[10px]">
+                                                            {pingPongCount} appels avec ping-pong ({pingPongPercentage}%)
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        </TooltipContent>
-                                    </Tooltip>
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">
+                                        Qualité
+                                    </div>
                                 </div>
                             </div>
 
