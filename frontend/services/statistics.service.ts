@@ -160,7 +160,7 @@ async function getQueueKPIs(
             GROUP BY aqp.cdr_id, aqp.call_history_id, aqp.cdr_started_at, aqp.cdr_ended_at
         ),
         final_outcomes AS (
-            SELECT 
+            SELECT
                 cdr_id,
                 call_history_id,
                 cdr_started_at,
@@ -169,7 +169,7 @@ async function getQueueKPIs(
                 talk_time_seconds,
                 answered_and_transferred,
                 -- Determine SINGLE outcome: answered > overflow > abandoned
-                CASE 
+                CASE
                     WHEN answered_here = 1 THEN 'answered'
                     WHEN forwarded_to_other_queue = 1 THEN 'overflow'
                     ELSE 'abandoned'
@@ -177,6 +177,16 @@ async function getQueueKPIs(
                 -- Time in queue for abandoned calls
                 EXTRACT(EPOCH FROM (cdr_ended_at - cdr_started_at)) as time_in_queue
             FROM outcomes
+        ),
+        -- First passage per call (chronological order)
+        -- This ensures unique calls are counted based on their FIRST passage outcome only
+        -- Prevents overlap: same call won't be in multiple categories
+        first_passage AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                outcome as first_outcome
+            FROM final_outcomes
+            ORDER BY call_history_id, cdr_started_at ASC
         )
         SELECT
             -- PASSAGES (total count including ping-pong)
@@ -188,11 +198,12 @@ async function getQueueKPIs(
             SUM(CASE WHEN outcome = 'abandoned' AND time_in_queue >= 10 THEN 1 ELSE 0 END) as abandoned_after_10s_passages,
             SUM(CASE WHEN outcome = 'overflow' THEN 1 ELSE 0 END) as overflow_passages,
 
-            -- UNIQUE CALLS (distinct call_history_id)
-            COUNT(DISTINCT call_history_id) as unique_calls,
-            COUNT(DISTINCT CASE WHEN outcome = 'answered' THEN call_history_id END) as unique_answered,
-            COUNT(DISTINCT CASE WHEN outcome = 'abandoned' THEN call_history_id END) as unique_abandoned,
-            COUNT(DISTINCT CASE WHEN outcome = 'overflow' THEN call_history_id END) as unique_overflow,
+            -- UNIQUE CALLS (based on FIRST passage outcome only)
+            -- Guarantees: unique_answered + unique_abandoned + unique_overflow = unique_calls
+            (SELECT COUNT(*) FROM first_passage) as unique_calls,
+            (SELECT COUNT(*) FROM first_passage WHERE first_outcome = 'answered') as unique_answered,
+            (SELECT COUNT(*) FROM first_passage WHERE first_outcome = 'abandoned') as unique_abandoned,
+            (SELECT COUNT(*) FROM first_passage WHERE first_outcome = 'overflow') as unique_overflow,
 
             AVG(wait_time_seconds) as avg_wait_time,
             AVG(CASE WHEN outcome = 'answered' THEN talk_time_seconds ELSE NULL END) as avg_talk_time

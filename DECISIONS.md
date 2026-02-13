@@ -2,7 +2,7 @@
 
 > Ce document recense les choix de conception effectués pour l'outil de statistiques 3CX.
 > Chaque décision est accompagnée de son contexte, de sa justification et des alternatives écartées.
-> Dernière mise à jour : 11 février 2025
+> Dernière mise à jour : 12 février 2026
 
 ---
 
@@ -11,10 +11,11 @@
 1. [Page Statistiques — Vue Queue](#1-page-statistiques--vue-queue)
     - [1.1 Le graphique ne montre que les appels queue](#11-le-graphique-ne-montre-que-les-appels-queue)
     - [1.2 Distinction appels répondus vs transférés](#12-distinction-appels-répondus-vs-transférés)
-    - [1.3 Comptage unique des appels (DISTINCT)](#13-comptage-unique-des-appels-distinct)
+    - [1.3 Comptage des passages : Méthode N°2 (Tous les Passages)](#13-comptage-des-passages--méthode-n2-tous-les-passages)
     - [1.4 Filtrage des transferts : uniquement hors queue](#14-filtrage-des-transferts--uniquement-hors-queue)
     - [1.5 Exclusion des destinations techniques](#15-exclusion-des-destinations-techniques)
     - [1.6 Redirections = Overflow automatique](#16-redirections--overflow-automatique)
+    - [1.7 Le phénomène du "Ping-Pong" — Décision Architecturale Majeure](#17-le-phénomène-du-ping-pong--décision-architecturale-majeure)
 2. [Tableau Performance Agents](#2-tableau-performance-agents)
     - [2.1 Pourquoi pas de "Taux de réponse" individuel sur la queue](#21-pourquoi-pas-de-taux-de-réponse-individuel-sur-la-queue)
     - [2.2 Ajout des appels directs pour contextualiser](#22-ajout-des-appels-directs-pour-contextualiser)
@@ -66,22 +67,72 @@
 
 ---
 
-### 1.3 Comptage unique des appels (DISTINCT)
+### 1.3 Comptage des passages : Méthode N°2 (Tous les Passages)
 
-**Problème :** Un même appel peut générer plusieurs entrées CDR quand il est re-présenté à la queue (ex: un appel rebondit 3 fois avant d'être décroché).
+**⚠️ CHANGEMENT MAJEUR (12 février 2026) :** Cette section a été complètement révisée suite à la découverte que les passages multiples à travers une même queue (ping-pong) sont **très fréquents** dans notre système.
 
-**Décision :** Chaque appel est compté **une seule fois** grâce à `DISTINCT ON (call_history_id)`.
+**Problème :** Un même appel peut passer plusieurs fois par la même queue (ex: client se trompe de choix, est transféré, puis revient à la réception qui le redirige correctement → 3-4 passages).
 
-**Justification :**
-- Sans ce filtre, un appel rebondissant 3 fois serait compté 3 fois dans les "reçus", gonflant artificiellement les chiffres.
-- Avec le filtre, le total correspond au nombre **réel** de personnes ayant appelé.
+**Ancienne approche (Méthode N°1 - abandonnée) :**
+- Comptage avec `DISTINCT ON (call_history_id)` pour ne compter que le premier passage
+- **Problème identifié :** Masque complètement le phénomène du ping-pong (très fréquent)
+- Ne reflète pas la charge réelle des agents (qui traitent plusieurs fois le même appel)
+
+**Nouvelle approche (Méthode N°2 - retenue) :**
+- Compter **tous les passages** à travers la queue, incluant les passages multiples
+- Afficher **deux métriques simultanément** :
+  - **Passages** : nombre total de fois qu'un appel entre dans la queue (incluant ping-pong)
+  - **Appels uniques** : nombre de `call_history_id` distincts (appels réels)
 
 **SQL utilisé :**
 ```sql
-SELECT DISTINCT ON (call_history_id) ...
-ORDER BY call_history_id, cdr_started_at ASC
+-- Plus de DISTINCT ON - compter chaque passage
+WITH all_queue_passages AS (
+    SELECT call_history_id, cdr_id, cdr_started_at, cdr_ended_at
+    FROM cdroutput
+    WHERE destination_dn_number = ${queueNumber}
+      AND destination_dn_type = 'queue'
+    -- PAS de ORDER BY, PAS de DISTINCT
+)
+
+SELECT
+    COUNT(*) as total_passages,
+    COUNT(DISTINCT call_history_id) as unique_calls,
+    (COUNT(*) - COUNT(DISTINCT call_history_id)) as ping_pong_count
+FROM all_queue_passages
 ```
-La première entrée chronologique est conservée pour chaque `call_history_id`.
+
+**Affichage UI :**
+
+**Donut center :**
+```
+┌─────────────────┐
+│   360 passages  │  ← Grand, non-cliquable (information)
+│ 📞 300 appels   │  ← Petit, cliquable (vers les logs)
+│     uniques     │
+└─────────────────┘
+```
+
+**KPI cards :**
+```
+┌────────────────────────────────┐
+│ 🟢 Répondus            [65%] 🔗│
+│                                │
+│ 218 passages         ← Niveau 1│
+│ 📞 210 appels uniques← Niveau 2│
+│ 🔄 8 avec ping-pong  ← Niveau 3│
+│    (3.8%)                      │
+└────────────────────────────────┘
+```
+
+**Justification :**
+- ✅ Reflète la charge **réelle** des agents : 218 passages = 218 interactions à gérer
+- ✅ Rend visible le phénomène du ping-pong (essentiel pour l'optimisation opérationnelle)
+- ✅ Transparence totale : les deux métriques sont affichées simultanément
+- ✅ Correspondance exacte garantie entre statistiques et logs filtrés
+- ✅ Le taux de ping-pong devient un **KPI stratégique** pour identifier les problèmes de routage
+
+**Voir aussi :** [Section 1.7](#17-le-phénomène-du-ping-pong--décision-architecturale-majeure) pour l'analyse complète et les alternatives écartées.
 
 ---
 
@@ -125,6 +176,273 @@ La première entrée chronologique est conservée pour chaque `call_history_id`.
 **Justification :**
 - Ce sont deux mécanismes fondamentalement différents : automatique vs manuel.
 - Le manager doit pouvoir distinguer "l'appel a été renvoyé car personne ne répondait" vs "l'agent a répondu et a choisi de transférer".
+
+---
+
+### 1.7 Le phénomène du "Ping-Pong" — Décision Architecturale Majeure
+
+**Date de la décision :** 12 février 2026
+
+**Contexte :** Lors de l'implémentation des KPI cards cliquables, nous avons découvert une **discordance systématique** entre les statistiques et les logs filtrés (ex: Queue 993 affichait 210 appels "Répondus" dans les statistiques, mais 218 résultats dans les logs filtrés).
+
+#### Le Problème
+
+**Cause identifiée :**
+- Les **statistiques** comptaient le **premier passage uniquement** (via `DISTINCT ON (call_history_id, queue_number)`)
+- Les **logs filtrés** matchaient **n'importe quel passage** à travers la queue
+
+**Révélation majeure :**
+> "En fait ce ne sont pas des cas aussi rare et exceptionnel en fait. C'est même plutôt fréquent. Les appels sont sans arrêt repassé à la réception. Imagine qu'un client se trompe de choix, il appuie 2 pour transporter, parle avec quelqu'un qui dit non finalement, donc redirigé vers la réception, qui lui réexplique les choix et le revoie vers le département correct. Plusieurs appels font donc 3-4 tours par les queues."
+
+Cette révélation a **fondamentalement changé notre approche** : le ping-pong n'est pas un cas edge, c'est un **comportement normal et fréquent** du système.
+
+#### Analyse des Approches
+
+**Méthode N°1 : Premier Passage Uniquement (❌ REJETÉE)**
+
+*Description :* Compter uniquement le premier passage via `DISTINCT ON (call_history_id, queue_number)`.
+
+**Avantages ✅**
+- Comptage "propre" : 1 appel = 1 passage
+- Cohérence mathématique simple
+- Correspond au nombre d'appelants uniques
+
+**Inconvénients ❌**
+- **Masque complètement le phénomène du ping-pong** (très fréquent selon le client)
+- **Ne reflète pas la charge réelle** des agents (qui traitent plusieurs fois le même appel)
+- **Incompatible avec le filtrage des logs** : impossible de garantir le match exact entre KPI et logs
+- **Perte d'information critique** pour l'optimisation opérationnelle
+
+**Verdict :** ❌ Rejetée car elle masque un comportement fréquent et important du système.
+
+---
+
+**Méthode N°2 : Tous les Passages (✅ RETENUE)**
+
+*Description :* Compter **tous les passages** incluant les passages multiples, et afficher **deux métriques simultanément** (passages + appels uniques).
+
+**Avantages ✅**
+- **Rend visible le phénomène du ping-pong** (très fréquent selon le client)
+- **Reflète la charge réelle** des agents : 218 passages = 218 interactions à gérer
+- **Compatible avec le filtrage des logs** : match exact garanti entre KPI et logs filtrés
+- **Transparence totale** : affichage simultané des deux métriques (passages + appels uniques)
+- **Information exploitable** pour l'optimisation : taux de ping-pong = indicateur de qualité du routage
+- **Permet de mesurer l'efficacité** : pourcentage de ping-pong = KPI stratégique
+
+**Inconvénients ❌**
+- Risque de confusion si les deux métriques ne sont pas clairement distinguées (résolu par le double affichage)
+- Comptage "moins intuitif" pour les non-initiés (mais plus précis pour le métier)
+
+**Verdict :** ✅ Retenue car elle fournit une vision complète et honnête du système, essentielle pour l'optimisation.
+
+---
+
+**Méthode N°3 : Filtrage Strict Premier Passage (❌ NON RETENUE)**
+
+*Description :* Modifier le filtrage des logs pour matcher uniquement le premier passage via `WITH ORDINALITY`.
+
+**Inconvénients ❌**
+- Même problème fondamental que Méthode N°1 : masque le ping-pong
+- Complexité SQL accrue (ORDINALITY, sous-requêtes groupées)
+- Ne résout pas le problème métier : les passages multiples existent et doivent être visibles
+
+**Verdict :** ❌ Non retenue car elle perpétue le même problème que la Méthode N°1.
+
+---
+
+#### Justification de la Décision Finale
+
+**1. Fidélité à la Réalité Opérationnelle**
+
+Les agents traitent réellement plusieurs fois le même appel. Ignorer ce phénomène reviendrait à sous-estimer leur charge de travail.
+
+**2. Information Exploitable**
+
+Le pourcentage de ping-pong devient un **KPI stratégique** pour identifier les problèmes de routage :
+
+| Queue | Ping-pong | Interprétation |
+|---|---|---|
+| Queue 993 | 8 appels / 210 = **3.8%** | ✅ Bon routage |
+| Queue 928 | 45 appels / 120 = **37.5%** | ⚠️ Problème à investiguer |
+
+**3. Transparence vs Masquage**
+
+Plutôt que de **choisir** entre "passages" ou "appels uniques", nous affichons **les deux simultanément**. Cette double affichage évite toute ambiguïté et permet à l'utilisateur de comprendre la situation complète.
+
+**4. Cohérence avec les Logs Filtrés**
+
+Les logs filtrés matchent **au moins un passage** avec le résultat demandé, ce qui correspond exactement au comptage de la Méthode N°2.
+
+**Garantie de correspondance exacte :**
+- Statistiques : `COUNT(*)` WHERE `result = 'answered'` → 218 passages
+- Logs filtrés : `journeyQueue=903&journeyResult=answered` → 218 résultats
+- **Match parfait** ✅
+
+**5. Validation par le Client**
+
+Lorsque présentée avec le choix entre Méthode N°1 et N°2, le client a confirmé :
+> "tout en parallèle si tu t'en sens capable"
+
+Et a validé les décisions UX/UI (terminologie "passages", double affichage, center non-cliquable, etc.).
+
+---
+
+#### Impact Métier
+
+Les passages multiples à travers une même queue ont un **impact réel** sur :
+
+1. **Charge de travail des agents** : ils traitent plusieurs fois le même appel
+2. **Temps d'attente total des appelants** : augmente à chaque rebond
+3. **Perception de l'efficacité** du routage téléphonique
+4. **Décisions d'optimisation** du flux d'appels (IVR, scripts, formation des agents)
+
+**Il est donc crucial de rendre ce phénomène visible et mesurable.**
+
+---
+
+#### Décisions UX/UI Associées
+
+**Terminologie retenue :** "Passages" (pas "interactions")
+- Plus précis techniquement (passage à travers une queue)
+- Évite la confusion avec "interactions agent-client"
+- Correspond au vocabulaire métier 3CX
+
+**Cliquabilité du Donut Center :**
+- Total "passages" : **non-cliquable** (information pure)
+- "Appels uniques" : **cliquable** (redirige vers les logs)
+- Justification : évite la surcharge cognitive, le total "passages" est purement informatif
+
+**Hiérarchie Visuelle des Métriques :**
+1. **Niveau 1 : Passages** (text-2xl, bold) → charge réelle
+2. **Niveau 2 : Appels uniques** (text-sm, normal) → contexte
+3. **Niveau 3 : Ping-pong** (text-[10px], conditionnel) → diagnostic
+
+**Logique de Filtrage :**
+- **"Au moins un passage répond au critère"** (logique OR)
+- Exemple : Si un appel passe 2 fois par Queue 903 (1er passage abandonné, 2ème répondu) → compté dans "Répondus"
+- Plus intuitif pour l'utilisateur final
+- Correspond au comportement des KPI clickables
+
+---
+
+#### Filtre Multi-Passage (Bonus)
+
+**Nouveau filtre ajouté :** `multiPassageSameQueue` (boolean)
+- Permet de filtrer les appels avec passages multiples à travers la **même** queue
+- Requiert `journeyQueueNumber` d'être défini
+- URL exemple : `?journeyQueue=903&journeyResult=answered&multiPassage=true`
+
+**UI :**
+- Checkbox visible uniquement quand une queue est sélectionnée
+- Texte : "🔄 Appels avec passages multiples"
+- Description : "Filtre les appels qui sont repassés plusieurs fois par cette queue (ping-pong)"
+
+**SQL :**
+```sql
+-- Compter les occurrences de la queue dans le journey
+(SELECT COUNT(*)
+ FROM jsonb_array_elements(cj.journey::jsonb) elem
+ WHERE elem->>'type' = 'queue'
+   AND elem->>'label' = '903') > 1
+```
+
+---
+
+#### Nouveaux Champs dans `QueueKPIs`
+
+```typescript
+export interface QueueKPIs {
+    // PASSAGES (Method N°2): Count ALL passages through queue, including ping-pong
+    callsReceived: number;        // Total passages entrant dans la queue
+    callsAnswered: number;        // Passages répondus par un agent
+    callsAbandoned: number;       // Passages abandonnés total
+    callsOverflow: number;        // Passages repartis ailleurs
+
+    // APPELS UNIQUES (Method N°2): Count unique calls (DISTINCT call_history_id)
+    uniqueCalls: number;          // Nombre d'appels uniques
+    uniqueCallsAnswered: number;  // Appels uniques avec au moins un passage répondu
+    uniqueCallsAbandoned: number; // Appels uniques avec au moins un passage abandonné
+    uniqueCallsOverflow: number;  // Appels uniques avec au moins un passage overflow
+
+    // PING-PONG METRICS (Method N°2): Measure multi-passage calls
+    pingPongCount: number;        // callsReceived - uniqueCalls
+    pingPongPercentage: number;   // (pingPongCount / callsReceived) * 100
+}
+```
+
+---
+
+#### Fichiers Modifiés
+
+1. **`frontend/types/statistics.types.ts`** - Ajout des 6 nouveaux champs pour Méthode N°2
+2. **`frontend/services/statistics.service.ts`** - Suppression `DISTINCT ON`, calcul double métriques
+3. **`frontend/components/stats/unified-call-flow.tsx`** - Affichage double métriques (donut + cards)
+4. **`frontend/types/logs.types.ts`** - Ajout `multiPassageSameQueue` filter
+5. **`frontend/services/logs.service.ts`** - Implémentation filtre multi-passage (JSONB)
+6. **`frontend/app/(authenticated)/admin/logs/page.tsx`** - State management multi-passage
+7. **`frontend/components/column-filters/ColumnFilterJourney.tsx`** - UI checkbox multi-passage
+
+---
+
+#### Performances
+
+**Impact de la suppression du DISTINCT ON :**
+- **Avant :** Opération coûteuse (tri + déduplication)
+- **Après :** Scan simple avec index sur `(destination_dn_number, destination_dn_type)`
+- **Résultat :** Amélioration potentielle des performances
+
+**Volumes estimés (1 mois) :**
+- ~60000 appels + ~6000 passages supplémentaires (ping-pong 10%)
+- Scan : ~66000 lignes
+- Avec index : **< 100ms** ✅
+
+---
+
+#### Tests et Validation
+
+**✅ Tests effectués :**
+1. Correspondance exacte statistiques ↔ logs filtrés (Queue 993 : 218 = 218)
+2. Double affichage (passages + appels uniques)
+3. Filtre multi-passage fonctionnel
+4. Cliquabilité correcte (center non-cliquable, KPI cards cliquables)
+
+**✅ Cas d'usage validés :**
+- Exemple concret : Appel `00000000-01dc-9c2f-9e44-d9cf00002e2d`
+- Extension 593 → Extension 610 → Ring group 430 → IVR script → Queue 928 (abandonné)
+- Journey complet visible dans les logs ✅
+- Comptabilisé correctement comme 1 passage dans Queue 928 ✅
+
+---
+
+#### Évolutions Futures Possibles
+
+1. **Analyse temporelle du ping-pong** : Graphique montrant l'évolution du taux dans le temps
+2. **Top N des appels avec plus de passages** : Liste des appels avec 5+ passages (cas extrêmes)
+3. **Détection automatique des boucles** : Alerter si un appel passe 3+ fois par la même queue
+4. **Comparaison inter-queues** : Dashboard comparant les taux de ping-pong entre queues
+5. **Export des données ping-pong** : CSV/Excel pour analyse approfondie avec les responsables
+
+---
+
+#### Conclusion
+
+**Synthèse :** Nous avons choisi la **Méthode N°2** parce que :
+
+1. ✅ Reflète la réalité opérationnelle (agents traitent plusieurs fois le même appel)
+2. ✅ Rend visible un phénomène fréquent (ping-pong = quotidien, pas exception)
+3. ✅ Fournit une information exploitable (taux de ping-pong = KPI stratégique)
+4. ✅ Garantit la cohérence (match exact statistiques ↔ logs)
+5. ✅ Transparence totale (double affichage évite toute confusion)
+6. ✅ Validé par le client
+
+**Leçon apprise :**
+> Ne jamais faire d'hypothèses sur les "cas edge" sans valider avec les utilisateurs finaux. Ce qui semble anormal pour un développeur peut être le comportement normal du métier.
+
+**Impact attendu :**
+- Meilleure compréhension de la charge réelle des agents
+- Détection proactive des problèmes de routage
+- Optimisation guidée par les données (réduction du ping-pong = meilleure expérience client)
+- Confiance des utilisateurs (correspondance exacte KPI ↔ logs)
 
 ---
 

@@ -3,8 +3,14 @@
 import Link from "next/link";
 import { QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent } from "@/components/ui/card";
-import { Clock, ExternalLink } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { Clock, ExternalLink, Info } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { format } from "date-fns";
 
 interface UnifiedCallFlowProps {
@@ -15,6 +21,7 @@ interface UnifiedCallFlowProps {
 }
 
 export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: UnifiedCallFlowProps) {
+    // Wrap component with TooltipProvider for the new Info icon tooltips
     const totalPassages = kpis.callsReceived;
     const uniqueCalls = kpis.uniqueCalls;
     const pingPongCount = kpis.pingPongCount;
@@ -87,6 +94,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
     const patternId = "hatchPattern";
 
     return (
+        <TooltipProvider delayDuration={200}>
         <Card className="overflow-hidden">
             {/* Header Compact */}
             <div className="bg-slate-50 border-b px-6 py-4 flex items-center justify-between">
@@ -130,7 +138,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                         />
                                     ))}
                                 </Pie>
-                                <Tooltip
+                                <RechartsTooltip
                                     formatter={(value: number) => [`${value} appels`, '']}
                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                 />
@@ -181,22 +189,30 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                             <ExternalLink className="h-3 w-3 text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                                         </div>
                                     </div>
-                                    <div className="space-y-1">
-                                        {/* Primary metric: Passages */}
-                                        <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered} passages</p>
-                                        {/* Secondary metric: Unique calls */}
-                                        <p className="text-sm text-emerald-600">📞 {kpis.uniqueCallsAnswered} appels uniques</p>
-                                        {/* Tertiary: Ping-pong indicator (only if significant) */}
-                                        {(kpis.callsAnswered - kpis.uniqueCallsAnswered) > 0 && (
-                                            <p className="text-[10px] text-emerald-500">
-                                                🔄 {kpis.callsAnswered - kpis.uniqueCallsAnswered} avec passages multiples
-                                            </p>
-                                        )}
-                                        {/* Transfer detail */}
+                                    <div className="flex items-end justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
+                                            {/* Info icon with tooltip */}
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Info className="h-4 w-4 text-emerald-500 cursor-help flex-shrink-0" />
+                                                </TooltipTrigger>
+                                                <TooltipContent side="right" className="max-w-xs">
+                                                    <div className="space-y-1 text-xs">
+                                                        <p><strong>Passages:</strong> {kpis.callsAnswered}</p>
+                                                        <p><strong>Appels uniques:</strong> {kpis.uniqueCallsAnswered}</p>
+                                                        <p><strong>Ping-pong:</strong> {kpis.callsAnswered - kpis.uniqueCallsAnswered} ({Math.round(((kpis.callsAnswered - kpis.uniqueCallsAnswered) / kpis.callsAnswered) * 100)}%)</p>
+                                                        <p className="text-slate-400 mt-2 pt-2 border-t">
+                                                            Les appels uniques sont basés sur le résultat du premier passage dans cette queue
+                                                        </p>
+                                                    </div>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </div>
                                         {kpis.callsAnsweredAndTransferred > 0 && (
-                                            <p className="text-xs text-emerald-600 pt-1 border-t border-emerald-100">
-                                                dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong>
-                                            </p>
+                                            <div className="text-xs text-emerald-600 text-right">
+                                                <div>dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong></div>
+                                            </div>
                                         )}
                                     </div>
                                 </Link>
@@ -211,86 +227,31 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                             {getPercentage(kpis.callsAnswered, totalPassages)}%
                                         </span>
                                     </div>
-                                    <div className="space-y-1">
-                                        <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered} passages</p>
-                                        <p className="text-sm text-emerald-600">📞 {kpis.uniqueCallsAnswered} appels uniques</p>
-                                        {(kpis.callsAnswered - kpis.uniqueCallsAnswered) > 0 && (
-                                            <p className="text-[10px] text-emerald-500">
-                                                🔄 {kpis.callsAnswered - kpis.uniqueCallsAnswered} avec passages multiples
-                                            </p>
-                                        )}
+                                    <div className="flex items-end justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
+                                            {/* Info icon with tooltip */}
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Info className="h-4 w-4 text-emerald-500 cursor-help flex-shrink-0" />
+                                                </TooltipTrigger>
+                                                <TooltipContent side="right" className="max-w-xs">
+                                                    <div className="space-y-1 text-xs">
+                                                        <p><strong>Passages:</strong> {kpis.callsAnswered}</p>
+                                                        <p><strong>Appels uniques:</strong> {kpis.uniqueCallsAnswered}</p>
+                                                        <p><strong>Ping-pong:</strong> {kpis.callsAnswered - kpis.uniqueCallsAnswered} ({Math.round(((kpis.callsAnswered - kpis.uniqueCallsAnswered) / kpis.callsAnswered) * 100)}%)</p>
+                                                        <p className="text-slate-400 mt-2 pt-2 border-t">
+                                                            Les appels uniques sont basés sur le résultat du premier passage dans cette queue
+                                                        </p>
+                                                    </div>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </div>
                                         {kpis.callsAnsweredAndTransferred > 0 && (
-                                            <p className="text-xs text-emerald-600 pt-1 border-t border-emerald-100">
-                                                dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong>
-                                            </p>
+                                            <div className="text-xs text-emerald-600 text-right">
+                                                <div>dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong></div>
+                                            </div>
                                         )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Abandonnés - Clickable */}
-                            {isClickable ? (
-                                <Link
-                                    href={buildLogsUrl('abandoned') || '#'}
-                                    className="block p-4 rounded-xl bg-red-50/50 border border-red-100 transition-all hover:shadow-md hover:border-red-200 cursor-pointer group"
-                                >
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-3 h-3 rounded-full bg-red-500 group-hover:scale-110 transition-transform" />
-                                            <span className="font-medium text-red-900 group-hover:underline">Abandonnés</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-                                                {getPercentage(kpis.callsAbandoned, totalPassages)}%
-                                            </span>
-                                            <ExternalLink className="h-3 w-3 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                        </div>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <div className="flex items-baseline justify-between">
-                                            <div>
-                                                <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned} passages</p>
-                                                <p className="text-sm text-red-600">📞 {kpis.uniqueCallsAbandoned} appels uniques</p>
-                                                {(kpis.callsAbandoned - kpis.uniqueCallsAbandoned) > 0 && (
-                                                    <p className="text-[10px] text-red-500">
-                                                        🔄 {kpis.callsAbandoned - kpis.uniqueCallsAbandoned} avec passages multiples
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <div className="text-xs text-red-600 text-right">
-                                                <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
-                                                <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </Link>
-                            ) : (
-                                <div className="p-4 rounded-xl bg-red-50/50 border border-red-100">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-3 h-3 rounded-full bg-red-500" />
-                                            <span className="font-medium text-red-900">Abandonnés</span>
-                                        </div>
-                                        <span className="text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-                                            {getPercentage(kpis.callsAbandoned, totalPassages)}%
-                                        </span>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <div className="flex items-baseline justify-between">
-                                            <div>
-                                                <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned} passages</p>
-                                                <p className="text-sm text-red-600">📞 {kpis.uniqueCallsAbandoned} appels uniques</p>
-                                                {(kpis.callsAbandoned - kpis.uniqueCallsAbandoned) > 0 && (
-                                                    <p className="text-[10px] text-red-500">
-                                                        🔄 {kpis.callsAbandoned - kpis.uniqueCallsAbandoned} avec passages multiples
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <div className="text-xs text-red-600 text-right">
-                                                <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
-                                                <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>
-                                            </div>
-                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -313,14 +274,24 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                             <ExternalLink className="h-3 w-3 text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                                         </div>
                                     </div>
-                                    <div className="space-y-1">
-                                        <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow} passages</p>
-                                        <p className="text-sm text-amber-600">📞 {kpis.uniqueCallsOverflow} appels uniques</p>
-                                        {(kpis.callsOverflow - kpis.uniqueCallsOverflow) > 0 && (
-                                            <p className="text-[10px] text-amber-500">
-                                                🔄 {kpis.callsOverflow - kpis.uniqueCallsOverflow} avec passages multiples
-                                            </p>
-                                        )}
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow}</p>
+                                        {/* Info icon with tooltip */}
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Info className="h-4 w-4 text-amber-500 cursor-help flex-shrink-0" />
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right" className="max-w-xs">
+                                                <div className="space-y-1 text-xs">
+                                                    <p><strong>Passages:</strong> {kpis.callsOverflow}</p>
+                                                    <p><strong>Appels uniques:</strong> {kpis.uniqueCallsOverflow}</p>
+                                                    <p><strong>Ping-pong:</strong> {kpis.callsOverflow - kpis.uniqueCallsOverflow} ({Math.round(((kpis.callsOverflow - kpis.uniqueCallsOverflow) / (kpis.callsOverflow || 1)) * 100)}%)</p>
+                                                    <p className="text-slate-400 mt-2 pt-2 border-t">
+                                                        Les appels uniques sont basés sur le résultat du premier passage dans cette queue
+                                                    </p>
+                                                </div>
+                                            </TooltipContent>
+                                        </Tooltip>
                                     </div>
                                 </Link>
                             ) : (
@@ -334,14 +305,107 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                             {getPercentage(kpis.callsOverflow, totalPassages)}%
                                         </span>
                                     </div>
-                                    <div className="space-y-1">
-                                        <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow} passages</p>
-                                        <p className="text-sm text-amber-600">📞 {kpis.uniqueCallsOverflow} appels uniques</p>
-                                        {(kpis.callsOverflow - kpis.uniqueCallsOverflow) > 0 && (
-                                            <p className="text-[10px] text-amber-500">
-                                                🔄 {kpis.callsOverflow - kpis.uniqueCallsOverflow} avec passages multiples
-                                            </p>
-                                        )}
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow}</p>
+                                        {/* Info icon with tooltip */}
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Info className="h-4 w-4 text-amber-500 cursor-help flex-shrink-0" />
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right" className="max-w-xs">
+                                                <div className="space-y-1 text-xs">
+                                                    <p><strong>Passages:</strong> {kpis.callsOverflow}</p>
+                                                    <p><strong>Appels uniques:</strong> {kpis.uniqueCallsOverflow}</p>
+                                                    <p><strong>Ping-pong:</strong> {kpis.callsOverflow - kpis.uniqueCallsOverflow} ({Math.round(((kpis.callsOverflow - kpis.uniqueCallsOverflow) / (kpis.callsOverflow || 1)) * 100)}%)</p>
+                                                    <p className="text-slate-400 mt-2 pt-2 border-t">
+                                                        Les appels uniques sont basés sur le résultat du premier passage dans cette queue
+                                                    </p>
+                                                </div>
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Abandonnés - Clickable */}
+                            {isClickable ? (
+                                <Link
+                                    href={buildLogsUrl('abandoned') || '#'}
+                                    className="block p-4 rounded-xl bg-red-50/50 border border-red-100 transition-all hover:shadow-md hover:border-red-200 cursor-pointer group"
+                                >
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-red-500 group-hover:scale-110 transition-transform" />
+                                            <span className="font-medium text-red-900 group-hover:underline">Abandonnés</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                                                {getPercentage(kpis.callsAbandoned, totalPassages)}%
+                                            </span>
+                                            <ExternalLink className="h-3 w-3 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-baseline justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned}</p>
+                                            {/* Info icon with tooltip */}
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Info className="h-4 w-4 text-red-500 cursor-help flex-shrink-0" />
+                                                </TooltipTrigger>
+                                                <TooltipContent side="right" className="max-w-xs">
+                                                    <div className="space-y-1 text-xs">
+                                                        <p><strong>Passages:</strong> {kpis.callsAbandoned}</p>
+                                                        <p><strong>Appels uniques:</strong> {kpis.uniqueCallsAbandoned}</p>
+                                                        <p><strong>Ping-pong:</strong> {kpis.callsAbandoned - kpis.uniqueCallsAbandoned} ({Math.round(((kpis.callsAbandoned - kpis.uniqueCallsAbandoned) / (kpis.callsAbandoned || 1)) * 100)}%)</p>
+                                                        <p className="text-slate-400 mt-2 pt-2 border-t">
+                                                            Les appels uniques sont basés sur le résultat du premier passage dans cette queue
+                                                        </p>
+                                                    </div>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </div>
+                                        <div className="text-xs text-red-600 text-right">
+                                            <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
+                                            <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>
+                                        </div>
+                                    </div>
+                                </Link>
+                            ) : (
+                                <div className="p-4 rounded-xl bg-red-50/50 border border-red-100">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-red-500" />
+                                            <span className="font-medium text-red-900">Abandonnés</span>
+                                        </div>
+                                        <span className="text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                                            {getPercentage(kpis.callsAbandoned, totalPassages)}%
+                                        </span>
+                                    </div>
+                                    <div className="flex items-baseline justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned}</p>
+                                            {/* Info icon with tooltip */}
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Info className="h-4 w-4 text-red-500 cursor-help flex-shrink-0" />
+                                                </TooltipTrigger>
+                                                <TooltipContent side="right" className="max-w-xs">
+                                                    <div className="space-y-1 text-xs">
+                                                        <p><strong>Passages:</strong> {kpis.callsAbandoned}</p>
+                                                        <p><strong>Appels uniques:</strong> {kpis.uniqueCallsAbandoned}</p>
+                                                        <p><strong>Ping-pong:</strong> {kpis.callsAbandoned - kpis.uniqueCallsAbandoned} ({Math.round(((kpis.callsAbandoned - kpis.uniqueCallsAbandoned) / (kpis.callsAbandoned || 1)) * 100)}%)</p>
+                                                        <p className="text-slate-400 mt-2 pt-2 border-t">
+                                                            Les appels uniques sont basés sur le résultat du premier passage dans cette queue
+                                                        </p>
+                                                    </div>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </div>
+                                        <div className="text-xs text-red-600 text-right">
+                                            <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
+                                            <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -418,5 +482,6 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                 </div>
             </CardContent>
         </Card>
+        </TooltipProvider>
     );
 }
