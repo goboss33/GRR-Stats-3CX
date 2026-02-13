@@ -81,17 +81,11 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
         return Math.round((value / total) * 100);
     };
 
-    const answeredNotTransferred = kpis.callsAnswered - kpis.callsAnsweredAndTransferred;
-
     const data = [
-        { name: "Répondus", value: answeredNotTransferred, color: "#10b981" }, // emerald-500
-        { name: "Répondus (transférés)", value: kpis.callsAnsweredAndTransferred, color: "#10b981" }, // same green, will use pattern
+        { name: "Répondus", value: kpis.callsAnswered, color: "#10b981" }, // emerald-500 (all answered, including transferred)
         { name: "Abandonnés", value: kpis.callsAbandoned, color: "#ef4444" }, // red-500
         { name: "Redirigés", value: kpis.callsOverflow, color: "#f59e0b" }, // amber-500
     ].filter(d => d.value > 0);
-
-    // Unique pattern ID to avoid SVG conflicts
-    const patternId = "hatchPattern";
 
     return (
         <TooltipProvider delayDuration={200}>
@@ -184,13 +178,6 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                             <div className="flex-1 h-52 relative">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
-                                        {/* SVG Pattern definition for hatched green */}
-                                        <defs>
-                                            <pattern id={patternId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                                                <rect width="6" height="6" fill="#10b981" />
-                                                <line x1="0" y1="0" x2="0" y2="6" stroke="white" strokeWidth="2" />
-                                            </pattern>
-                                        </defs>
                                         <Pie
                                             data={data}
                                             cx="50%"
@@ -204,7 +191,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                             {data.map((entry, index) => (
                                                 <Cell
                                                     key={`cell-${index}`}
-                                                    fill={entry.name === "Répondus (transférés)" ? `url(#${patternId})` : entry.color}
+                                                    fill={entry.color}
                                                 />
                                             ))}
                                         </Pie>
@@ -504,46 +491,6 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                     {kpis.overflowDestinations.length > 5 && (
                                         <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium text-slate-400 border border-dashed border-slate-300">
                                             +{kpis.overflowDestinations.length - 5} autres
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Destinations Transfert */}
-                        {kpis.transferDestinations.length > 0 && (
-                            <div className={`pt-4 ${kpis.overflowDestinations.length > 0 ? '' : 'border-t border-slate-100'}`}>
-                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                                    Top Destinations Transfert
-                                </p>
-                                <div className="flex flex-wrap gap-2">
-                                    {kpis.transferDestinations.slice(0, 5).map((dest) => {
-                                        const isQueue = dest.destinationType === 'queue';
-                                        const badgeColor = isQueue
-                                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                            : 'bg-violet-50 text-violet-700 border-violet-200';
-                                        const dotColor = isQueue ? 'bg-amber-500' : 'bg-violet-500';
-                                        const countColor = isQueue
-                                            ? 'bg-amber-100 text-amber-800'
-                                            : 'bg-violet-100 text-violet-800';
-                                        const prefix = isQueue ? 'Queue' : 'Ext.';
-
-                                        return (
-                                            <span
-                                                key={`${dest.destinationType}-${dest.destination}`}
-                                                className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium ${badgeColor} border`}
-                                            >
-                                                <span className={`w-2 h-2 rounded-full ${dotColor} mr-1.5`} />
-                                                {prefix}: {dest.destination} - {dest.destinationName}
-                                                <span className={`ml-1.5 ${countColor} px-1.5 rounded-sm`}>
-                                                    {dest.count}
-                                                </span>
-                                            </span>
-                                        );
-                                    })}
-                                    {kpis.transferDestinations.length > 5 && (
-                                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium text-slate-400 border border-dashed border-slate-300">
-                                            +{kpis.transferDestinations.length - 5} autres
                                         </span>
                                     )}
                                 </div>

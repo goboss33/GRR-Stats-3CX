@@ -418,15 +418,9 @@ async function getAgentStats(
                 COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL
                            AND c.creation_forward_reason = 'polling'
                       THEN 1 END) as answered,
-                -- Transferred EXTERNALLY (destination NOT in queue agents)
+                -- ALL transfers (internal + external to the queue)
                 COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL
                            AND c.termination_reason = 'continued_in'
-                           AND EXISTS (
-                               SELECT 1 FROM cdroutput dest
-                               WHERE dest.cdr_id = c.continued_in_cdr_id
-                                 AND dest.destination_dn_type IN ('extension', 'queue')
-                                 AND dest.destination_dn_number NOT IN (SELECT extension FROM queue_agents)
-                           )
                       THEN 1 END) as transferred,
                 -- Queue handling time (only answered)
                 AVG(CASE WHEN c.cdr_answered_at IS NOT NULL
