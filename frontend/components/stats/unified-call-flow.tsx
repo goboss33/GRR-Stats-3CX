@@ -146,76 +146,91 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                     />
                                 </PieChart>
                             </ResponsiveContainer>
-                            {/* Centre du Donut - Simplified: only total with tooltip */}
+                            {/* Centre du Donut - Number + Info icon */}
                             <div className="absolute inset-0 flex items-center justify-center">
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div className="text-center cursor-help pointer-events-auto">
-                                            <span className="text-4xl font-bold text-slate-900">{totalPassages}</span>
-                                        </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="right" className="max-w-xs">
-                                        <div className="space-y-1 text-xs">
-                                            <p><strong>Total passages:</strong> {totalPassages}</p>
-                                            <p><strong>Appels uniques:</strong> {uniqueCalls}</p>
-                                            <p><strong>Passages multiples (ping-pong):</strong> {pingPongCount}</p>
-                                            <p className="text-slate-400 mt-2 pt-2 border-t">
-                                                Le total inclut les appels qui repassent plusieurs fois par la queue
-                                            </p>
-                                        </div>
-                                    </TooltipContent>
-                                </Tooltip>
+                                <div className="flex items-center gap-2 pointer-events-auto">
+                                    <span className="text-4xl font-bold text-slate-900">{totalPassages}</span>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Info className="h-5 w-5 text-slate-400 cursor-help hover:text-slate-600 transition-colors flex-shrink-0" />
+                                        </TooltipTrigger>
+                                        <TooltipContent side="right" className="max-w-xs">
+                                            <div className="space-y-1 text-xs">
+                                                <p><strong>Total passages:</strong> {totalPassages}</p>
+                                                <p><strong>Appels uniques:</strong> {uniqueCalls}</p>
+                                                <p><strong>Passages multiples (ping-pong):</strong> {pingPongCount}</p>
+                                                <p className="text-slate-400 mt-2 pt-2 border-t">
+                                                    Le total inclut les appels qui repassent plusieurs fois par la queue
+                                                </p>
+                                            </div>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </div>
                             </div>
                         </div>
 
-                        {/* Quality Bar - Visualize unique calls ratio */}
-                        <div className="px-2">
-                            <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
-                                    Qualité de routage
-                                </span>
+                        {/* Quality Bar - Vertical segmented bar with gradient */}
+                        <div className="flex items-center justify-center gap-4 px-6">
+                            {/* Vertical segmented bar */}
+                            <div className="flex flex-col-reverse gap-0.5">
+                                {[...Array(10)].map((_, index) => {
+                                    const segmentThreshold = ((index + 1) / 10) * 100;
+                                    const currentPercentage = Math.round((uniqueCalls / totalPassages) * 100);
+                                    const isFilled = currentPercentage >= segmentThreshold;
+
+                                    // Calculate gradient color from red (bottom) to green (top)
+                                    // Red at 0-30%, Orange at 30-70%, Yellow at 70-85%, Green at 85-100%
+                                    const getSegmentColor = (idx: number) => {
+                                        const position = (idx + 1) / 10; // 0.1 to 1.0
+                                        if (position <= 0.3) return '#ef4444'; // red-500
+                                        if (position <= 0.5) return '#f97316'; // orange-500
+                                        if (position <= 0.7) return '#f59e0b'; // amber-500
+                                        if (position <= 0.85) return '#eab308'; // yellow-500
+                                        if (position <= 0.95) return '#84cc16'; // lime-500
+                                        return '#22c55e'; // green-500
+                                    };
+
+                                    return (
+                                        <div
+                                            key={index}
+                                            className={`w-8 h-2 rounded-sm transition-all duration-300 ${
+                                                isFilled ? 'opacity-100' : 'opacity-20'
+                                            }`}
+                                            style={{
+                                                backgroundColor: getSegmentColor(index),
+                                            }}
+                                        />
+                                    );
+                                })}
+                            </div>
+
+                            {/* Label and info */}
+                            <div className="flex flex-col justify-center">
                                 <Tooltip>
                                     <TooltipTrigger asChild>
-                                        <span className="text-xs font-bold text-slate-700 cursor-help">
-                                            {Math.round((uniqueCalls / totalPassages) * 100)}%
-                                        </span>
+                                        <div className="cursor-help">
+                                            <div className="text-2xl font-bold text-slate-700">
+                                                {Math.round((uniqueCalls / totalPassages) * 100)}%
+                                            </div>
+                                            <div className="text-[10px] text-slate-500 uppercase tracking-wider">
+                                                Qualité
+                                            </div>
+                                        </div>
                                     </TooltipTrigger>
-                                    <TooltipContent side="left" className="max-w-xs">
+                                    <TooltipContent side="right" className="max-w-xs">
                                         <div className="space-y-1 text-xs">
                                             <p><strong>Taux d'appels uniques:</strong> {uniqueCalls} / {totalPassages} = {Math.round((uniqueCalls / totalPassages) * 100)}%</p>
                                             <p className="text-slate-400 mt-2 pt-2 border-t">
                                                 Plus ce taux est élevé, moins il y a de passages multiples (ping-pong)
                                             </p>
-                                            <div className="mt-2 pt-2 border-t space-y-1">
-                                                <p className="text-emerald-600"><strong>&gt;90%:</strong> Excellent routage</p>
-                                                <p className="text-amber-600"><strong>70-90%:</strong> À surveiller</p>
-                                                <p className="text-red-600"><strong>&lt;70%:</strong> Problème de routage</p>
+                                            <div className="mt-2 pt-2 border-t space-y-0.5">
+                                                <p className="text-slate-400 text-[10px]">
+                                                    {pingPongCount} appels avec ping-pong ({pingPongPercentage}%)
+                                                </p>
                                             </div>
                                         </div>
                                     </TooltipContent>
                                 </Tooltip>
-                            </div>
-                            {/* Progress bar */}
-                            <div className="w-full bg-slate-200 rounded-full h-3.5 overflow-hidden shadow-inner">
-                                <div
-                                    className={`h-full rounded-full transition-all duration-500 ${
-                                        (uniqueCalls / totalPassages) > 0.9
-                                            ? 'bg-gradient-to-r from-emerald-500 to-emerald-600'
-                                            : (uniqueCalls / totalPassages) > 0.7
-                                            ? 'bg-gradient-to-r from-amber-500 to-amber-600'
-                                            : 'bg-gradient-to-r from-red-500 to-red-600'
-                                    }`}
-                                    style={{ width: `${Math.round((uniqueCalls / totalPassages) * 100)}%` }}
-                                />
-                            </div>
-                            {/* Labels */}
-                            <div className="flex justify-between items-center mt-1.5">
-                                <span className="text-[10px] text-slate-400">
-                                    {pingPongCount} ping-pong ({pingPongPercentage}%)
-                                </span>
-                                <span className="text-[10px] text-slate-600 font-medium">
-                                    {uniqueCalls} uniques
-                                </span>
                             </div>
                         </div>
                     </div>
