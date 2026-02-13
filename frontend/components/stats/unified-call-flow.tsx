@@ -247,31 +247,24 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                             <ExternalLink className="h-3 w-3 text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                                         </div>
                                     </div>
-                                    <div className="flex items-end justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
-                                            {/* Info icon with tooltip */}
-                                            <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                    <Info className="h-4 w-4 text-emerald-500 cursor-help flex-shrink-0" />
-                                                </TooltipTrigger>
-                                                <TooltipContent side="right" className="max-w-xs">
-                                                    <div className="space-y-1 text-xs">
-                                                        <p><strong>Passages:</strong> {kpis.callsAnswered}</p>
-                                                        <p><strong>Appels uniques:</strong> {kpis.uniqueCallsAnswered}</p>
-                                                        <p><strong>Ping-pong:</strong> {kpis.callsAnswered - kpis.uniqueCallsAnswered} ({Math.round(((kpis.callsAnswered - kpis.uniqueCallsAnswered) / kpis.callsAnswered) * 100)}%)</p>
-                                                        <p className="text-slate-400 mt-2 pt-2 border-t">
-                                                            Les appels uniques sont basés sur le résultat du premier passage dans cette queue
-                                                        </p>
-                                                    </div>
-                                                </TooltipContent>
-                                            </Tooltip>
-                                        </div>
-                                        {kpis.callsAnsweredAndTransferred > 0 && (
-                                            <div className="text-xs text-emerald-600 text-right">
-                                                <div>dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong></div>
-                                            </div>
-                                        )}
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
+                                        {/* Info icon with tooltip */}
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Info className="h-4 w-4 text-emerald-500 cursor-help flex-shrink-0" />
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right" className="max-w-xs">
+                                                <div className="space-y-1 text-xs">
+                                                    <p><strong>Passages:</strong> {kpis.callsAnswered}</p>
+                                                    <p><strong>Appels uniques:</strong> {kpis.uniqueCallsAnswered}</p>
+                                                    <p><strong>Ping-pong:</strong> {kpis.callsAnswered - kpis.uniqueCallsAnswered} ({Math.round(((kpis.callsAnswered - kpis.uniqueCallsAnswered) / kpis.callsAnswered) * 100)}%)</p>
+                                                    <p className="text-slate-400 mt-2 pt-2 border-t">
+                                                        Les appels uniques sont basés sur le résultat du premier passage dans cette queue
+                                                    </p>
+                                                </div>
+                                            </TooltipContent>
+                                        </Tooltip>
                                     </div>
                                 </Link>
                             ) : (
@@ -285,31 +278,24 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                             {getPercentage(kpis.callsAnswered, totalPassages)}%
                                         </span>
                                     </div>
-                                    <div className="flex items-end justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
-                                            {/* Info icon with tooltip */}
-                                            <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                    <Info className="h-4 w-4 text-emerald-500 cursor-help flex-shrink-0" />
-                                                </TooltipTrigger>
-                                                <TooltipContent side="right" className="max-w-xs">
-                                                    <div className="space-y-1 text-xs">
-                                                        <p><strong>Passages:</strong> {kpis.callsAnswered}</p>
-                                                        <p><strong>Appels uniques:</strong> {kpis.uniqueCallsAnswered}</p>
-                                                        <p><strong>Ping-pong:</strong> {kpis.callsAnswered - kpis.uniqueCallsAnswered} ({Math.round(((kpis.callsAnswered - kpis.uniqueCallsAnswered) / kpis.callsAnswered) * 100)}%)</p>
-                                                        <p className="text-slate-400 mt-2 pt-2 border-t">
-                                                            Les appels uniques sont basés sur le résultat du premier passage dans cette queue
-                                                        </p>
-                                                    </div>
-                                                </TooltipContent>
-                                            </Tooltip>
-                                        </div>
-                                        {kpis.callsAnsweredAndTransferred > 0 && (
-                                            <div className="text-xs text-emerald-600 text-right">
-                                                <div>dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong></div>
-                                            </div>
-                                        )}
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
+                                        {/* Info icon with tooltip */}
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Info className="h-4 w-4 text-emerald-500 cursor-help flex-shrink-0" />
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right" className="max-w-xs">
+                                                <div className="space-y-1 text-xs">
+                                                    <p><strong>Passages:</strong> {kpis.callsAnswered}</p>
+                                                    <p><strong>Appels uniques:</strong> {kpis.uniqueCallsAnswered}</p>
+                                                    <p><strong>Ping-pong:</strong> {kpis.callsAnswered - kpis.uniqueCallsAnswered} ({Math.round(((kpis.callsAnswered - kpis.uniqueCallsAnswered) / kpis.callsAnswered) * 100)}%)</p>
+                                                    <p className="text-slate-400 mt-2 pt-2 border-t">
+                                                        Les appels uniques sont basés sur le résultat du premier passage dans cette queue
+                                                    </p>
+                                                </div>
+                                            </TooltipContent>
+                                        </Tooltip>
                                     </div>
                                 </div>
                             )}
