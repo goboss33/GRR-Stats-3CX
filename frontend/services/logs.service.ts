@@ -553,21 +553,30 @@ export async function getAggregatedCallLogs(
     }
 
     // Multi-passage filter (Method N°2): Filter for calls with multiple passages through the SAME queue
-    // This is used to identify "ping-pong" calls that return to the queue multiple times
-    if (filters.multiPassageSameQueue && filters.journeyQueueNumber) {
+    // Three states: true (ping-pong), false (first passage only), undefined (all calls)
+    if (filters.multiPassageSameQueue !== undefined && filters.journeyQueueNumber) {
         const queueNum = filters.journeyQueueNumber.replace(/'/g, "''"); // SQL escape
 
-        // Count how many times this queue appears in the journey
-        // If multiPassageSameQueue is true, filter for count > 1 (ping-pong calls)
-        aggregatedWhereConditions.push(`
-            (SELECT COUNT(*)
-             FROM jsonb_array_elements(cj.journey::jsonb) elem
-             WHERE elem->>'type' = 'queue'
-               AND elem->>'label' = '${queueNum}') > 1
-        `);
+        if (filters.multiPassageSameQueue === true) {
+            // Ping-pong: queue appears MORE than once (count > 1)
+            aggregatedWhereConditions.push(`
+                (SELECT COUNT(*)
+                 FROM jsonb_array_elements(cj.journey::jsonb) elem
+                 WHERE elem->>'type' = 'queue'
+                   AND elem->>'label' = '${queueNum}') > 1
+            `);
+        } else if (filters.multiPassageSameQueue === false) {
+            // First passage only: queue appears EXACTLY once (count = 1)
+            aggregatedWhereConditions.push(`
+                (SELECT COUNT(*)
+                 FROM jsonb_array_elements(cj.journey::jsonb) elem
+                 WHERE elem->>'type' = 'queue'
+                   AND elem->>'label' = '${queueNum}') = 1
+            `);
+        }
+        // undefined = no filter (show all calls)
 
         // Optional: Combine with journeyQueueResult to filter for multi-passage calls with specific result
-        // Example: "At least one passage answered" for ping-pong calls
         if (filters.journeyQueueResult) {
             const result = filters.journeyQueueResult;
             aggregatedWhereConditions.push(

@@ -12,6 +12,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { QueueAgentPicker } from "@/components/queue-agent-picker";
 
 import type { JourneyStepType, JourneyMatchMode } from "@/types/logs.types";
@@ -70,6 +71,13 @@ export function ColumnFilterJourney({
     const [localQueueResults, setLocalQueueResults] = React.useState<QueueResultType[]>(queueResults ?? []);
     const [localMultiPassage, setLocalMultiPassage] = React.useState<boolean>(multiPassageSameQueue ?? false);
 
+    // Radio group state for passage filter (all/first/multi)
+    const [localPassageFilter, setLocalPassageFilter] = React.useState<"all" | "first" | "multi">(() => {
+        if (multiPassageSameQueue === true) return "multi";
+        if (multiPassageSameQueue === false) return "first";
+        return "all";
+    });
+
     React.useEffect(() => {
         if (!open) {
             setLocalSelected(selected);
@@ -77,6 +85,11 @@ export function ColumnFilterJourney({
             setLocalQueueNumber(queueNumber ?? null);
             setLocalQueueResults(queueResults ?? []);
             setLocalMultiPassage(multiPassageSameQueue ?? false);
+            setLocalPassageFilter(
+                multiPassageSameQueue === true ? "multi" :
+                multiPassageSameQueue === false ? "first" :
+                "all"
+            );
         }
     }, [selected, matchMode, queueNumber, queueResults, multiPassageSameQueue, open]);
 
@@ -91,7 +104,13 @@ export function ColumnFilterJourney({
             const hasQueueResultsChanged =
                 (localQueueResults ?? []).length !== (queueResults ?? []).length ||
                 !(localQueueResults ?? []).every(r => (queueResults ?? []).includes(r));
-            const hasMultiPassageChanged = localMultiPassage !== (multiPassageSameQueue ?? false);
+
+            // Check if passage filter (radio group) has changed
+            const hasPassageFilterChanged = (() => {
+                const currentValue = multiPassageSameQueue === true ? "multi" :
+                                    multiPassageSameQueue === false ? "first" : "all";
+                return localPassageFilter !== currentValue;
+            })();
 
             if (hasTypesChanged) {
                 onChange(localSelected);
@@ -105,8 +124,11 @@ export function ColumnFilterJourney({
             if (hasQueueResultsChanged && onQueueResultsChange) {
                 onQueueResultsChange(localQueueResults);
             }
-            if (hasMultiPassageChanged && onMultiPassageSameQueueChange) {
-                onMultiPassageSameQueueChange(localMultiPassage);
+            if (hasPassageFilterChanged && onMultiPassageSameQueueChange) {
+                const newValue = localPassageFilter === "multi" ? true :
+                                localPassageFilter === "first" ? false :
+                                undefined;
+                onMultiPassageSameQueueChange(newValue);
             }
         }
         if (isOpen) {
@@ -115,6 +137,11 @@ export function ColumnFilterJourney({
             setLocalQueueNumber(queueNumber ?? null);
             setLocalQueueResults(queueResults ?? []);
             setLocalMultiPassage(multiPassageSameQueue ?? false);
+            setLocalPassageFilter(
+                multiPassageSameQueue === true ? "multi" :
+                multiPassageSameQueue === false ? "first" :
+                "all"
+            );
         }
         setOpen(isOpen);
     };
@@ -136,7 +163,35 @@ export function ColumnFilterJourney({
     };
 
     const getLabel = () => {
-        if (selected.length === 0) {
+        // Check if ANY filter is active (not just journey types)
+        const hasJourneyTypeFilter = selected.length > 0;
+        const hasQueueFilter = queueNumber !== null && queueNumber !== undefined;
+        const hasResultFilter = queueResults && queueResults.length > 0;
+        const hasPassageFilter = multiPassageSameQueue !== undefined;
+
+        // If queue-specific filters are active, show custom label
+        if (hasQueueFilter || hasResultFilter || hasPassageFilter) {
+            const parts: string[] = [];
+
+            if (hasQueueFilter) {
+                parts.push(`Q${queueNumber}`);
+            }
+
+            if (hasResultFilter) {
+                parts.push(`${queueResults.length} rés.`);
+            }
+
+            if (hasPassageFilter) {
+                const passageLabel = multiPassageSameQueue === true ? 'Multi' :
+                                    multiPassageSameQueue === false ? 'Premier' : '';
+                if (passageLabel) parts.push(passageLabel);
+            }
+
+            return parts.length > 0 ? parts.join(' • ') : "Filtré";
+        }
+
+        // Otherwise, show journey type label (existing logic)
+        if (!hasJourneyTypeFilter) {
             return "Tout";
         }
         if (selected.length === 1) {
@@ -155,7 +210,12 @@ export function ColumnFilterJourney({
                     <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 w-full justify-between text-xs font-normal bg-white/80 border-input"
+                        className={cn(
+                            "h-8 w-full justify-between text-xs font-normal bg-white/80 border-input",
+                            // Visual highlighting when filter is active
+                            (selected.length > 0 || queueNumber || (queueResults && queueResults.length > 0) || multiPassageSameQueue !== undefined) &&
+                                "ring-2 ring-blue-500 ring-offset-1 border-blue-500"
+                        )}
                     >
                         <span className="truncate">{getLabel()}</span>
                         <ChevronDown className="ml-1 h-3 w-3 text-slate-500" />
@@ -251,25 +311,38 @@ export function ColumnFilterJourney({
                                     </div>
                                 )}
 
-                                {/* Multi-passage filter (Method N°2) - only when queue is selected */}
+                                {/* Multi-passage filter (Method N°2) - Radio group for passage filtering */}
                                 {localQueueNumber && onMultiPassageSameQueueChange && (
                                     <div className="px-1 mt-3 pt-2 border-t border-slate-200">
-                                        <div className="flex items-center gap-2">
-                                            <Checkbox
-                                                id="multi-passage-filter"
-                                                checked={localMultiPassage}
-                                                onCheckedChange={(checked) => setLocalMultiPassage(checked as boolean)}
-                                            />
-                                            <Label
-                                                htmlFor="multi-passage-filter"
-                                                className="text-sm cursor-pointer flex-1"
-                                            >
-                                                <span className="mr-1">🔄</span>
-                                                Appels avec passages multiples
-                                            </Label>
-                                        </div>
-                                        <p className="text-[10px] text-slate-400 px-1 mt-1 ml-6">
-                                            Filtre les appels qui sont repassés plusieurs fois par cette queue (ping-pong)
+                                        <Label className="text-xs text-slate-500 mb-1.5 block">Filtre de passage :</Label>
+                                        <RadioGroup
+                                            value={localPassageFilter}
+                                            onValueChange={(value) => setLocalPassageFilter(value as "all" | "first" | "multi")}
+                                        >
+                                            <div className="flex items-center space-x-2 py-1">
+                                                <RadioGroupItem value="all" id="passage-all" />
+                                                <Label htmlFor="passage-all" className="text-sm cursor-pointer font-normal">
+                                                    Tous les passages
+                                                </Label>
+                                            </div>
+                                            <div className="flex items-center space-x-2 py-1">
+                                                <RadioGroupItem value="first" id="passage-first" />
+                                                <Label htmlFor="passage-first" className="text-sm cursor-pointer font-normal">
+                                                    Premier passage uniquement
+                                                </Label>
+                                            </div>
+                                            <div className="flex items-center space-x-2 py-1">
+                                                <RadioGroupItem value="multi" id="passage-multi" />
+                                                <Label htmlFor="passage-multi" className="text-sm cursor-pointer font-normal">
+                                                    <span className="mr-1">🔄</span>
+                                                    Passages multiples (ping-pong)
+                                                </Label>
+                                            </div>
+                                        </RadioGroup>
+                                        <p className="text-[10px] text-slate-400 px-1 mt-1.5">
+                                            {localPassageFilter === "all" ? "Affiche tous les appels sans distinction" :
+                                             localPassageFilter === "first" ? "Affiche uniquement les appels lors de leur premier passage dans cette queue" :
+                                             "Affiche uniquement les appels qui sont repassés plusieurs fois par cette queue"}
                                         </p>
                                     </div>
                                 )}

@@ -137,6 +137,7 @@ export default function AdminLogsPage() {
     const getInitialMultiPassageSameQueue = (): boolean | undefined => {
         const param = searchParams.get("multiPassage");
         if (param === "true") return true;
+        if (param === "false") return false;  // NEW: parse false
         return undefined;
     };
 
@@ -250,7 +251,7 @@ export default function AdminLogsPage() {
         if (journeyQueueResult) params.set("journeyResult", journeyQueueResult);
         if (hasMultipleQueues !== undefined) params.set("multiQueues", String(hasMultipleQueues));
         // Multi-passage filter (Method N°2)
-        if (multiPassageSameQueue) params.set("multiPassage", "true");
+        if (multiPassageSameQueue !== undefined) params.set("multiPassage", String(multiPassageSameQueue));
 
         router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
     }, [

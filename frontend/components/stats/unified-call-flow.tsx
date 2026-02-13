@@ -46,6 +46,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
             start: format(dateRange.startDate, 'yyyy-MM-dd'),
             end: format(dateRange.endDate, 'yyyy-MM-dd'),
             journeyQueue: queueNumber,
+            multiPassage: 'false',  // Filter for first passage only to match unique calls in tooltip
         });
 
         // Map KPI outcome to journey result and queue count filter
