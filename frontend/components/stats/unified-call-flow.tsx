@@ -110,127 +110,130 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
 
             <CardContent className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-                    {/* Colonne Gauche: Donut + Quality Bar */}
-                    <div className="col-span-1 md:col-span-4 flex flex-col gap-4">
-                        {/* Donut Chart */}
-                        <div className="h-52 relative">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    {/* SVG Pattern definition for hatched green */}
-                                    <defs>
-                                        <pattern id={patternId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                                            <rect width="6" height="6" fill="#10b981" />
-                                            <line x1="0" y1="0" x2="0" y2="6" stroke="white" strokeWidth="2" />
-                                        </pattern>
-                                    </defs>
-                                    <Pie
-                                        data={data}
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius={60}
-                                        outerRadius={80}
-                                        paddingAngle={2}
-                                        dataKey="value"
-                                        stroke="none"
-                                    >
-                                        {data.map((entry, index) => (
-                                            <Cell
-                                                key={`cell-${index}`}
-                                                fill={entry.name === "Répondus (transférés)" ? `url(#${patternId})` : entry.color}
+                    {/* Colonne Gauche: Quality Bar + Donut */}
+                    <div className="col-span-1 md:col-span-4">
+                        <div className="flex items-center gap-6">
+                            {/* Quality Bar - LEFT - Vertical segmented bar with gradient */}
+                            <div className="flex items-center gap-3">
+                                {/* Vertical segmented bar */}
+                                <div className="flex flex-col-reverse gap-0.5">
+                                    {[...Array(10)].map((_, index) => {
+                                        const segmentThreshold = ((index + 1) / 10) * 100;
+                                        const currentPercentage = Math.round((uniqueCalls / totalPassages) * 100);
+                                        const isFilled = currentPercentage >= segmentThreshold;
+
+                                        // Calculate gradient color: Rouge 0-15%, Orange 15-35%, Vert 35-100%
+                                        const getSegmentColor = (idx: number) => {
+                                            const position = (idx + 1) / 10; // 0.1 to 1.0
+                                            if (position <= 0.15) return '#ef4444'; // red-500 (0-15%)
+                                            if (position <= 0.35) return '#f97316'; // orange-500 (15-35%)
+                                            // Gradient vert de 35% à 100%
+                                            if (position <= 0.5) return '#fb923c'; // orange-400 → transition
+                                            if (position <= 0.65) return '#fbbf24'; // amber-400
+                                            if (position <= 0.8) return '#a3e635'; // lime-400
+                                            if (position <= 0.9) return '#4ade80'; // green-400
+                                            return '#22c55e'; // green-500 (top)
+                                        };
+
+                                        return (
+                                            <div
+                                                key={index}
+                                                className={`w-8 h-2 rounded-sm transition-all duration-300 ${
+                                                    isFilled ? 'opacity-100' : 'opacity-20'
+                                                }`}
+                                                style={{
+                                                    backgroundColor: getSegmentColor(index),
+                                                }}
                                             />
-                                        ))}
-                                    </Pie>
-                                    <RechartsTooltip
-                                        formatter={(value: number) => [`${value} appels`, '']}
-                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                    />
-                                </PieChart>
-                            </ResponsiveContainer>
-                            {/* Centre du Donut - Number + Info icon */}
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="flex items-center gap-2 pointer-events-auto">
-                                    <span className="text-4xl font-bold text-slate-900">{totalPassages}</span>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* Label and info */}
+                                <div className="flex flex-col justify-center">
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <Info className="h-5 w-5 text-slate-400 cursor-help hover:text-slate-600 transition-colors flex-shrink-0" />
+                                            <div className="cursor-help">
+                                                <div className="text-2xl font-bold text-slate-700">
+                                                    {Math.round((uniqueCalls / totalPassages) * 100)}%
+                                                </div>
+                                                <div className="text-[10px] text-slate-500 uppercase tracking-wider">
+                                                    Qualité
+                                                </div>
+                                            </div>
                                         </TooltipTrigger>
                                         <TooltipContent side="right" className="max-w-xs">
                                             <div className="space-y-1 text-xs">
-                                                <p><strong>Total passages:</strong> {totalPassages}</p>
-                                                <p><strong>Appels uniques:</strong> {uniqueCalls}</p>
-                                                <p><strong>Passages multiples (ping-pong):</strong> {pingPongCount}</p>
+                                                <p><strong>Taux d'appels uniques:</strong> {uniqueCalls} / {totalPassages} = {Math.round((uniqueCalls / totalPassages) * 100)}%</p>
                                                 <p className="text-slate-400 mt-2 pt-2 border-t">
-                                                    Le total inclut les appels qui repassent plusieurs fois par la queue
+                                                    Plus ce taux est élevé, moins il y a de passages multiples (ping-pong)
                                                 </p>
+                                                <div className="mt-2 pt-2 border-t space-y-0.5">
+                                                    <p className="text-slate-400 text-[10px]">
+                                                        {pingPongCount} appels avec ping-pong ({pingPongPercentage}%)
+                                                    </p>
+                                                </div>
                                             </div>
                                         </TooltipContent>
                                     </Tooltip>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Quality Bar - Vertical segmented bar with gradient */}
-                        <div className="flex items-center justify-center gap-4 px-6">
-                            {/* Vertical segmented bar */}
-                            <div className="flex flex-col-reverse gap-0.5">
-                                {[...Array(10)].map((_, index) => {
-                                    const segmentThreshold = ((index + 1) / 10) * 100;
-                                    const currentPercentage = Math.round((uniqueCalls / totalPassages) * 100);
-                                    const isFilled = currentPercentage >= segmentThreshold;
-
-                                    // Calculate gradient color from red (bottom) to green (top)
-                                    // Red at 0-30%, Orange at 30-70%, Yellow at 70-85%, Green at 85-100%
-                                    const getSegmentColor = (idx: number) => {
-                                        const position = (idx + 1) / 10; // 0.1 to 1.0
-                                        if (position <= 0.3) return '#ef4444'; // red-500
-                                        if (position <= 0.5) return '#f97316'; // orange-500
-                                        if (position <= 0.7) return '#f59e0b'; // amber-500
-                                        if (position <= 0.85) return '#eab308'; // yellow-500
-                                        if (position <= 0.95) return '#84cc16'; // lime-500
-                                        return '#22c55e'; // green-500
-                                    };
-
-                                    return (
-                                        <div
-                                            key={index}
-                                            className={`w-8 h-2 rounded-sm transition-all duration-300 ${
-                                                isFilled ? 'opacity-100' : 'opacity-20'
-                                            }`}
-                                            style={{
-                                                backgroundColor: getSegmentColor(index),
-                                            }}
+                            {/* Donut Chart - RIGHT */}
+                            <div className="flex-1 h-52 relative">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        {/* SVG Pattern definition for hatched green */}
+                                        <defs>
+                                            <pattern id={patternId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                                                <rect width="6" height="6" fill="#10b981" />
+                                                <line x1="0" y1="0" x2="0" y2="6" stroke="white" strokeWidth="2" />
+                                            </pattern>
+                                        </defs>
+                                        <Pie
+                                            data={data}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={60}
+                                            outerRadius={80}
+                                            paddingAngle={2}
+                                            dataKey="value"
+                                            stroke="none"
+                                        >
+                                            {data.map((entry, index) => (
+                                                <Cell
+                                                    key={`cell-${index}`}
+                                                    fill={entry.name === "Répondus (transférés)" ? `url(#${patternId})` : entry.color}
+                                                />
+                                            ))}
+                                        </Pie>
+                                        <RechartsTooltip
+                                            formatter={(value: number) => [`${value} appels`, '']}
+                                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                         />
-                                    );
-                                })}
-                            </div>
-
-                            {/* Label and info */}
-                            <div className="flex flex-col justify-center">
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div className="cursor-help">
-                                            <div className="text-2xl font-bold text-slate-700">
-                                                {Math.round((uniqueCalls / totalPassages) * 100)}%
-                                            </div>
-                                            <div className="text-[10px] text-slate-500 uppercase tracking-wider">
-                                                Qualité
-                                            </div>
-                                        </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="right" className="max-w-xs">
-                                        <div className="space-y-1 text-xs">
-                                            <p><strong>Taux d'appels uniques:</strong> {uniqueCalls} / {totalPassages} = {Math.round((uniqueCalls / totalPassages) * 100)}%</p>
-                                            <p className="text-slate-400 mt-2 pt-2 border-t">
-                                                Plus ce taux est élevé, moins il y a de passages multiples (ping-pong)
-                                            </p>
-                                            <div className="mt-2 pt-2 border-t space-y-0.5">
-                                                <p className="text-slate-400 text-[10px]">
-                                                    {pingPongCount} appels avec ping-pong ({pingPongPercentage}%)
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </TooltipContent>
-                                </Tooltip>
+                                    </PieChart>
+                                </ResponsiveContainer>
+                                {/* Centre du Donut - Number + Info icon */}
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="flex items-center gap-2 pointer-events-auto">
+                                        <span className="text-4xl font-bold text-slate-900">{totalPassages}</span>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Info className="h-5 w-5 text-slate-400 cursor-help hover:text-slate-600 transition-colors flex-shrink-0" />
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right" className="max-w-xs">
+                                                <div className="space-y-1 text-xs">
+                                                    <p><strong>Total passages:</strong> {totalPassages}</p>
+                                                    <p><strong>Appels uniques:</strong> {uniqueCalls}</p>
+                                                    <p><strong>Passages multiples (ping-pong):</strong> {pingPongCount}</p>
+                                                    <p className="text-slate-400 mt-2 pt-2 border-t">
+                                                        Le total inclut les appels qui repassent plusieurs fois par la queue
+                                                    </p>
+                                                </div>
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
