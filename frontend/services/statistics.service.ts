@@ -385,9 +385,12 @@ async function getAgentStats(
     totalQueueCalls: number
 ): Promise<AgentStats[]> {
     const result = await prisma.$queryRaw<any[]>`
-        WITH unique_queue_calls AS (
-            -- Aligned with KPIs: DISTINCT ON call_history_id to avoid double-counting
-            SELECT DISTINCT ON (call_history_id)
+        -- METHOD N°2: Count ALL passages through queue (including ping-pong calls)
+        -- This aligns with the KPI calculation which counts all passages
+        WITH all_queue_passages AS (
+            -- ALL passages through this queue (NO DISTINCT ON)
+            -- Each passage is counted separately (e.g., if call passes 3 times, count = 3)
+            SELECT
                 call_history_id,
                 cdr_id,
                 cdr_started_at
@@ -396,23 +399,23 @@ async function getAgentStats(
               AND destination_dn_type = 'queue'
               AND cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
-            ORDER BY call_history_id, cdr_started_at ASC
+            -- NO ORDER BY, NO DISTINCT - count every passage
         ),
         queue_agents AS (
             -- All extensions that were polled by this queue
             SELECT DISTINCT c.destination_dn_number as extension
-            FROM unique_queue_calls uqc
-            JOIN cdroutput c ON c.originating_cdr_id = uqc.cdr_id
+            FROM all_queue_passages aqp
+            JOIN cdroutput c ON c.originating_cdr_id = aqp.cdr_id
             WHERE c.destination_dn_type = 'extension'
         ),
         agent_activity AS (
-            SELECT 
+            SELECT
                 c.destination_dn_number as extension,
                 c.destination_dn_name as name,
-                -- Appels reçus queue: unique calls where phone rang
-                COUNT(DISTINCT CASE WHEN c.creation_forward_reason = 'polling' THEN qc.call_history_id END) as calls_received,
-                -- Calls answered from queue
-                COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL 
+                -- Appels reçus queue: all passages where phone rang (including ping-pong)
+                COUNT(DISTINCT CASE WHEN c.creation_forward_reason = 'polling' THEN aqp.call_history_id END) as calls_received,
+                -- Calls answered from queue (all passages)
+                COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL
                            AND c.creation_forward_reason = 'polling'
                       THEN 1 END) as answered,
                 -- Transferred EXTERNALLY (destination NOT in queue agents)
@@ -426,22 +429,22 @@ async function getAgentStats(
                            )
                       THEN 1 END) as transferred,
                 -- Queue handling time (only answered)
-                AVG(CASE WHEN c.cdr_answered_at IS NOT NULL 
+                AVG(CASE WHEN c.cdr_answered_at IS NOT NULL
                     THEN EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) ELSE NULL END) as avg_handling_time,
-                SUM(CASE WHEN c.cdr_answered_at IS NOT NULL 
+                SUM(CASE WHEN c.cdr_answered_at IS NOT NULL
                     THEN EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) ELSE 0 END) as total_handling_time
-            FROM unique_queue_calls qc
-            JOIN cdroutput c ON c.originating_cdr_id = qc.cdr_id
+            FROM all_queue_passages aqp
+            JOIN cdroutput c ON c.originating_cdr_id = aqp.cdr_id
             WHERE c.destination_dn_type = 'extension'
             GROUP BY c.destination_dn_number, c.destination_dn_name
         ),
         direct_calls AS (
             -- Appels directs (non-queue) reçus par les agents de cette queue sur la même période
-            SELECT 
+            SELECT
                 c.destination_dn_number as extension,
                 COUNT(*) as direct_received,
                 COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL THEN 1 END) as direct_answered,
-                SUM(CASE WHEN c.cdr_answered_at IS NOT NULL 
+                SUM(CASE WHEN c.cdr_answered_at IS NOT NULL
                     THEN EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) ELSE 0 END) as direct_talk_time
             FROM cdroutput c
             WHERE c.destination_dn_type = 'extension'
@@ -451,12 +454,12 @@ async function getAgentStats(
               AND (c.creation_forward_reason IS DISTINCT FROM 'polling')
               AND NOT EXISTS (
                   -- Exclude calls that originated from this queue (avoid counting queue sub-legs)
-                  SELECT 1 FROM unique_queue_calls uqc
-                  WHERE uqc.cdr_id = c.originating_cdr_id
+                  SELECT 1 FROM all_queue_passages aqp
+                  WHERE aqp.cdr_id = c.originating_cdr_id
               )
             GROUP BY c.destination_dn_number
         )
-        SELECT 
+        SELECT
             aa.extension,
             aa.name,
             aa.calls_received,
