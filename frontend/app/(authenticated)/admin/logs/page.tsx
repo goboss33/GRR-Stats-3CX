@@ -134,6 +134,12 @@ export default function AdminLogsPage() {
         return undefined;
     };
 
+    const getInitialMultiPassageSameQueue = (): boolean | undefined => {
+        const param = searchParams.get("multiPassage");
+        if (param === "true") return true;
+        return undefined;
+    };
+
     const [journeyQueueNumber, setJourneyQueueNumber] = useState<string | undefined>(
         () => getInitialJourneyQueueNumber()
     );
@@ -142,6 +148,9 @@ export default function AdminLogsPage() {
     );
     const [hasMultipleQueues, setHasMultipleQueues] = useState<boolean | undefined>(
         () => getInitialHasMultipleQueues()
+    );
+    const [multiPassageSameQueue, setMultiPassageSameQueue] = useState<boolean | undefined>(
+        () => getInitialMultiPassageSameQueue()
     );
 
     // UI-level state for queue-specific journey filters (maps to backend state)
@@ -188,6 +197,8 @@ export default function AdminLogsPage() {
         journeyQueueNumber: journeyQueueNumber,
         journeyQueueResult: journeyQueueResult,
         hasMultipleQueues: hasMultipleQueues,
+        // Multi-passage filter (Method N°2)
+        multiPassageSameQueue: multiPassageSameQueue,
     };
 
     // Update URL when filters change - uses DEBOUNCED values for text search
@@ -238,6 +249,8 @@ export default function AdminLogsPage() {
         if (journeyQueueNumber) params.set("journeyQueue", journeyQueueNumber);
         if (journeyQueueResult) params.set("journeyResult", journeyQueueResult);
         if (hasMultipleQueues !== undefined) params.set("multiQueues", String(hasMultipleQueues));
+        // Multi-passage filter (Method N°2)
+        if (multiPassageSameQueue) params.set("multiPassage", "true");
 
         router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
     }, [
@@ -261,6 +274,7 @@ export default function AdminLogsPage() {
         journeyQueueNumber,
         journeyQueueResult,
         hasMultipleQueues,
+        multiPassageSameQueue,
     ]);
 
     // Fetch data
@@ -305,6 +319,8 @@ export default function AdminLogsPage() {
         journeyQueueNumber,
         journeyQueueResult,
         hasMultipleQueues,
+        // Multi-passage filter (Method N°2)
+        multiPassageSameQueue,
     ]);
 
     // Fetch on filter/page change and update URL
@@ -318,6 +334,7 @@ export default function AdminLogsPage() {
         const queueParam = searchParams.get("journeyQueue");
         const resultParam = searchParams.get("journeyResult");
         const multiQueuesParam = searchParams.get("multiQueues");
+        const multiPassageParam = searchParams.get("multiPassage");
 
         // Update backend state
         setJourneyQueueNumber(queueParam || undefined);
@@ -343,6 +360,9 @@ export default function AdminLogsPage() {
         } else {
             setHasMultipleQueues(undefined);
         }
+
+        // Multi-passage filter (Method N°2)
+        setMultiPassageSameQueue(multiPassageParam === "true" ? true : undefined);
 
         // Sync UI state from backend state
         setUiJourneyQueueNumber(queueParam || null);
@@ -498,6 +518,7 @@ export default function AdminLogsPage() {
             setUiJourneyQueueResults([]);
             setJourneyQueueResult(undefined);
             setHasMultipleQueues(undefined);
+            setMultiPassageSameQueue(undefined);
         }
     };
 
@@ -525,6 +546,11 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
+    const handleMultiPassageSameQueueChange = (enabled: boolean) => {
+        setMultiPassageSameQueue(enabled ? true : undefined);
+        setCurrentPage(1);
+    };
+
     const handleRemoveJourneyType = (type: JourneyStepType) => {
         setSelectedJourneyTypes(selectedJourneyTypes.filter(t => t !== type));
         setCurrentPage(1);
@@ -534,6 +560,7 @@ export default function AdminLogsPage() {
         setJourneyQueueNumber(undefined);
         setJourneyQueueResult(undefined);
         setHasMultipleQueues(undefined);
+        setMultiPassageSameQueue(undefined);
         setCurrentPage(1);
     };
 
@@ -556,6 +583,7 @@ export default function AdminLogsPage() {
         setJourneyQueueNumber(undefined);
         setJourneyQueueResult(undefined);
         setHasMultipleQueues(undefined);
+        setMultiPassageSameQueue(undefined);
         setCurrentPage(1);
         // Increment reset counter to trigger immediate refetch (bypasses debounce)
         setResetCounter(c => c + 1);
@@ -710,6 +738,9 @@ export default function AdminLogsPage() {
                     onJourneyQueueNumberChange={handleJourneyQueueNumberChange}
                     journeyQueueResults={uiJourneyQueueResults}
                     onJourneyQueueResultsChange={handleJourneyQueueResultsChange}
+                    // Multi-passage filter (Method N°2)
+                    multiPassageSameQueue={multiPassageSameQueue}
+                    onMultiPassageSameQueueChange={handleMultiPassageSameQueueChange}
                     // Row click
                     onRowClick={handleRowClick}
                 />

@@ -96,12 +96,13 @@ async function getQueueKPIs(
     // They share the same call_history_id but go through scripts/ring_groups in between.
 
     const result = await prisma.$queryRaw<any[]>`
-        -- REFACTORED: Count by unique call_history_id (DRY - aligned with logs.service.ts)
-        -- This ensures statistics match the logs count (e.g., 673 instead of 751)
-        WITH unique_queue_calls AS (
-            -- One record per unique call (call_history_id)
-            -- Takes the FIRST entry into this queue if multiple entries exist
-            SELECT DISTINCT ON (call_history_id)
+        -- METHOD N°2: Count ALL passages through queue (including ping-pong calls)
+        -- Rationale: Ping-pong calls (3-4x through same queue) are FREQUENT, not rare
+        -- This gives a true measure of queue workload (passages) while also tracking unique calls
+        WITH all_queue_passages AS (
+            -- ALL passages through this queue (NO DISTINCT ON)
+            -- Each passage is counted separately (e.g., if call passes 3 times, count = 3)
+            SELECT
                 call_history_id,
                 cdr_id,
                 cdr_started_at,
@@ -111,52 +112,52 @@ async function getQueueKPIs(
               AND destination_dn_type = 'queue'
               AND cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
-            ORDER BY call_history_id, cdr_started_at ASC
+            -- NO ORDER BY, NO DISTINCT - count every passage
         ),
         outcomes AS (
-            SELECT 
-                uqc.cdr_id,
-                uqc.call_history_id,
-                uqc.cdr_started_at,
-                uqc.cdr_ended_at,
-                -- Answered by an agent from THIS queue?
-                MAX(CASE 
-                    WHEN ans.originating_cdr_id = uqc.cdr_id 
+            SELECT
+                aqp.cdr_id,
+                aqp.call_history_id,
+                aqp.cdr_started_at,
+                aqp.cdr_ended_at,
+                -- Answered by an agent from THIS queue passage?
+                MAX(CASE
+                    WHEN ans.originating_cdr_id = aqp.cdr_id
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
                     THEN 1 ELSE 0 END) as answered_here,
                 -- Answered AND then transferred by the agent?
-                MAX(CASE 
-                    WHEN ans.originating_cdr_id = uqc.cdr_id 
+                MAX(CASE
+                    WHEN ans.originating_cdr_id = aqp.cdr_id
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
                          AND ans.termination_reason = 'continued_in'
                     THEN 1 ELSE 0 END) as answered_and_transferred,
                 -- Forwarded to another queue? (via call_history_id, not originating_cdr_id)
-                MAX(CASE 
+                MAX(CASE
                     WHEN other_q.destination_dn_type = 'queue'
                          AND other_q.destination_dn_number != ${queueNumber}
-                         AND other_q.cdr_started_at > uqc.cdr_started_at
+                         AND other_q.cdr_started_at > aqp.cdr_started_at
                     THEN 1 ELSE 0 END) as forwarded_to_other_queue,
-                -- Wait time (time before answer by agent from this queue)
-                MIN(CASE 
-                    WHEN ans.originating_cdr_id = uqc.cdr_id 
+                -- Wait time (time before answer by agent from this queue passage)
+                MIN(CASE
+                    WHEN ans.originating_cdr_id = aqp.cdr_id
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
-                    THEN EXTRACT(EPOCH FROM (ans.cdr_answered_at - uqc.cdr_started_at))
+                    THEN EXTRACT(EPOCH FROM (ans.cdr_answered_at - aqp.cdr_started_at))
                     ELSE NULL END) as wait_time_seconds,
                 -- Talk time
-                MAX(CASE 
-                    WHEN ans.originating_cdr_id = uqc.cdr_id 
+                MAX(CASE
+                    WHEN ans.originating_cdr_id = aqp.cdr_id
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
-                    THEN EXTRACT(EPOCH FROM (ans.cdr_ended_at - ans.cdr_answered_at)) 
+                    THEN EXTRACT(EPOCH FROM (ans.cdr_ended_at - ans.cdr_answered_at))
                     ELSE 0 END) as talk_time_seconds
-            FROM unique_queue_calls uqc
-            LEFT JOIN cdroutput ans ON ans.originating_cdr_id = uqc.cdr_id
-            LEFT JOIN cdroutput other_q ON other_q.call_history_id = uqc.call_history_id
-                                       AND other_q.cdr_started_at > uqc.cdr_started_at
-            GROUP BY uqc.cdr_id, uqc.call_history_id, uqc.cdr_started_at, uqc.cdr_ended_at
+            FROM all_queue_passages aqp
+            LEFT JOIN cdroutput ans ON ans.originating_cdr_id = aqp.cdr_id
+            LEFT JOIN cdroutput other_q ON other_q.call_history_id = aqp.call_history_id
+                                       AND other_q.cdr_started_at > aqp.cdr_started_at
+            GROUP BY aqp.cdr_id, aqp.call_history_id, aqp.cdr_started_at, aqp.cdr_ended_at
         ),
         final_outcomes AS (
             SELECT 
@@ -177,14 +178,22 @@ async function getQueueKPIs(
                 EXTRACT(EPOCH FROM (cdr_ended_at - cdr_started_at)) as time_in_queue
             FROM outcomes
         )
-        SELECT 
-            COUNT(*) as total_calls,
-            SUM(CASE WHEN outcome = 'answered' THEN 1 ELSE 0 END) as answered,
-            SUM(CASE WHEN outcome = 'answered' AND answered_and_transferred = 1 THEN 1 ELSE 0 END) as answered_and_transferred,
-            SUM(CASE WHEN outcome = 'abandoned' THEN 1 ELSE 0 END) as abandoned,
-            SUM(CASE WHEN outcome = 'abandoned' AND time_in_queue < 10 THEN 1 ELSE 0 END) as abandoned_before_10s,
-            SUM(CASE WHEN outcome = 'abandoned' AND time_in_queue >= 10 THEN 1 ELSE 0 END) as abandoned_after_10s,
-            SUM(CASE WHEN outcome = 'overflow' THEN 1 ELSE 0 END) as overflow,
+        SELECT
+            -- PASSAGES (total count including ping-pong)
+            COUNT(*) as total_passages,
+            SUM(CASE WHEN outcome = 'answered' THEN 1 ELSE 0 END) as answered_passages,
+            SUM(CASE WHEN outcome = 'answered' AND answered_and_transferred = 1 THEN 1 ELSE 0 END) as answered_and_transferred_passages,
+            SUM(CASE WHEN outcome = 'abandoned' THEN 1 ELSE 0 END) as abandoned_passages,
+            SUM(CASE WHEN outcome = 'abandoned' AND time_in_queue < 10 THEN 1 ELSE 0 END) as abandoned_before_10s_passages,
+            SUM(CASE WHEN outcome = 'abandoned' AND time_in_queue >= 10 THEN 1 ELSE 0 END) as abandoned_after_10s_passages,
+            SUM(CASE WHEN outcome = 'overflow' THEN 1 ELSE 0 END) as overflow_passages,
+
+            -- UNIQUE CALLS (distinct call_history_id)
+            COUNT(DISTINCT call_history_id) as unique_calls,
+            COUNT(DISTINCT CASE WHEN outcome = 'answered' THEN call_history_id END) as unique_answered,
+            COUNT(DISTINCT CASE WHEN outcome = 'abandoned' THEN call_history_id END) as unique_abandoned,
+            COUNT(DISTINCT CASE WHEN outcome = 'overflow' THEN call_history_id END) as unique_overflow,
+
             AVG(wait_time_seconds) as avg_wait_time,
             AVG(CASE WHEN outcome = 'answered' THEN talk_time_seconds ELSE NULL END) as avg_talk_time
         FROM final_outcomes;
@@ -192,9 +201,19 @@ async function getQueueKPIs(
 
     const row = result[0] || {};
 
-    // Get overflow destinations - only FIRST destination per overflow call
+    // Calculate ping-pong metrics
+    const totalPassages = Number(row.total_passages || 0);
+    const uniqueCallsCount = Number(row.unique_calls || 0);
+    const pingPongCount = totalPassages - uniqueCallsCount;
+    const pingPongPercentage = totalPassages > 0
+        ? Math.round((pingPongCount / totalPassages) * 100)
+        : 0;
+
+    // Get overflow destinations - count UNIQUE CALLS per destination (not passages)
+    // For overflow analysis, we care about how many unique calls went to each destination
     const overflowDests = await prisma.$queryRaw<any[]>`
-        WITH unique_queue_calls AS (
+        WITH first_queue_passage AS (
+            -- For overflow destination analysis, use first passage per unique call
             SELECT DISTINCT ON (call_history_id)
                 call_history_id,
                 cdr_id,
@@ -207,18 +226,18 @@ async function getQueueKPIs(
             ORDER BY call_history_id, cdr_started_at ASC
         ),
         queue_with_answer_status AS (
-            SELECT 
-                uqc.cdr_id,
-                uqc.call_history_id,
-                uqc.cdr_started_at,
-                MAX(CASE 
-                    WHEN ans.originating_cdr_id = uqc.cdr_id 
+            SELECT
+                fqp.cdr_id,
+                fqp.call_history_id,
+                fqp.cdr_started_at,
+                MAX(CASE
+                    WHEN ans.originating_cdr_id = fqp.cdr_id
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
                     THEN 1 ELSE 0 END) as answered_here
-            FROM unique_queue_calls uqc
-            LEFT JOIN cdroutput ans ON ans.originating_cdr_id = uqc.cdr_id
-            GROUP BY uqc.cdr_id, uqc.call_history_id, uqc.cdr_started_at
+            FROM first_queue_passage fqp
+            LEFT JOIN cdroutput ans ON ans.originating_cdr_id = fqp.cdr_id
+            GROUP BY fqp.cdr_id, fqp.call_history_id, fqp.cdr_started_at
         ),
         first_overflow_destination AS (
             -- For each overflow call, get only the FIRST other queue it went to
@@ -251,8 +270,10 @@ async function getQueueKPIs(
 
     // Get transfer destinations (answered then transferred by agent)
     // Only show transfers OUTSIDE the queue (exclude queue member agents + technical destinations)
+    // Count unique calls per destination (not passages)
     const transferDests = await prisma.$queryRaw<any[]>`
-        WITH unique_queue_calls AS (
+        WITH first_queue_passage AS (
+            -- For transfer destination analysis, use first passage per unique call
             SELECT DISTINCT ON (call_history_id)
                 call_history_id,
                 cdr_id,
@@ -267,18 +288,18 @@ async function getQueueKPIs(
         queue_agents AS (
             -- Get all extensions that are agents of this queue
             SELECT DISTINCT c.destination_dn_number as extension
-            FROM unique_queue_calls uqc
-            JOIN cdroutput c ON c.originating_cdr_id = uqc.cdr_id
+            FROM first_queue_passage fqp
+            JOIN cdroutput c ON c.originating_cdr_id = fqp.cdr_id
             WHERE c.destination_dn_type = 'extension'
               AND c.cdr_answered_at IS NOT NULL
         ),
         agent_transferred AS (
             -- Find agents who answered from this queue and then transferred
-            SELECT 
+            SELECT
                 ans.cdr_id as agent_cdr_id,
                 ans.continued_in_cdr_id
-            FROM unique_queue_calls uqc
-            JOIN cdroutput ans ON ans.originating_cdr_id = uqc.cdr_id
+            FROM first_queue_passage fqp
+            JOIN cdroutput ans ON ans.originating_cdr_id = fqp.cdr_id
                               AND ans.destination_dn_type = 'extension'
                               AND ans.cdr_answered_at IS NOT NULL
                               AND ans.termination_reason = 'continued_in'
@@ -315,17 +336,27 @@ async function getQueueKPIs(
     // Compute external transfer count from filtered destinations
     const externalTransferCount = transferDestinations.reduce((sum, d) => sum + d.count, 0);
 
-    const totalCalls = Number(row.total_calls || 0);
-
     return {
-        callsReceived: totalCalls,
-        callsAnswered: Number(row.answered || 0),
+        // PASSAGES (Method N°2): Total workload including ping-pong
+        callsReceived: totalPassages,
+        callsAnswered: Number(row.answered_passages || 0),
         callsAnsweredAndTransferred: externalTransferCount,
-        callsAbandoned: Number(row.abandoned || 0),
-        abandonedBefore10s: Number(row.abandoned_before_10s || 0),
-        abandonedAfter10s: Number(row.abandoned_after_10s || 0),
+        callsAbandoned: Number(row.abandoned_passages || 0),
+        abandonedBefore10s: Number(row.abandoned_before_10s_passages || 0),
+        abandonedAfter10s: Number(row.abandoned_after_10s_passages || 0),
         callsToVoicemail: 0,
-        callsOverflow: Number(row.overflow || 0),
+        callsOverflow: Number(row.overflow_passages || 0),
+
+        // UNIQUE CALLS (Method N°2): Distinct call_history_id
+        uniqueCalls: uniqueCallsCount,
+        uniqueCallsAnswered: Number(row.unique_answered || 0),
+        uniqueCallsAbandoned: Number(row.unique_abandoned || 0),
+        uniqueCallsOverflow: Number(row.unique_overflow || 0),
+
+        // PING-PONG METRICS (Method N°2)
+        pingPongCount: pingPongCount,
+        pingPongPercentage: pingPongPercentage,
+
         overflowDestinations,
         transferDestinations,
         avgWaitTimeSeconds: Math.round(Number(row.avg_wait_time || 0)),

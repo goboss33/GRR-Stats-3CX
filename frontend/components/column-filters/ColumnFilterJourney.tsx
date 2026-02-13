@@ -31,6 +31,9 @@ interface ColumnFilterJourneyProps {
     onQueueNumberChange?: (queueNumber: string | null) => void;
     queueResults?: QueueResultType[];
     onQueueResultsChange?: (results: QueueResultType[]) => void;
+    // Multi-passage filter (Method N°2)
+    multiPassageSameQueue?: boolean;
+    onMultiPassageSameQueueChange?: (enabled: boolean) => void;
     className?: string;
 }
 
@@ -56,6 +59,8 @@ export function ColumnFilterJourney({
     onQueueNumberChange,
     queueResults,
     onQueueResultsChange,
+    multiPassageSameQueue,
+    onMultiPassageSameQueueChange,
     className,
 }: ColumnFilterJourneyProps) {
     const [open, setOpen] = React.useState(false);
@@ -63,6 +68,7 @@ export function ColumnFilterJourney({
     const [localMatchMode, setLocalMatchMode] = React.useState<JourneyMatchMode>(matchMode);
     const [localQueueNumber, setLocalQueueNumber] = React.useState<string | null>(queueNumber ?? null);
     const [localQueueResults, setLocalQueueResults] = React.useState<QueueResultType[]>(queueResults ?? []);
+    const [localMultiPassage, setLocalMultiPassage] = React.useState<boolean>(multiPassageSameQueue ?? false);
 
     React.useEffect(() => {
         if (!open) {
@@ -70,8 +76,9 @@ export function ColumnFilterJourney({
             setLocalMatchMode(matchMode);
             setLocalQueueNumber(queueNumber ?? null);
             setLocalQueueResults(queueResults ?? []);
+            setLocalMultiPassage(multiPassageSameQueue ?? false);
         }
-    }, [selected, matchMode, queueNumber, queueResults, open]);
+    }, [selected, matchMode, queueNumber, queueResults, multiPassageSameQueue, open]);
 
     const handleOpenChange = (isOpen: boolean) => {
         if (!isOpen && open) {
@@ -84,6 +91,7 @@ export function ColumnFilterJourney({
             const hasQueueResultsChanged =
                 (localQueueResults ?? []).length !== (queueResults ?? []).length ||
                 !(localQueueResults ?? []).every(r => (queueResults ?? []).includes(r));
+            const hasMultiPassageChanged = localMultiPassage !== (multiPassageSameQueue ?? false);
 
             if (hasTypesChanged) {
                 onChange(localSelected);
@@ -97,12 +105,16 @@ export function ColumnFilterJourney({
             if (hasQueueResultsChanged && onQueueResultsChange) {
                 onQueueResultsChange(localQueueResults);
             }
+            if (hasMultiPassageChanged && onMultiPassageSameQueueChange) {
+                onMultiPassageSameQueueChange(localMultiPassage);
+            }
         }
         if (isOpen) {
             setLocalSelected(selected);
             setLocalMatchMode(matchMode);
             setLocalQueueNumber(queueNumber ?? null);
             setLocalQueueResults(queueResults ?? []);
+            setLocalMultiPassage(multiPassageSameQueue ?? false);
         }
         setOpen(isOpen);
     };
@@ -236,6 +248,29 @@ export function ColumnFilterJourney({
                                                 </div>
                                             ))}
                                         </div>
+                                    </div>
+                                )}
+
+                                {/* Multi-passage filter (Method N°2) - only when queue is selected */}
+                                {localQueueNumber && onMultiPassageSameQueueChange && (
+                                    <div className="px-1 mt-3 pt-2 border-t border-slate-200">
+                                        <div className="flex items-center gap-2">
+                                            <Checkbox
+                                                id="multi-passage-filter"
+                                                checked={localMultiPassage}
+                                                onCheckedChange={(checked) => setLocalMultiPassage(checked as boolean)}
+                                            />
+                                            <Label
+                                                htmlFor="multi-passage-filter"
+                                                className="text-sm cursor-pointer flex-1"
+                                            >
+                                                <span className="mr-1">🔄</span>
+                                                Appels avec passages multiples
+                                            </Label>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 px-1 mt-1 ml-6">
+                                            Filtre les appels qui sont repassés plusieurs fois par cette queue (ping-pong)
+                                        </p>
                                     </div>
                                 )}
                             </div>

@@ -105,6 +105,9 @@ interface LogsTableProps {
     onJourneyQueueNumberChange?: (queueNumber: string | null) => void;
     journeyQueueResults?: ("answered" | "abandoned" | "redirected")[];
     onJourneyQueueResultsChange?: (results: ("answered" | "abandoned" | "redirected")[]) => void;
+    // Multi-passage filter (Method N°2)
+    multiPassageSameQueue?: boolean;
+    onMultiPassageSameQueueChange?: (enabled: boolean) => void;
     // Row click
     onRowClick?: (callHistoryId: string) => void;
 }
@@ -251,6 +254,9 @@ export function LogsTable({
     onJourneyQueueNumberChange,
     journeyQueueResults,
     onJourneyQueueResultsChange,
+    // Multi-passage filter (Method N°2)
+    multiPassageSameQueue,
+    onMultiPassageSameQueueChange,
     // Row click
     onRowClick,
 }: LogsTableProps) {
@@ -364,6 +370,8 @@ export function LogsTable({
                                     onQueueNumberChange={onJourneyQueueNumberChange}
                                     queueResults={journeyQueueResults}
                                     onQueueResultsChange={onJourneyQueueResultsChange}
+                                    multiPassageSameQueue={multiPassageSameQueue}
+                                    onMultiPassageSameQueueChange={onMultiPassageSameQueueChange}
                                 />
                             </TableHead>
                             <TableHead className="py-2">

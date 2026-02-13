@@ -15,7 +15,21 @@ interface UnifiedCallFlowProps {
 }
 
 export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: UnifiedCallFlowProps) {
-    const totalEntrants = kpis.callsReceived;
+    const totalPassages = kpis.callsReceived;
+    const uniqueCalls = kpis.uniqueCalls;
+    const pingPongCount = kpis.pingPongCount;
+    const pingPongPercentage = kpis.pingPongPercentage;
+
+    // Helper to build logs URL for ALL calls (no outcome filter)
+    const buildAllCallsUrl = (): string | undefined => {
+        if (!dateRange) return undefined;
+        const params = new URLSearchParams({
+            start: format(dateRange.startDate, 'yyyy-MM-dd'),
+            end: format(dateRange.endDate, 'yyyy-MM-dd'),
+            queue: queueNumber,
+        });
+        return `/admin/logs?${params.toString()}`;
+    };
 
     // Helper to build logs URL with filters (exact match with statistics logic)
     const buildLogsUrl = (outcome: 'answered' | 'abandoned' | 'overflow'): string | undefined => {
@@ -122,10 +136,27 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                 />
                             </PieChart>
                         </ResponsiveContainer>
-                        {/* Centre du Donut */}
-                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <span className="text-3xl font-bold text-slate-900">{totalEntrants}</span>
-                            <span className="text-xs text-slate-500 uppercase tracking-wide">Total</span>
+                        {/* Centre du Donut - Dual metrics (passages + unique calls) */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            {/* Total passages - non-clickable, informative only */}
+                            <div className="text-center pointer-events-none">
+                                <span className="text-3xl font-bold text-slate-900">{totalPassages}</span>
+                                <span className="text-xs text-slate-500 uppercase tracking-wide block">passages</span>
+                            </div>
+                            {/* Unique calls - clickable to navigate to all logs for this queue */}
+                            {isClickable && (
+                                <Link
+                                    href={buildAllCallsUrl() || '#'}
+                                    className="mt-1.5 text-sm text-slate-600 hover:text-blue-600 hover:underline transition-colors pointer-events-auto flex items-center gap-1"
+                                >
+                                    <span>📞 {uniqueCalls} appels uniques</span>
+                                </Link>
+                            )}
+                            {!isClickable && (
+                                <div className="mt-1.5 text-sm text-slate-600 pointer-events-none">
+                                    📞 {uniqueCalls} appels uniques
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -145,17 +176,27 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                         </div>
                                         <div className="flex items-center gap-1.5">
                                             <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                                                {getPercentage(kpis.callsAnswered, totalEntrants)}%
+                                                {getPercentage(kpis.callsAnswered, totalPassages)}%
                                             </span>
                                             <ExternalLink className="h-3 w-3 text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                                         </div>
                                     </div>
-                                    <div className="flex items-end justify-between">
-                                        <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
+                                    <div className="space-y-1">
+                                        {/* Primary metric: Passages */}
+                                        <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered} passages</p>
+                                        {/* Secondary metric: Unique calls */}
+                                        <p className="text-sm text-emerald-600">📞 {kpis.uniqueCallsAnswered} appels uniques</p>
+                                        {/* Tertiary: Ping-pong indicator (only if significant) */}
+                                        {(kpis.callsAnswered - kpis.uniqueCallsAnswered) > 0 && (
+                                            <p className="text-[10px] text-emerald-500">
+                                                🔄 {kpis.callsAnswered - kpis.uniqueCallsAnswered} avec passages multiples
+                                            </p>
+                                        )}
+                                        {/* Transfer detail */}
                                         {kpis.callsAnsweredAndTransferred > 0 && (
-                                            <div className="text-xs text-emerald-600 text-right">
-                                                <div>dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong></div>
-                                            </div>
+                                            <p className="text-xs text-emerald-600 pt-1 border-t border-emerald-100">
+                                                dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong>
+                                            </p>
                                         )}
                                     </div>
                                 </Link>
@@ -167,15 +208,21 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                             <span className="font-medium text-emerald-900">Répondus</span>
                                         </div>
                                         <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                                            {getPercentage(kpis.callsAnswered, totalEntrants)}%
+                                            {getPercentage(kpis.callsAnswered, totalPassages)}%
                                         </span>
                                     </div>
-                                    <div className="flex items-end justify-between">
-                                        <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
+                                    <div className="space-y-1">
+                                        <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered} passages</p>
+                                        <p className="text-sm text-emerald-600">📞 {kpis.uniqueCallsAnswered} appels uniques</p>
+                                        {(kpis.callsAnswered - kpis.uniqueCallsAnswered) > 0 && (
+                                            <p className="text-[10px] text-emerald-500">
+                                                🔄 {kpis.callsAnswered - kpis.uniqueCallsAnswered} avec passages multiples
+                                            </p>
+                                        )}
                                         {kpis.callsAnsweredAndTransferred > 0 && (
-                                            <div className="text-xs text-emerald-600 text-right">
-                                                <div>dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong></div>
-                                            </div>
+                                            <p className="text-xs text-emerald-600 pt-1 border-t border-emerald-100">
+                                                dont transférés: <strong>{kpis.callsAnsweredAndTransferred}</strong>
+                                            </p>
                                         )}
                                     </div>
                                 </div>
@@ -194,16 +241,26 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                         </div>
                                         <div className="flex items-center gap-1.5">
                                             <span className="text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-                                                {getPercentage(kpis.callsAbandoned, totalEntrants)}%
+                                                {getPercentage(kpis.callsAbandoned, totalPassages)}%
                                             </span>
                                             <ExternalLink className="h-3 w-3 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                                         </div>
                                     </div>
-                                    <div className="flex items-end justify-between">
-                                        <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned}</p>
-                                        <div className="text-xs text-red-600 text-right">
-                                            <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
-                                            <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>
+                                    <div className="space-y-1">
+                                        <div className="flex items-baseline justify-between">
+                                            <div>
+                                                <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned} passages</p>
+                                                <p className="text-sm text-red-600">📞 {kpis.uniqueCallsAbandoned} appels uniques</p>
+                                                {(kpis.callsAbandoned - kpis.uniqueCallsAbandoned) > 0 && (
+                                                    <p className="text-[10px] text-red-500">
+                                                        🔄 {kpis.callsAbandoned - kpis.uniqueCallsAbandoned} avec passages multiples
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div className="text-xs text-red-600 text-right">
+                                                <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
+                                                <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>
+                                            </div>
                                         </div>
                                     </div>
                                 </Link>
@@ -215,14 +272,24 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                             <span className="font-medium text-red-900">Abandonnés</span>
                                         </div>
                                         <span className="text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-                                            {getPercentage(kpis.callsAbandoned, totalEntrants)}%
+                                            {getPercentage(kpis.callsAbandoned, totalPassages)}%
                                         </span>
                                     </div>
-                                    <div className="flex items-end justify-between">
-                                        <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned}</p>
-                                        <div className="text-xs text-red-600 text-right">
-                                            <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
-                                            <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>
+                                    <div className="space-y-1">
+                                        <div className="flex items-baseline justify-between">
+                                            <div>
+                                                <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned} passages</p>
+                                                <p className="text-sm text-red-600">📞 {kpis.uniqueCallsAbandoned} appels uniques</p>
+                                                {(kpis.callsAbandoned - kpis.uniqueCallsAbandoned) > 0 && (
+                                                    <p className="text-[10px] text-red-500">
+                                                        🔄 {kpis.callsAbandoned - kpis.uniqueCallsAbandoned} avec passages multiples
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div className="text-xs text-red-600 text-right">
+                                                <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
+                                                <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -241,12 +308,20 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                         </div>
                                         <div className="flex items-center gap-1.5">
                                             <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                                                {getPercentage(kpis.callsOverflow, totalEntrants)}%
+                                                {getPercentage(kpis.callsOverflow, totalPassages)}%
                                             </span>
                                             <ExternalLink className="h-3 w-3 text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                                         </div>
                                     </div>
-                                    <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow}</p>
+                                    <div className="space-y-1">
+                                        <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow} passages</p>
+                                        <p className="text-sm text-amber-600">📞 {kpis.uniqueCallsOverflow} appels uniques</p>
+                                        {(kpis.callsOverflow - kpis.uniqueCallsOverflow) > 0 && (
+                                            <p className="text-[10px] text-amber-500">
+                                                🔄 {kpis.callsOverflow - kpis.uniqueCallsOverflow} avec passages multiples
+                                            </p>
+                                        )}
+                                    </div>
                                 </Link>
                             ) : (
                                 <div className="p-4 rounded-xl bg-amber-50/50 border border-amber-100">
@@ -256,10 +331,18 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, dateRange }: Uni
                                             <span className="font-medium text-amber-900">Redirigés</span>
                                         </div>
                                         <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                                            {getPercentage(kpis.callsOverflow, totalEntrants)}%
+                                            {getPercentage(kpis.callsOverflow, totalPassages)}%
                                         </span>
                                     </div>
-                                    <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow}</p>
+                                    <div className="space-y-1">
+                                        <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow} passages</p>
+                                        <p className="text-sm text-amber-600">📞 {kpis.uniqueCallsOverflow} appels uniques</p>
+                                        {(kpis.callsOverflow - kpis.uniqueCallsOverflow) > 0 && (
+                                            <p className="text-[10px] text-amber-500">
+                                                🔄 {kpis.callsOverflow - kpis.uniqueCallsOverflow} avec passages multiples
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>

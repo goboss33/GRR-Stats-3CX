@@ -1,14 +1,26 @@
 // Types for Statistics module
 
 export interface QueueKPIs {
-    callsReceived: number;        // Appels entrant dans la queue (hors voicemail)
-    callsAnswered: number;        // Répondus par un agent
-    callsAnsweredAndTransferred: number; // Répondus puis transférés hors queue (sous-ensemble de callsAnswered)
-    callsAbandoned: number;       // Abandonnés total
-    abandonedBefore10s: number;   // Abandonnés < 10s
-    abandonedAfter10s: number;    // Abandonnés >= 10s
+    // PASSAGES (Method N°2): Count ALL passages through queue, including ping-pong
+    callsReceived: number;        // Total passages entrant dans la queue (hors voicemail)
+    callsAnswered: number;        // Passages répondus par un agent
+    callsAnsweredAndTransferred: number; // Passages répondus puis transférés hors queue
+    callsAbandoned: number;       // Passages abandonnés total
+    abandonedBefore10s: number;   // Passages abandonnés < 10s
+    abandonedAfter10s: number;    // Passages abandonnés >= 10s
     callsToVoicemail: number;     // Messagerie vocale (exclus des reçus)
-    callsOverflow: number;        // Repartis ailleurs (débordement automatique)
+    callsOverflow: number;        // Passages repartis ailleurs (débordement automatique)
+
+    // APPELS UNIQUES (Method N°2): Count unique calls (DISTINCT call_history_id)
+    uniqueCalls: number;          // Nombre d'appels uniques (DISTINCT call_history_id)
+    uniqueCallsAnswered: number;  // Appels uniques avec au moins un passage répondu
+    uniqueCallsAbandoned: number; // Appels uniques avec au moins un passage abandonné
+    uniqueCallsOverflow: number;  // Appels uniques avec au moins un passage overflow
+
+    // PING-PONG METRICS (Method N°2): Measure multi-passage calls
+    pingPongCount: number;        // Nombre d'appels avec passages multiples (callsReceived - uniqueCalls)
+    pingPongPercentage: number;   // Pourcentage d'appels avec ping-pong ((callsReceived - uniqueCalls) / callsReceived * 100)
+
     overflowDestinations: OverflowDestination[];
     transferDestinations: TransferDestination[];  // Destinations des transferts actifs
     avgWaitTimeSeconds: number;

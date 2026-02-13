@@ -102,6 +102,8 @@ export interface LogsFilters {
     journeyQueueNumber?: string;           // Filter to specific queue number
     journeyQueueResult?: JourneyStepResult; // Filter by result in that queue (answered/not_answered)
     hasMultipleQueues?: boolean;           // True = multiple queues (overflow), False = single queue only (abandoned)
+    // Multi-passage filter (Method N°2) - requires journeyQueueNumber to be set
+    multiPassageSameQueue?: boolean;       // True = calls with multiple passages through the SAME queue (ping-pong)
 }
 
 export interface LogsPagination {

@@ -552,6 +552,30 @@ export async function getAggregatedCallLogs(
         }
     }
 
+    // Multi-passage filter (Method N°2): Filter for calls with multiple passages through the SAME queue
+    // This is used to identify "ping-pong" calls that return to the queue multiple times
+    if (filters.multiPassageSameQueue && filters.journeyQueueNumber) {
+        const queueNum = filters.journeyQueueNumber.replace(/'/g, "''"); // SQL escape
+
+        // Count how many times this queue appears in the journey
+        // If multiPassageSameQueue is true, filter for count > 1 (ping-pong calls)
+        aggregatedWhereConditions.push(`
+            (SELECT COUNT(*)
+             FROM jsonb_array_elements(cj.journey::jsonb) elem
+             WHERE elem->>'type' = 'queue'
+               AND elem->>'label' = '${queueNum}') > 1
+        `);
+
+        // Optional: Combine with journeyQueueResult to filter for multi-passage calls with specific result
+        // Example: "At least one passage answered" for ping-pong calls
+        if (filters.journeyQueueResult) {
+            const result = filters.journeyQueueResult;
+            aggregatedWhereConditions.push(
+                `cj.journey::jsonb @> '[{"type":"queue", "label":"${queueNum}", "result":"${result}"}]'::jsonb`
+            );
+        }
+    }
+
     try {
         // Step 1: Get distinct call_history_ids with aggregated data
         const aggregatedQuery = `
