@@ -107,7 +107,7 @@ interface LogsTableProps {
     onJourneyQueueResultsChange?: (results: ("answered" | "abandoned" | "redirected")[]) => void;
     // Multi-passage filter (Method N°2)
     multiPassageSameQueue?: boolean;
-    onMultiPassageSameQueueChange?: (enabled: boolean) => void;
+    onMultiPassageSameQueueChange?: (enabled: boolean | undefined) => void;
     // Row click
     onRowClick?: (callHistoryId: string) => void;
 }

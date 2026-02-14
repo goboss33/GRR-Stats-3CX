@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Check, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -26,15 +26,15 @@ interface ColumnFilterJourneyProps {
     onChange: (types: JourneyStepType[]) => void;
     matchMode: JourneyMatchMode;
     onMatchModeChange: (mode: JourneyMatchMode) => void;
-    // Queue-specific filters (new)
+    // Queue-specific filters
     queues?: QueueInfo[];
     queueNumber?: string | null;
     onQueueNumberChange?: (queueNumber: string | null) => void;
     queueResults?: QueueResultType[];
     onQueueResultsChange?: (results: QueueResultType[]) => void;
-    // Multi-passage filter (Method N°2)
+    // Multi-passage filter
     multiPassageSameQueue?: boolean;
-    onMultiPassageSameQueueChange?: (enabled: boolean) => void;
+    onMultiPassageSameQueueChange?: (enabled: boolean | undefined) => void;
     className?: string;
 }
 
@@ -49,6 +49,18 @@ const queueResultOptions: { value: QueueResultType; label: string; color: string
     { value: "abandoned", label: "Abandonné", color: "text-red-700" },
     { value: "redirected", label: "Redirigé", color: "text-amber-700" },
 ];
+
+function passageFilterFromBoolean(value: boolean | undefined): "all" | "first" | "multi" {
+    if (value === true) return "multi";
+    if (value === false) return "first";
+    return "all";
+}
+
+function passageFilterToBoolean(value: "all" | "first" | "multi"): boolean | undefined {
+    if (value === "multi") return true;
+    if (value === "first") return false;
+    return undefined;
+}
 
 export function ColumnFilterJourney({
     selected,
@@ -69,27 +81,18 @@ export function ColumnFilterJourney({
     const [localMatchMode, setLocalMatchMode] = React.useState<JourneyMatchMode>(matchMode);
     const [localQueueNumber, setLocalQueueNumber] = React.useState<string | null>(queueNumber ?? null);
     const [localQueueResults, setLocalQueueResults] = React.useState<QueueResultType[]>(queueResults ?? []);
-    const [localMultiPassage, setLocalMultiPassage] = React.useState<boolean>(multiPassageSameQueue ?? false);
+    const [localPassageFilter, setLocalPassageFilter] = React.useState<"all" | "first" | "multi">(
+        () => passageFilterFromBoolean(multiPassageSameQueue)
+    );
 
-    // Radio group state for passage filter (all/first/multi)
-    const [localPassageFilter, setLocalPassageFilter] = React.useState<"all" | "first" | "multi">(() => {
-        if (multiPassageSameQueue === true) return "multi";
-        if (multiPassageSameQueue === false) return "first";
-        return "all";
-    });
-
+    // Sync local state from parent props when popover is closed
     React.useEffect(() => {
         if (!open) {
             setLocalSelected(selected);
             setLocalMatchMode(matchMode);
             setLocalQueueNumber(queueNumber ?? null);
             setLocalQueueResults(queueResults ?? []);
-            setLocalMultiPassage(multiPassageSameQueue ?? false);
-            setLocalPassageFilter(
-                multiPassageSameQueue === true ? "multi" :
-                multiPassageSameQueue === false ? "first" :
-                "all"
-            );
+            setLocalPassageFilter(passageFilterFromBoolean(multiPassageSameQueue));
         }
     }, [selected, matchMode, queueNumber, queueResults, multiPassageSameQueue, open]);
 
@@ -104,13 +107,8 @@ export function ColumnFilterJourney({
             const hasQueueResultsChanged =
                 (localQueueResults ?? []).length !== (queueResults ?? []).length ||
                 !(localQueueResults ?? []).every(r => (queueResults ?? []).includes(r));
-
-            // Check if passage filter (radio group) has changed
-            const hasPassageFilterChanged = (() => {
-                const currentValue = multiPassageSameQueue === true ? "multi" :
-                                    multiPassageSameQueue === false ? "first" : "all";
-                return localPassageFilter !== currentValue;
-            })();
+            const hasPassageFilterChanged =
+                localPassageFilter !== passageFilterFromBoolean(multiPassageSameQueue);
 
             if (hasTypesChanged) {
                 onChange(localSelected);
@@ -125,23 +123,16 @@ export function ColumnFilterJourney({
                 onQueueResultsChange(localQueueResults);
             }
             if (hasPassageFilterChanged && onMultiPassageSameQueueChange) {
-                const newValue = localPassageFilter === "multi" ? true :
-                                localPassageFilter === "first" ? false :
-                                undefined;
-                onMultiPassageSameQueueChange(newValue);
+                onMultiPassageSameQueueChange(passageFilterToBoolean(localPassageFilter));
             }
         }
         if (isOpen) {
+            // Sync from parent on open
             setLocalSelected(selected);
             setLocalMatchMode(matchMode);
             setLocalQueueNumber(queueNumber ?? null);
             setLocalQueueResults(queueResults ?? []);
-            setLocalMultiPassage(multiPassageSameQueue ?? false);
-            setLocalPassageFilter(
-                multiPassageSameQueue === true ? "multi" :
-                multiPassageSameQueue === false ? "first" :
-                "all"
-            );
+            setLocalPassageFilter(passageFilterFromBoolean(multiPassageSameQueue));
         }
         setOpen(isOpen);
     };
@@ -155,43 +146,48 @@ export function ColumnFilterJourney({
     };
 
     const handleSelectAll = () => {
-        if (localSelected.length === journeyOptions.length || localSelected.length === 0) {
-            setLocalSelected([]);
-        } else {
-            setLocalSelected(journeyOptions.map((o) => o.value));
-        }
+        setLocalSelected([]);
+    };
+
+    const handleClearQueue = () => {
+        setLocalQueueNumber(null);
+        setLocalQueueResults([]);
+        setLocalPassageFilter("all");
     };
 
     const getLabel = () => {
-        // Check if ANY filter is active (not just journey types)
-        const hasJourneyTypeFilter = selected.length > 0;
         const hasQueueFilter = queueNumber !== null && queueNumber !== undefined;
         const hasResultFilter = queueResults && queueResults.length > 0;
         const hasPassageFilter = multiPassageSameQueue !== undefined;
 
-        // If queue-specific filters are active, show custom label
+        // Queue-specific filters take priority in the label
         if (hasQueueFilter || hasResultFilter || hasPassageFilter) {
             const parts: string[] = [];
 
             if (hasQueueFilter) {
-                parts.push(`Q${queueNumber}`);
+                const queue = queues?.find(q => q.queueNumber === queueNumber);
+                parts.push(queue ? `Q${queueNumber}` : `Q${queueNumber}`);
             }
 
             if (hasResultFilter) {
-                parts.push(`${queueResults.length} rés.`);
+                const labels = queueResults.map(r => {
+                    const opt = queueResultOptions.find(o => o.value === r);
+                    return opt?.label ?? r;
+                });
+                parts.push(labels.join(', '));
             }
 
             if (hasPassageFilter) {
                 const passageLabel = multiPassageSameQueue === true ? 'Multi' :
-                                    multiPassageSameQueue === false ? 'Premier' : '';
+                                    multiPassageSameQueue === false ? '1er passage' : '';
                 if (passageLabel) parts.push(passageLabel);
             }
 
-            return parts.length > 0 ? parts.join(' • ') : "Filtré";
+            return parts.length > 0 ? parts.join(' · ') : "Filtré";
         }
 
-        // Otherwise, show journey type label (existing logic)
-        if (!hasJourneyTypeFilter) {
+        // Journey type label
+        if (selected.length === 0) {
             return "Tout";
         }
         if (selected.length === 1) {
@@ -200,6 +196,11 @@ export function ColumnFilterJourney({
         }
         return `${selected.length} sél.`;
     };
+
+    const isFilterActive = selected.length > 0 ||
+        (queueNumber !== null && queueNumber !== undefined) ||
+        (queueResults && queueResults.length > 0) ||
+        multiPassageSameQueue !== undefined;
 
     const allSelected = localSelected.length === 0;
 
@@ -212,32 +213,31 @@ export function ColumnFilterJourney({
                         size="sm"
                         className={cn(
                             "h-8 w-full justify-between text-xs font-normal bg-white/80 border-input",
-                            // Visual highlighting when filter is active
-                            (selected.length > 0 || queueNumber || (queueResults && queueResults.length > 0) || multiPassageSameQueue !== undefined) &&
-                                "ring-2 ring-blue-500 ring-offset-1 border-blue-500"
+                            isFilterActive && "ring-2 ring-blue-500 ring-offset-1 border-blue-500"
                         )}
                     >
                         <span className="truncate">{getLabel()}</span>
                         <ChevronDown className="ml-1 h-3 w-3 text-slate-500" />
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-48 p-2" align="start">
+                <PopoverContent className="w-64 p-2" align="start">
                     <div className="space-y-2">
-                        {/* Select All */}
-                        <div
-                            className="flex items-center gap-2 px-1 py-1 hover:bg-slate-100 rounded cursor-pointer"
-                            onClick={handleSelectAll}
-                        >
-                            <div className={cn(
-                                "flex h-4 w-4 items-center justify-center rounded border",
-                                allSelected ? "bg-primary border-primary text-primary-foreground" : "border-input"
-                            )}>
-                                {allSelected && <Check className="h-3 w-3" />}
+                        {/* Section 1: Journey type filter */}
+                        <div>
+                            <Label className="text-xs text-slate-500 mb-1.5 block px-1">Type de parcours</Label>
+                            <div
+                                className="flex items-center gap-2 px-1 py-1 hover:bg-slate-100 rounded cursor-pointer"
+                                onClick={handleSelectAll}
+                            >
+                                <div className={cn(
+                                    "flex h-4 w-4 items-center justify-center rounded border",
+                                    allSelected ? "bg-primary border-primary text-primary-foreground" : "border-input"
+                                )}>
+                                    {allSelected && <Check className="h-3 w-3" />}
+                                </div>
+                                <span className="text-sm font-medium">Tout</span>
                             </div>
-                            <span className="text-sm font-medium">Tout</span>
-                        </div>
 
-                        <div className="border-t border-slate-100 pt-1">
                             {journeyOptions.map((opt) => (
                                 <div key={opt.value} className="flex items-center gap-2 px-1 py-1">
                                     <Checkbox
@@ -256,100 +256,7 @@ export function ColumnFilterJourney({
                             ))}
                         </div>
 
-                        {/* Queue-specific filters - only show when Queue is selected */}
-                        {localSelected.includes("queue") && queues && onQueueNumberChange && onQueueResultsChange && (
-                            <div className="border-t border-slate-100 pt-2 space-y-2">
-                                <div className="px-1">
-                                    <Label className="text-xs text-slate-500 mb-1.5 block">Queue :</Label>
-                                    <QueueAgentPicker
-                                        queues={queues}
-                                        agents={[]}
-                                        selectedItem={localQueueNumber ? {
-                                            type: 'queue' as const,
-                                            queueNumber: localQueueNumber,
-                                            queueName: queues.find(q => q.number === localQueueNumber)?.name || localQueueNumber
-                                        } : null}
-                                        onSelect={(item) => {
-                                            if (item && item.type === 'queue') {
-                                                setLocalQueueNumber(item.queueNumber);
-                                            } else {
-                                                setLocalQueueNumber(null);
-                                            }
-                                        }}
-                                        show="queues"
-                                        size="compact"
-                                        placeholder="Toutes les queues"
-                                    />
-                                </div>
-
-                                {localQueueNumber && (
-                                    <div className="px-1">
-                                        <Label className="text-xs text-slate-500 mb-1.5 block">Résultat :</Label>
-                                        <div className="space-y-1">
-                                            {queueResultOptions.map((opt) => (
-                                                <div key={opt.value} className="flex items-center gap-2">
-                                                    <Checkbox
-                                                        id={`queue-result-${opt.value}`}
-                                                        checked={localQueueResults.includes(opt.value)}
-                                                        onCheckedChange={(checked) => {
-                                                            if (checked) {
-                                                                setLocalQueueResults([...localQueueResults, opt.value]);
-                                                            } else {
-                                                                setLocalQueueResults(localQueueResults.filter(r => r !== opt.value));
-                                                            }
-                                                        }}
-                                                    />
-                                                    <Label
-                                                        htmlFor={`queue-result-${opt.value}`}
-                                                        className={cn("text-sm cursor-pointer flex-1 font-medium", opt.color)}
-                                                    >
-                                                        {opt.label}
-                                                    </Label>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Multi-passage filter (Method N°2) - Radio group for passage filtering */}
-                                {localQueueNumber && onMultiPassageSameQueueChange && (
-                                    <div className="px-1 mt-3 pt-2 border-t border-slate-200">
-                                        <Label className="text-xs text-slate-500 mb-1.5 block">Filtre de passage :</Label>
-                                        <RadioGroup
-                                            value={localPassageFilter}
-                                            onValueChange={(value) => setLocalPassageFilter(value as "all" | "first" | "multi")}
-                                        >
-                                            <div className="flex items-center space-x-2 py-1">
-                                                <RadioGroupItem value="all" id="passage-all" />
-                                                <Label htmlFor="passage-all" className="text-sm cursor-pointer font-normal">
-                                                    Tous les passages
-                                                </Label>
-                                            </div>
-                                            <div className="flex items-center space-x-2 py-1">
-                                                <RadioGroupItem value="first" id="passage-first" />
-                                                <Label htmlFor="passage-first" className="text-sm cursor-pointer font-normal">
-                                                    Premier passage uniquement
-                                                </Label>
-                                            </div>
-                                            <div className="flex items-center space-x-2 py-1">
-                                                <RadioGroupItem value="multi" id="passage-multi" />
-                                                <Label htmlFor="passage-multi" className="text-sm cursor-pointer font-normal">
-                                                    <span className="mr-1">🔄</span>
-                                                    Passages multiples (ping-pong)
-                                                </Label>
-                                            </div>
-                                        </RadioGroup>
-                                        <p className="text-[10px] text-slate-400 px-1 mt-1.5">
-                                            {localPassageFilter === "all" ? "Affiche tous les appels sans distinction" :
-                                             localPassageFilter === "first" ? "Affiche uniquement les appels lors de leur premier passage dans cette queue" :
-                                             "Affiche uniquement les appels qui sont repassés plusieurs fois par cette queue"}
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* OU/ET toggle - only show when multiple types selected */}
+                        {/* OU/ET toggle - only when multiple types selected */}
                         {localSelected.length >= 2 && (
                             <div className="border-t border-slate-100 pt-2">
                                 <div className="flex items-center justify-between px-1">
@@ -386,6 +293,115 @@ export function ColumnFilterJourney({
                                         ? "Au moins un type sélectionné"
                                         : "Tous les types sélectionnés"}
                                 </p>
+                            </div>
+                        )}
+
+                        {/* Section 2: Queue-specific filters - only when Queue is selected */}
+                        {localSelected.includes("queue") && queues && onQueueNumberChange && onQueueResultsChange && (
+                            <div className="border-t border-slate-200 pt-2 space-y-2">
+                                {/* Queue picker */}
+                                <div className="px-1">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <Label className="text-xs text-slate-500">Queue</Label>
+                                        {localQueueNumber && (
+                                            <button
+                                                type="button"
+                                                onClick={handleClearQueue}
+                                                className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-0.5"
+                                            >
+                                                <X className="h-3 w-3" />
+                                                <span>Effacer</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                    <QueueAgentPicker
+                                        queues={queues}
+                                        show="queues"
+                                        size="compact"
+                                        selectedQueueNumber={localQueueNumber}
+                                        onSelect={(item) => {
+                                            if (item && item.type === 'queue') {
+                                                setLocalQueueNumber(item.queueNumber);
+                                            } else {
+                                                setLocalQueueNumber(null);
+                                            }
+                                        }}
+                                        placeholder="Toutes les queues"
+                                        displayValue={
+                                            localQueueNumber
+                                                ? (() => {
+                                                    const q = queues.find(q => q.queueNumber === localQueueNumber);
+                                                    return q ? `${q.queueNumber} - ${q.queueName}` : localQueueNumber;
+                                                })()
+                                                : ""
+                                        }
+                                    />
+                                </div>
+
+                                {/* Section 3: Queue result filter */}
+                                {localQueueNumber && (
+                                    <div className="px-1">
+                                        <Label className="text-xs text-slate-500 mb-1.5 block">Résultat</Label>
+                                        <div className="space-y-1">
+                                            {queueResultOptions.map((opt) => (
+                                                <div key={opt.value} className="flex items-center gap-2">
+                                                    <Checkbox
+                                                        id={`queue-result-${opt.value}`}
+                                                        checked={localQueueResults.includes(opt.value)}
+                                                        onCheckedChange={(checked) => {
+                                                            if (checked) {
+                                                                setLocalQueueResults([...localQueueResults, opt.value]);
+                                                            } else {
+                                                                setLocalQueueResults(localQueueResults.filter(r => r !== opt.value));
+                                                            }
+                                                        }}
+                                                    />
+                                                    <Label
+                                                        htmlFor={`queue-result-${opt.value}`}
+                                                        className={cn("text-sm cursor-pointer flex-1 font-medium", opt.color)}
+                                                    >
+                                                        {opt.label}
+                                                    </Label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Section 4: Passage filter */}
+                                {localQueueNumber && onMultiPassageSameQueueChange && (
+                                    <div className="px-1 pt-2 border-t border-slate-100">
+                                        <Label className="text-xs text-slate-500 mb-1.5 block">Filtre de passage</Label>
+                                        <RadioGroup
+                                            value={localPassageFilter}
+                                            onValueChange={(value) => setLocalPassageFilter(value as "all" | "first" | "multi")}
+                                        >
+                                            <div className="flex items-center space-x-2 py-0.5">
+                                                <RadioGroupItem value="all" id="passage-all" />
+                                                <Label htmlFor="passage-all" className="text-sm cursor-pointer font-normal">
+                                                    Tous les passages
+                                                </Label>
+                                            </div>
+                                            <div className="flex items-center space-x-2 py-0.5">
+                                                <RadioGroupItem value="first" id="passage-first" />
+                                                <Label htmlFor="passage-first" className="text-sm cursor-pointer font-normal">
+                                                    Premier passage uniquement
+                                                </Label>
+                                            </div>
+                                            <div className="flex items-center space-x-2 py-0.5">
+                                                <RadioGroupItem value="multi" id="passage-multi" />
+                                                <Label htmlFor="passage-multi" className="text-sm cursor-pointer font-normal">
+                                                    Passages multiples (ping-pong)
+                                                </Label>
+                                            </div>
+                                        </RadioGroup>
+                                        <p className="text-[10px] text-slate-400 px-1 mt-1">
+                                            {localPassageFilter === "all" ? "Tous les appels sans distinction" :
+                                             localPassageFilter === "first" ? "Résultat du premier passage dans cette queue" :
+                                             "Appels repassés plusieurs fois par cette queue"}
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

@@ -504,21 +504,50 @@ export async function getAggregatedCallLogs(
         }
     }
 
-    // Queue-specific journey filter (exact match with statistics logic)
-    // Used for clickable KPI cards to filter by queue outcome
-    if (filters.journeyQueueNumber && filters.journeyQueueResult) {
+    // Queue-specific journey filter (unified logic for queue number, result, passage, and overflow)
+    // Aligns with statistics.service.ts first_passage CTE for consistent counting
+    if (filters.journeyQueueNumber) {
         const queueNum = filters.journeyQueueNumber.replace(/'/g, "''"); // SQL escape
-        const result = filters.journeyQueueResult;
 
-        // Step 1: Filter by queue number and result
-        aggregatedWhereConditions.push(
-            `cj.journey::jsonb @> '[{"type":"queue", "label":"${queueNum}", "result":"${result}"}]'::jsonb`
-        );
+        // Result filter — depends on passage filter mode
+        if (filters.journeyQueueResult) {
+            const result = filters.journeyQueueResult;
 
-        // Step 2: If hasMultipleQueues is specified, filter by queue count
-        // CRITICAL: Match statistics logic exactly - count only queues that appear AFTER this queue
-        // Statistics use: other_q.cdr_started_at > uqc.cdr_started_at
-        // Journey is chronologically ordered, so we use array index to determine "after"
+            if (filters.multiPassageSameQueue === false) {
+                // First passage mode: check the result of the FIRST occurrence of this queue
+                // This aligns with statistics.service.ts which uses:
+                //   DISTINCT ON (call_history_id) ORDER BY cdr_started_at ASC
+                aggregatedWhereConditions.push(`
+                    (SELECT elem->>'result'
+                     FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx)
+                     WHERE elem->>'type' = 'queue' AND elem->>'label' = '${queueNum}'
+                     ORDER BY idx ASC
+                     LIMIT 1
+                    ) = '${result}'
+                `);
+            } else {
+                // All passages or ping-pong: any passage with this result (JSONB containment)
+                aggregatedWhereConditions.push(
+                    `cj.journey::jsonb @> '[{"type":"queue", "label":"${queueNum}", "result":"${result}"}]'::jsonb`
+                );
+            }
+        }
+
+        // Passage count filter — only for ping-pong (multiPassageSameQueue === true)
+        // Note: multiPassageSameQueue === false does NOT filter by count — it only changes
+        // how the result is checked (first passage vs any passage)
+        if (filters.multiPassageSameQueue === true) {
+            // Ping-pong: queue appears MORE than once (count > 1)
+            aggregatedWhereConditions.push(`
+                (SELECT COUNT(*)
+                 FROM jsonb_array_elements(cj.journey::jsonb) elem
+                 WHERE elem->>'type' = 'queue'
+                   AND elem->>'label' = '${queueNum}') > 1
+            `);
+        }
+
+        // Multiple queues filter (overflow/abandoned)
+        // CRITICAL: Match statistics logic — count only queues that appear AFTER this queue
         if (filters.hasMultipleQueues !== undefined) {
             if (filters.hasMultipleQueues === true) {
                 // Redirigés (overflow): OTHER queues exist AFTER this queue in the journey
@@ -549,39 +578,6 @@ export async function getAggregatedCallLogs(
                     ) = 0
                 `);
             }
-        }
-    }
-
-    // Multi-passage filter (Method N°2): Filter for calls with multiple passages through the SAME queue
-    // Three states: true (ping-pong), false (first passage only), undefined (all calls)
-    if (filters.multiPassageSameQueue !== undefined && filters.journeyQueueNumber) {
-        const queueNum = filters.journeyQueueNumber.replace(/'/g, "''"); // SQL escape
-
-        if (filters.multiPassageSameQueue === true) {
-            // Ping-pong: queue appears MORE than once (count > 1)
-            aggregatedWhereConditions.push(`
-                (SELECT COUNT(*)
-                 FROM jsonb_array_elements(cj.journey::jsonb) elem
-                 WHERE elem->>'type' = 'queue'
-                   AND elem->>'label' = '${queueNum}') > 1
-            `);
-        } else if (filters.multiPassageSameQueue === false) {
-            // First passage only: queue appears EXACTLY once (count = 1)
-            aggregatedWhereConditions.push(`
-                (SELECT COUNT(*)
-                 FROM jsonb_array_elements(cj.journey::jsonb) elem
-                 WHERE elem->>'type' = 'queue'
-                   AND elem->>'label' = '${queueNum}') = 1
-            `);
-        }
-        // undefined = no filter (show all calls)
-
-        // Optional: Combine with journeyQueueResult to filter for multi-passage calls with specific result
-        if (filters.journeyQueueResult) {
-            const result = filters.journeyQueueResult;
-            aggregatedWhereConditions.push(
-                `cj.journey::jsonb @> '[{"type":"queue", "label":"${queueNum}", "result":"${result}"}]'::jsonb`
-            );
         }
     }
 

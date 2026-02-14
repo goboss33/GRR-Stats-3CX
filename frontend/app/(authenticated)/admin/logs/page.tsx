@@ -363,7 +363,11 @@ export default function AdminLogsPage() {
         }
 
         // Multi-passage filter (Method N°2)
-        setMultiPassageSameQueue(multiPassageParam === "true" ? true : undefined);
+        setMultiPassageSameQueue(
+            multiPassageParam === "true" ? true :
+            multiPassageParam === "false" ? false :
+            undefined
+        );
 
         // Sync UI state from backend state
         setUiJourneyQueueNumber(queueParam || null);
@@ -547,8 +551,8 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
-    const handleMultiPassageSameQueueChange = (enabled: boolean) => {
-        setMultiPassageSameQueue(enabled ? true : undefined);
+    const handleMultiPassageSameQueueChange = (enabled: boolean | undefined) => {
+        setMultiPassageSameQueue(enabled);
         setCurrentPage(1);
     };
 
