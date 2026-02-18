@@ -65,6 +65,8 @@ export interface QueueAgentPickerProps {
     className?: string;
     /** Display value when an item is selected (overrides default) */
     displayValue?: string;
+    /** Additional CSS classes for the input element */
+    inputClassName?: string;
 }
 
 // ============================================
@@ -80,6 +82,7 @@ export function QueueAgentPicker({
     size = "default",
     className,
     displayValue,
+    inputClassName,
 }: QueueAgentPickerProps) {
     const [open, setOpen] = React.useState(false);
     const [inputValue, setInputValue] = React.useState("");
@@ -224,7 +227,8 @@ export function QueueAgentPicker({
                     "pl-9 pr-8 bg-white",
                     inputHeight,
                     inputTextSize,
-                    selectedQueueNumber && !inputValue && "text-slate-900"
+                    selectedQueueNumber && !inputValue && "text-slate-900",
+                    inputClassName
                 )}
                 value={inputValue}
                 onChange={handleInputChange}

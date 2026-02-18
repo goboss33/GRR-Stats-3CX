@@ -97,7 +97,10 @@ export function ColumnFilterDirection({
                     <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 w-full justify-between text-xs font-normal bg-white/80 border-input"
+                        className={cn(
+                            "h-8 w-full justify-between text-xs font-normal bg-white/80 border-input",
+                            selected.length > 0 && selected.length < 4 && "border-blue-500 bg-blue-50/50"
+                        )}
                     >
                         <span className="truncate">{getLabel()}</span>
                         <ChevronDown className="ml-1 h-3 w-3 text-slate-500" />

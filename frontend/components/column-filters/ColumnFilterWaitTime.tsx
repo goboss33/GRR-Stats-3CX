@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, X } from "lucide-react";
+import { Hourglass, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -12,20 +12,19 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover";
 
-interface ColumnFilterDurationProps {
+interface ColumnFilterWaitTimeProps {
     min?: number;
     max?: number;
     onChange: (range: { min?: number; max?: number }) => void;
     className?: string;
 }
 
-// Duration presets in seconds
-const DURATION_MAX = 600; // 10 minutes max
-const DURATION_PRESETS = [
-    { label: "< 30s", min: 0, max: 30 },
-    { label: "30s - 2m", min: 30, max: 120 },
-    { label: "2 - 5m", min: 120, max: 300 },
-    { label: "> 5m", min: 300, max: undefined },
+const WAIT_MAX = 300; // 5 minutes max
+const WAIT_PRESETS = [
+    { label: "< 15s", min: 0, max: 15 },
+    { label: "15 - 30s", min: 15, max: 30 },
+    { label: "30s - 1m", min: 30, max: 60 },
+    { label: "> 1m", min: 60, max: undefined },
 ];
 
 function formatDuration(seconds: number): string {
@@ -37,20 +36,20 @@ function formatDuration(seconds: number): string {
     return `${seconds}s`;
 }
 
-export function ColumnFilterDuration({
+export function ColumnFilterWaitTime({
     min,
     max,
     onChange,
     className,
-}: ColumnFilterDurationProps) {
+}: ColumnFilterWaitTimeProps) {
     const [open, setOpen] = React.useState(false);
 
     // Local state for slider while dragging (so it's responsive)
-    const [localValue, setLocalValue] = React.useState<number[]>([min ?? 0, max ?? DURATION_MAX]);
+    const [localValue, setLocalValue] = React.useState<number[]>([min ?? 0, max ?? WAIT_MAX]);
 
     // Sync local value when props change (e.g., from URL or external update)
     React.useEffect(() => {
-        setLocalValue([min ?? 0, max ?? DURATION_MAX]);
+        setLocalValue([min ?? 0, max ?? WAIT_MAX]);
     }, [min, max]);
 
     const hasFilter = min !== undefined || max !== undefined;
@@ -63,24 +62,24 @@ export function ColumnFilterDuration({
     // Called on mouse/touch release - apply the filter
     const handleSliderCommit = (values: number[]) => {
         const newMin = values[0] === 0 ? undefined : values[0];
-        const newMax = values[1] === DURATION_MAX ? undefined : values[1];
+        const newMax = values[1] === WAIT_MAX ? undefined : values[1];
         onChange({ min: newMin, max: newMax });
     };
 
-    const handlePreset = (preset: typeof DURATION_PRESETS[0]) => {
+    const handlePreset = (preset: typeof WAIT_PRESETS[0]) => {
         const newMin = preset.min || undefined;
         const newMax = preset.max;
-        setLocalValue([preset.min ?? 0, preset.max ?? DURATION_MAX]);
+        setLocalValue([preset.min ?? 0, preset.max ?? WAIT_MAX]);
         onChange({ min: newMin, max: newMax });
     };
 
     const handleClear = () => {
-        setLocalValue([0, DURATION_MAX]);
+        setLocalValue([0, WAIT_MAX]);
         onChange({ min: undefined, max: undefined });
     };
 
     const getLabel = () => {
-        if (!hasFilter) return "Durée";
+        if (!hasFilter) return "Attente";
         const minStr = min !== undefined ? formatDuration(min) : "0s";
         const maxStr = max !== undefined ? formatDuration(max) : "∞";
         return `${minStr} - ${maxStr}`;
@@ -98,14 +97,14 @@ export function ColumnFilterDuration({
                             hasFilter && "border-blue-500 bg-blue-50/50"
                         )}
                     >
-                        <Clock className="h-3 w-3 text-slate-500" />
+                        <Hourglass className="h-3 w-3 text-slate-500" />
                         <span className="truncate">{getLabel()}</span>
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-56 p-3" align="start">
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">Durée</span>
+                            <span className="text-sm font-medium">Attente</span>
                             {hasFilter && (
                                 <Button
                                     variant="ghost"
@@ -124,15 +123,15 @@ export function ColumnFilterDuration({
                             <Slider
                                 value={localValue}
                                 min={0}
-                                max={DURATION_MAX}
-                                step={15}
+                                max={WAIT_MAX}
+                                step={5}
                                 onValueChange={handleSliderChange}
                                 onValueCommit={handleSliderCommit}
                                 className="w-full"
                             />
                             <div className="flex justify-between text-xs text-slate-500 mt-1">
                                 <span>{formatDuration(localValue[0])}</span>
-                                <span>{localValue[1] === DURATION_MAX ? "∞" : formatDuration(localValue[1])}</span>
+                                <span>{localValue[1] === WAIT_MAX ? "∞" : formatDuration(localValue[1])}</span>
                             </div>
                         </div>
 
@@ -140,7 +139,7 @@ export function ColumnFilterDuration({
                         <div className="border-t border-slate-100 pt-2">
                             <p className="text-xs text-slate-500 mb-1.5">Raccourcis</p>
                             <div className="flex flex-wrap gap-1">
-                                {DURATION_PRESETS.map((preset) => {
+                                {WAIT_PRESETS.map((preset) => {
                                     const isActive = min === preset.min && max === preset.max;
                                     return (
                                         <Button

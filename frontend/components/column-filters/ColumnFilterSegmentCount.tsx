@@ -80,7 +80,7 @@ export function ColumnFilterSegmentCount({
                         size="sm"
                         className={cn(
                             "h-8 w-full justify-start text-xs font-normal bg-white/80 border-input gap-1",
-                            hasFilter && "border-primary/50 bg-primary/5"
+                            hasFilter && "border-blue-500 bg-blue-50/50"
                         )}
                     >
                         <Layers className="h-3 w-3 text-slate-500" />

@@ -27,7 +27,10 @@ export function ColumnFilterInput({
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder}
-                className="h-8 text-xs pr-7 bg-white/80"
+                className={cn(
+                    "h-8 text-xs pr-7 bg-white/80",
+                    value && "border-blue-500 bg-blue-50/50"
+                )}
             />
             {value && (
                 <Button

@@ -45,6 +45,16 @@ type QueueResultType = "answered" | "abandoned" | "redirected";
 const defaultColumnVisibility: ColumnVisibility = {
     callHistoryId: true,
     segmentCount: true,
+    dateTime: true,
+    caller: true,
+    callee: true,
+    handledBy: true,
+    queues: true,
+    journey: true,
+    direction: true,
+    status: true,
+    duration: true,
+    waitTime: true,
 };
 
 export default function AdminLogsPage() {
@@ -104,6 +114,8 @@ export default function AdminLogsPage() {
     const [segmentCountMax, setSegmentCountMax] = useState<number | undefined>(() => getInitialNumberParam("segMax"));
     const [durationMin, setDurationMin] = useState<number | undefined>(() => getInitialNumberParam("durMin"));
     const [durationMax, setDurationMax] = useState<number | undefined>(() => getInitialNumberParam("durMax"));
+    const [waitTimeMin, setWaitTimeMin] = useState<number | undefined>(() => getInitialNumberParam("waitMin"));
+    const [waitTimeMax, setWaitTimeMax] = useState<number | undefined>(() => getInitialNumberParam("waitMax"));
     const [selectedJourneyTypes, setSelectedJourneyTypes] = useState<JourneyStepType[]>(() => {
         const param = searchParams.get("journey");
         if (!param) return [];
@@ -192,6 +204,8 @@ export default function AdminLogsPage() {
         segmentCountMax,
         durationMin,
         durationMax,
+        waitTimeMin,
+        waitTimeMax,
         journeyTypes: selectedJourneyTypes.length > 0 ? selectedJourneyTypes : undefined,
         journeyMatchMode: journeyMatchMode,
         // Queue-specific journey filters (for clickable KPIs)
@@ -237,6 +251,8 @@ export default function AdminLogsPage() {
         if (segmentCountMax !== undefined) params.set("segMax", segmentCountMax.toString());
         if (durationMin !== undefined) params.set("durMin", durationMin.toString());
         if (durationMax !== undefined) params.set("durMax", durationMax.toString());
+        if (waitTimeMin !== undefined) params.set("waitMin", waitTimeMin.toString());
+        if (waitTimeMax !== undefined) params.set("waitMax", waitTimeMax.toString());
 
         // Journey types
         if (selectedJourneyTypes.length > 0) {
@@ -270,6 +286,8 @@ export default function AdminLogsPage() {
         segmentCountMax,
         durationMin,
         durationMax,
+        waitTimeMin,
+        waitTimeMax,
         selectedJourneyTypes,
         journeyMatchMode,
         journeyQueueNumber,
@@ -312,6 +330,8 @@ export default function AdminLogsPage() {
         segmentCountMax,
         durationMin,
         durationMax,
+        waitTimeMin,
+        waitTimeMax,
         currentPage,
         sort,
         selectedJourneyTypes,
@@ -454,6 +474,12 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
+    const handleWaitTimeChange = (range: { min?: number; max?: number }) => {
+        setWaitTimeMin(range.min);
+        setWaitTimeMax(range.max);
+        setCurrentPage(1);
+    };
+
     const handleRowClick = (callHistoryId: string) => {
         setSelectedCallHistoryId(callHistoryId);
     };
@@ -504,6 +530,12 @@ export default function AdminLogsPage() {
     const handleRemoveDuration = () => {
         setDurationMin(undefined);
         setDurationMax(undefined);
+        setCurrentPage(1);
+    };
+
+    const handleRemoveWaitTime = () => {
+        setWaitTimeMin(undefined);
+        setWaitTimeMax(undefined);
         setCurrentPage(1);
     };
 
@@ -582,6 +614,8 @@ export default function AdminLogsPage() {
         setSegmentCountMax(undefined);
         setDurationMin(undefined);
         setDurationMax(undefined);
+        setWaitTimeMin(undefined);
+        setWaitTimeMax(undefined);
         setSelectedJourneyTypes([]);
         setJourneyMatchMode('or');
         // Reset queue-specific journey filters
@@ -618,18 +652,33 @@ export default function AdminLogsPage() {
                         <PopoverContent className="w-48 p-2" align="end">
                             <p className="text-xs font-medium text-slate-600 mb-2 px-1">Colonnes visibles</p>
                             <div className="space-y-1">
-                                <div className="flex items-center gap-2 px-1 py-1">
-                                    <Checkbox
-                                        id="col-id"
-                                        checked={columnVisibility.callHistoryId}
-                                        onCheckedChange={(checked) =>
-                                            setColumnVisibility({ ...columnVisibility, callHistoryId: checked as boolean })
-                                        }
-                                    />
-                                    <Label htmlFor="col-id" className="text-sm cursor-pointer">
-                                        ID
-                                    </Label>
-                                </div>
+                                {([
+                                    { key: "callHistoryId", label: "ID" },
+                                    { key: "segmentCount", label: "Segments" },
+                                    { key: "dateTime", label: "Date/Heure" },
+                                    { key: "caller", label: "Appelant" },
+                                    { key: "callee", label: "Destinataire" },
+                                    { key: "handledBy", label: "Traité par" },
+                                    { key: "queues", label: "Queue(s)" },
+                                    { key: "journey", label: "Parcours" },
+                                    { key: "direction", label: "Direction" },
+                                    { key: "status", label: "Statut" },
+                                    { key: "duration", label: "Durée" },
+                                    { key: "waitTime", label: "Attente" },
+                                ] as { key: keyof ColumnVisibility; label: string }[]).map((col) => (
+                                    <div key={col.key} className="flex items-center gap-2 px-1 py-1">
+                                        <Checkbox
+                                            id={`col-${col.key}`}
+                                            checked={columnVisibility[col.key]}
+                                            onCheckedChange={(checked) =>
+                                                setColumnVisibility({ ...columnVisibility, [col.key]: checked as boolean })
+                                            }
+                                        />
+                                        <Label htmlFor={`col-${col.key}`} className="text-sm cursor-pointer">
+                                            {col.label}
+                                        </Label>
+                                    </div>
+                                ))}
                             </div>
                         </PopoverContent>
                     </Popover>
@@ -671,6 +720,7 @@ export default function AdminLogsPage() {
                 onRemoveIdSearch={handleRemoveIdSearch}
                 onRemoveSegmentCount={handleRemoveSegmentCount}
                 onRemoveDuration={handleRemoveDuration}
+                onRemoveWaitTime={handleRemoveWaitTime}
                 onRemoveJourneyType={handleRemoveJourneyType}
                 onRemoveJourneyQueueFilter={handleRemoveJourneyQueueFilter}
                 onResetAll={handleResetAllFilters}
@@ -711,6 +761,9 @@ export default function AdminLogsPage() {
                     durationMin={durationMin}
                     durationMax={durationMax}
                     onDurationChange={handleDurationChange}
+                    waitTimeMin={waitTimeMin}
+                    waitTimeMax={waitTimeMax}
+                    onWaitTimeChange={handleWaitTimeChange}
                     handledBySearch={handledBySearch}
                     onHandledBySearchChange={setHandledBySearch}
                     queues={queues}

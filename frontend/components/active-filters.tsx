@@ -23,6 +23,7 @@ interface ActiveFiltersProps {
     onRemoveIdSearch: () => void;
     onRemoveSegmentCount: () => void;
     onRemoveDuration: () => void;
+    onRemoveWaitTime: () => void;
     onRemoveJourneyType: (type: JourneyStepType) => void;
     onRemoveJourneyQueueFilter?: () => void;  // For queue-specific journey filters
     onResetAll: () => void;
@@ -54,6 +55,7 @@ export function ActiveFilters({
     onRemoveIdSearch,
     onRemoveSegmentCount,
     onRemoveDuration,
+    onRemoveWaitTime,
     onRemoveJourneyType,
     onRemoveJourneyQueueFilter,
     onResetAll,
@@ -217,6 +219,26 @@ export function ActiveFilters({
                 onClick={onRemoveDuration}
             >
                 Durée: {durationLabel}
+                <X className="h-3 w-3" />
+            </Badge>
+        );
+    }
+
+    // Wait time filter
+    if (filters.waitTimeMin !== undefined || filters.waitTimeMax !== undefined) {
+        const waitLabel = filters.waitTimeMin !== undefined && filters.waitTimeMax !== undefined
+            ? `${filters.waitTimeMin}s - ${filters.waitTimeMax}s`
+            : filters.waitTimeMin !== undefined
+                ? `≥ ${filters.waitTimeMin}s`
+                : `≤ ${filters.waitTimeMax}s`;
+        activeFilters.push(
+            <Badge
+                key="waitTime"
+                variant="secondary"
+                className="bg-yellow-100 text-yellow-700 gap-1 px-2 py-1 cursor-pointer hover:bg-yellow-200 transition-colors"
+                onClick={onRemoveWaitTime}
+            >
+                Attente: {waitLabel}
                 <X className="h-3 w-3" />
             </Badge>
         );

@@ -1,11 +1,12 @@
 /**
  * ColumnFilterQueue
- * 
+ *
  * A column filter for queue selection using QueueAgentPicker.
  * Shows only queues (not agents) with compact size for column headers.
  */
 "use client";
 
+import { cn } from "@/lib/utils";
 import { QueueAgentPicker, QueueAgentPickerItem } from "@/components/queue-agent-picker";
 import { QueueInfo } from "@/types/queues.types";
 
@@ -49,6 +50,9 @@ export function ColumnFilterQueue({
             placeholder={placeholder}
             className={className}
             displayValue={displayValue}
+            inputClassName={cn(
+                selectedQueueNumber && "border-blue-500 bg-blue-50/50"
+            )}
         />
     );
 }

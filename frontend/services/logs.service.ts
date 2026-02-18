@@ -487,6 +487,14 @@ export async function getAggregatedCallLogs(
         aggregatedWhereConditions.push(`ca.segment_count <= ${filters.segmentCountMax}`);
     }
 
+    // Wait time filter (on aggregated data — wait = time from first start to first human answer)
+    if (filters.waitTimeMin !== undefined) {
+        aggregatedWhereConditions.push(`EXTRACT(EPOCH FROM (COALESCE(ans.answered_at, ca.first_answered_at) - ca.first_started_at)) >= ${Number(filters.waitTimeMin)}`);
+    }
+    if (filters.waitTimeMax !== undefined) {
+        aggregatedWhereConditions.push(`EXTRACT(EPOCH FROM (COALESCE(ans.answered_at, ca.first_answered_at) - ca.first_started_at)) <= ${Number(filters.waitTimeMax)}`);
+    }
+
     // Journey type filter (on call_journey CTE data)
     if (filters.journeyTypes && filters.journeyTypes.length > 0) {
         const validTypes = ['direct', 'queue', 'voicemail'];

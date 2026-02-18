@@ -213,7 +213,7 @@ export function ColumnFilterJourney({
                         size="sm"
                         className={cn(
                             "h-8 w-full justify-between text-xs font-normal bg-white/80 border-input",
-                            isFilterActive && "ring-2 ring-blue-500 ring-offset-1 border-blue-500"
+                            isFilterActive && "border-blue-500 bg-blue-50/50"
                         )}
                     >
                         <span className="truncate">{getLabel()}</span>

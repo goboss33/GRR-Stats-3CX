@@ -131,10 +131,20 @@ export interface CallLogsResponse {
     currentPage: number;
 }
 
-// Column visibility settings (simplified)
+// Column visibility settings
 export interface ColumnVisibility {
     callHistoryId: boolean;
     segmentCount: boolean;
+    dateTime: boolean;
+    caller: boolean;
+    callee: boolean;
+    handledBy: boolean;
+    queues: boolean;
+    journey: boolean;
+    direction: boolean;
+    status: boolean;
+    duration: boolean;
+    waitTime: boolean;
 }
 
 // Segment category for display in modal
