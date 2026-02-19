@@ -163,7 +163,7 @@ function formatDateTime(isoString: string): string {
     if (!isoString) return "-";
     try {
         const date = new Date(isoString);
-        return format(date, "dd/MM/yyyy HH:mm:ss", { locale: fr });
+        return format(date, "dd/MM/yyyy", { locale: fr });
     } catch {
         return "-";
     }
