@@ -497,7 +497,6 @@ export async function getAggregatedCallLogs(
 
     // Time slot filter (multiple OR'd time ranges in Europe/Zurich local time)
     // Applied on aggregated first_started_at so we don't break segment counts
-    console.log("🕐 DEBUG timeSlots filter:", JSON.stringify(filters.timeSlots));
     if (filters.timeSlots && filters.timeSlots.length > 0) {
         const slotConditions = filters.timeSlots.map(slot => {
             const startTime = slot.start.replace(/'/g, "");
@@ -505,9 +504,7 @@ export async function getAggregatedCallLogs(
             return `((ca.first_started_at AT TIME ZONE 'Europe/Zurich')::time >= '${startTime}'::time
                 AND (ca.first_started_at AT TIME ZONE 'Europe/Zurich')::time < '${endTime}'::time)`;
         });
-        const timeCondition = `(${slotConditions.join(' OR ')})`;
-        console.log("🕐 DEBUG SQL time condition:", timeCondition);
-        aggregatedWhereConditions.push(timeCondition);
+        aggregatedWhereConditions.push(`(${slotConditions.join(' OR ')})`);
     }
 
     // Journey type filter (on call_journey CTE data)
@@ -983,9 +980,11 @@ export async function getAggregatedCallLogs(
 
         const countQuery = `
             WITH call_aggregates AS (
-                SELECT 
+                SELECT
                     call_history_id,
-                    COUNT(*) as segment_count
+                    COUNT(*) as segment_count,
+                    MIN(cdr_started_at) as first_started_at,
+                    MIN(cdr_answered_at) as first_answered_at
                 FROM cdroutput
                 WHERE ${whereClause}
                 GROUP BY call_history_id
