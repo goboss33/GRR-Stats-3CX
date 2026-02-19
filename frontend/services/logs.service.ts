@@ -354,6 +354,26 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
 }
 
 
+// Build ORDER BY clause from sort parameter
+function buildOrderByClause(sort?: LogsSort): string {
+    if (!sort) return "ca.first_started_at DESC";
+    const dir = sort.direction === "asc" ? "ASC" : "DESC";
+    switch (sort.field) {
+        case "startedAt":
+            return `ca.first_started_at ${dir}`;
+        case "timeOfDay":
+            return `(ca.first_started_at AT TIME ZONE 'Europe/Zurich')::time ${dir}`;
+        case "duration":
+            return `(ca.last_ended_at - ca.first_started_at) ${dir}`;
+        case "sourceNumber":
+            return `fs.source_dn_number ${dir}`;
+        case "destinationNumber":
+            return `fs.first_dest_number ${dir}`;
+        default:
+            return "ca.first_started_at DESC";
+    }
+}
+
 // ============================================
 // MAIN FUNCTION: GET AGGREGATED CALL LOGS
 // ============================================
@@ -840,7 +860,7 @@ export async function getAggregatedCallLogs(
             LEFT JOIN call_journey cj ON ca.call_history_id = cj.call_history_id
             ${calleeFilterJoin}
             ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
-            ORDER BY ca.first_started_at DESC
+            ORDER BY ${buildOrderByClause(sort)}
             LIMIT ${limit} OFFSET ${skip}
         `;
 

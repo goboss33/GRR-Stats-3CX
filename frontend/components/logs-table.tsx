@@ -314,7 +314,9 @@ export function LogsTable({
                                 </TableHead>
                             )}
                             {columnVisibility.timeSlot && (
-                                <TableHead className="w-24">Heure</TableHead>
+                                <TableHead>
+                                    <SortableHeader label="Heure" field="timeOfDay" currentSort={sort} onSort={onSort} />
+                                </TableHead>
                             )}
                             {columnVisibility.caller && (
                                 <TableHead>

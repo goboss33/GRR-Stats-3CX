@@ -4,7 +4,7 @@ export type CallDirection = "inbound" | "outbound" | "internal" | "bridge";
 export type CallStatus = "answered" | "voicemail" | "abandoned" | "busy";
 export type EntityType = "extension" | "external" | "queue" | "ivr" | "script" | "unknown";
 export type SortDirection = "asc" | "desc";
-export type SortField = "startedAt" | "duration" | "sourceNumber" | "destinationNumber";
+export type SortField = "startedAt" | "timeOfDay" | "duration" | "sourceNumber" | "destinationNumber";
 
 // Journey step types for the "Parcours" column
 export type JourneyStepType = "direct" | "queue" | "voicemail";
