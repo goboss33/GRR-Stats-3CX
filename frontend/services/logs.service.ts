@@ -495,6 +495,18 @@ export async function getAggregatedCallLogs(
         aggregatedWhereConditions.push(`EXTRACT(EPOCH FROM (COALESCE(ans.answered_at, ca.first_answered_at) - ca.first_started_at)) <= ${Number(filters.waitTimeMax)}`);
     }
 
+    // Time slot filter (multiple OR'd time ranges in Europe/Zurich local time)
+    // Applied on aggregated first_started_at so we don't break segment counts
+    if (filters.timeSlots && filters.timeSlots.length > 0) {
+        const slotConditions = filters.timeSlots.map(slot => {
+            const startTime = slot.start.replace(/'/g, "");
+            const endTime = slot.end.replace(/'/g, "");
+            return `((ca.first_started_at AT TIME ZONE 'Europe/Zurich')::time >= '${startTime}'::time
+                AND (ca.first_started_at AT TIME ZONE 'Europe/Zurich')::time < '${endTime}'::time)`;
+        });
+        aggregatedWhereConditions.push(`(${slotConditions.join(' OR ')})`);
+    }
+
     // Journey type filter (on call_journey CTE data)
     if (filters.journeyTypes && filters.journeyTypes.length > 0) {
         const validTypes = ['direct', 'queue', 'voicemail'];

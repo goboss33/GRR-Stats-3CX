@@ -7,3 +7,4 @@ export { ColumnFilterWaitTime } from "./ColumnFilterWaitTime";
 export { ColumnFilterSegmentCount } from "./ColumnFilterSegmentCount";
 export { ColumnFilterQueue } from "./ColumnFilterQueue";
 export { ColumnFilterJourney } from "./ColumnFilterJourney";
+export { ColumnFilterTimeSlot } from "./ColumnFilterTimeSlot";

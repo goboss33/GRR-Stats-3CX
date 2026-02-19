@@ -11,6 +11,12 @@ export type JourneyStepType = "direct" | "queue" | "voicemail";
 export type JourneyStepResult = "answered" | "not_answered" | "busy" | "voicemail";
 export type JourneyMatchMode = "or" | "and";
 
+// Time slot for hour-of-day filtering
+export interface TimeSlot {
+    start: string; // "HH:MM" (e.g., "08:00")
+    end: string;   // "HH:MM" (e.g., "18:00")
+}
+
 export interface JourneyStep {
     type: JourneyStepType;
     label: string;   // Short label (e.g., "Queue 905")
@@ -104,6 +110,8 @@ export interface LogsFilters {
     hasMultipleQueues?: boolean;           // True = multiple queues (overflow), False = single queue only (abandoned)
     // Multi-passage filter (Method N°2) - requires journeyQueueNumber to be set
     multiPassageSameQueue?: boolean;       // True = calls with multiple passages through the SAME queue (ping-pong)
+    // Time slot filter (hour-of-day ranges)
+    timeSlots?: TimeSlot[];               // Multiple time ranges (OR'd together)
 }
 
 export interface LogsPagination {
@@ -136,6 +144,7 @@ export interface ColumnVisibility {
     callHistoryId: boolean;
     segmentCount: boolean;
     dateTime: boolean;
+    timeSlot: boolean;
     caller: boolean;
     callee: boolean;
     handledBy: boolean;

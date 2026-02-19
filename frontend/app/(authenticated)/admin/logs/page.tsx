@@ -35,6 +35,7 @@ import type {
     JourneyStepType,
     JourneyStepResult,
     JourneyMatchMode,
+    TimeSlot,
 } from "@/types/logs.types";
 
 const PAGE_SIZE = 50;
@@ -46,6 +47,7 @@ const defaultColumnVisibility: ColumnVisibility = {
     callHistoryId: true,
     segmentCount: true,
     dateTime: true,
+    timeSlot: true,
     caller: true,
     callee: true,
     handledBy: true,
@@ -116,6 +118,14 @@ export default function AdminLogsPage() {
     const [durationMax, setDurationMax] = useState<number | undefined>(() => getInitialNumberParam("durMax"));
     const [waitTimeMin, setWaitTimeMin] = useState<number | undefined>(() => getInitialNumberParam("waitMin"));
     const [waitTimeMax, setWaitTimeMax] = useState<number | undefined>(() => getInitialNumberParam("waitMax"));
+    const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(() => {
+        const param = searchParams.get("timeSlots");
+        if (!param) return [];
+        return param.split(",").map(s => {
+            const [start, end] = s.split("-");
+            return { start, end };
+        }).filter(s => s.start && s.end);
+    });
     const [selectedJourneyTypes, setSelectedJourneyTypes] = useState<JourneyStepType[]>(() => {
         const param = searchParams.get("journey");
         if (!param) return [];
@@ -206,6 +216,7 @@ export default function AdminLogsPage() {
         durationMax,
         waitTimeMin,
         waitTimeMax,
+        timeSlots: timeSlots.length > 0 ? timeSlots : undefined,
         journeyTypes: selectedJourneyTypes.length > 0 ? selectedJourneyTypes : undefined,
         journeyMatchMode: journeyMatchMode,
         // Queue-specific journey filters (for clickable KPIs)
@@ -254,6 +265,11 @@ export default function AdminLogsPage() {
         if (waitTimeMin !== undefined) params.set("waitMin", waitTimeMin.toString());
         if (waitTimeMax !== undefined) params.set("waitMax", waitTimeMax.toString());
 
+        // Time slots
+        if (timeSlots.length > 0) {
+            params.set("timeSlots", timeSlots.map(s => `${s.start}-${s.end}`).join(","));
+        }
+
         // Journey types
         if (selectedJourneyTypes.length > 0) {
             params.set("journey", selectedJourneyTypes.join(","));
@@ -288,6 +304,7 @@ export default function AdminLogsPage() {
         durationMax,
         waitTimeMin,
         waitTimeMax,
+        timeSlots,
         selectedJourneyTypes,
         journeyMatchMode,
         journeyQueueNumber,
@@ -332,6 +349,7 @@ export default function AdminLogsPage() {
         durationMax,
         waitTimeMin,
         waitTimeMax,
+        timeSlots,
         currentPage,
         sort,
         selectedJourneyTypes,
@@ -480,6 +498,16 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
+    const handleTimeSlotsChange = (slots: TimeSlot[]) => {
+        setTimeSlots(slots);
+        setCurrentPage(1);
+    };
+
+    const handleRemoveTimeSlots = () => {
+        setTimeSlots([]);
+        setCurrentPage(1);
+    };
+
     const handleRowClick = (callHistoryId: string) => {
         setSelectedCallHistoryId(callHistoryId);
     };
@@ -616,6 +644,7 @@ export default function AdminLogsPage() {
         setDurationMax(undefined);
         setWaitTimeMin(undefined);
         setWaitTimeMax(undefined);
+        setTimeSlots([]);
         setSelectedJourneyTypes([]);
         setJourneyMatchMode('or');
         // Reset queue-specific journey filters
@@ -656,6 +685,7 @@ export default function AdminLogsPage() {
                                     { key: "callHistoryId", label: "ID" },
                                     { key: "segmentCount", label: "Segments" },
                                     { key: "dateTime", label: "Date/Heure" },
+                                    { key: "timeSlot", label: "Heure" },
                                     { key: "caller", label: "Appelant" },
                                     { key: "callee", label: "Destinataire" },
                                     { key: "handledBy", label: "Traité par" },
@@ -721,6 +751,7 @@ export default function AdminLogsPage() {
                 onRemoveSegmentCount={handleRemoveSegmentCount}
                 onRemoveDuration={handleRemoveDuration}
                 onRemoveWaitTime={handleRemoveWaitTime}
+                onRemoveTimeSlots={handleRemoveTimeSlots}
                 onRemoveJourneyType={handleRemoveJourneyType}
                 onRemoveJourneyQueueFilter={handleRemoveJourneyQueueFilter}
                 onResetAll={handleResetAllFilters}
@@ -750,6 +781,8 @@ export default function AdminLogsPage() {
                     // Filter props
                     dateRange={dateRange}
                     onDateRangeChange={handleDateRangeChange}
+                    timeSlots={timeSlots}
+                    onTimeSlotsChange={handleTimeSlotsChange}
                     callerSearch={callerSearch}
                     onCallerSearchChange={setCallerSearch}
                     calleeSearch={calleeSearch}

@@ -26,6 +26,7 @@ interface ActiveFiltersProps {
     onRemoveWaitTime: () => void;
     onRemoveJourneyType: (type: JourneyStepType) => void;
     onRemoveJourneyQueueFilter?: () => void;  // For queue-specific journey filters
+    onRemoveTimeSlots?: () => void;
     onResetAll: () => void;
 }
 
@@ -58,6 +59,7 @@ export function ActiveFilters({
     onRemoveWaitTime,
     onRemoveJourneyType,
     onRemoveJourneyQueueFilter,
+    onRemoveTimeSlots,
     onResetAll,
 }: ActiveFiltersProps) {
     const activeFilters: React.ReactNode[] = [];
@@ -288,6 +290,24 @@ export function ActiveFilters({
                 onClick={onRemoveJourneyQueueFilter}
             >
                 Queue {filters.journeyQueueNumber}: {outcomeLabel}
+                <X className="h-3 w-3" />
+            </Badge>
+        );
+    }
+
+    // Time slot filters
+    if (filters.timeSlots && filters.timeSlots.length > 0 && onRemoveTimeSlots) {
+        const slotLabel = filters.timeSlots.length === 1
+            ? `${filters.timeSlots[0].start}-${filters.timeSlots[0].end}`
+            : `${filters.timeSlots.length} créneaux`;
+        activeFilters.push(
+            <Badge
+                key="timeSlots"
+                variant="secondary"
+                className="bg-sky-100 text-sky-700 gap-1 px-2 py-1 cursor-pointer hover:bg-sky-200 transition-colors"
+                onClick={onRemoveTimeSlots}
+            >
+                Heure: {slotLabel}
                 <X className="h-3 w-3" />
             </Badge>
         );

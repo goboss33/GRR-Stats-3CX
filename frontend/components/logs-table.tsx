@@ -45,6 +45,7 @@ import {
     ColumnFilterSegmentCount,
     ColumnFilterQueue,
     ColumnFilterJourney,
+    ColumnFilterTimeSlot,
 } from "@/components/column-filters";
 import { QueueInfo } from "@/types/queues.types";
 
@@ -59,6 +60,7 @@ import type {
     JourneyStepResult,
     JourneyStep,
     JourneyMatchMode,
+    TimeSlot,
 } from "@/types/logs.types";
 
 interface LogsTableProps {
@@ -71,6 +73,9 @@ interface LogsTableProps {
     // Filter props
     dateRange: { startDate: Date; endDate: Date };
     onDateRangeChange: (range: { startDate: Date; endDate: Date }) => void;
+    // Time slot filter
+    timeSlots: TimeSlot[];
+    onTimeSlotsChange: (slots: TimeSlot[]) => void;
     callerSearch: string;
     onCallerSearchChange: (value: string) => void;
     calleeSearch: string;
@@ -164,6 +169,16 @@ function formatDateTime(isoString: string): string {
     }
 }
 
+function formatTime(isoString: string): string {
+    if (!isoString) return "-";
+    try {
+        const date = new Date(isoString);
+        return format(date, "HH:mm:ss", { locale: fr });
+    } catch {
+        return "-";
+    }
+}
+
 // Get color for segment count badge
 function getSegmentBadgeColor(count: number): string {
     if (count === 1) return "bg-emerald-100 text-emerald-700";
@@ -224,6 +239,9 @@ export function LogsTable({
     // Filter props
     dateRange,
     onDateRangeChange,
+    // Time slots
+    timeSlots,
+    onTimeSlotsChange,
     callerSearch,
     onCallerSearchChange,
     calleeSearch,
@@ -295,6 +313,9 @@ export function LogsTable({
                                     <SortableHeader label="Date/Heure" field="startedAt" currentSort={sort} onSort={onSort} />
                                 </TableHead>
                             )}
+                            {columnVisibility.timeSlot && (
+                                <TableHead className="w-24">Heure</TableHead>
+                            )}
                             {columnVisibility.caller && (
                                 <TableHead>
                                     <SortableHeader label="Appelant" field="sourceNumber" currentSort={sort} onSort={onSort} />
@@ -361,6 +382,14 @@ export function LogsTable({
                                     <ColumnFilterDateRange
                                         dateRange={dateRange}
                                         onDateRangeChange={onDateRangeChange}
+                                    />
+                                </TableHead>
+                            )}
+                            {columnVisibility.timeSlot && (
+                                <TableHead className="py-2">
+                                    <ColumnFilterTimeSlot
+                                        slots={timeSlots}
+                                        onChange={onTimeSlotsChange}
                                     />
                                 </TableHead>
                             )}
@@ -505,6 +534,13 @@ export function LogsTable({
                                         {columnVisibility.dateTime && (
                                             <TableCell className="text-sm tabular-nums">
                                                 {formatDateTime(log.startedAt)}
+                                            </TableCell>
+                                        )}
+
+                                        {/* Time */}
+                                        {columnVisibility.timeSlot && (
+                                            <TableCell className="text-sm tabular-nums text-slate-600">
+                                                {formatTime(log.startedAt)}
                                             </TableCell>
                                         )}
 
