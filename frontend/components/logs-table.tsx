@@ -310,7 +310,7 @@ export function LogsTable({
                             )}
                             {columnVisibility.dateTime && (
                                 <TableHead className="w-40">
-                                    <SortableHeader label="Date/Heure" field="startedAt" currentSort={sort} onSort={onSort} />
+                                    <SortableHeader label="Date" field="startedAt" currentSort={sort} onSort={onSort} />
                                 </TableHead>
                             )}
                             {columnVisibility.timeSlot && (

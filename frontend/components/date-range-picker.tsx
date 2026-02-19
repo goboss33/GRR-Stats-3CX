@@ -263,7 +263,7 @@ export function DateRangePicker({
 
     // Size-based styles
     const triggerStyles = size === "compact"
-        ? "h-8 text-xs font-normal bg-white/80 border-input"
+        ? "h-8 text-xs font-normal bg-blue-50/50 border-blue-500"
         : "h-10 text-sm font-normal bg-white border-slate-200";
 
     const triggerWidth = size === "compact"
