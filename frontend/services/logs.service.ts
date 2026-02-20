@@ -527,70 +527,69 @@ export async function getAggregatedCallLogs(
         aggregatedWhereConditions.push(`(${slotConditions.join(' OR ')})`);
     }
 
-    // Journey type filter (on call_journey CTE data)
-    if (filters.journeyTypes && filters.journeyTypes.length > 0) {
-        const validTypes = ['direct', 'queue', 'voicemail'];
-        const safeTypes = filters.journeyTypes.filter(t => validTypes.includes(t));
-        if (safeTypes.length > 0) {
-            const matchMode = filters.journeyMatchMode || 'or';
-            const typesConditions = safeTypes.map(t => `cj.journey::jsonb @> '[{"type":"${t}"}]'::jsonb`);
-            if (matchMode === 'and') {
-                // AND mode: all selected types must be present in the journey
-                aggregatedWhereConditions.push(`(${typesConditions.join(' AND ')})`);
-            } else {
-                // OR mode (default): at least one selected type matches
-                aggregatedWhereConditions.push(`(${typesConditions.join(' OR ')})`);
+    // Journey conditions filter (composable step predicates)
+    if (filters.journeyConditions && filters.journeyConditions.length > 0) {
+        for (const condition of filters.journeyConditions) {
+            const validTypes = ['direct', 'queue', 'voicemail'];
+            const validResults = ['answered', 'not_answered', 'busy', 'voicemail'];
+            const clauses: string[] = [];
+
+            // Build WHERE clauses for this condition
+            if (condition.type && validTypes.includes(condition.type)) {
+                clauses.push(`elem->>'type' = '${condition.type}'`);
             }
-        }
-    }
+            if (condition.queueNumber) {
+                const queueNum = condition.queueNumber.replace(/'/g, "''");
+                clauses.push(`elem->>'label' = '${queueNum}'`);
+            }
+            if (condition.agentNumber) {
+                const agentNum = condition.agentNumber.replace(/'/g, "''");
+                clauses.push(`elem->>'agentNumber' = '${agentNum}'`);
+            }
+            if (condition.result && validResults.includes(condition.result)) {
+                clauses.push(`elem->>'result' = '${condition.result}'`);
+            }
 
-    // Queue-specific journey filter (unified logic for queue number, result, passage, and overflow)
-    // Aligns with statistics.service.ts first_passage CTE for consistent counting
-    if (filters.journeyQueueNumber) {
-        const queueNum = filters.journeyQueueNumber.replace(/'/g, "''"); // SQL escape
-
-        // Result filter — depends on passage filter mode
-        if (filters.journeyQueueResult) {
-            const result = filters.journeyQueueResult;
-
-            if (filters.multiPassageSameQueue === false) {
+            // Handle passageMode for queue conditions
+            if (condition.queueNumber && condition.passageMode === 'first' && condition.result) {
                 // First passage mode: check the result of the FIRST occurrence of this queue
-                // This aligns with statistics.service.ts which uses:
-                //   DISTINCT ON (call_history_id) ORDER BY cdr_started_at ASC
+                const queueNum = condition.queueNumber.replace(/'/g, "''");
+                const result = condition.result;
+                const existsOp = condition.negate ? 'NOT' : '';
                 aggregatedWhereConditions.push(`
-                    (SELECT elem->>'result'
+                    ${existsOp} (SELECT elem->>'result'
                      FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx)
                      WHERE elem->>'type' = 'queue' AND elem->>'label' = '${queueNum}'
                      ORDER BY idx ASC
                      LIMIT 1
                     ) = '${result}'
                 `);
-            } else {
-                // All passages or ping-pong: any passage with this result (JSONB containment)
-                aggregatedWhereConditions.push(
-                    `cj.journey::jsonb @> '[{"type":"queue", "label":"${queueNum}", "result":"${result}"}]'::jsonb`
-                );
+            } else if (clauses.length > 0) {
+                // Standard EXISTS/NOT EXISTS condition
+                const existsOp = condition.negate ? 'NOT EXISTS' : 'EXISTS';
+                aggregatedWhereConditions.push(`
+                    ${existsOp} (
+                        SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) elem
+                        WHERE ${clauses.join(' AND ')}
+                    )
+                `);
             }
-        }
 
-        // Passage count filter — only for ping-pong (multiPassageSameQueue === true)
-        // Note: multiPassageSameQueue === false does NOT filter by count — it only changes
-        // how the result is checked (first passage vs any passage)
-        if (filters.multiPassageSameQueue === true) {
-            // Ping-pong: queue appears MORE than once (count > 1)
-            aggregatedWhereConditions.push(`
-                (SELECT COUNT(*)
-                 FROM jsonb_array_elements(cj.journey::jsonb) elem
-                 WHERE elem->>'type' = 'queue'
-                   AND elem->>'label' = '${queueNum}') > 1
-            `);
-        }
+            // Ping-pong filter (multi-passages through same queue)
+            if (condition.queueNumber && condition.passageMode === 'multi') {
+                const queueNum = condition.queueNumber.replace(/'/g, "''");
+                aggregatedWhereConditions.push(`
+                    (SELECT COUNT(*)
+                     FROM jsonb_array_elements(cj.journey::jsonb) elem
+                     WHERE elem->>'type' = 'queue'
+                       AND elem->>'label' = '${queueNum}') > 1
+                `);
+            }
 
-        // Multiple queues filter (overflow/abandoned)
-        // CRITICAL: Match statistics logic — count only queues that appear AFTER this queue
-        if (filters.hasMultipleQueues !== undefined) {
-            if (filters.hasMultipleQueues === true) {
-                // Redirigés (overflow): OTHER queues exist AFTER this queue in the journey
+            // Overflow filter (redirected to other queues after this one)
+            if (condition.queueNumber && condition.hasOverflow !== undefined) {
+                const queueNum = condition.queueNumber.replace(/'/g, "''");
+                const countOp = condition.hasOverflow ? '> 0' : '= 0';
                 aggregatedWhereConditions.push(`
                     (SELECT COUNT(DISTINCT elem->>'label')
                      FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx)
@@ -601,35 +600,10 @@ export async function getAggregatedCallLogs(
                            FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t2(elem2, idx2)
                            WHERE elem2->>'type' = 'queue' AND elem2->>'label' = '${queueNum}'
                        )
-                    ) > 0
-                `);
-            } else {
-                // Abandonnés: NO other queues exist AFTER this queue in the journey
-                aggregatedWhereConditions.push(`
-                    (SELECT COUNT(DISTINCT elem->>'label')
-                     FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx)
-                     WHERE elem->>'type' = 'queue'
-                       AND elem->>'label' != '${queueNum}'
-                       AND idx > (
-                           SELECT MIN(idx2)
-                           FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t2(elem2, idx2)
-                           WHERE elem2->>'type' = 'queue' AND elem2->>'label' = '${queueNum}'
-                       )
-                    ) = 0
+                    ) ${countOp}
                 `);
             }
         }
-    }
-
-    // Journey agent filter: filter calls where a specific agent appears in the journey
-    if (filters.journeyAgentNumber) {
-        const agentNum = filters.journeyAgentNumber.replace(/'/g, "''");
-        aggregatedWhereConditions.push(`
-            EXISTS (
-                SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) elem
-                WHERE elem->>'agentNumber' = '${agentNum}'
-            )
-        `);
     }
 
     try {
@@ -890,7 +864,7 @@ export async function getAggregatedCallLogs(
         // Count query - optimize by only including expensive CTEs when filtering on them
         const needsHandledBy = !!filters.handledBySearch?.trim();
         const needsCallQueues = !!filters.queueSearch?.trim();
-        const needsCallJourney = !!((filters.journeyTypes && filters.journeyTypes.length > 0) || filters.journeyQueueNumber || filters.journeyAgentNumber);
+        const needsCallJourney = !!(filters.journeyConditions && filters.journeyConditions.length > 0);
 
         // Build conditional CTEs for count query
         const handledByCTEForCount = needsHandledBy ? `,

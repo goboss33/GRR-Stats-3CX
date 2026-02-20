@@ -56,10 +56,8 @@ import type {
     ColumnVisibility,
     SortField,
     LogsSort,
-    JourneyStepType,
-    JourneyStepResult,
     JourneyStep,
-    JourneyMatchMode,
+    JourneyCondition,
     TimeSlot,
 } from "@/types/logs.types";
 
@@ -105,22 +103,9 @@ interface LogsTableProps {
     segmentCountMin?: number;
     segmentCountMax?: number;
     onSegmentCountChange: (range: { min?: number; max?: number }) => void;
-    // Journey filter
-    selectedJourneyTypes: JourneyStepType[];
-    onJourneyTypesChange: (types: JourneyStepType[]) => void;
-    journeyMatchMode: JourneyMatchMode;
-    onJourneyMatchModeChange: (mode: JourneyMatchMode) => void;
-    // Queue-specific journey filters
-    journeyQueueNumber?: string | null;
-    onJourneyQueueNumberChange?: (queueNumber: string | null) => void;
-    journeyQueueResults?: ("answered" | "abandoned" | "redirected")[];
-    onJourneyQueueResultsChange?: (results: ("answered" | "abandoned" | "redirected")[]) => void;
-    // Multi-passage filter (Method N°2)
-    multiPassageSameQueue?: boolean;
-    onMultiPassageSameQueueChange?: (enabled: boolean | undefined) => void;
-    // Agent journey filter
-    journeyAgentNumber?: string | null;
-    onJourneyAgentNumberChange?: (agentNumber: string | null) => void;
+    // Journey filter (composable conditions)
+    journeyConditions: JourneyCondition[];
+    onJourneyConditionsChange: (conditions: JourneyCondition[]) => void;
     // Row click
     onRowClick?: (callHistoryId: string) => void;
 }
@@ -274,22 +259,9 @@ export function LogsTable({
     segmentCountMin,
     segmentCountMax,
     onSegmentCountChange,
-    // Journey filter
-    selectedJourneyTypes,
-    onJourneyTypesChange,
-    journeyMatchMode,
-    onJourneyMatchModeChange,
-    // Queue-specific journey filters
-    journeyQueueNumber,
-    onJourneyQueueNumberChange,
-    journeyQueueResults,
-    onJourneyQueueResultsChange,
-    // Multi-passage filter (Method N°2)
-    multiPassageSameQueue,
-    onMultiPassageSameQueueChange,
-    // Agent journey filter
-    journeyAgentNumber,
-    onJourneyAgentNumberChange,
+    // Journey filter (composable conditions)
+    journeyConditions,
+    onJourneyConditionsChange,
     // Row click
     onRowClick,
 }: LogsTableProps) {
@@ -446,19 +418,9 @@ export function LogsTable({
                             {columnVisibility.journey && (
                                 <TableHead className="py-2">
                                     <ColumnFilterJourney
-                                        selected={selectedJourneyTypes}
-                                        onChange={onJourneyTypesChange}
-                                        matchMode={journeyMatchMode}
-                                        onMatchModeChange={onJourneyMatchModeChange}
+                                        conditions={journeyConditions}
+                                        onChange={onJourneyConditionsChange}
                                         queues={queues}
-                                        queueNumber={journeyQueueNumber ?? null}
-                                        onQueueNumberChange={onJourneyQueueNumberChange}
-                                        queueResults={journeyQueueResults}
-                                        onQueueResultsChange={onJourneyQueueResultsChange}
-                                        multiPassageSameQueue={multiPassageSameQueue}
-                                        onMultiPassageSameQueueChange={onMultiPassageSameQueueChange}
-                                        agentNumber={journeyAgentNumber ?? null}
-                                        onAgentNumberChange={onJourneyAgentNumberChange}
                                     />
                                 </TableHead>
                             )}

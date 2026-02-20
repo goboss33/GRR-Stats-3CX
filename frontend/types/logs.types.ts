@@ -9,7 +9,18 @@ export type SortField = "startedAt" | "timeOfDay" | "duration" | "sourceNumber" 
 // Journey step types for the "Parcours" column
 export type JourneyStepType = "direct" | "queue" | "voicemail";
 export type JourneyStepResult = "answered" | "not_answered" | "busy" | "voicemail";
-export type JourneyMatchMode = "or" | "and";
+
+// Composable journey condition for filtering
+export interface JourneyCondition {
+    type?: JourneyStepType;        // undefined = any type
+    queueNumber?: string;          // Filter by specific queue (matches step label)
+    agentNumber?: string;          // Filter by specific agent extension
+    result?: JourneyStepResult;    // undefined = any result
+    // Advanced options
+    negate?: boolean;              // Invert the condition (NOT EXISTS instead of EXISTS)
+    passageMode?: 'all' | 'first' | 'multi';  // Queue: all/first passage/multi-passages (ping-pong)
+    hasOverflow?: boolean;         // Queue: redirected to other queues after this one
+}
 
 // Time slot for hour-of-day filtering
 export interface TimeSlot {
@@ -103,16 +114,8 @@ export interface LogsFilters {
     durationMax?: number;
     waitTimeMin?: number;
     waitTimeMax?: number;
-    journeyTypes?: JourneyStepType[];  // Filter by journey step types (Parcours column)
-    journeyMatchMode?: JourneyMatchMode;  // 'or' (default) = any type matches, 'and' = all types must be present
-    // Queue-specific journey filters (for clickable KPIs)
-    journeyQueueNumber?: string;           // Filter to specific queue number
-    journeyQueueResult?: JourneyStepResult; // Filter by result in that queue (answered/not_answered)
-    hasMultipleQueues?: boolean;           // True = multiple queues (overflow), False = single queue only (abandoned)
-    // Multi-passage filter (Method N°2) - requires journeyQueueNumber to be set
-    multiPassageSameQueue?: boolean;       // True = calls with multiple passages through the SAME queue (ping-pong)
-    // Agent-specific journey filter
-    journeyAgentNumber?: string;           // Filter by agent extension appearing in journey
+    // Composable journey conditions (AND-combined step predicates)
+    journeyConditions?: JourneyCondition[];
     // Time slot filter (hour-of-day ranges)
     timeSlots?: TimeSlot[];               // Multiple time ranges (OR'd together)
 }

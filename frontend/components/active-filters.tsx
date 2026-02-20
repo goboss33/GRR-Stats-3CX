@@ -8,7 +8,7 @@ import { fr } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-import type { CallDirection, CallStatus, JourneyStepType, LogsFilters } from "@/types/logs.types";
+import type { CallDirection, CallStatus, JourneyCondition, LogsFilters } from "@/types/logs.types";
 
 interface ActiveFiltersProps {
     dateRange: { startDate: Date; endDate: Date };
@@ -24,8 +24,7 @@ interface ActiveFiltersProps {
     onRemoveSegmentCount: () => void;
     onRemoveDuration: () => void;
     onRemoveWaitTime: () => void;
-    onRemoveJourneyType: (type: JourneyStepType) => void;
-    onRemoveJourneyQueueFilter?: () => void;  // For queue-specific journey filters
+    onRemoveJourneyConditions?: () => void;
     onRemoveTimeSlots?: () => void;
     onResetAll: () => void;
 }
@@ -44,6 +43,23 @@ const statusLabels: Record<CallStatus, string> = {
     busy: "Occupé",
 };
 
+function formatConditionLabel(
+    condition: JourneyCondition,
+    typeLabels: Record<string, string>,
+    resultLabels: Record<string, string>,
+): string {
+    const parts: string[] = [];
+    if (condition.negate) parts.push("PAS");
+    if (condition.type) parts.push(typeLabels[condition.type] || condition.type);
+    if (condition.queueNumber) parts.push(`Q${condition.queueNumber}`);
+    if (condition.agentNumber) parts.push(`Agent ${condition.agentNumber}`);
+    if (condition.result) parts.push(resultLabels[condition.result] || condition.result);
+    if (condition.passageMode === 'multi') parts.push("(ping-pong)");
+    if (condition.passageMode === 'first') parts.push("(1er passage)");
+    if (condition.hasOverflow) parts.push("(redirigé)");
+    return parts.length > 0 ? parts.join(" ") : "Tous";
+}
+
 export function ActiveFilters({
     dateRange,
     filters,
@@ -57,8 +73,7 @@ export function ActiveFilters({
     onRemoveSegmentCount,
     onRemoveDuration,
     onRemoveWaitTime,
-    onRemoveJourneyType,
-    onRemoveJourneyQueueFilter,
+    onRemoveJourneyConditions,
     onRemoveTimeSlots,
     onResetAll,
 }: ActiveFiltersProps) {
@@ -246,50 +261,32 @@ export function ActiveFilters({
         );
     }
 
-    // Journey type filters
-    const journeyTypeLabels: Record<JourneyStepType, { icon: string; label: string }> = {
-        direct: { icon: "📞", label: "Direct" },
-        queue: { icon: "👥", label: "Queue" },
-        voicemail: { icon: "📫", label: "Messagerie" },
-    };
-    if (filters.journeyTypes && filters.journeyTypes.length > 0) {
-        filters.journeyTypes.forEach((type) => {
-            const config = journeyTypeLabels[type];
-            activeFilters.push(
-                <Badge
-                    key={`journey-${type}`}
-                    variant="secondary"
-                    className="bg-violet-100 text-violet-700 gap-1 px-2 py-1 cursor-pointer hover:bg-violet-200 transition-colors"
-                    onClick={() => onRemoveJourneyType(type)}
-                >
-                    {config.icon} {config.label}
-                    <X className="h-3 w-3" />
-                </Badge>
-            );
-        });
-    }
+    // Journey conditions filter
+    if (filters.journeyConditions && filters.journeyConditions.length > 0 && onRemoveJourneyConditions) {
+        const typeLabels: Record<string, string> = {
+            direct: "Direct",
+            queue: "Queue",
+            voicemail: "Messagerie",
+        };
+        const resultLabels: Record<string, string> = {
+            answered: "Répondu",
+            not_answered: "Non rép.",
+            busy: "Occupé",
+            voicemail: "Messagerie",
+        };
 
-    // Queue-specific journey filter (for clickable KPIs)
-    if (filters.journeyQueueNumber && filters.journeyQueueResult && onRemoveJourneyQueueFilter) {
-        let outcomeLabel = '';
-        if (filters.journeyQueueResult === 'answered') {
-            outcomeLabel = 'Répondus';
-        } else if (filters.journeyQueueResult === 'not_answered' && filters.hasMultipleQueues === false) {
-            outcomeLabel = 'Abandonnés';
-        } else if (filters.journeyQueueResult === 'not_answered' && filters.hasMultipleQueues === true) {
-            outcomeLabel = 'Redirigés';
-        } else {
-            outcomeLabel = 'Non répondus';
-        }
+        const conditionLabel = filters.journeyConditions.length === 1
+            ? formatConditionLabel(filters.journeyConditions[0], typeLabels, resultLabels)
+            : `${filters.journeyConditions.length} conditions`;
 
         activeFilters.push(
             <Badge
-                key="journey-queue"
+                key="journey-conditions"
                 variant="secondary"
-                className="bg-emerald-100 text-emerald-700 gap-1 px-2 py-1 cursor-pointer hover:bg-emerald-200 transition-colors font-semibold"
-                onClick={onRemoveJourneyQueueFilter}
+                className="bg-violet-100 text-violet-700 gap-1 px-2 py-1 cursor-pointer hover:bg-violet-200 transition-colors"
+                onClick={onRemoveJourneyConditions}
             >
-                Queue {filters.journeyQueueNumber}: {outcomeLabel}
+                Parcours: {conditionLabel}
                 <X className="h-3 w-3" />
             </Badge>
         );

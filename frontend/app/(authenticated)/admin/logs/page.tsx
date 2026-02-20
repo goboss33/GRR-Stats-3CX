@@ -32,16 +32,11 @@ import type {
     SortField,
     ColumnVisibility,
     AggregatedCallLogsResponse,
-    JourneyStepType,
-    JourneyStepResult,
-    JourneyMatchMode,
+    JourneyCondition,
     TimeSlot,
 } from "@/types/logs.types";
 
 const PAGE_SIZE = 50;
-
-// Queue-specific result types for UI (maps to backend JourneyStepResult + hasMultipleQueues)
-type QueueResultType = "answered" | "abandoned" | "redirected";
 
 const defaultColumnVisibility: ColumnVisibility = {
     callHistoryId: true,
@@ -126,64 +121,16 @@ export default function AdminLogsPage() {
             return { start, end };
         }).filter(s => s.start && s.end);
     });
-    const [selectedJourneyTypes, setSelectedJourneyTypes] = useState<JourneyStepType[]>(() => {
-        const param = searchParams.get("journey");
+    // Journey conditions (composable step predicates)
+    const [journeyConditions, setJourneyConditions] = useState<JourneyCondition[]>(() => {
+        const param = searchParams.get("journeyFilter");
         if (!param) return [];
-        const validTypes: JourneyStepType[] = ['direct', 'queue', 'voicemail'];
-        return param.split(",").filter(t => validTypes.includes(t as JourneyStepType)) as JourneyStepType[];
+        try {
+            return JSON.parse(decodeURIComponent(param));
+        } catch {
+            return [];
+        }
     });
-    const [journeyMatchMode, setJourneyMatchMode] = useState<JourneyMatchMode>(() => {
-        const param = searchParams.get("journeyMode");
-        return param === 'and' ? 'and' : 'or';
-    });
-
-    // Queue-specific journey filter states (for clickable KPIs)
-    const getInitialJourneyQueueNumber = () => searchParams.get("journeyQueue") || undefined;
-
-    const getInitialJourneyQueueResult = (): JourneyStepResult | undefined => {
-        const param = searchParams.get("journeyResult");
-        if (!param) return undefined;
-        const validResults: JourneyStepResult[] = ['answered', 'not_answered', 'busy', 'voicemail'];
-        return validResults.includes(param as JourneyStepResult)
-            ? param as JourneyStepResult
-            : undefined;
-    };
-
-    const getInitialHasMultipleQueues = (): boolean | undefined => {
-        const param = searchParams.get("multiQueues");
-        if (param === "true") return true;
-        if (param === "false") return false;
-        return undefined;
-    };
-
-    const getInitialMultiPassageSameQueue = (): boolean | undefined => {
-        const param = searchParams.get("multiPassage");
-        if (param === "true") return true;
-        if (param === "false") return false;  // NEW: parse false
-        return undefined;
-    };
-
-    const [journeyQueueNumber, setJourneyQueueNumber] = useState<string | undefined>(
-        () => getInitialJourneyQueueNumber()
-    );
-    const [journeyQueueResult, setJourneyQueueResult] = useState<JourneyStepResult | undefined>(
-        () => getInitialJourneyQueueResult()
-    );
-    const [hasMultipleQueues, setHasMultipleQueues] = useState<boolean | undefined>(
-        () => getInitialHasMultipleQueues()
-    );
-    const [multiPassageSameQueue, setMultiPassageSameQueue] = useState<boolean | undefined>(
-        () => getInitialMultiPassageSameQueue()
-    );
-
-    // Agent-specific journey filter
-    const [journeyAgentNumber, setJourneyAgentNumber] = useState<string | undefined>(() => {
-        return searchParams.get("journeyAgent") || undefined;
-    });
-
-    // UI-level state for queue-specific journey filters (maps to backend state)
-    const [uiJourneyQueueNumber, setUiJourneyQueueNumber] = useState<string | null>(null);
-    const [uiJourneyQueueResults, setUiJourneyQueueResults] = useState<QueueResultType[]>([]);
 
     // Data state
     const [data, setData] = useState<AggregatedCallLogsResponse | null>(null);
@@ -222,16 +169,8 @@ export default function AdminLogsPage() {
         waitTimeMin,
         waitTimeMax,
         timeSlots: timeSlots.length > 0 ? timeSlots : undefined,
-        journeyTypes: selectedJourneyTypes.length > 0 ? selectedJourneyTypes : undefined,
-        journeyMatchMode: journeyMatchMode,
-        // Queue-specific journey filters (for clickable KPIs)
-        journeyQueueNumber: journeyQueueNumber,
-        journeyQueueResult: journeyQueueResult,
-        hasMultipleQueues: hasMultipleQueues,
-        // Multi-passage filter (Method N°2)
-        multiPassageSameQueue: multiPassageSameQueue,
-        // Agent-specific journey filter
-        journeyAgentNumber: journeyAgentNumber,
+        // Journey conditions (composable)
+        journeyConditions: journeyConditions.length > 0 ? journeyConditions : undefined,
     };
 
     // Update URL when filters change - uses DEBOUNCED values for text search
@@ -277,22 +216,10 @@ export default function AdminLogsPage() {
             params.set("timeSlots", timeSlots.map(s => `${s.start}-${s.end}`).join(","));
         }
 
-        // Journey types
-        if (selectedJourneyTypes.length > 0) {
-            params.set("journey", selectedJourneyTypes.join(","));
-            if (journeyMatchMode === 'and') {
-                params.set("journeyMode", "and");
-            }
+        // Journey conditions
+        if (journeyConditions.length > 0) {
+            params.set("journeyFilter", encodeURIComponent(JSON.stringify(journeyConditions)));
         }
-
-        // Queue-specific journey filters (for clickable KPIs)
-        if (journeyQueueNumber) params.set("journeyQueue", journeyQueueNumber);
-        if (journeyQueueResult) params.set("journeyResult", journeyQueueResult);
-        if (hasMultipleQueues !== undefined) params.set("multiQueues", String(hasMultipleQueues));
-        // Multi-passage filter (Method N°2)
-        if (multiPassageSameQueue !== undefined) params.set("multiPassage", String(multiPassageSameQueue));
-        // Agent-specific journey filter
-        if (journeyAgentNumber) params.set("journeyAgent", journeyAgentNumber);
 
         router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
     }, [
@@ -314,13 +241,7 @@ export default function AdminLogsPage() {
         waitTimeMin,
         waitTimeMax,
         timeSlots,
-        selectedJourneyTypes,
-        journeyMatchMode,
-        journeyQueueNumber,
-        journeyQueueResult,
-        hasMultipleQueues,
-        multiPassageSameQueue,
-        journeyAgentNumber,
+        journeyConditions,
     ]);
 
     // Fetch data
@@ -362,16 +283,7 @@ export default function AdminLogsPage() {
         timeSlots,
         currentPage,
         sort,
-        selectedJourneyTypes,
-        journeyMatchMode,
-        // Queue-specific journey filters (for clickable KPIs)
-        journeyQueueNumber,
-        journeyQueueResult,
-        hasMultipleQueues,
-        // Multi-passage filter (Method N°2)
-        multiPassageSameQueue,
-        // Agent journey filter
-        journeyAgentNumber,
+        journeyConditions,
     ]);
 
     // Fetch on filter/page change and update URL
@@ -379,62 +291,6 @@ export default function AdminLogsPage() {
         fetchData();
         updateUrl();
     }, [fetchData, updateUrl]);
-
-    // Sync queue-specific journey filters with URL params
-    useEffect(() => {
-        const queueParam = searchParams.get("journeyQueue");
-        const resultParam = searchParams.get("journeyResult");
-        const multiQueuesParam = searchParams.get("multiQueues");
-        const multiPassageParam = searchParams.get("multiPassage");
-
-        // Update backend state
-        setJourneyQueueNumber(queueParam || undefined);
-
-        let backendResult: JourneyStepResult | undefined;
-        if (resultParam) {
-            const validResults: JourneyStepResult[] = ['answered', 'not_answered', 'busy', 'voicemail'];
-            backendResult = validResults.includes(resultParam as JourneyStepResult)
-                ? resultParam as JourneyStepResult
-                : undefined;
-            setJourneyQueueResult(backendResult);
-        } else {
-            setJourneyQueueResult(undefined);
-        }
-
-        let backendMultiQueues: boolean | undefined;
-        if (multiQueuesParam === "true") {
-            backendMultiQueues = true;
-            setHasMultipleQueues(true);
-        } else if (multiQueuesParam === "false") {
-            backendMultiQueues = false;
-            setHasMultipleQueues(false);
-        } else {
-            setHasMultipleQueues(undefined);
-        }
-
-        // Multi-passage filter (Method N°2)
-        setMultiPassageSameQueue(
-            multiPassageParam === "true" ? true :
-            multiPassageParam === "false" ? false :
-            undefined
-        );
-
-        // Sync UI state from backend state
-        setUiJourneyQueueNumber(queueParam || null);
-
-        // Convert backend types to UI types
-        const uiResults: QueueResultType[] = [];
-        if (backendResult === 'answered') {
-            uiResults.push('answered');
-        } else if (backendResult === 'not_answered') {
-            if (backendMultiQueues === false) {
-                uiResults.push('abandoned');
-            } else if (backendMultiQueues === true) {
-                uiResults.push('redirected');
-            }
-        }
-        setUiJourneyQueueResults(uiResults);
-    }, [searchParams]);
 
     // Load queues for filter dropdown
     useEffect(() => {
@@ -579,70 +435,13 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
-    const handleJourneyTypesChange = (types: JourneyStepType[]) => {
-        setSelectedJourneyTypes(types);
+    const handleJourneyConditionsChange = (conditions: JourneyCondition[]) => {
+        setJourneyConditions(conditions);
         setCurrentPage(1);
     };
 
-    // Handlers to convert between UI and backend types for queue-specific journey filters
-    const handleJourneyQueueNumberChange = (queueNumber: string | null) => {
-        setUiJourneyQueueNumber(queueNumber);
-        setJourneyQueueNumber(queueNumber || undefined);
-        setCurrentPage(1);
-
-        // Clear results when queue is cleared
-        if (!queueNumber) {
-            setUiJourneyQueueResults([]);
-            setJourneyQueueResult(undefined);
-            setHasMultipleQueues(undefined);
-            setMultiPassageSameQueue(undefined);
-        }
-    };
-
-    const handleJourneyQueueResultsChange = (results: QueueResultType[]) => {
-        setUiJourneyQueueResults(results);
-
-        // Convert UI types to backend types
-        if (results.length === 0) {
-            setJourneyQueueResult(undefined);
-            setHasMultipleQueues(undefined);
-        } else if (results.includes('answered')) {
-            // Répondus: answered in this queue
-            setJourneyQueueResult('answered');
-            setHasMultipleQueues(undefined);
-        } else if (results.includes('abandoned')) {
-            // Abandonnés: not answered AND single queue
-            setJourneyQueueResult('not_answered');
-            setHasMultipleQueues(false);
-        } else if (results.includes('redirected')) {
-            // Redirigés: not answered AND multiple queues
-            setJourneyQueueResult('not_answered');
-            setHasMultipleQueues(true);
-        }
-
-        setCurrentPage(1);
-    };
-
-    const handleMultiPassageSameQueueChange = (enabled: boolean | undefined) => {
-        setMultiPassageSameQueue(enabled);
-        setCurrentPage(1);
-    };
-
-    const handleJourneyAgentNumberChange = (agentNumber: string | null) => {
-        setJourneyAgentNumber(agentNumber || undefined);
-        setCurrentPage(1);
-    };
-
-    const handleRemoveJourneyType = (type: JourneyStepType) => {
-        setSelectedJourneyTypes(selectedJourneyTypes.filter(t => t !== type));
-        setCurrentPage(1);
-    };
-
-    const handleRemoveJourneyQueueFilter = () => {
-        setJourneyQueueNumber(undefined);
-        setJourneyQueueResult(undefined);
-        setHasMultipleQueues(undefined);
-        setMultiPassageSameQueue(undefined);
+    const handleRemoveJourneyConditions = () => {
+        setJourneyConditions([]);
         setCurrentPage(1);
     };
 
@@ -662,15 +461,7 @@ export default function AdminLogsPage() {
         setWaitTimeMin(undefined);
         setWaitTimeMax(undefined);
         setTimeSlots([]);
-        setSelectedJourneyTypes([]);
-        setJourneyMatchMode('or');
-        // Reset queue-specific journey filters
-        setJourneyQueueNumber(undefined);
-        setJourneyQueueResult(undefined);
-        setHasMultipleQueues(undefined);
-        setMultiPassageSameQueue(undefined);
-        // Reset agent journey filter
-        setJourneyAgentNumber(undefined);
+        setJourneyConditions([]);
         setCurrentPage(1);
         // Increment reset counter to trigger immediate refetch (bypasses debounce)
         setResetCounter(c => c + 1);
@@ -771,8 +562,7 @@ export default function AdminLogsPage() {
                 onRemoveDuration={handleRemoveDuration}
                 onRemoveWaitTime={handleRemoveWaitTime}
                 onRemoveTimeSlots={handleRemoveTimeSlots}
-                onRemoveJourneyType={handleRemoveJourneyType}
-                onRemoveJourneyQueueFilter={handleRemoveJourneyQueueFilter}
+                onRemoveJourneyConditions={handleRemoveJourneyConditions}
                 onResetAll={handleResetAllFilters}
             />
 
@@ -835,25 +625,9 @@ export default function AdminLogsPage() {
                         setSegmentCountMax(max);
                         setCurrentPage(1);
                     }}
-                    // Journey filter
-                    selectedJourneyTypes={selectedJourneyTypes}
-                    onJourneyTypesChange={handleJourneyTypesChange}
-                    journeyMatchMode={journeyMatchMode}
-                    onJourneyMatchModeChange={(mode) => {
-                        setJourneyMatchMode(mode);
-                        setCurrentPage(1);
-                    }}
-                    // Queue-specific journey filters
-                    journeyQueueNumber={uiJourneyQueueNumber}
-                    onJourneyQueueNumberChange={handleJourneyQueueNumberChange}
-                    journeyQueueResults={uiJourneyQueueResults}
-                    onJourneyQueueResultsChange={handleJourneyQueueResultsChange}
-                    // Multi-passage filter (Method N°2)
-                    multiPassageSameQueue={multiPassageSameQueue}
-                    onMultiPassageSameQueueChange={handleMultiPassageSameQueueChange}
-                    // Agent journey filter
-                    journeyAgentNumber={journeyAgentNumber ?? null}
-                    onJourneyAgentNumberChange={handleJourneyAgentNumberChange}
+                    // Journey filter (composable conditions)
+                    journeyConditions={journeyConditions}
+                    onJourneyConditionsChange={handleJourneyConditionsChange}
                     // Row click
                     onRowClick={handleRowClick}
                 />
