@@ -118,6 +118,12 @@ interface LogsTableProps {
     // Multi-passage filter (Method N°2)
     multiPassageSameQueue?: boolean;
     onMultiPassageSameQueueChange?: (enabled: boolean | undefined) => void;
+    // Agent journey filter
+    journeyAgentNumber?: string | null;
+    onJourneyAgentNumberChange?: (agentNumber: string | null) => void;
+    // Transfer journey filter
+    journeyHasTransfer?: boolean;
+    onJourneyHasTransferChange?: (enabled: boolean) => void;
     // Row click
     onRowClick?: (callHistoryId: string) => void;
 }
@@ -154,6 +160,8 @@ function getJourneyStepStyle(step: JourneyStep): { icon: string; className: stri
             }
         case 'voicemail':
             return { icon: '📫', className: 'bg-purple-50 text-purple-600 border-purple-200' };
+        case 'transfer':
+            return { icon: '↗', className: 'bg-amber-50 text-amber-600 border-amber-200' };
         default:
             return { icon: '❓', className: 'bg-slate-50 text-slate-500 border-slate-200' };
     }
@@ -284,6 +292,12 @@ export function LogsTable({
     // Multi-passage filter (Method N°2)
     multiPassageSameQueue,
     onMultiPassageSameQueueChange,
+    // Agent journey filter
+    journeyAgentNumber,
+    onJourneyAgentNumberChange,
+    // Transfer journey filter
+    journeyHasTransfer,
+    onJourneyHasTransferChange,
     // Row click
     onRowClick,
 }: LogsTableProps) {
@@ -451,6 +465,10 @@ export function LogsTable({
                                         onQueueResultsChange={onJourneyQueueResultsChange}
                                         multiPassageSameQueue={multiPassageSameQueue}
                                         onMultiPassageSameQueueChange={onMultiPassageSameQueueChange}
+                                        agentNumber={journeyAgentNumber ?? null}
+                                        onAgentNumberChange={onJourneyAgentNumberChange}
+                                        hasTransfer={journeyHasTransfer}
+                                        onHasTransferChange={onJourneyHasTransferChange}
                                     />
                                 </TableHead>
                             )}
@@ -640,40 +658,48 @@ export function LogsTable({
                                         {/* Parcours (Journey) */}
                                         {columnVisibility.journey && (
                                             <TableCell>
-                                                {log.journey && log.journey.length > 0 ? (
-                                                    <div className="flex items-center gap-0.5">
-                                                        {log.journey.map((step, idx) => {
-                                                            const config = getJourneyStepStyle(step);
-                                                            return (
-                                                                <React.Fragment key={idx}>
-                                                                    {idx > 0 && (
-                                                                        <span className="text-slate-300 text-xs mx-0.5">→</span>
-                                                                    )}
-                                                                    <Tooltip>
-                                                                        <TooltipTrigger asChild>
-                                                                            <span
-                                                                                className={`inline-flex items-center justify-center w-6 h-6 rounded border text-xs cursor-default ${config.className}`}
-                                                                            >
-                                                                                {config.icon}
-                                                                            </span>
-                                                                        </TooltipTrigger>
-                                                                        <TooltipContent side="top" className="text-xs max-w-[200px]">
-                                                                            <div className="flex flex-col gap-1">
-                                                                                <span>{step.detail}</span>
-                                                                                {step.agent && (
-                                                                                    <div className="flex items-center gap-1 text-green-600 font-medium">
-                                                                                        <Phone className="w-3 h-3" />
-                                                                                        <span>{step.agent}</span>
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        </TooltipContent>
-                                                                    </Tooltip>
-                                                                </React.Fragment>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                ) : (
+                                                {log.journey && log.journey.length > 0 ? (() => {
+                                                    const maxVisible = 8;
+                                                    const visibleSteps = log.journey.slice(0, maxVisible);
+                                                    const hiddenCount = log.journey.length - maxVisible;
+                                                    return (
+                                                        <div className="flex items-center gap-0.5">
+                                                            {visibleSteps.map((step, idx) => {
+                                                                const config = getJourneyStepStyle(step);
+                                                                return (
+                                                                    <React.Fragment key={idx}>
+                                                                        {idx > 0 && (
+                                                                            <span className="text-slate-300 text-xs mx-0.5">→</span>
+                                                                        )}
+                                                                        <Tooltip>
+                                                                            <TooltipTrigger asChild>
+                                                                                <span
+                                                                                    className={`inline-flex items-center justify-center w-6 h-6 rounded border text-xs cursor-default ${config.className}`}
+                                                                                >
+                                                                                    {config.icon}
+                                                                                </span>
+                                                                            </TooltipTrigger>
+                                                                            <TooltipContent side="top" className="text-xs max-w-[200px]">
+                                                                                <div className="flex flex-col gap-1">
+                                                                                    <span>{step.detail}</span>
+                                                                                    {step.agent && (
+                                                                                        <div className="flex items-center gap-1 text-green-600 font-medium">
+                                                                                            <Phone className="w-3 h-3" />
+                                                                                            <span>{step.agent}</span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            </TooltipContent>
+                                                                        </Tooltip>
+                                                                    </React.Fragment>
+                                                                );
+                                                            })}
+                                                            {hiddenCount > 0 && (
+                                                                <span className="text-[10px] text-slate-400 ml-0.5">+{hiddenCount}</span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })() : (
                                                     <span className="text-xs text-slate-300">-</span>
                                                 )}
                                             </TableCell>
