@@ -684,7 +684,7 @@ export default function AdminLogsPage() {
                                 {([
                                     { key: "callHistoryId", label: "ID" },
                                     { key: "segmentCount", label: "Segments" },
-                                    { key: "dateTime", label: "Date/Heure" },
+                                    { key: "dateTime", label: "Date" },
                                     { key: "timeSlot", label: "Heure" },
                                     { key: "caller", label: "Appelant" },
                                     { key: "callee", label: "Destinataire" },
