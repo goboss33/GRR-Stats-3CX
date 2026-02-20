@@ -129,7 +129,7 @@ export default function AdminLogsPage() {
     const [selectedJourneyTypes, setSelectedJourneyTypes] = useState<JourneyStepType[]>(() => {
         const param = searchParams.get("journey");
         if (!param) return [];
-        const validTypes: JourneyStepType[] = ['direct', 'queue', 'voicemail', 'transfer'];
+        const validTypes: JourneyStepType[] = ['direct', 'queue', 'voicemail'];
         return param.split(",").filter(t => validTypes.includes(t as JourneyStepType)) as JourneyStepType[];
     });
     const [journeyMatchMode, setJourneyMatchMode] = useState<JourneyMatchMode>(() => {
@@ -179,10 +179,6 @@ export default function AdminLogsPage() {
     // Agent-specific journey filter
     const [journeyAgentNumber, setJourneyAgentNumber] = useState<string | undefined>(() => {
         return searchParams.get("journeyAgent") || undefined;
-    });
-    // Transfer journey filter
-    const [journeyHasTransfer, setJourneyHasTransfer] = useState<boolean>(() => {
-        return searchParams.get("journeyTransfer") === "true";
     });
 
     // UI-level state for queue-specific journey filters (maps to backend state)
@@ -236,8 +232,6 @@ export default function AdminLogsPage() {
         multiPassageSameQueue: multiPassageSameQueue,
         // Agent-specific journey filter
         journeyAgentNumber: journeyAgentNumber,
-        // Transfer journey filter
-        journeyHasTransfer: journeyHasTransfer || undefined,
     };
 
     // Update URL when filters change - uses DEBOUNCED values for text search
@@ -299,8 +293,6 @@ export default function AdminLogsPage() {
         if (multiPassageSameQueue !== undefined) params.set("multiPassage", String(multiPassageSameQueue));
         // Agent-specific journey filter
         if (journeyAgentNumber) params.set("journeyAgent", journeyAgentNumber);
-        // Transfer journey filter
-        if (journeyHasTransfer) params.set("journeyTransfer", "true");
 
         router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
     }, [
@@ -329,7 +321,6 @@ export default function AdminLogsPage() {
         hasMultipleQueues,
         multiPassageSameQueue,
         journeyAgentNumber,
-        journeyHasTransfer,
     ]);
 
     // Fetch data
@@ -379,9 +370,8 @@ export default function AdminLogsPage() {
         hasMultipleQueues,
         // Multi-passage filter (Method N°2)
         multiPassageSameQueue,
-        // Agent and transfer journey filters
+        // Agent journey filter
         journeyAgentNumber,
-        journeyHasTransfer,
     ]);
 
     // Fetch on filter/page change and update URL
@@ -643,11 +633,6 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
-    const handleJourneyHasTransferChange = (enabled: boolean) => {
-        setJourneyHasTransfer(enabled);
-        setCurrentPage(1);
-    };
-
     const handleRemoveJourneyType = (type: JourneyStepType) => {
         setSelectedJourneyTypes(selectedJourneyTypes.filter(t => t !== type));
         setCurrentPage(1);
@@ -684,9 +669,8 @@ export default function AdminLogsPage() {
         setJourneyQueueResult(undefined);
         setHasMultipleQueues(undefined);
         setMultiPassageSameQueue(undefined);
-        // Reset agent and transfer journey filters
+        // Reset agent journey filter
         setJourneyAgentNumber(undefined);
-        setJourneyHasTransfer(false);
         setCurrentPage(1);
         // Increment reset counter to trigger immediate refetch (bypasses debounce)
         setResetCounter(c => c + 1);
@@ -870,9 +854,6 @@ export default function AdminLogsPage() {
                     // Agent journey filter
                     journeyAgentNumber={journeyAgentNumber ?? null}
                     onJourneyAgentNumberChange={handleJourneyAgentNumberChange}
-                    // Transfer journey filter
-                    journeyHasTransfer={journeyHasTransfer}
-                    onJourneyHasTransferChange={handleJourneyHasTransferChange}
                     // Row click
                     onRowClick={handleRowClick}
                 />

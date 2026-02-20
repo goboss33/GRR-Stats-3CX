@@ -7,7 +7,7 @@ export type SortDirection = "asc" | "desc";
 export type SortField = "startedAt" | "timeOfDay" | "duration" | "sourceNumber" | "destinationNumber";
 
 // Journey step types for the "Parcours" column
-export type JourneyStepType = "direct" | "queue" | "voicemail" | "transfer";
+export type JourneyStepType = "direct" | "queue" | "voicemail";
 export type JourneyStepResult = "answered" | "not_answered" | "busy" | "voicemail";
 export type JourneyMatchMode = "or" | "and";
 
@@ -113,8 +113,6 @@ export interface LogsFilters {
     multiPassageSameQueue?: boolean;       // True = calls with multiple passages through the SAME queue (ping-pong)
     // Agent-specific journey filter
     journeyAgentNumber?: string;           // Filter by agent extension appearing in journey
-    // Transfer filter
-    journeyHasTransfer?: boolean;          // Filter calls containing a manual transfer step
     // Time slot filter (hour-of-day ranges)
     timeSlots?: TimeSlot[];               // Multiple time ranges (OR'd together)
 }

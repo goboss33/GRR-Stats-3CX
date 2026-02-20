@@ -529,7 +529,7 @@ export async function getAggregatedCallLogs(
 
     // Journey type filter (on call_journey CTE data)
     if (filters.journeyTypes && filters.journeyTypes.length > 0) {
-        const validTypes = ['direct', 'queue', 'voicemail', 'transfer'];
+        const validTypes = ['direct', 'queue', 'voicemail'];
         const safeTypes = filters.journeyTypes.filter(t => validTypes.includes(t));
         if (safeTypes.length > 0) {
             const matchMode = filters.journeyMatchMode || 'or';
@@ -630,13 +630,6 @@ export async function getAggregatedCallLogs(
                 WHERE elem->>'agentNumber' = '${agentNum}'
             )
         `);
-    }
-
-    // Journey transfer filter: filter calls containing a manual transfer step
-    if (filters.journeyHasTransfer === true) {
-        aggregatedWhereConditions.push(
-            `cj.journey::jsonb @> '[{"type":"transfer"}]'::jsonb`
-        );
     }
 
     try {
@@ -835,29 +828,8 @@ export async function getAggregatedCallLogs(
                               )
                           )
 
-                        UNION ALL
-
-                        -- Transfer steps: manual transfers (agent answered then continued_in)
-                        SELECT
-                            c.call_history_id,
-                            c.cdr_ended_at as step_order,
-                            'transfer' as step_type,
-                            c.destination_dn_number as step_label,
-                            'Transfert par ' || COALESCE(c.destination_dn_name, c.destination_dn_number) as step_detail,
-                            COALESCE(c.destination_dn_name, c.destination_dn_number) as agent_name,
-                            c.destination_dn_number as agent_number,
-                            'answered' as step_result,
-                            0 as step_num
-                        FROM cdroutput c
-                        WHERE ${dateOnlyWhereClause}
-                          AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                          AND c.destination_dn_type = 'extension'
-                          AND c.destination_entity_type != 'voicemail'
-                          AND c.cdr_answered_at IS NOT NULL
-                          AND c.termination_reason = 'continued_in'
-                          AND c.creation_forward_reason IS DISTINCT FROM 'polling'
                     ) all_steps
-                    WHERE all_steps.step_type = 'transfer' OR all_steps.step_num <= 15
+                    WHERE all_steps.step_num <= 15
                 ) j
                 GROUP BY j.call_history_id
             )${calleeFilterCTE}
@@ -918,7 +890,7 @@ export async function getAggregatedCallLogs(
         // Count query - optimize by only including expensive CTEs when filtering on them
         const needsHandledBy = !!filters.handledBySearch?.trim();
         const needsCallQueues = !!filters.queueSearch?.trim();
-        const needsCallJourney = !!((filters.journeyTypes && filters.journeyTypes.length > 0) || filters.journeyQueueNumber || filters.journeyAgentNumber || filters.journeyHasTransfer);
+        const needsCallJourney = !!((filters.journeyTypes && filters.journeyTypes.length > 0) || filters.journeyQueueNumber || filters.journeyAgentNumber);
 
         // Build conditional CTEs for count query
         const handledByCTEForCount = needsHandledBy ? `,
@@ -1059,28 +1031,8 @@ export async function getAggregatedCallLogs(
                               )
                           )
 
-                        UNION ALL
-
-                        SELECT
-                            c.call_history_id,
-                            c.cdr_ended_at as step_order,
-                            'transfer' as step_type,
-                            c.destination_dn_number as step_label,
-                            'Transfert par ' || COALESCE(c.destination_dn_name, c.destination_dn_number) as step_detail,
-                            COALESCE(c.destination_dn_name, c.destination_dn_number) as agent_name,
-                            c.destination_dn_number as agent_number,
-                            'answered' as step_result,
-                            0 as step_num
-                        FROM cdroutput c
-                        WHERE ${dateOnlyWhereClause}
-                          AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                          AND c.destination_dn_type = 'extension'
-                          AND c.destination_entity_type != 'voicemail'
-                          AND c.cdr_answered_at IS NOT NULL
-                          AND c.termination_reason = 'continued_in'
-                          AND c.creation_forward_reason IS DISTINCT FROM 'polling'
                     ) all_steps
-                    WHERE all_steps.step_type = 'transfer' OR all_steps.step_num <= 15
+                    WHERE all_steps.step_num <= 15
                 ) j
                 GROUP BY j.call_history_id
             )` : '';

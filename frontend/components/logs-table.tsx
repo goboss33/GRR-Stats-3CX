@@ -121,9 +121,6 @@ interface LogsTableProps {
     // Agent journey filter
     journeyAgentNumber?: string | null;
     onJourneyAgentNumberChange?: (agentNumber: string | null) => void;
-    // Transfer journey filter
-    journeyHasTransfer?: boolean;
-    onJourneyHasTransferChange?: (enabled: boolean) => void;
     // Row click
     onRowClick?: (callHistoryId: string) => void;
 }
@@ -160,8 +157,6 @@ function getJourneyStepStyle(step: JourneyStep): { icon: string; className: stri
             }
         case 'voicemail':
             return { icon: '📫', className: 'bg-purple-50 text-purple-600 border-purple-200' };
-        case 'transfer':
-            return { icon: '↗', className: 'bg-amber-50 text-amber-600 border-amber-200' };
         default:
             return { icon: '❓', className: 'bg-slate-50 text-slate-500 border-slate-200' };
     }
@@ -295,9 +290,6 @@ export function LogsTable({
     // Agent journey filter
     journeyAgentNumber,
     onJourneyAgentNumberChange,
-    // Transfer journey filter
-    journeyHasTransfer,
-    onJourneyHasTransferChange,
     // Row click
     onRowClick,
 }: LogsTableProps) {
@@ -467,8 +459,6 @@ export function LogsTable({
                                         onMultiPassageSameQueueChange={onMultiPassageSameQueueChange}
                                         agentNumber={journeyAgentNumber ?? null}
                                         onAgentNumberChange={onJourneyAgentNumberChange}
-                                        hasTransfer={journeyHasTransfer}
-                                        onHasTransferChange={onJourneyHasTransferChange}
                                     />
                                 </TableHead>
                             )}
