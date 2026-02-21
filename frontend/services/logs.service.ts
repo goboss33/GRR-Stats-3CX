@@ -758,12 +758,12 @@ export async function getAggregatedCallLogs(
                             END as step_detail,
                             CASE
                                 WHEN c.destination_dn_type = 'queue' THEN COALESCE(qo.agent_name, qo.agent_number)
-                                WHEN c.destination_dn_type = 'extension' AND c.cdr_answered_at IS NOT NULL THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
+                                WHEN c.destination_dn_type = 'extension' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
                                 ELSE NULL
                             END as agent_name,
                             CASE
                                 WHEN c.destination_dn_type = 'queue' THEN qo.agent_number
-                                WHEN c.destination_dn_type = 'extension' AND c.cdr_answered_at IS NOT NULL THEN c.destination_dn_number
+                                WHEN c.destination_dn_type = 'extension' THEN c.destination_dn_number
                                 ELSE NULL
                             END as agent_number,
                             CASE
