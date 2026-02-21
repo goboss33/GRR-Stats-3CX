@@ -36,7 +36,6 @@ const TYPE_OPTIONS: { value: string; label: string; icon: string }[] = [
     { value: "_all", label: "Tous", icon: "" },
     { value: "direct", label: "Direct", icon: "📞" },
     { value: "queue", label: "Queue", icon: "👥" },
-    { value: "voicemail", label: "Messagerie", icon: "📫" },
 ];
 
 const RESULT_OPTIONS: { value: string; label: string }[] = [
@@ -51,7 +50,6 @@ const PRESETS: { label: string; conditions: JourneyCondition[] }[] = [
     { label: "Queue répondus", conditions: [{ type: "queue", result: "answered" }] },
     { label: "Queue abandonnés", conditions: [{ type: "queue", result: "not_answered" }] },
     { label: "Queue ping-pong", conditions: [{ type: "queue", passageMode: "multi" }] },
-    { label: "Messagerie", conditions: [{ type: "voicemail" }] },
     { label: "Direct répondus", conditions: [{ type: "direct", result: "answered" }] },
 ];
 
