@@ -256,7 +256,7 @@ export function QueueAgentPicker({
 
             {/* Dropdown */}
             {open && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-80 overflow-auto z-50">
+                <div className="absolute top-full left-0 w-full min-w-[280px] mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-80 overflow-auto z-50">
                     {filteredItems.length === 0 ? (
                         <div className="p-4 text-center text-sm text-slate-500">
                             Aucun résultat trouvé

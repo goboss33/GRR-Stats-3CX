@@ -70,8 +70,8 @@ function getPickerDisplayValue(
     }
     if (condition.agentNumber) {
         for (const q of queues) {
-            const agent = q.agents?.find(a => a.extensionNumber === condition.agentNumber);
-            if (agent) return `${agent.extensionNumber} - ${agent.agentName}`;
+            const member = q.members?.find((m: any) => m.agentExtension === condition.agentNumber);
+            if (member) return `${member.agentExtension} - ${member.agentName}`;
         }
         return condition.agentNumber;
     }
@@ -291,10 +291,13 @@ export function ColumnFilterJourney({
                                         </Select>
 
                                         {/* Target (Queue/Agent picker) */}
-                                        <div className="relative">
+                                        <div className="relative min-w-0">
                                             {(condition.queueNumber || condition.agentNumber) ? (
-                                                <div className="flex items-center h-7 text-xs border border-slate-200 rounded px-2 bg-white gap-1">
-                                                    <span className="truncate flex-1">
+                                                <div className="flex items-center h-7 text-xs border border-slate-200 rounded px-2 bg-white gap-1 w-full">
+                                                    <span
+                                                        className="truncate flex-1"
+                                                        title={getPickerDisplayValue(condition, queues)}
+                                                    >
                                                         {getPickerDisplayValue(condition, queues)}
                                                     </span>
                                                     <button
@@ -345,7 +348,7 @@ export function ColumnFilterJourney({
                                                     ? "text-blue-600 bg-blue-50"
                                                     : "text-slate-400 hover:text-slate-600 hover:bg-slate-50",
                                                 (condition.negate || condition.passageMode === 'first' || condition.passageMode === 'multi' || condition.hasOverflow !== undefined) &&
-                                                    !expandedAdvanced.has(index) && "text-blue-500"
+                                                !expandedAdvanced.has(index) && "text-blue-500"
                                             )}
                                             title="Options avancées"
                                         >
