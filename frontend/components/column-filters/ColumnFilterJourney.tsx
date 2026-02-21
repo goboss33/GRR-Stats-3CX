@@ -255,7 +255,7 @@ export function ColumnFilterJourney({
 
                             {/* Column headers */}
                             {localConditions.length > 0 && (
-                                <div className="grid grid-cols-[90px_1fr_100px_28px_28px] gap-1.5 px-0.5">
+                                <div className="grid grid-cols-[100px_1fr_100px_28px_28px] gap-1.5 px-0.5">
                                     <span className="text-[10px] text-slate-400 font-medium">Type</span>
                                     <span className="text-[10px] text-slate-400 font-medium">Cible</span>
                                     <span className="text-[10px] text-slate-400 font-medium">Résultat</span>
@@ -270,7 +270,7 @@ export function ColumnFilterJourney({
                                     condition.negate && "bg-red-50/50 border-red-200"
                                 )}>
                                     {/* Main row: Type | Target | Result | Advanced | Remove */}
-                                    <div className="grid grid-cols-[90px_1fr_100px_28px_28px] gap-1.5 items-center">
+                                    <div className="grid grid-cols-[100px_1fr_100px_28px_28px] gap-1.5 items-center">
                                         {/* Type select */}
                                         <Select
                                             value={condition.type || "_all"}
