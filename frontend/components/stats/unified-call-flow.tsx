@@ -204,7 +204,12 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDa
                                         {getPercentage(kpis.callsAnswered, totalCalls)}%
                                     </span>
                                 </div>
-                                <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
+                                <Link
+                                    href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${encodeURIComponent(JSON.stringify([{ type: "queue", queueNumber, result: "answered" }]))}`}
+                                    className="text-2xl font-bold text-emerald-700 hover:text-emerald-500 hover:underline transition-colors"
+                                >
+                                    {kpis.callsAnswered}
+                                </Link>
                             </div>
 
                             {/* Redirigés */}
