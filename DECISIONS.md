@@ -28,7 +28,7 @@
     - [2.7 Comment les transferts reçus sont comptabilisés](#27-comment-les-transferts-reçus-sont-comptabilisés)
     - [2.8 Les appels DID redirigés sont comptés comme "directs"](#28-les-appels-did-redirigés-sont-comptés-comme-directs)
     - [2.9 Résolveur Final — Crédit agent par appel unique](#29-résolveur-final--crédit-agent-par-appel-unique)
-    - [2.10 Colonnes "Abandonnés" et "Redirigés" par agent](#210-colonnes-abandonnés-et-redirigés-par-agent)
+    - [2.10 Colonnes supprimées et TOTAL answered/received](#210-colonnes-supprimées-et-total-answeredreceived)
 3. [Page Logs d'Appels](#3-page-logs-dappels)
     - [3.1 Détection des transferts dans le CDR](#31-détection-des-transferts-dans-le-cdr)
     - [3.2 Détection des interceptions (pickup)](#32-détection-des-interceptions-pickup)
@@ -734,47 +734,23 @@ Cet invariant garantit que le total de la colonne "Queue (résolu)" dans le tabl
 
 ---
 
-### 2.10 Colonnes "Abandonnés" et "Redirigés" par agent
+### 2.10 Colonnes supprimées et TOTAL answered/received
 
 **Date de la décision :** 3 mars 2026
 
-**Problème :** Les managers veulent savoir quel agent est "responsable" des appels abandonnés ou redirigés — c'est-à-dire chez quel agent le téléphone a sonné sans réponse.
+**Colonnes supprimées :**
+- **"Interventions"** : Initialement ajoutée pour créditer les agents non-résolveurs dans les cas de ping-pong. Retirée car elle embrouillait plus qu'elle n'aidait (valeurs très faibles, concept difficile à expliquer).
+- **"Transférés"** : Retirée car les transferts hors queue n'apportaient pas d'information actionnable pour le manager. La section "Destinations Transferts Actifs" dans le flow a également été supprimée.
+- **"Abandonnés" et "Redirigés" par agent** : Testées puis retirées. L'attribution des abandons/redirections par agent n'apportait pas de valeur ajoutée au manager. Un même appel pouvant sonner chez plusieurs agents, les totaux étaient supérieurs aux KPIs, ce qui créait de la confusion.
 
-**Décision :** Deux colonnes montrent le nombre d'appels abandonnés/redirigés où le téléphone de l'agent a sonné :
-- **Abandonnés** : appels où le call_outcome = 'abandoned' et l'agent a été pollé sans décrocher
-- **Redirigés** : appels où le call_outcome = 'overflow' et l'agent a été pollé sans décrocher
+**TOTAL Queue :** Affiche désormais `answered/received` (ex: 46/62) au lieu de `answered/answered` pour donner le contexte du taux de réponse global.
 
-**⚠️ Responsabilité partagée :** Un même appel peut sonner chez **plusieurs** agents avant d'être abandonné/redirigé. Donc `SUM(agents.abandoned)` ≥ `kpis.callsAbandoned`. C'est voulu — on montre à chaque agent sa part de responsabilité.
-
-**Exemple :**
+**Layout final du tableau :**
 ```
-| Agent   | Queue (résolu) | Abandonnés | Redirigés | Directs |
-| Nicole  | 14/46          | 3          | 2         | 7/10    |
-| Maxime  | 14/46          | 5          | 4         | 12/22   |
-| TOTAL   | 46/62          | (somme)    | (somme)   | 61/146  |
+| Agent          | Queue (résolu) | Directs  | Durée totale | Durée moy. | Score |
+| Nicole R.-C.   | 14/62          | 7/10     | 38m 5s       | 1m 49s      | 88    |
+| TOTAL          | 46/62          | 61/146   | 3h 52m       | 2m 11s      | —     |
 ```
-
-**SQL :**
-```sql
--- Agents pollés pour un appel abandonné
-agent_abandoned AS (
-    SELECT c.destination_dn_number as extension,
-           COUNT(DISTINCT aqp.call_history_id) as abandoned
-    FROM all_queue_passages aqp
-    JOIN cdroutput c ON c.originating_cdr_id = aqp.cdr_id
-    JOIN call_outcomes co ON co.call_history_id = aqp.call_history_id
-    WHERE c.creation_forward_reason = 'polling'
-      AND c.cdr_answered_at IS NULL
-      AND co.call_outcome = 'abandoned'
-    GROUP BY c.destination_dn_number
-)
-```
-
-**Note :** Le TOTAL de la colonne Queue affiche désormais `answered/received` (ex: 46/62) au lieu de `answered/answered` pour donner le contexte du taux de réponse global.
-
-**Colonne "Interventions" supprimée :** Initialement ajoutée pour créditer les agents non-résolveurs dans les cas de ping-pong, cette colonne a été retirée car elle embrouillait plus qu'elle n'aidait (valeurs très faibles, concept difficile à expliquer).
-
-**Colonne "Transférés" supprimée :** Retirée car les transferts hors queue n'apportaient pas d'information actionnable pour le manager. La section "Destinations Transferts Actifs" dans le flow a également été supprimée.
 
 ---
 

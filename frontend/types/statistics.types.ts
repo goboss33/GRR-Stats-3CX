@@ -36,8 +36,6 @@ export interface AgentStats {
     // Queue stats (résolveur final)
     callsReceived: number;           // Appels uniques queue où le tel a sonné (DISTINCT call_history_id)
     answered: number;                // Appels uniques résolus (résolveur final = dernier à décrocher)
-    abandoned: number;               // Appels abandonnés où le tel de l'agent a sonné (responsabilité partagée)
-    overflow: number;                // Appels redirigés (overflow) où le tel de l'agent a sonné
     // Direct stats
     directReceived: number;          // Appels directs reçus
     directAnswered: number;          // Appels directs répondus

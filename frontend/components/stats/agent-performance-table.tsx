@@ -17,14 +17,12 @@ interface AgentPerformanceTableProps {
     totalQueueCallsReceived: number;
 }
 
-type SortField = "name" | "answered" | "abandoned" | "overflow" | "directAnswered" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds" | "score";
+type SortField = "name" | "answered" | "directAnswered" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds" | "score";
 type SortDirection = "asc" | "desc";
 
 const columnTooltips: Record<string, string> = {
     name: "Nom de l'agent, extension, et jauge de charge visuelle (vert = queue, bleu = directs)",
     answered: "Appels uniques résolus par cet agent (résolveur final = dernier à décrocher dans la queue)",
-    abandoned: "Appels abandonnés où le téléphone de l'agent a sonné sans réponse. Un même appel peut sonner chez plusieurs agents.",
-    overflow: "Appels redirigés (overflow) où le téléphone de l'agent a sonné sans réponse. Un même appel peut sonner chez plusieurs agents.",
     directAnswered: "Appels directs répondus / appels directs reçus par l'agent",
     totalHandlingTimeSeconds: "Durée totale cumulée en conversation (queue + directs)",
     avgHandlingTimeSeconds: "Durée moyenne de conversation par appel répondu (queue + directs)",
@@ -125,13 +123,11 @@ export function AgentPerformanceTable({ agents, totalQueueCallsAnswered, totalQu
     const totals = agents.reduce(
         (acc, agent) => ({
             answered: acc.answered + agent.answered,
-            abandoned: acc.abandoned + agent.abandoned,
-            overflow: acc.overflow + agent.overflow,
             directAnswered: acc.directAnswered + agent.directAnswered,
             directReceived: acc.directReceived + agent.directReceived,
             totalHandlingTimeSeconds: acc.totalHandlingTimeSeconds + agent.totalHandlingTimeSeconds,
         }),
-        { answered: 0, abandoned: 0, overflow: 0, directAnswered: 0, directReceived: 0, totalHandlingTimeSeconds: 0 }
+        { answered: 0, directAnswered: 0, directReceived: 0, totalHandlingTimeSeconds: 0 }
     );
     const totalAvgHandling = (totals.answered + totals.directAnswered) > 0
         ? Math.round(totals.totalHandlingTimeSeconds / (totals.answered + totals.directAnswered))
@@ -235,8 +231,6 @@ export function AgentPerformanceTable({ agents, totalQueueCallsAnswered, totalQu
                                 <tr>
                                     <SortHeader field="name" label="Agent" />
                                     <SortHeader field="answered" label="Queue (résolu)" />
-                                    <SortHeader field="abandoned" label="Abandonnés" />
-                                    <SortHeader field="overflow" label="Redirigés" />
                                     <SortHeader field="directAnswered" label="Directs" />
                                     <SortHeader field="totalHandlingTimeSeconds" label="Durée totale" />
                                     <SortHeader field="avgHandlingTimeSeconds" label="Durée moy." />
@@ -256,24 +250,6 @@ export function AgentPerformanceTable({ agents, totalQueueCallsAnswered, totalQu
                                         <td className="px-3 py-3">
                                             <span className="font-semibold text-emerald-700">{agent.answered}</span>
                                             <span className="text-slate-400 text-sm">/{totalQueueCallsAnswered}</span>
-                                        </td>
-                                        <td className="px-3 py-3">
-                                            {agent.abandoned > 0 ? (
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
-                                                    {agent.abandoned}
-                                                </span>
-                                            ) : (
-                                                <span className="text-slate-300">0</span>
-                                            )}
-                                        </td>
-                                        <td className="px-3 py-3">
-                                            {agent.overflow > 0 ? (
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700">
-                                                    {agent.overflow}
-                                                </span>
-                                            ) : (
-                                                <span className="text-slate-300">0</span>
-                                            )}
                                         </td>
                                         <td className="px-3 py-3">
                                             <span className="font-semibold text-blue-700">{agent.directAnswered}</span>
@@ -301,8 +277,6 @@ export function AgentPerformanceTable({ agents, totalQueueCallsAnswered, totalQu
                                         <span className="text-emerald-700">{totals.answered}</span>
                                         <span className="text-slate-400 text-sm">/{totalQueueCallsReceived}</span>
                                     </td>
-                                    <td className="px-3 py-3 text-red-700">{totals.abandoned}</td>
-                                    <td className="px-3 py-3 text-amber-700">{totals.overflow}</td>
                                     <td className="px-3 py-3">
                                         <span className="text-blue-700">{totals.directAnswered}</span>
                                         <span className="text-slate-400 text-sm">/{totals.directReceived}</span>

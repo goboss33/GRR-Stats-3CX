@@ -329,7 +329,7 @@ async function getQueueKPIs(
 }
 
 // ============================================
-// AGENT STATS — RÉSOLVEUR FINAL + ABANDONED/OVERFLOW PAR AGENT
+// AGENT STATS — RÉSOLVEUR FINAL
 // ============================================
 async function getAgentStats(
     queueNumber: string,
@@ -338,8 +338,6 @@ async function getAgentStats(
 ): Promise<AgentStats[]> {
     // Résolveur final: for each unique call (call_history_id), the LAST agent
     // to answer in the queue gets the "answered" credit.
-    // Abandoned/Overflow: attributed to all agents who were polled but didn't answer.
-    // Note: SUM(agents.abandoned) >= kpis.callsAbandoned (shared responsibility)
     // Invariant: SUM(agents.answered) == kpis.callsAnswered (unique calls answered)
 
     const result = await prisma.$queryRaw<any[]>`
@@ -354,7 +352,7 @@ async function getAgentStats(
               AND cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
         ),
-        -- Determine outcome per passage (same logic as KPIs)
+        -- Determine outcome per passage
         passage_outcomes AS (
             SELECT
                 aqp.cdr_id,
@@ -364,29 +362,10 @@ async function getAgentStats(
                     WHEN ans.originating_cdr_id = aqp.cdr_id
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
-                    THEN 1 ELSE 0 END) as answered_here,
-                MAX(CASE
-                    WHEN other_q.destination_dn_type = 'queue'
-                         AND other_q.destination_dn_number != ${queueNumber}
-                         AND other_q.cdr_started_at > aqp.cdr_started_at
-                    THEN 1 ELSE 0 END) as forwarded_to_other_queue
+                    THEN 1 ELSE 0 END) as answered_here
             FROM all_queue_passages aqp
             LEFT JOIN cdroutput ans ON ans.originating_cdr_id = aqp.cdr_id
-            LEFT JOIN cdroutput other_q ON other_q.call_history_id = aqp.call_history_id
-                                        AND other_q.cdr_started_at > aqp.cdr_started_at
             GROUP BY aqp.cdr_id, aqp.call_history_id, aqp.cdr_started_at
-        ),
-        -- Priority-based outcome per unique call (same as KPIs)
-        call_outcomes AS (
-            SELECT
-                call_history_id,
-                CASE
-                    WHEN bool_or(answered_here = 1) THEN 'answered'
-                    WHEN bool_or(forwarded_to_other_queue = 1) THEN 'overflow'
-                    ELSE 'abandoned'
-                END as call_outcome
-            FROM passage_outcomes
-            GROUP BY call_history_id
         ),
         -- All answered passages with their agent info
         answered_passages AS (
@@ -439,34 +418,6 @@ async function getAgentStats(
               AND c.creation_forward_reason = 'polling'
             GROUP BY c.destination_dn_number
         ),
-        -- Abandoned calls where agent was polled but didn't answer
-        agent_abandoned AS (
-            SELECT
-                c.destination_dn_number as extension,
-                COUNT(DISTINCT aqp.call_history_id) as abandoned
-            FROM all_queue_passages aqp
-            JOIN cdroutput c ON c.originating_cdr_id = aqp.cdr_id
-            JOIN call_outcomes co ON co.call_history_id = aqp.call_history_id
-            WHERE c.destination_dn_type = 'extension'
-              AND c.creation_forward_reason = 'polling'
-              AND c.cdr_answered_at IS NULL
-              AND co.call_outcome = 'abandoned'
-            GROUP BY c.destination_dn_number
-        ),
-        -- Overflow calls where agent was polled but didn't answer
-        agent_overflow AS (
-            SELECT
-                c.destination_dn_number as extension,
-                COUNT(DISTINCT aqp.call_history_id) as overflow
-            FROM all_queue_passages aqp
-            JOIN cdroutput c ON c.originating_cdr_id = aqp.cdr_id
-            JOIN call_outcomes co ON co.call_history_id = aqp.call_history_id
-            WHERE c.destination_dn_type = 'extension'
-              AND c.creation_forward_reason = 'polling'
-              AND c.cdr_answered_at IS NULL
-              AND co.call_outcome = 'overflow'
-            GROUP BY c.destination_dn_number
-        ),
         -- Handling time from ALL answered passages
         agent_handling AS (
             SELECT
@@ -496,34 +447,26 @@ async function getAgentStats(
             GROUP BY c.destination_dn_number
         )
         SELECT
-            COALESCE(ar.extension, dc.extension, aab.extension, aov.extension) as extension,
-            COALESCE(ar.name, dc.extension, aab.extension, aov.extension) as name,
+            COALESCE(ar.extension, dc.extension) as extension,
+            COALESCE(ar.name, dc.extension) as name,
             COALESCE(acr.calls_received, 0) as calls_received,
             COALESCE(ar.resolved, 0) as resolved,
-            COALESCE(aab.abandoned, 0) as abandoned,
-            COALESCE(aov.overflow, 0) as overflow,
             COALESCE(ah.total_handling_time, 0) as total_handling_time,
             COALESCE(dc.direct_received, 0) as direct_received,
             COALESCE(dc.direct_answered, 0) as direct_answered,
             COALESCE(dc.direct_talk_time, 0) as direct_talk_time
         FROM agent_resolved ar
         FULL OUTER JOIN direct_calls dc ON dc.extension = ar.extension
-        FULL OUTER JOIN agent_abandoned aab ON aab.extension = COALESCE(ar.extension, dc.extension)
-        FULL OUTER JOIN agent_overflow aov ON aov.extension = COALESCE(ar.extension, dc.extension, aab.extension)
-        LEFT JOIN agent_calls_received acr ON acr.extension = COALESCE(ar.extension, dc.extension, aab.extension, aov.extension)
-        LEFT JOIN agent_handling ah ON ah.extension = COALESCE(ar.extension, dc.extension, aab.extension, aov.extension)
+        LEFT JOIN agent_calls_received acr ON acr.extension = COALESCE(ar.extension, dc.extension)
+        LEFT JOIN agent_handling ah ON ah.extension = COALESCE(ar.extension, dc.extension)
         WHERE COALESCE(ar.resolved, 0) > 0
            OR COALESCE(dc.direct_answered, 0) > 0
-           OR COALESCE(aab.abandoned, 0) > 0
-           OR COALESCE(aov.overflow, 0) > 0
         ORDER BY COALESCE(ar.resolved, 0) DESC;
     `;
 
     return result.map((row: any) => {
         const callsReceived = Number(row.calls_received || 0);
         const answered = Number(row.resolved || 0);
-        const abandoned = Number(row.abandoned || 0);
-        const overflow = Number(row.overflow || 0);
         const directReceived = Number(row.direct_received || 0);
         const directAnswered = Number(row.direct_answered || 0);
         const directTalkTime = Math.round(Number(row.direct_talk_time || 0));
@@ -537,8 +480,6 @@ async function getAgentStats(
             name: row.name || row.extension,
             callsReceived,
             answered,
-            abandoned,
-            overflow,
             directReceived,
             directAnswered,
             directTalkTimeSeconds: directTalkTime,
