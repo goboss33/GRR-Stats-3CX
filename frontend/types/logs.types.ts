@@ -8,7 +8,7 @@ export type SortField = "startedAt" | "timeOfDay" | "duration" | "sourceNumber" 
 
 // Journey step types for the "Parcours" column
 export type JourneyStepType = "direct" | "queue" | "voicemail";
-export type JourneyStepResult = "answered" | "not_answered" | "busy" | "voicemail";
+export type JourneyStepResult = "answered" | "not_answered" | "busy" | "voicemail" | "abandoned" | "overflow";
 
 // Composable journey condition for filtering
 export interface JourneyCondition {

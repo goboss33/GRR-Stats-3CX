@@ -223,7 +223,12 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDa
                                         {getPercentage(kpis.callsOverflow, totalCalls)}%
                                     </span>
                                 </div>
-                                <p className="text-2xl font-bold text-amber-700">{kpis.callsOverflow}</p>
+                                <Link
+                                    href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${encodeURIComponent(JSON.stringify([{ type: "queue", queueNumber, result: "overflow" }]))}`}
+                                    className="text-2xl font-bold text-amber-700 hover:text-amber-500 hover:underline transition-colors"
+                                >
+                                    {kpis.callsOverflow}
+                                </Link>
                             </div>
 
                             {/* Abandonnés */}
@@ -238,7 +243,12 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDa
                                     </span>
                                 </div>
                                 <div className="flex items-baseline justify-between">
-                                    <p className="text-2xl font-bold text-red-700">{kpis.callsAbandoned}</p>
+                                    <Link
+                                        href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${encodeURIComponent(JSON.stringify([{ type: "queue", queueNumber, result: "abandoned" }]))}`}
+                                        className="text-2xl font-bold text-red-700 hover:text-red-500 hover:underline transition-colors"
+                                    >
+                                        {kpis.callsAbandoned}
+                                    </Link>
                                     <div className="text-xs text-red-600 text-right">
                                         <div>&lt;10s: <strong>{kpis.abandonedBefore10s}</strong></div>
                                         <div>≥10s: <strong>{kpis.abandonedAfter10s}</strong></div>

@@ -535,7 +535,7 @@ function buildAggregatedQueryParts(
     if (filters.journeyConditions && filters.journeyConditions.length > 0) {
         for (const condition of filters.journeyConditions) {
             const validTypes = ['direct', 'queue', 'voicemail'];
-            const validResults = ['answered', 'not_answered', 'busy', 'voicemail'];
+            const validResults = ['answered', 'not_answered', 'busy', 'voicemail', 'abandoned', 'overflow'];
             const clauses: string[] = [];
 
             // Build WHERE clauses for this condition
@@ -744,6 +744,26 @@ export async function getCallLogsSQL(
               AND p.cdr_answered_at IS NOT NULL
             ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC
         ),
+        queue_overflow AS (
+            SELECT c.cdr_id
+            FROM cdroutput c
+            WHERE ${dateOnlyWhereClause}
+              AND c.destination_dn_type = 'queue'
+              AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+              AND NOT EXISTS (
+                  SELECT 1 FROM cdroutput p
+                  WHERE p.originating_cdr_id = c.cdr_id
+                    AND p.creation_forward_reason = 'polling'
+                    AND p.cdr_answered_at IS NOT NULL
+              )
+              AND EXISTS (
+                  SELECT 1 FROM cdroutput c2
+                  WHERE c2.call_history_id = c.call_history_id
+                    AND c2.destination_dn_type = 'queue'
+                    AND c2.destination_dn_number != c.destination_dn_number
+                    AND c2.cdr_started_at > c.cdr_started_at
+              )
+        ),
         call_journey AS (
             SELECT
                 j.call_history_id,
@@ -788,7 +808,8 @@ export async function getCallLogsSQL(
                             WHEN c.destination_dn_type = 'queue' THEN
                                 CASE
                                     WHEN qo.originating_cdr_id IS NOT NULL THEN 'answered'
-                                    ELSE 'not_answered'
+                                    WHEN qov.cdr_id IS NOT NULL THEN 'overflow'
+                                    ELSE 'abandoned'
                                 END
                             ELSE
                                 CASE
@@ -800,6 +821,7 @@ export async function getCallLogsSQL(
                         ROW_NUMBER() OVER (PARTITION BY c.call_history_id ORDER BY c.cdr_started_at) as step_num
                     FROM cdroutput c
                     LEFT JOIN queue_outcome qo ON c.cdr_id = qo.originating_cdr_id
+                    LEFT JOIN queue_overflow qov ON c.cdr_id = qov.cdr_id
                     WHERE ${dateOnlyWhereClause}
                       AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                       AND (
@@ -1008,6 +1030,26 @@ export async function getAggregatedCallLogs(
                   AND p.cdr_answered_at IS NOT NULL
                 ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC
             ),
+            queue_overflow AS (
+                SELECT c.cdr_id
+                FROM cdroutput c
+                WHERE ${dateOnlyWhereClause}
+                  AND c.destination_dn_type = 'queue'
+                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM cdroutput p
+                      WHERE p.originating_cdr_id = c.cdr_id
+                        AND p.creation_forward_reason = 'polling'
+                        AND p.cdr_answered_at IS NOT NULL
+                  )
+                  AND EXISTS (
+                      SELECT 1 FROM cdroutput c2
+                      WHERE c2.call_history_id = c.call_history_id
+                        AND c2.destination_dn_type = 'queue'
+                        AND c2.destination_dn_number != c.destination_dn_number
+                        AND c2.cdr_started_at > c.cdr_started_at
+                  )
+            ),
             call_journey AS (
                 SELECT
                     j.call_history_id,
@@ -1053,7 +1095,8 @@ export async function getAggregatedCallLogs(
                                 WHEN c.destination_dn_type = 'queue' THEN
                                     CASE
                                         WHEN qo.originating_cdr_id IS NOT NULL THEN 'answered'
-                                        ELSE 'not_answered'
+                                        WHEN qov.cdr_id IS NOT NULL THEN 'overflow'
+                                        ELSE 'abandoned'
                                     END
                                 ELSE
                                     CASE
@@ -1065,6 +1108,7 @@ export async function getAggregatedCallLogs(
                             ROW_NUMBER() OVER (PARTITION BY c.call_history_id ORDER BY c.cdr_started_at) as step_num
                         FROM cdroutput c
                         LEFT JOIN queue_outcome qo ON c.cdr_id = qo.originating_cdr_id
+                        LEFT JOIN queue_overflow qov ON c.cdr_id = qov.cdr_id
                         WHERE ${dateOnlyWhereClause}
                           AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                           AND (
@@ -1212,6 +1256,26 @@ export async function getAggregatedCallLogs(
                   AND p.cdr_answered_at IS NOT NULL
                 ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC
             ),
+            queue_overflow AS (
+                SELECT c.cdr_id
+                FROM cdroutput c
+                WHERE ${dateOnlyWhereClause}
+                  AND c.destination_dn_type = 'queue'
+                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM cdroutput p
+                      WHERE p.originating_cdr_id = c.cdr_id
+                        AND p.creation_forward_reason = 'polling'
+                        AND p.cdr_answered_at IS NOT NULL
+                  )
+                  AND EXISTS (
+                      SELECT 1 FROM cdroutput c2
+                      WHERE c2.call_history_id = c.call_history_id
+                        AND c2.destination_dn_type = 'queue'
+                        AND c2.destination_dn_number != c.destination_dn_number
+                        AND c2.cdr_started_at > c.cdr_started_at
+                  )
+            ),
             call_journey AS (
                 SELECT
                     j.call_history_id,
@@ -1256,7 +1320,8 @@ export async function getAggregatedCallLogs(
                                 WHEN c.destination_dn_type = 'queue' THEN
                                     CASE
                                         WHEN qo.originating_cdr_id IS NOT NULL THEN 'answered'
-                                        ELSE 'not_answered'
+                                        WHEN qov.cdr_id IS NOT NULL THEN 'overflow'
+                                        ELSE 'abandoned'
                                     END
                                 ELSE
                                     CASE
@@ -1268,6 +1333,7 @@ export async function getAggregatedCallLogs(
                             ROW_NUMBER() OVER (PARTITION BY c.call_history_id ORDER BY c.cdr_started_at) as step_num
                         FROM cdroutput c
                         LEFT JOIN queue_outcome qo ON c.cdr_id = qo.originating_cdr_id
+                        LEFT JOIN queue_overflow qov ON c.cdr_id = qov.cdr_id
                         WHERE ${dateOnlyWhereClause}
                           AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                           AND (

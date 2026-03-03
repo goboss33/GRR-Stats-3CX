@@ -42,13 +42,15 @@ const RESULT_OPTIONS: { value: string; label: string }[] = [
     { value: "_all", label: "Tous" },
     { value: "answered", label: "Répondu" },
     { value: "not_answered", label: "Non répondu" },
+    { value: "abandoned", label: "Abandonné" },
+    { value: "overflow", label: "Redirigé" },
     { value: "busy", label: "Occupé" },
     { value: "voicemail", label: "Messagerie" },
 ];
 
 const PRESETS: { label: string; conditions: JourneyCondition[] }[] = [
     { label: "Queue répondus", conditions: [{ type: "queue", result: "answered" }] },
-    { label: "Queue abandonnés", conditions: [{ type: "queue", result: "not_answered" }] },
+    { label: "Queue abandonnés", conditions: [{ type: "queue", result: "abandoned" }] },
     { label: "Queue ping-pong", conditions: [{ type: "queue", passageMode: "multi" }] },
     { label: "Direct répondus", conditions: [{ type: "direct", result: "answered" }] },
 ];

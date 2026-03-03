@@ -137,6 +137,8 @@ function getJourneyStepStyle(step: JourneyStep): { icon: string; className: stri
         case 'queue':
             switch (step.result) {
                 case 'answered': return { icon: '👥', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+                case 'overflow': return { icon: '👥', className: 'bg-amber-50 text-amber-600 border-amber-200' };
+                case 'abandoned': return { icon: '👥', className: 'bg-red-50 text-red-600 border-red-200' };
                 case 'not_answered':
                 default: return { icon: '👥', className: 'bg-orange-50 text-orange-600 border-orange-200' };
             }

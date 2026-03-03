@@ -271,6 +271,8 @@ export function ActiveFilters({
         const resultLabels: Record<string, string> = {
             answered: "Répondu",
             not_answered: "Non rép.",
+            abandoned: "Abandonné",
+            overflow: "Redirigé",
             busy: "Occupé",
             voicemail: "Messagerie",
         };
