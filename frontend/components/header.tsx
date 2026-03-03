@@ -1,5 +1,6 @@
 import { auth, signOut } from "@/lib/auth";
-import { LogOut, User } from "lucide-react";
+import { User } from "lucide-react";
+import { LogoutMenuItem } from "@/components/logout-menu-item";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -95,22 +96,12 @@ export async function Header() {
                             </div>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <form
-                            action={async () => {
+                        <LogoutMenuItem
+                            signOutAction={async () => {
                                 "use server";
                                 await signOut({ redirectTo: "/login" });
                             }}
-                        >
-                            <DropdownMenuItem asChild>
-                                <button
-                                    type="submit"
-                                    className="w-full flex items-center gap-2 text-red-600 cursor-pointer"
-                                >
-                                    <LogOut className="h-4 w-4" />
-                                    <span>Déconnexion</span>
-                                </button>
-                            </DropdownMenuItem>
-                        </form>
+                        />
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
