@@ -164,7 +164,6 @@ export default function StatisticsPage() {
                         kpis={statistics.kpis}
                         queueName={statistics.queueName}
                         queueNumber={statistics.queueNumber}
-                        dateRange={dateRange}
                     />
 
                     {/* Agent Performance */}
