@@ -224,7 +224,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDa
                                     </span>
                                 </div>
                                 <Link
-                                    href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${encodeURIComponent(JSON.stringify([{ type: "queue", queueNumber, result: "overflow" }]))}`}
+                                    href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${encodeURIComponent(JSON.stringify([{ type: "queue", queueNumber, result: "overflow" }, { type: "queue", queueNumber, result: "answered", negate: true }]))}`}
                                     className="text-2xl font-bold text-amber-700 hover:text-amber-500 hover:underline transition-colors"
                                 >
                                     {kpis.callsOverflow}
@@ -244,7 +244,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDa
                                 </div>
                                 <div className="flex items-baseline justify-between">
                                     <Link
-                                        href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${encodeURIComponent(JSON.stringify([{ type: "queue", queueNumber, result: "abandoned" }]))}`}
+                                        href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${encodeURIComponent(JSON.stringify([{ type: "queue", queueNumber, result: "abandoned" }, { type: "queue", queueNumber, result: "answered", negate: true }, { type: "queue", queueNumber, result: "overflow", negate: true }]))}`}
                                         className="text-2xl font-bold text-red-700 hover:text-red-500 hover:underline transition-colors"
                                     >
                                         {kpis.callsAbandoned}
