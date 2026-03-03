@@ -467,32 +467,34 @@ La Méthode N°2 (section 1.3) affichait les passages comme métrique principale
 - **Primary** : Appels uniques (`DISTINCT call_history_id`) = tous les champs `callsReceived`, `callsAnswered`, etc.
 - **Secondary** : Passages = champ `totalPassages`, utilisé uniquement pour la jauge de qualité ping-pong
 
-**Nouveau `QueueKPIs` :**
-```typescript
-export interface QueueKPIs {
-    // PRIMARY: Appels uniques
-    callsReceived: number;        // Appels uniques entrants
-    callsAnswered: number;        // Appels uniques répondus
-    callsAbandoned: number;       // Appels uniques abandonnés
-    callsOverflow: number;        // Appels uniques redirigés
+**Détermination de l'outcome d'un appel unique — Approche par priorité :**
 
-    // SECONDARY: Passages (jauge ping-pong)
-    totalPassages: number;
-    pingPongCount: number;
-    pingPongPercentage: number;
+Un même appel peut passer plusieurs fois dans la queue (ping-pong). La première version utilisait le résultat du **premier passage** pour déterminer l'outcome. Cela créait une incohérence : un appel d'abord abandonné puis re-entré et décroché était classé "abandonné" par les KPIs mais crédité à un agent dans le tableau.
 
-    // TEAM BANNER
-    teamDirectReceived: number;   // Directs reçus (agrégé équipe)
-    teamDirectAnswered: number;   // Directs répondus (agrégé équipe)
-}
+**Règle corrigée :** L'outcome d'un appel unique est déterminé par **priorité** :
+1. Si **un passage quelconque** a été répondu → l'appel est **"répondu"**
+2. Sinon, si **un passage quelconque** a été redirigé (overflow) → **"redirigé"**
+3. Sinon → **"abandonné"**
+
+```sql
+-- Priority-based outcome per unique call
+CASE
+    WHEN bool_or(outcome = 'answered') THEN 'answered'
+    WHEN bool_or(outcome = 'overflow') THEN 'overflow'
+    ELSE 'abandoned'
+END
 ```
 
-**Invariant fondamental :**
-`callsAnswered + callsAbandoned + callsOverflow == callsReceived`
+Cette règle garantit que `SUM(agents.answered) == kpis.callsAnswered` (invariant donut ↔ tableau) car les deux utilisent la même définition de "répondu".
+
+**Invariants fondamentaux :**
+- `callsAnswered + callsAbandoned + callsOverflow == callsReceived` (partitionnement strict)
+- `SUM(agents[].answered) == callsAnswered` (cohérence donut ↔ tableau)
 
 **Justification :**
-- Cohérence totale entre logs, KPIs, donut, trends et tableau agents
+- Cohérence totale entre KPIs, donut, tableau agents, trends et logs
 - Lecture immédiate pour les managers : 1 appel = 1 comptage
+- Un appel finalement décroché = "répondu" (logique intuitive)
 - Le ping-pong reste visible via la jauge de qualité (info secondaire)
 
 ---

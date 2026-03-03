@@ -92,7 +92,8 @@ async function getQueueKPIs(
     // - ANSWERED: Agent with originating_cdr_id = queue's cdr_id AND cdr_answered_at IS NOT NULL
     // - OVERFLOW: Another queue in same call_history_id with cdr_started_at > queue's cdr_started_at
     // - ABANDONED: Neither answered nor overflowed
-    // - Unique call outcome = outcome of FIRST passage through this queue
+    // - Unique call outcome = PRIORITY-BASED: answered > overflow > abandoned
+    //   (if ANY passage was answered, the call is "answered")
 
     const result = await prisma.$queryRaw<any[]>`
         WITH all_queue_passages AS (
@@ -164,26 +165,41 @@ async function getQueueKPIs(
                 EXTRACT(EPOCH FROM (cdr_ended_at - cdr_started_at)) as time_in_queue
             FROM outcomes
         ),
-        -- First passage per unique call (determines unique call outcome)
-        first_passage AS (
-            SELECT DISTINCT ON (call_history_id)
+        -- Priority-based outcome per unique call:
+        -- answered > overflow > abandoned
+        -- (if ANY passage was answered, the call is "answered")
+        call_outcomes AS (
+            SELECT
                 call_history_id,
-                outcome as first_outcome,
-                time_in_queue
+                CASE
+                    WHEN bool_or(outcome = 'answered') THEN 'answered'
+                    WHEN bool_or(outcome = 'overflow') THEN 'overflow'
+                    ELSE 'abandoned'
+                END as call_outcome
             FROM final_outcomes
-            ORDER BY call_history_id, cdr_started_at ASC
+            GROUP BY call_history_id
+        ),
+        -- For abandoned timing, use the FIRST passage's time_in_queue
+        abandoned_timing AS (
+            SELECT DISTINCT ON (fo.call_history_id)
+                fo.call_history_id,
+                fo.time_in_queue
+            FROM final_outcomes fo
+            JOIN call_outcomes co ON co.call_history_id = fo.call_history_id
+            WHERE co.call_outcome = 'abandoned'
+            ORDER BY fo.call_history_id, fo.cdr_started_at ASC
         )
         SELECT
             -- PASSAGES (secondary: for ping-pong gauge)
             COUNT(*) as total_passages,
 
-            -- UNIQUE CALLS (primary)
-            (SELECT COUNT(*) FROM first_passage) as unique_calls,
-            (SELECT COUNT(*) FROM first_passage WHERE first_outcome = 'answered') as unique_answered,
-            (SELECT COUNT(*) FROM first_passage WHERE first_outcome = 'abandoned') as unique_abandoned,
-            (SELECT COUNT(*) FROM first_passage WHERE first_outcome = 'abandoned' AND time_in_queue < 10) as unique_abandoned_before_10s,
-            (SELECT COUNT(*) FROM first_passage WHERE first_outcome = 'abandoned' AND time_in_queue >= 10) as unique_abandoned_after_10s,
-            (SELECT COUNT(*) FROM first_passage WHERE first_outcome = 'overflow') as unique_overflow,
+            -- UNIQUE CALLS (primary) — priority-based outcome
+            (SELECT COUNT(*) FROM call_outcomes) as unique_calls,
+            (SELECT COUNT(*) FROM call_outcomes WHERE call_outcome = 'answered') as unique_answered,
+            (SELECT COUNT(*) FROM call_outcomes WHERE call_outcome = 'abandoned') as unique_abandoned,
+            (SELECT COUNT(*) FROM abandoned_timing WHERE time_in_queue < 10) as unique_abandoned_before_10s,
+            (SELECT COUNT(*) FROM abandoned_timing WHERE time_in_queue >= 10) as unique_abandoned_after_10s,
+            (SELECT COUNT(*) FROM call_outcomes WHERE call_outcome = 'overflow') as unique_overflow,
 
             AVG(wait_time_seconds) as avg_wait_time,
             AVG(CASE WHEN outcome = 'answered' THEN talk_time_seconds ELSE NULL END) as avg_talk_time
