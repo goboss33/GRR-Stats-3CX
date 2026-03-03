@@ -13,15 +13,16 @@ import {
 
 interface AgentPerformanceTableProps {
     agents: AgentStats[];
-    totalQueueCalls: number;
+    totalQueueCallsAnswered: number;
 }
 
-type SortField = "name" | "answered" | "directAnswered" | "transferred" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds" | "score";
+type SortField = "name" | "answered" | "interventions" | "directAnswered" | "transferred" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds" | "score";
 type SortDirection = "asc" | "desc";
 
 const columnTooltips: Record<string, string> = {
     name: "Nom de l'agent, extension, et jauge de charge visuelle (vert = queue, bleu = directs)",
-    answered: "Appels répondus via la queue / total d'appels entrés dans la queue",
+    answered: "Appels uniques résolus par cet agent (résolveur final = dernier à décrocher dans la queue)",
+    interventions: "Appels où l'agent a décroché mais un autre agent a finalement résolu (ping-pong)",
     directAnswered: "Appels directs répondus / appels directs reçus par l'agent",
     transferred: "Appels répondus puis transférés vers quelqu'un en dehors de cette queue",
     totalHandlingTimeSeconds: "Durée totale cumulée en conversation (queue + directs)",
@@ -52,7 +53,7 @@ function getScoreColor(score: number): string {
     return "text-red-700 bg-red-50 border-red-200";
 }
 
-export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerformanceTableProps) {
+export function AgentPerformanceTable({ agents, totalQueueCallsAnswered }: AgentPerformanceTableProps) {
     const [sortField, setSortField] = useState<SortField>("score");
     const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
@@ -123,13 +124,14 @@ export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerforma
     const totals = agents.reduce(
         (acc, agent) => ({
             answered: acc.answered + agent.answered,
+            interventions: acc.interventions + agent.interventions,
             directAnswered: acc.directAnswered + agent.directAnswered,
             directReceived: acc.directReceived + agent.directReceived,
             transferred: acc.transferred + agent.transferred,
             totalHandlingTimeSeconds: acc.totalHandlingTimeSeconds + agent.totalHandlingTimeSeconds,
             callsReceived: acc.callsReceived + agent.callsReceived,
         }),
-        { answered: 0, directAnswered: 0, directReceived: 0, transferred: 0, totalHandlingTimeSeconds: 0, callsReceived: 0 }
+        { answered: 0, interventions: 0, directAnswered: 0, directReceived: 0, transferred: 0, totalHandlingTimeSeconds: 0, callsReceived: 0 }
     );
     const totalAvgHandling = (totals.answered + totals.directAnswered) > 0
         ? Math.round(totals.totalHandlingTimeSeconds / (totals.answered + totals.directAnswered))
@@ -232,7 +234,8 @@ export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerforma
                             <thead className="bg-slate-50 border-y">
                                 <tr>
                                     <SortHeader field="name" label="Agent" />
-                                    <SortHeader field="answered" label="Queue" />
+                                    <SortHeader field="answered" label="Queue (résolu)" />
+                                    <SortHeader field="interventions" label="Interv." />
                                     <SortHeader field="directAnswered" label="Directs" />
                                     <SortHeader field="transferred" label="Transférés" />
                                     <SortHeader field="totalHandlingTimeSeconds" label="Durée totale" />
@@ -252,7 +255,16 @@ export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerforma
                                         </td>
                                         <td className="px-3 py-3">
                                             <span className="font-semibold text-emerald-700">{agent.answered}</span>
-                                            <span className="text-slate-400 text-sm">/{totalQueueCalls}</span>
+                                            <span className="text-slate-400 text-sm">/{totalQueueCallsAnswered}</span>
+                                        </td>
+                                        <td className="px-3 py-3">
+                                            {agent.interventions > 0 ? (
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
+                                                    +{agent.interventions}
+                                                </span>
+                                            ) : (
+                                                <span className="text-slate-300">—</span>
+                                            )}
                                         </td>
                                         <td className="px-3 py-3">
                                             <span className="font-semibold text-blue-700">{agent.directAnswered}</span>
@@ -287,7 +299,14 @@ export function AgentPerformanceTable({ agents, totalQueueCalls }: AgentPerforma
                                     <td className="px-3 py-3 text-slate-800">TOTAL</td>
                                     <td className="px-3 py-3">
                                         <span className="text-emerald-700">{totals.answered}</span>
-                                        <span className="text-slate-400 text-sm">/{totalQueueCalls}</span>
+                                        <span className="text-slate-400 text-sm">/{totalQueueCallsAnswered}</span>
+                                    </td>
+                                    <td className="px-3 py-3">
+                                        {totals.interventions > 0 ? (
+                                            <span className="text-slate-600">+{totals.interventions}</span>
+                                        ) : (
+                                            <span className="text-slate-300">—</span>
+                                        )}
                                     </td>
                                     <td className="px-3 py-3">
                                         <span className="text-blue-700">{totals.directAnswered}</span>

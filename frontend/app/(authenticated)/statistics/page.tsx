@@ -10,6 +10,7 @@ import { getQueuesForSelector, getQueueStatistics } from "@/services/statistics.
 import { AgentPerformanceTable } from "@/components/stats/agent-performance-table";
 import { TrendCharts } from "@/components/stats/trend-charts";
 import { UnifiedCallFlow } from "@/components/stats/unified-call-flow";
+import { TeamBanner } from "@/components/stats/team-banner";
 import { QueueSelector } from "@/components/stats/queue-selector";
 import { DateRangePicker } from "@/components/date-range-picker";
 
@@ -159,7 +160,13 @@ export default function StatisticsPage() {
             {/* Statistics content */}
             {statistics && !isLoading && (
                 <>
-                    {/* Unified Call Flow (replaces KPI cards + old flow diagram) */}
+                    {/* Team Banner - vue d'ensemble queue + directs */}
+                    <TeamBanner
+                        kpis={statistics.kpis}
+                        queueName={statistics.queueName}
+                    />
+
+                    {/* Unified Call Flow - donut + détails queue */}
                     <UnifiedCallFlow
                         kpis={statistics.kpis}
                         queueName={statistics.queueName}
@@ -167,7 +174,7 @@ export default function StatisticsPage() {
                     />
 
                     {/* Agent Performance */}
-                    <AgentPerformanceTable agents={statistics.agents} totalQueueCalls={statistics.kpis.callsReceived} />
+                    <AgentPerformanceTable agents={statistics.agents} totalQueueCallsAnswered={statistics.kpis.callsAnswered} />
 
                     {/* Trend Charts */}
                     <TrendCharts

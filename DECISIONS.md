@@ -2,7 +2,7 @@
 
 > Ce document recense les choix de conception effectués pour l'outil de statistiques 3CX.
 > Chaque décision est accompagnée de son contexte, de sa justification et des alternatives écartées.
-> Dernière mise à jour : 12 février 2026
+> Dernière mise à jour : 3 mars 2026
 
 ---
 
@@ -16,6 +16,8 @@
     - [1.5 Exclusion des destinations techniques](#15-exclusion-des-destinations-techniques)
     - [1.6 Redirections = Overflow automatique](#16-redirections--overflow-automatique)
     - [1.7 Le phénomène du "Ping-Pong" — Décision Architecturale Majeure](#17-le-phénomène-du-ping-pong--décision-architecturale-majeure)
+    - [1.8 Pivot vers les Appels Uniques comme métrique principale](#18-pivot-vers-les-appels-uniques-comme-métrique-principale)
+    - [1.9 Bandeau "Bilan de l'équipe"](#19-bandeau-bilan-de-léquipe)
 2. [Tableau Performance Agents](#2-tableau-performance-agents)
     - [2.1 Pourquoi pas de "Taux de réponse" individuel sur la queue](#21-pourquoi-pas-de-taux-de-réponse-individuel-sur-la-queue)
     - [2.2 Ajout des appels directs pour contextualiser](#22-ajout-des-appels-directs-pour-contextualiser)
@@ -25,6 +27,8 @@
     - [2.6 Colonnes supprimées et pourquoi](#26-colonnes-supprimées-et-pourquoi)
     - [2.7 Comment les transferts reçus sont comptabilisés](#27-comment-les-transferts-reçus-sont-comptabilisés)
     - [2.8 Les appels DID redirigés sont comptés comme "directs"](#28-les-appels-did-redirigés-sont-comptés-comme-directs)
+    - [2.9 Résolveur Final — Crédit agent par appel unique](#29-résolveur-final--crédit-agent-par-appel-unique)
+    - [2.10 Colonne "Interventions"](#210-colonne-interventions)
 3. [Page Logs d'Appels](#3-page-logs-dappels)
     - [3.1 Détection des transferts dans le CDR](#31-détection-des-transferts-dans-le-cdr)
     - [3.2 Détection des interceptions (pickup)](#32-détection-des-interceptions-pickup)
@@ -446,6 +450,82 @@ export interface QueueKPIs {
 
 ---
 
+### 1.8 Pivot vers les Appels Uniques comme métrique principale
+
+**Date de la décision :** 3 mars 2026
+
+**⚠️ CHANGEMENT MAJEUR :** Les **appels uniques** remplacent les **passages** comme métrique principale dans toute l'interface statistiques.
+
+**Contexte :**
+La Méthode N°2 (section 1.3) affichait les passages comme métrique principale et les appels uniques en secondaire. Après utilisation, plusieurs problèmes ont émergé :
+
+1. **Incohérence avec les logs** : la page Logs affiche 1 ligne = 1 appel unique (`GROUP BY call_history_id`). Les managers comparant les deux pages voyaient des chiffres différents.
+2. **Incohérence interne** : les trends daily/hourly utilisaient déjà `DISTINCT ON (call_history_id)` (appels uniques), alors que les KPIs et le donut utilisaient les passages.
+3. **Complexité pour les managers** : le concept de "passages" nécessitait une explication systématique. Les managers comparaient le donut au total du tableau agents et ne comprenaient pas les différences.
+
+**Décision :** Inverser la hiérarchie :
+- **Primary** : Appels uniques (`DISTINCT call_history_id`) = tous les champs `callsReceived`, `callsAnswered`, etc.
+- **Secondary** : Passages = champ `totalPassages`, utilisé uniquement pour la jauge de qualité ping-pong
+
+**Nouveau `QueueKPIs` :**
+```typescript
+export interface QueueKPIs {
+    // PRIMARY: Appels uniques
+    callsReceived: number;        // Appels uniques entrants
+    callsAnswered: number;        // Appels uniques répondus
+    callsAbandoned: number;       // Appels uniques abandonnés
+    callsOverflow: number;        // Appels uniques redirigés
+
+    // SECONDARY: Passages (jauge ping-pong)
+    totalPassages: number;
+    pingPongCount: number;
+    pingPongPercentage: number;
+
+    // TEAM BANNER
+    teamDirectReceived: number;   // Directs reçus (agrégé équipe)
+    teamDirectAnswered: number;   // Directs répondus (agrégé équipe)
+}
+```
+
+**Invariant fondamental :**
+`callsAnswered + callsAbandoned + callsOverflow == callsReceived`
+
+**Justification :**
+- Cohérence totale entre logs, KPIs, donut, trends et tableau agents
+- Lecture immédiate pour les managers : 1 appel = 1 comptage
+- Le ping-pong reste visible via la jauge de qualité (info secondaire)
+
+---
+
+### 1.9 Bandeau "Bilan de l'équipe"
+
+**Date de la décision :** 3 mars 2026
+
+**Problème :** Les appels directs des agents n'apparaissaient nulle part dans la vue d'ensemble. Le manager voyait uniquement les stats queue, mais un agent peu actif en queue peut être très chargé en directs.
+
+**Décision :** Ajouter un bandeau "Bilan de l'équipe" au-dessus du donut, combinant queue + directs.
+
+**Affichage :**
+```
+Bilan de l'équipe · Queue 3001
+89 appels répondus
+Queue: 42/55 (76%) · Directs: 47/55 (85%)
+8 abandonnés · 5 redirigés
+```
+
+**Calculs :**
+- Total répondus = `kpis.callsAnswered + kpis.teamDirectAnswered`
+- Queue rate = `kpis.callsAnswered / kpis.callsReceived`
+- Direct rate = `kpis.teamDirectAnswered / kpis.teamDirectReceived`
+- `teamDirectReceived` / `teamDirectAnswered` = somme de tous les agents de la queue
+
+**Justification :**
+- Vue d'ensemble immédiate de l'activité totale de l'équipe
+- Les directs et la queue sont présentés côte à côte avec leurs taux respectifs
+- Le bandeau est un résumé, le détail reste dans le donut (queue) et le tableau (agents)
+
+---
+
 ## 2. Tableau Performance Agents
 
 ### 2.1 Pourquoi pas de "Taux de réponse" individuel sur la queue
@@ -619,6 +699,64 @@ export interface QueueKPIs {
 - Le manager peut repérer un agent avec beaucoup de `direct_received` mais peu de `direct_answered` → indication de `forward_all` activé ou saturation
 
 **Alternative envisagée :** Exclure les legs `forward_all` des directs (via `termination_reason_details IS DISTINCT FROM 'forward_all'`). Rejeté car cela masquerait une information utile au manager.
+
+---
+
+### 2.9 Résolveur Final — Crédit agent par appel unique
+
+**Date de la décision :** 3 mars 2026
+
+**Problème :** Avec le passage aux appels uniques (section 1.8), comment créditer les agents ? Si un même appel est décroché 3 fois par différents agents (ping-pong), lequel obtient le crédit ?
+
+**Décision :** Le **dernier agent à décrocher** dans la queue pour un appel donné = le "résolveur final" → il obtient le crédit dans la colonne `answered`.
+
+**SQL :**
+```sql
+-- Pour chaque call_history_id, le DERNIER passage répondu
+SELECT DISTINCT ON (call_history_id)
+    call_history_id, cdr_id
+FROM answered_passages
+ORDER BY call_history_id, cdr_started_at DESC  -- DESC = dernier
+```
+
+**Invariant critique :**
+`SUM(agents[].answered) == kpis.callsAnswered`
+
+Cet invariant garantit que le total de la colonne "Queue (résolu)" dans le tableau = le nombre dans le donut "Répondus". Le manager voit des chiffres parfaitement cohérents.
+
+**Justification :**
+- Le dernier agent à décrocher est celui qui a effectivement résolu la demande du client
+- Les agents intermédiaires ont contribué mais n'ont pas finalisé → comptés en "Interventions" (voir 2.10)
+- Cohérence parfaite donut ↔ tableau : pas de confusion possible pour le manager
+
+**Alternative écartée :** Créditer tous les agents qui ont décroché (style passages). Rejeté car `SUM(agents.answered)` > `kpis.callsAnswered`, créant une incohérence visible entre donut et tableau.
+
+---
+
+### 2.10 Colonne "Interventions"
+
+**Date de la décision :** 3 mars 2026
+
+**Problème :** Avec le résolveur final (2.9), un agent qui décroche un appel sans le résoudre (l'appel repart en ping-pong) perdrait toute trace de sa contribution.
+
+**Décision :** Ajouter une colonne "Interventions" montrant le nombre d'appels où l'agent a décroché **sans être le résolveur final**.
+
+**Affichage :** `+3` en badge discret (gris) — info secondaire de valorisation, pas de lien avec le donut.
+
+**Exemple :**
+```
+| Agent   | Queue (résolu) | Interv. | Directs |
+| Diane   | 15/50          | +3      | 12/18   |
+| Filip   | 12/50          | +1      | 8/10    |
+| TOTAL   | 40/50          | +6      | 27/46   |
+```
+
+**Invariant :** Pour un agent donné, un même `call_history_id` compte dans `answered` OU `interventions`, jamais les deux.
+
+**Justification :**
+- Valorise le travail intermédiaire des agents (ils ont quand même décroché et parlé au client)
+- Ne casse pas la cohérence donut ↔ tableau (seul `answered` est lié au donut)
+- Information complémentaire utile : un agent avec beaucoup d'interventions et peu de résolutions peut indiquer un problème de routing
 
 ---
 

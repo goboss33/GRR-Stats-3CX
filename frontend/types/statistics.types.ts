@@ -1,28 +1,27 @@
 // Types for Statistics module
 
 export interface QueueKPIs {
-    // PASSAGES (Method N°2): Count ALL passages through queue, including ping-pong
-    callsReceived: number;        // Total passages entrant dans la queue (hors voicemail)
-    callsAnswered: number;        // Passages répondus par un agent
-    callsAnsweredAndTransferred: number; // Passages répondus puis transférés hors queue
-    callsAbandoned: number;       // Passages abandonnés total
-    abandonedBefore10s: number;   // Passages abandonnés < 10s
-    abandonedAfter10s: number;    // Passages abandonnés >= 10s
+    // PRIMARY: Appels uniques (DISTINCT call_history_id)
+    callsReceived: number;        // Appels uniques entrants dans la queue (hors voicemail)
+    callsAnswered: number;        // Appels uniques répondus par un agent
+    callsAnsweredAndTransferred: number; // Appels uniques répondus puis transférés hors queue
+    callsAbandoned: number;       // Appels uniques abandonnés
+    abandonedBefore10s: number;   // Appels uniques abandonnés < 10s
+    abandonedAfter10s: number;    // Appels uniques abandonnés >= 10s
     callsToVoicemail: number;     // Messagerie vocale (exclus des reçus)
-    callsOverflow: number;        // Passages repartis ailleurs (débordement automatique)
+    callsOverflow: number;        // Appels uniques redirigés (débordement automatique)
 
-    // APPELS UNIQUES (Method N°2): Count unique calls (DISTINCT call_history_id)
-    uniqueCalls: number;          // Nombre d'appels uniques (DISTINCT call_history_id)
-    uniqueCallsAnswered: number;  // Appels uniques avec au moins un passage répondu
-    uniqueCallsAbandoned: number; // Appels uniques avec au moins un passage abandonné
-    uniqueCallsOverflow: number;  // Appels uniques avec au moins un passage overflow
+    // SECONDARY: Passages (pour jauge ping-pong)
+    totalPassages: number;        // Total passages incluant ping-pong
+    pingPongCount: number;        // totalPassages - callsReceived
+    pingPongPercentage: number;   // % de ping-pong
 
-    // PING-PONG METRICS (Method N°2): Measure multi-passage calls
-    pingPongCount: number;        // Nombre d'appels avec passages multiples (callsReceived - uniqueCalls)
-    pingPongPercentage: number;   // Pourcentage d'appels avec ping-pong ((callsReceived - uniqueCalls) / callsReceived * 100)
+    // TEAM BANNER: Appels directs agrégés de l'équipe
+    teamDirectReceived: number;   // Total appels directs reçus par les agents de la queue
+    teamDirectAnswered: number;   // Total appels directs répondus par les agents de la queue
 
     overflowDestinations: OverflowDestination[];
-    transferDestinations: TransferDestination[];  // Destinations des transferts actifs
+    transferDestinations: TransferDestination[];
     avgWaitTimeSeconds: number;
     avgTalkTimeSeconds: number;
 }
@@ -43,9 +42,10 @@ export interface TransferDestination {
 export interface AgentStats {
     extension: string;
     name: string;
-    // Queue stats
+    // Queue stats (résolveur final)
     callsReceived: number;           // Appels uniques queue où le tel a sonné (DISTINCT call_history_id)
-    answered: number;                // Appels répondus via la queue
+    answered: number;                // Appels uniques résolus (résolveur final = dernier à décrocher)
+    interventions: number;           // Appels où l'agent a décroché mais N'EST PAS le résolveur final
     transferred: number;             // Appels transférés hors queue après réponse
     // Direct stats
     directReceived: number;          // Appels directs reçus
