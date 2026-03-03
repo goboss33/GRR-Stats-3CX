@@ -28,7 +28,7 @@
     - [2.7 Comment les transferts reçus sont comptabilisés](#27-comment-les-transferts-reçus-sont-comptabilisés)
     - [2.8 Les appels DID redirigés sont comptés comme "directs"](#28-les-appels-did-redirigés-sont-comptés-comme-directs)
     - [2.9 Résolveur Final — Crédit agent par appel unique](#29-résolveur-final--crédit-agent-par-appel-unique)
-    - [2.10 Colonne "Interventions"](#210-colonne-interventions)
+    - [2.10 Colonnes "Abandonnés" et "Redirigés" par agent](#210-colonnes-abandonnés-et-redirigés-par-agent)
 3. [Page Logs d'Appels](#3-page-logs-dappels)
     - [3.1 Détection des transferts dans le CDR](#31-détection-des-transferts-dans-le-cdr)
     - [3.2 Détection des interceptions (pickup)](#32-détection-des-interceptions-pickup)
@@ -728,37 +728,53 @@ Cet invariant garantit que le total de la colonne "Queue (résolu)" dans le tabl
 
 **Justification :**
 - Le dernier agent à décrocher est celui qui a effectivement résolu la demande du client
-- Les agents intermédiaires ont contribué mais n'ont pas finalisé → comptés en "Interventions" (voir 2.10)
 - Cohérence parfaite donut ↔ tableau : pas de confusion possible pour le manager
 
 **Alternative écartée :** Créditer tous les agents qui ont décroché (style passages). Rejeté car `SUM(agents.answered)` > `kpis.callsAnswered`, créant une incohérence visible entre donut et tableau.
 
 ---
 
-### 2.10 Colonne "Interventions"
+### 2.10 Colonnes "Abandonnés" et "Redirigés" par agent
 
 **Date de la décision :** 3 mars 2026
 
-**Problème :** Avec le résolveur final (2.9), un agent qui décroche un appel sans le résoudre (l'appel repart en ping-pong) perdrait toute trace de sa contribution.
+**Problème :** Les managers veulent savoir quel agent est "responsable" des appels abandonnés ou redirigés — c'est-à-dire chez quel agent le téléphone a sonné sans réponse.
 
-**Décision :** Ajouter une colonne "Interventions" montrant le nombre d'appels où l'agent a décroché **sans être le résolveur final**.
+**Décision :** Deux colonnes montrent le nombre d'appels abandonnés/redirigés où le téléphone de l'agent a sonné :
+- **Abandonnés** : appels où le call_outcome = 'abandoned' et l'agent a été pollé sans décrocher
+- **Redirigés** : appels où le call_outcome = 'overflow' et l'agent a été pollé sans décrocher
 
-**Affichage :** `+3` en badge discret (gris) — info secondaire de valorisation, pas de lien avec le donut.
+**⚠️ Responsabilité partagée :** Un même appel peut sonner chez **plusieurs** agents avant d'être abandonné/redirigé. Donc `SUM(agents.abandoned)` ≥ `kpis.callsAbandoned`. C'est voulu — on montre à chaque agent sa part de responsabilité.
 
 **Exemple :**
 ```
-| Agent   | Queue (résolu) | Interv. | Directs |
-| Diane   | 15/50          | +3      | 12/18   |
-| Filip   | 12/50          | +1      | 8/10    |
-| TOTAL   | 40/50          | +6      | 27/46   |
+| Agent   | Queue (résolu) | Abandonnés | Redirigés | Directs |
+| Nicole  | 14/46          | 3          | 2         | 7/10    |
+| Maxime  | 14/46          | 5          | 4         | 12/22   |
+| TOTAL   | 46/62          | (somme)    | (somme)   | 61/146  |
 ```
 
-**Invariant :** Pour un agent donné, un même `call_history_id` compte dans `answered` OU `interventions`, jamais les deux.
+**SQL :**
+```sql
+-- Agents pollés pour un appel abandonné
+agent_abandoned AS (
+    SELECT c.destination_dn_number as extension,
+           COUNT(DISTINCT aqp.call_history_id) as abandoned
+    FROM all_queue_passages aqp
+    JOIN cdroutput c ON c.originating_cdr_id = aqp.cdr_id
+    JOIN call_outcomes co ON co.call_history_id = aqp.call_history_id
+    WHERE c.creation_forward_reason = 'polling'
+      AND c.cdr_answered_at IS NULL
+      AND co.call_outcome = 'abandoned'
+    GROUP BY c.destination_dn_number
+)
+```
 
-**Justification :**
-- Valorise le travail intermédiaire des agents (ils ont quand même décroché et parlé au client)
-- Ne casse pas la cohérence donut ↔ tableau (seul `answered` est lié au donut)
-- Information complémentaire utile : un agent avec beaucoup d'interventions et peu de résolutions peut indiquer un problème de routing
+**Note :** Le TOTAL de la colonne Queue affiche désormais `answered/received` (ex: 46/62) au lieu de `answered/answered` pour donner le contexte du taux de réponse global.
+
+**Colonne "Interventions" supprimée :** Initialement ajoutée pour créditer les agents non-résolveurs dans les cas de ping-pong, cette colonne a été retirée car elle embrouillait plus qu'elle n'aidait (valeurs très faibles, concept difficile à expliquer).
+
+**Colonne "Transférés" supprimée :** Retirée car les transferts hors queue n'apportaient pas d'information actionnable pour le manager. La section "Destinations Transferts Actifs" dans le flow a également été supprimée.
 
 ---
 

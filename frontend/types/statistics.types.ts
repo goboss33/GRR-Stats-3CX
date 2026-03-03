@@ -4,7 +4,6 @@ export interface QueueKPIs {
     // PRIMARY: Appels uniques (DISTINCT call_history_id)
     callsReceived: number;        // Appels uniques entrants dans la queue (hors voicemail)
     callsAnswered: number;        // Appels uniques répondus par un agent
-    callsAnsweredAndTransferred: number; // Appels uniques répondus puis transférés hors queue
     callsAbandoned: number;       // Appels uniques abandonnés
     abandonedBefore10s: number;   // Appels uniques abandonnés < 10s
     abandonedAfter10s: number;    // Appels uniques abandonnés >= 10s
@@ -21,7 +20,6 @@ export interface QueueKPIs {
     teamDirectAnswered: number;   // Total appels directs répondus par les agents de la queue
 
     overflowDestinations: OverflowDestination[];
-    transferDestinations: TransferDestination[];
     avgWaitTimeSeconds: number;
     avgTalkTimeSeconds: number;
 }
@@ -32,21 +30,14 @@ export interface OverflowDestination {
     count: number;
 }
 
-export interface TransferDestination {
-    destination: string;         // numéro
-    destinationName: string;     // nom
-    destinationType: string;     // 'extension' | 'queue' | autre
-    count: number;
-}
-
 export interface AgentStats {
     extension: string;
     name: string;
     // Queue stats (résolveur final)
     callsReceived: number;           // Appels uniques queue où le tel a sonné (DISTINCT call_history_id)
     answered: number;                // Appels uniques résolus (résolveur final = dernier à décrocher)
-    interventions: number;           // Appels où l'agent a décroché mais N'EST PAS le résolveur final
-    transferred: number;             // Appels transférés hors queue après réponse
+    abandoned: number;               // Appels abandonnés où le tel de l'agent a sonné (responsabilité partagée)
+    overflow: number;                // Appels redirigés (overflow) où le tel de l'agent a sonné
     // Direct stats
     directReceived: number;          // Appels directs reçus
     directAnswered: number;          // Appels directs répondus

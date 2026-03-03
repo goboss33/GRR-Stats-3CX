@@ -196,21 +196,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlo
                                         {getPercentage(kpis.callsAnswered, totalCalls)}%
                                     </span>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
-                                    {kpis.callsAnsweredAndTransferred > 0 && (
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded cursor-help">
-                                                    dont {kpis.callsAnsweredAndTransferred} transf.
-                                                </span>
-                                            </TooltipTrigger>
-                                            <TooltipContent side="right" className="max-w-xs text-xs">
-                                                Appels répondus puis transférés vers quelqu'un en dehors de cette queue
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    )}
-                                </div>
+                                <p className="text-2xl font-bold text-emerald-700">{kpis.callsAnswered}</p>
                             </div>
 
                             {/* Redirigés */}
@@ -276,33 +262,6 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlo
                             </div>
                         )}
 
-                        {/* Transfer Destinations */}
-                        {kpis.transferDestinations.length > 0 && (
-                            <div className="pt-4 border-t border-slate-100">
-                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                                    Destinations Transferts Actifs
-                                </p>
-                                <div className="flex flex-wrap gap-2">
-                                    {kpis.transferDestinations.slice(0, 5).map((dest) => (
-                                        <span
-                                            key={dest.destination}
-                                            className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200"
-                                        >
-                                            <span className="w-2 h-2 rounded-full bg-purple-500 mr-1.5" />
-                                            {dest.destinationName}
-                                            <span className="ml-1.5 bg-purple-100 text-purple-800 px-1.5 rounded-sm">
-                                                {dest.count}
-                                            </span>
-                                        </span>
-                                    ))}
-                                    {kpis.transferDestinations.length > 5 && (
-                                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium text-slate-400 border border-dashed border-slate-300">
-                                            +{kpis.transferDestinations.length - 5} autres
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        )}
                     </div>
                 </div>
             </CardContent>

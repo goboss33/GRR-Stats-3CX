@@ -174,7 +174,11 @@ export default function StatisticsPage() {
                     />
 
                     {/* Agent Performance */}
-                    <AgentPerformanceTable agents={statistics.agents} totalQueueCallsAnswered={statistics.kpis.callsAnswered} />
+                    <AgentPerformanceTable
+                        agents={statistics.agents}
+                        totalQueueCallsAnswered={statistics.kpis.callsAnswered}
+                        totalQueueCallsReceived={statistics.kpis.callsReceived}
+                    />
 
                     {/* Trend Charts */}
                     <TrendCharts
