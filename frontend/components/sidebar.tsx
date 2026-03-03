@@ -48,6 +48,12 @@ const navItems: NavItem[] = [
         roles: ["ADMIN"],
     },
     {
+        label: "Utilisateurs",
+        href: "/admin/users",
+        icon: Users,
+        roles: ["ADMIN"],
+    },
+    {
         label: "Statistiques",
         href: "/statistics",
         icon: BarChart3,

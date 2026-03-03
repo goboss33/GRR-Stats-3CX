@@ -74,7 +74,7 @@ export default function LoginPage() {
                             <Input
                                 id="email"
                                 type="email"
-                                placeholder="admin@demo.com"
+                                placeholder="votre@email.com"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 required
@@ -111,13 +111,7 @@ export default function LoginPage() {
                         </Button>
                     </form>
 
-                    <div className="mt-6 pt-6 border-t border-slate-700">
-                        <p className="text-xs text-slate-500 text-center">
-                            Utilisateurs de test : admin@demo.com, manager@demo.com, user@demo.com
-                            <br />
-                            Mot de passe : 1234
-                        </p>
-                    </div>
+
                 </CardContent>
             </Card>
         </div>
