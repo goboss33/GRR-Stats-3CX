@@ -10,14 +10,17 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
+import Link from "next/link";
 
 interface UnifiedCallFlowProps {
     kpis: QueueKPIs;
     queueName: string;
     queueNumber: string;
+    startDate: string;
+    endDate: string;
 }
 
-export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlowProps) {
+export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDate }: UnifiedCallFlowProps) {
     // Primary metric: unique calls (callsReceived is now unique)
     const totalCalls = kpis.callsReceived;
     // Secondary: passages for ping-pong gauge
@@ -160,7 +163,12 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber }: UnifiedCallFlo
                                 {/* Centre du Donut */}
                                 <div className="absolute inset-0 flex items-center justify-center">
                                     <div className="flex items-center gap-2 pointer-events-auto">
-                                        <span className="text-4xl font-bold text-slate-900">{totalCalls}</span>
+                                        <Link
+                                            href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${encodeURIComponent(JSON.stringify([{ type: "queue", queueNumber }]))}`}
+                                            className="text-4xl font-bold text-slate-900 hover:text-blue-600 hover:underline transition-colors"
+                                        >
+                                            {totalCalls}
+                                        </Link>
                                         <Tooltip>
                                             <TooltipTrigger asChild>
                                                 <Info className="h-5 w-5 text-slate-400 cursor-help hover:text-slate-600 transition-colors flex-shrink-0" />

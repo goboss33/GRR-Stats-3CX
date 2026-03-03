@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { startOfMonth, endOfMonth, startOfDay, endOfDay } from "date-fns";
+import { startOfMonth, endOfMonth, startOfDay, endOfDay, format } from "date-fns";
 import { BarChart3, RefreshCw, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QueueInfo } from "@/types/queues.types";
@@ -171,6 +171,8 @@ export default function StatisticsPage() {
                         kpis={statistics.kpis}
                         queueName={statistics.queueName}
                         queueNumber={statistics.queueNumber}
+                        startDate={format(dateRange.startDate, "yyyy-MM-dd")}
+                        endDate={format(dateRange.endDate, "yyyy-MM-dd")}
                     />
 
                     {/* Agent Performance */}

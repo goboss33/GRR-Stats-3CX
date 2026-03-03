@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { RefreshCw, Download, FileText, Columns3 } from "lucide-react";
+import { RefreshCw, Download, FileText, Columns3, Code } from "lucide-react";
 import { subDays, startOfDay, endOfDay, parseISO, format } from "date-fns";
 
 import { Card } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { LogsTable } from "@/components/logs-table";
 import { Pagination } from "@/components/pagination";
 import { CallChainModal } from "@/components/call-chain-modal";
+import { SqlQueryModal } from "@/components/sql-query-modal";
 import { ActiveFilters } from "@/components/active-filters";
 import {
     Popover,
@@ -19,7 +20,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
-import { getAggregatedCallLogs, exportCallLogsCSV } from "@/services/logs.service";
+import { getAggregatedCallLogs, exportCallLogsCSV, getCallLogsSQL } from "@/services/logs.service";
 import { getQueueMembers } from "@/services/queues.service";
 import { useDebounce } from "@/lib/use-debounce";
 import type { QueueInfo } from "@/types/queues.types";
@@ -140,6 +141,9 @@ export default function AdminLogsPage() {
 
     // Modal state
     const [selectedCallHistoryId, setSelectedCallHistoryId] = useState<string | null>(null);
+    const [showSqlModal, setShowSqlModal] = useState(false);
+    const [sqlQuery, setSqlQuery] = useState("");
+    const [isLoadingSql, setIsLoadingSql] = useState(false);
 
     // Queues state for filter
     const [queues, setQueues] = useState<QueueInfo[]>([]);
@@ -344,6 +348,20 @@ export default function AdminLogsPage() {
         }
     };
 
+    const handleShowSQL = async () => {
+        setShowSqlModal(true);
+        setIsLoadingSql(true);
+        try {
+            const sql = await getCallLogsSQL(dateRange.startDate, dateRange.endDate, effectiveFilters, { page: currentPage, pageSize: PAGE_SIZE }, sort);
+            setSqlQuery(sql);
+        } catch (error) {
+            console.error("Error fetching SQL:", error);
+            setSqlQuery("-- Erreur lors de la génération de la requête SQL");
+        } finally {
+            setIsLoadingSql(false);
+        }
+    };
+
     const handleDirectionsChange = (directions: CallDirection[]) => {
         setSelectedDirections(directions.length === 0 ? ["inbound", "outbound", "internal"] : directions);
         setCurrentPage(1);
@@ -544,6 +562,16 @@ export default function AdminLogsPage() {
                         <Download className={`h-4 w-4 ${isExporting ? "animate-pulse" : ""}`} />
                         CSV
                     </Button>
+
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleShowSQL}
+                        className="gap-2"
+                    >
+                        <Code className="h-4 w-4" />
+                        SQL
+                    </Button>
                 </div>
             </div>
 
@@ -644,6 +672,14 @@ export default function AdminLogsPage() {
             <CallChainModal
                 callHistoryId={selectedCallHistoryId}
                 onClose={() => setSelectedCallHistoryId(null)}
+            />
+
+            {/* SQL Query Modal */}
+            <SqlQueryModal
+                open={showSqlModal}
+                onOpenChange={setShowSqlModal}
+                sql={sqlQuery}
+                isLoading={isLoadingSql}
             />
         </div>
     );
