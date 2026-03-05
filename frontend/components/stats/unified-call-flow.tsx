@@ -23,6 +23,14 @@ interface UnifiedCallFlowProps {
 export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDate }: UnifiedCallFlowProps) {
     // Primary metric: unique calls (callsReceived is now unique)
     const totalCalls = kpis.callsReceived;
+    // Secondary: passages for ping-pong gauge
+    const totalPassages = kpis.totalPassages;
+    const pingPongCount = kpis.pingPongCount;
+    const pingPongPercentage = kpis.pingPongPercentage;
+    // Quality = unique calls / total passages (higher = less ping-pong)
+    const qualityPercentage = totalPassages > 0
+        ? Math.round((totalCalls / totalPassages) * 100)
+        : 100;
 
     const formatDuration = (seconds: number): string => {
         if (seconds < 60) return `${seconds}s`;
