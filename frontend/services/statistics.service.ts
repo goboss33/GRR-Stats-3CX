@@ -329,6 +329,17 @@ async function getAgentStats(
               AND cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
         ),
+        -- Global lookup: latest name for each extension (across all time)
+        latest_agent_names AS (
+            SELECT DISTINCT ON (destination_dn_number)
+                destination_dn_number as extension,
+                destination_dn_name as latest_name
+            FROM cdroutput
+            WHERE destination_dn_type = 'extension'
+              AND destination_dn_name IS NOT NULL
+              AND destination_dn_name != ''
+            ORDER BY destination_dn_number, cdr_started_at DESC
+        ),
         -- Determine outcome per passage
         passage_outcomes AS (
             SELECT
@@ -425,7 +436,7 @@ async function getAgentStats(
         )
         SELECT
             COALESCE(ar.extension, dc.extension) as extension,
-            COALESCE(ar.name, dc.extension) as name,
+            COALESCE(lan.latest_name, ar.name, COALESCE(ar.extension, dc.extension)) as name,
             COALESCE(acr.calls_received, 0) as calls_received,
             COALESCE(ar.resolved, 0) as resolved,
             COALESCE(ah.total_handling_time, 0) as total_handling_time,
@@ -436,6 +447,7 @@ async function getAgentStats(
         FULL OUTER JOIN direct_calls dc ON dc.extension = ar.extension
         LEFT JOIN agent_calls_received acr ON acr.extension = COALESCE(ar.extension, dc.extension)
         LEFT JOIN agent_handling ah ON ah.extension = COALESCE(ar.extension, dc.extension)
+        LEFT JOIN latest_agent_names lan ON lan.extension = COALESCE(ar.extension, dc.extension)
         WHERE COALESCE(ar.resolved, 0) > 0
            OR COALESCE(dc.direct_answered, 0) > 0
         ORDER BY COALESCE(ar.resolved, 0) DESC;
