@@ -48,13 +48,6 @@ const RESULT_OPTIONS: { value: string; label: string }[] = [
     { value: "voicemail", label: "Messagerie" },
 ];
 
-const PRESETS: { label: string; conditions: JourneyCondition[] }[] = [
-    { label: "Queue répondus", conditions: [{ type: "queue", result: "answered" }] },
-    { label: "Queue abandonnés", conditions: [{ type: "queue", result: "abandoned" }] },
-    { label: "Queue ping-pong", conditions: [{ type: "queue", passageMode: "multi" }] },
-    { label: "Direct répondus", conditions: [{ type: "direct", result: "answered" }] },
-];
-
 function conditionsEqual(a: JourneyCondition[], b: JourneyCondition[]): boolean {
     if (a.length !== b.length) return false;
     return a.every((c, i) => JSON.stringify(c) === JSON.stringify(b[i]));
@@ -181,11 +174,6 @@ export function ColumnFilterJourney({
         );
         onChange(cleaned);
         setOpen(false);
-    };
-
-    const handlePreset = (preset: typeof PRESETS[0]) => {
-        setLocalConditions(preset.conditions);
-        onChange(preset.conditions);
     };
 
     const handleClear = () => {
@@ -460,27 +448,6 @@ export function ColumnFilterJourney({
                                     Appliquer
                                 </Button>
                             )}
-                        </div>
-
-                        {/* Presets */}
-                        <div className="border-t border-slate-100 pt-2">
-                            <p className="text-xs text-slate-500 mb-1.5">Raccourcis</p>
-                            <div className="flex flex-wrap gap-1">
-                                {PRESETS.map((preset) => {
-                                    const isActive = conditionsEqual(conditions, preset.conditions);
-                                    return (
-                                        <Button
-                                            key={preset.label}
-                                            variant={isActive ? "default" : "outline"}
-                                            size="sm"
-                                            className="h-7 text-xs"
-                                            onClick={() => handlePreset(preset)}
-                                        >
-                                            {preset.label}
-                                        </Button>
-                                    );
-                                })}
-                            </div>
                         </div>
                     </div>
                 </PopoverContent>
