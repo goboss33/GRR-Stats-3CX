@@ -414,7 +414,6 @@ function buildAggregatedQueryParts(
     }
 
     // Callee search - filter calls based on the FIRST segment's destination (what's displayed)
-    // Also includes source_participant_name for SDA name search (e.g., "Direct Teresa Troiano")
     let calleeFilterCTE = '';
     let calleeFilterJoin = '';
     if (filters.calleeSearch?.trim()) {
@@ -428,8 +427,7 @@ function buildAggregatedQueryParts(
                         destination_dn_number,
                         destination_participant_phone_number,
                         destination_participant_name,
-                        destination_dn_name,
-                        source_participant_name
+                        destination_dn_name
                     FROM cdroutput
                     WHERE cdr_started_at >= '${startDate.toISOString()}'
                       AND cdr_started_at <= '${endDate.toISOString()}'
@@ -439,8 +437,7 @@ function buildAggregatedQueryParts(
                     ${buildSqlSearchCondition('destination_dn_number', pattern)} OR
                     ${buildSqlSearchCondition('destination_participant_phone_number', pattern)} OR
                     ${buildSqlSearchCondition('destination_participant_name', pattern)} OR
-                    ${buildSqlSearchCondition('destination_dn_name', pattern)} OR
-                    ${buildSqlSearchCondition('source_participant_name', pattern)}
+                    ${buildSqlSearchCondition('destination_dn_name', pattern)}
                 )
             )`;
         calleeFilterJoin = 'JOIN callee_filter cf ON ca.call_history_id = cf.call_history_id';
