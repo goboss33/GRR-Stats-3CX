@@ -23,14 +23,6 @@ interface UnifiedCallFlowProps {
 export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDate }: UnifiedCallFlowProps) {
     // Primary metric: unique calls (callsReceived is now unique)
     const totalCalls = kpis.callsReceived;
-    // Secondary: passages for ping-pong gauge
-    const totalPassages = kpis.totalPassages;
-    const pingPongCount = kpis.pingPongCount;
-    const pingPongPercentage = kpis.pingPongPercentage;
-    // Quality = unique calls / total passages (higher = less ping-pong)
-    const qualityPercentage = totalPassages > 0
-        ? Math.round((totalCalls / totalPassages) * 100)
-        : 100;
 
     const formatDuration = (seconds: number): string => {
         if (seconds < 60) return `${seconds}s`;
@@ -69,70 +61,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDa
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
                     {/* Colonne Gauche: Quality Bar + Donut */}
                     <div className="col-span-1 md:col-span-4">
-                        <div className="flex items-center gap-8 px-8">
-                            {/* Quality Bar - Vertical segmented bar */}
-                            <div className="flex items-center gap-3">
-                                <div className="flex flex-col-reverse gap-0.5">
-                                    {[...Array(10)].map((_, index) => {
-                                        const segmentThreshold = ((index + 1) / 10) * 100;
-                                        const isFilled = qualityPercentage >= segmentThreshold;
-
-                                        const getSegmentColor = (idx: number) => {
-                                            const position = (idx + 1) / 10;
-                                            if (position <= 0.15) return '#ef4444';
-                                            if (position <= 0.25) return '#f97316';
-                                            if (position <= 0.4) return '#fb923c';
-                                            if (position <= 0.55) return '#fbbf24';
-                                            if (position <= 0.7) return '#a3e635';
-                                            if (position <= 0.85) return '#4ade80';
-                                            return '#22c55e';
-                                        };
-
-                                        return (
-                                            <div
-                                                key={index}
-                                                className={`w-8 h-2 rounded-sm transition-all duration-300 ${
-                                                    isFilled ? 'opacity-100' : 'opacity-20'
-                                                }`}
-                                                style={{
-                                                    backgroundColor: getSegmentColor(index),
-                                                }}
-                                            />
-                                        );
-                                    })}
-                                </div>
-
-                                {/* Label and info */}
-                                <div className="flex flex-col justify-center gap-1">
-                                    <div className="flex items-center gap-1.5">
-                                        <div className="text-2xl font-bold text-slate-700">
-                                            {qualityPercentage}%
-                                        </div>
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <Info className="h-4 w-4 text-slate-400 cursor-help hover:text-slate-600 transition-colors flex-shrink-0" />
-                                            </TooltipTrigger>
-                                            <TooltipContent side="right" className="max-w-xs">
-                                                <div className="space-y-1 text-xs">
-                                                    <p><strong>Taux d'appels uniques:</strong> {totalCalls} / {totalPassages} = {qualityPercentage}%</p>
-                                                    <p className="text-slate-400 mt-2 pt-2 border-t">
-                                                        Plus ce taux est élevé, moins il y a de passages multiples (ping-pong)
-                                                    </p>
-                                                    <div className="mt-2 pt-2 border-t space-y-0.5">
-                                                        <p className="text-slate-400 text-[10px]">
-                                                            {pingPongCount} appels avec ping-pong ({pingPongPercentage}%)
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    </div>
-                                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">
-                                        Qualité
-                                    </div>
-                                </div>
-                            </div>
-
+                        <div className="flex items-center justify-center px-8">
                             {/* Donut Chart */}
                             <div className="flex-1 h-52 relative">
                                 <ResponsiveContainer width="100%" height="100%">
