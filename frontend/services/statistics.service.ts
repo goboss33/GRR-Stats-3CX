@@ -9,29 +9,6 @@ import {
     HourlyTrend,
     OverflowDestination,
 } from "@/types/statistics.types";
-import { QueueInfo } from "@/types/queues.types";
-
-// ============================================
-// GET ALL QUEUES (for selector)
-// ============================================
-export async function getQueuesForSelector(): Promise<QueueInfo[]> {
-    const result = await prisma.$queryRaw<any[]>`
-        SELECT DISTINCT ON (destination_dn_number)
-            destination_dn_number AS queue_number,
-            destination_dn_name AS queue_name
-        FROM cdroutput
-        WHERE destination_dn_type = 'queue'
-        ORDER BY destination_dn_number, cdr_started_at DESC;
-    `;
-
-    return result.map((row) => ({
-        queueNumber: row.queue_number,
-        queueName: row.queue_name,
-        members: [],
-        memberCount: 0,
-    }));
-}
-
 // ============================================
 // GET QUEUE STATISTICS
 // ============================================

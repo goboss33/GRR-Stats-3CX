@@ -6,7 +6,8 @@ import { BarChart3, RefreshCw, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QueueInfo } from "@/types/queues.types";
 import { QueueStatistics } from "@/types/statistics.types";
-import { getQueuesForSelector, getQueueStatistics } from "@/services/statistics.service";
+import { getQueueStatistics } from "@/services/statistics.service";
+import { getQueueMembers } from "@/services/queues.service";
 import { AgentPerformanceTable } from "@/components/stats/agent-performance-table";
 import { TrendCharts } from "@/components/stats/trend-charts";
 import { UnifiedCallFlow } from "@/components/stats/unified-call-flow";
@@ -33,7 +34,7 @@ export default function StatisticsPage() {
 
     // Load queues on mount
     useEffect(() => {
-        getQueuesForSelector()
+        getQueueMembers()
             .then(setQueues)
             .finally(() => setIsLoadingQueues(false));
     }, []);
