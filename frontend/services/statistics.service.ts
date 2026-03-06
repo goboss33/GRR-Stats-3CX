@@ -235,6 +235,18 @@ async function getQueueKPIs(
                                   AND other_q.destination_dn_number != ${queueNumber}
                                   AND other_q.cdr_started_at > qas.cdr_started_at
             WHERE qas.answered_here = 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM cdroutput aqp2
+                  JOIN cdroutput ans2 ON ans2.originating_cdr_id = aqp2.cdr_id
+                  WHERE aqp2.call_history_id = qas.call_history_id
+                    AND aqp2.destination_dn_number = ${queueNumber}
+                    AND aqp2.destination_dn_type = 'queue'
+                    AND aqp2.cdr_started_at >= ${startDate}
+                    AND aqp2.cdr_started_at <= ${endDate}
+                    AND ans2.destination_dn_type = 'extension'
+                    AND ans2.cdr_answered_at IS NOT NULL
+                    AND ans2.creation_forward_reason = 'polling'
+              )
             ORDER BY qas.call_history_id, other_q.cdr_started_at ASC
         )
         SELECT
