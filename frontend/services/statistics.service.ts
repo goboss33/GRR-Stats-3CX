@@ -264,8 +264,8 @@ async function getQueueKPIs(
             WHERE c.destination_dn_type = 'extension'
         )
         SELECT
-            COUNT(*) as direct_received,
-            COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL THEN 1 END) as direct_answered
+            COUNT(DISTINCT c.call_history_id) as direct_received,
+            COUNT(DISTINCT CASE WHEN c.cdr_answered_at IS NOT NULL THEN c.call_history_id END) as direct_answered
         FROM cdroutput c
         WHERE c.destination_dn_type = 'extension'
           AND c.destination_dn_number IN (SELECT extension FROM queue_agents)
@@ -275,6 +275,10 @@ async function getQueueKPIs(
           AND NOT EXISTS (
               SELECT 1 FROM all_queue_passages aqp
               WHERE aqp.cdr_id = c.originating_cdr_id
+          )
+          AND NOT (
+              c.cdr_answered_at IS NULL
+              AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
           );
     `;
 
@@ -418,8 +422,8 @@ async function getAgentStats(
         direct_calls AS (
             SELECT
                 c.destination_dn_number as extension,
-                COUNT(*) as direct_received,
-                COUNT(CASE WHEN c.cdr_answered_at IS NOT NULL THEN 1 END) as direct_answered,
+                COUNT(DISTINCT c.call_history_id) as direct_received,
+                COUNT(DISTINCT CASE WHEN c.cdr_answered_at IS NOT NULL THEN c.call_history_id END) as direct_answered,
                 SUM(CASE WHEN c.cdr_answered_at IS NOT NULL
                     THEN EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) ELSE 0 END) as direct_talk_time
             FROM cdroutput c
@@ -431,6 +435,10 @@ async function getAgentStats(
               AND NOT EXISTS (
                   SELECT 1 FROM all_queue_passages aqp
                   WHERE aqp.cdr_id = c.originating_cdr_id
+              )
+              AND NOT (
+                  c.cdr_answered_at IS NULL
+                  AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
               )
             GROUP BY c.destination_dn_number
         )
