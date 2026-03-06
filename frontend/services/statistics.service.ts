@@ -94,11 +94,13 @@ async function getQueueKPIs(
                     WHEN ans.originating_cdr_id = aqp.cdr_id
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
+                         AND ans.creation_forward_reason = 'polling'
                     THEN 1 ELSE 0 END) as answered_here,
                 MAX(CASE
                     WHEN ans.originating_cdr_id = aqp.cdr_id
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
+                         AND ans.creation_forward_reason = 'polling'
                          AND ans.termination_reason = 'continued_in'
                     THEN 1 ELSE 0 END) as answered_and_transferred,
                 MAX(CASE
@@ -110,12 +112,14 @@ async function getQueueKPIs(
                     WHEN ans.originating_cdr_id = aqp.cdr_id
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
+                         AND ans.creation_forward_reason = 'polling'
                     THEN EXTRACT(EPOCH FROM (ans.cdr_answered_at - aqp.cdr_started_at))
                     ELSE NULL END) as wait_time_seconds,
                 MAX(CASE
                     WHEN ans.originating_cdr_id = aqp.cdr_id
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
+                         AND ans.creation_forward_reason = 'polling'
                     THEN EXTRACT(EPOCH FROM (ans.cdr_ended_at - ans.cdr_answered_at))
                     ELSE 0 END) as talk_time_seconds
             FROM all_queue_passages aqp
@@ -214,6 +218,7 @@ async function getQueueKPIs(
                     WHEN ans.originating_cdr_id = fqp.cdr_id
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
+                         AND ans.creation_forward_reason = 'polling'
                     THEN 1 ELSE 0 END) as answered_here
             FROM first_queue_passage fqp
             LEFT JOIN cdroutput ans ON ans.originating_cdr_id = fqp.cdr_id
