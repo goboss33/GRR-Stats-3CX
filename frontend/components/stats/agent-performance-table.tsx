@@ -249,7 +249,7 @@ export function AgentPerformanceTable({ agents, totalQueueCallsAnswered, totalQu
                                         </td>
                                         <td className="px-3 py-3">
                                             <span className="font-semibold text-emerald-700">{agent.answered}</span>
-                                            <span className="text-slate-400 text-sm">/{totalQueueCallsAnswered}</span>
+                                            <span className="text-slate-400 text-sm">/{totalQueueCallsReceived}</span>
                                         </td>
                                         <td className="px-3 py-3">
                                             <span className="font-semibold text-blue-700">{agent.directAnswered}</span>

@@ -359,6 +359,7 @@ async function getAgentStats(
                     WHEN ans.originating_cdr_id = aqp.cdr_id
                          AND ans.destination_dn_type = 'extension'
                          AND ans.cdr_answered_at IS NOT NULL
+                         AND ans.creation_forward_reason = 'polling'
                     THEN 1 ELSE 0 END) as answered_here
             FROM all_queue_passages aqp
             LEFT JOIN cdroutput ans ON ans.originating_cdr_id = aqp.cdr_id
@@ -379,6 +380,7 @@ async function getAgentStats(
             WHERE po.answered_here = 1
               AND c.destination_dn_type = 'extension'
               AND c.cdr_answered_at IS NOT NULL
+              AND c.creation_forward_reason = 'polling'
         ),
         -- RÉSOLVEUR FINAL: last answered passage per unique call
         last_answered AS (
