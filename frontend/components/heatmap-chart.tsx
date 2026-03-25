@@ -37,7 +37,7 @@ export function HeatmapChart({ data }: HeatmapChartProps) {
     };
 
     return (
-        <div className="w-full h-[400px] flex flex-col pb-2">
+        <div className="w-full h-[425px] flex flex-col pb-2">
             {/* Header row for days */}
             <div className="flex gap-[2px] mb-1">
                 <div className="w-8 shrink-0"></div>

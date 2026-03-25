@@ -69,7 +69,7 @@ export function CallsChart({ data }: CallsChartProps) {
     }
 
     return (
-        <div className="h-[400px] w-full">
+        <div className="h-[425px] w-full">
             <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
                     data={data}

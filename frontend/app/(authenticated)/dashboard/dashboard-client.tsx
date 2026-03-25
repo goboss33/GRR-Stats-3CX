@@ -254,7 +254,7 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         {isPending && !isInitialLoad ? (
-                            <div className="h-[400px] flex items-center justify-center">
+                            <div className="h-[425px] flex items-center justify-center">
                                 <RefreshCw className="h-8 w-8 animate-spin text-slate-300" />
                             </div>
                         ) : (
@@ -270,7 +270,7 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent className="px-4">
                         {isPending && !isInitialLoad ? (
-                            <div className="h-[400px] flex items-center justify-center">
+                            <div className="h-[425px] flex items-center justify-center">
                                 <RefreshCw className="h-8 w-8 animate-spin text-slate-300" />
                             </div>
                         ) : (
