@@ -7,7 +7,6 @@ import {
     ArrowDownLeft,
     ArrowUpRight,
     ArrowLeftRight,
-    ArrowRight,
     Shuffle,
     Phone,
     PhoneOff,
@@ -303,16 +302,10 @@ export function LogsTable({
                                     <SortableHeader label="Appelant" field="sourceNumber" currentSort={sort} onSort={onSort} />
                                 </TableHead>
                             )}
-                            {(columnVisibility.caller || columnVisibility.callee) && (
-                                <TableHead className="w-10 text-center"></TableHead>
-                            )}
                             {columnVisibility.callee && (
                                 <TableHead>
                                     <SortableHeader label="Destinataire" field="destinationNumber" currentSort={sort} onSort={onSort} />
                                 </TableHead>
-                            )}
-                            {(columnVisibility.callee || columnVisibility.handledBy) && (
-                                <TableHead className="w-10 text-center"></TableHead>
                             )}
                             {columnVisibility.handledBy && (
                                 <TableHead>Traité par</TableHead>
@@ -384,9 +377,6 @@ export function LogsTable({
                                     />
                                 </TableHead>
                             )}
-                            {(columnVisibility.caller || columnVisibility.callee) && (
-                                <TableHead className="py-2"></TableHead>
-                            )}
                             {columnVisibility.callee && (
                                 <TableHead className="py-2">
                                     <ColumnFilterInput
@@ -395,9 +385,6 @@ export function LogsTable({
                                         placeholder="Rechercher..."
                                     />
                                 </TableHead>
-                            )}
-                            {(columnVisibility.callee || columnVisibility.handledBy) && (
-                                <TableHead className="py-2"></TableHead>
                             )}
                             {columnVisibility.handledBy && (
                                 <TableHead className="py-2">
@@ -532,13 +519,6 @@ export function LogsTable({
                                             </TableCell>
                                         )}
 
-                                        {/* Empty spacer column */}
-                                        {(columnVisibility.caller || columnVisibility.callee) && (
-                                            <TableCell className="text-center">
-                                                <ArrowRight className="h-4 w-4 text-slate-400 mx-auto" />
-                                            </TableCell>
-                                        )}
-
                                         {/* Callee (initial destination) */}
                                         {columnVisibility.callee && (
                                             <TableCell>
@@ -552,19 +532,6 @@ export function LogsTable({
                                                         </span>
                                                     )}
                                                 </div>
-                                            </TableCell>
-                                        )}
-
-                                        {/* Arrow (direct or transferred) - between Destinataire and Traité par */}
-                                        {(columnVisibility.callee || columnVisibility.handledBy) && (
-                                            <TableCell className="text-center">
-                                                {log.wasTransferred ? (
-                                                    <span title="Transféré">
-                                                        <Shuffle className="h-4 w-4 text-amber-500 mx-auto" />
-                                                    </span>
-                                                ) : (
-                                                    <ArrowRight className="h-4 w-4 text-slate-400 mx-auto" />
-                                                )}
                                             </TableCell>
                                         )}
 

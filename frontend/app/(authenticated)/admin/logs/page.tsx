@@ -40,19 +40,19 @@ import type {
 const PAGE_SIZE = 50;
 
 const defaultColumnVisibility: ColumnVisibility = {
-    callHistoryId: true,
-    segmentCount: true,
+    callHistoryId: false,
+    segmentCount: false,
     dateTime: true,
     timeSlot: true,
     caller: true,
     callee: true,
-    handledBy: true,
-    queues: true,
+    handledBy: false,
+    queues: false,
     journey: true,
     direction: true,
     status: true,
-    duration: true,
-    waitTime: true,
+    duration: false,
+    waitTime: false,
 };
 
 export default function AdminLogsPage() {
