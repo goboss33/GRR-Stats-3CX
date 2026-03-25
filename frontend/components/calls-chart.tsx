@@ -1,8 +1,8 @@
 "use client";
 
 import {
-    BarChart,
-    Bar,
+    AreaChart,
+    Area,
     XAxis,
     YAxis,
     CartesianGrid,
@@ -33,22 +33,24 @@ const CustomTooltip = ({
         const rate = total > 0 ? Math.round((answered / total) * 100) : 0;
 
         return (
-            <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3">
-                <p className="font-medium text-slate-900 mb-2">{label}</p>
-                <div className="space-y-1 text-sm">
-                    <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded bg-emerald-500"></span>
-                        <span className="text-slate-600">Répondus:</span>
-                        <span className="font-medium text-slate-900">{answered}</span>
+            <div className="bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl shadow-xl p-4 transition-all">
+                <p className="font-semibold text-slate-900 mb-3">{label}</p>
+                <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-3">
+                        <span className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200"></span>
+                        <span className="text-slate-600 flex-1">Répondus:</span>
+                        <span className="font-bold text-slate-900">{answered}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded bg-rose-500"></span>
-                        <span className="text-slate-600">Manqués:</span>
-                        <span className="font-medium text-slate-900">{missed}</span>
+                    <div className="flex items-center gap-3">
+                        <span className="w-3 h-3 rounded-full bg-rose-500 shadow-sm shadow-rose-200"></span>
+                        <span className="text-slate-600 flex-1">Manqués:</span>
+                        <span className="font-bold text-slate-900">{missed}</span>
                     </div>
-                    <div className="border-t border-slate-200 pt-1 mt-1">
-                        <span className="text-slate-600">Taux réponse:</span>
-                        <span className="font-medium text-slate-900 ml-2">{rate}%</span>
+                    <div className="border-t border-slate-100 pt-2 mt-2">
+                        <div className="flex items-center justify-between">
+                            <span className="text-slate-500 text-xs uppercase tracking-wider font-semibold">Taux réponse</span>
+                            <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">{rate}%</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -60,53 +62,76 @@ const CustomTooltip = ({
 export function CallsChart({ data }: CallsChartProps) {
     if (!data || data.length === 0) {
         return (
-            <div className="h-[300px] flex items-center justify-center bg-slate-50 rounded-lg border-2 border-dashed border-slate-200">
-                <p className="text-slate-500">Aucune donnée pour cette période</p>
+            <div className="h-[300px] flex items-center justify-center bg-slate-50/50 rounded-xl border-2 border-dashed border-slate-200">
+                <p className="text-slate-500 font-medium">Aucune donnée pour cette période</p>
             </div>
         );
     }
 
     return (
-        <div className="h-[300px] w-full">
+        <div className="h-[350px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-                <BarChart
+                <AreaChart
                     data={data}
-                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                 >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <defs>
+                        <linearGradient id="colorAnswered" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="colorMissed" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.4}/>
+                            <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+                        </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis
                         dataKey="label"
-                        tick={{ fontSize: 12, fill: "#64748b" }}
+                        tick={{ fontSize: 12, fill: "#94a3b8" }}
                         tickLine={false}
-                        axisLine={{ stroke: "#e2e8f0" }}
+                        axisLine={false}
+                        dy={10}
                     />
                     <YAxis
-                        tick={{ fontSize: 12, fill: "#64748b" }}
+                        tick={{ fontSize: 12, fill: "#94a3b8" }}
                         tickLine={false}
-                        axisLine={{ stroke: "#e2e8f0" }}
+                        axisLine={false}
+                        dx={-10}
                     />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }} />
                     <Legend
                         wrapperStyle={{ paddingTop: "20px" }}
-                        formatter={(value) =>
-                            value === "answered" ? "Répondus" : "Manqués"
-                        }
+                        iconType="circle"
+                        formatter={(value) => (
+                            <span className="text-slate-600 font-medium ml-1">
+                                {value === "answered" ? "Répondus" : "Manqués"}
+                            </span>
+                        )}
                     />
-                    <Bar
-                        dataKey="answered"
-                        stackId="calls"
-                        fill="#10b981"
-                        radius={[0, 0, 0, 0]}
-                        name="answered"
-                    />
-                    <Bar
+                    <Area
+                        type="monotone"
                         dataKey="missed"
-                        stackId="calls"
-                        fill="#f43f5e"
-                        radius={[4, 4, 0, 0]}
+                        stackId="1"
+                        stroke="#f43f5e"
+                        strokeWidth={3}
+                        fillOpacity={1}
+                        fill="url(#colorMissed)"
+                        activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }}
                         name="missed"
                     />
-                </BarChart>
+                    <Area
+                        type="monotone"
+                        dataKey="answered"
+                        stackId="1"
+                        stroke="#10b981"
+                        strokeWidth={3}
+                        fillOpacity={1}
+                        fill="url(#colorAnswered)"
+                        activeDot={{ r: 6, strokeWidth: 0, fill: '#10b981' }}
+                        name="answered"
+                    />
+                </AreaChart>
             </ResponsiveContainer>
         </div>
     );
