@@ -6,13 +6,13 @@ interface HeatmapChartProps {
     data: HeatmapDataPoint[];
 }
 
-const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+const DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
 export function HeatmapChart({ data }: HeatmapChartProps) {
     if (!data || data.length === 0) {
         return (
-            <div className="h-[300px] flex items-center justify-center bg-slate-50/50 rounded-xl border-2 border-dashed border-slate-200">
+            <div className="h-[350px] flex items-center justify-center bg-slate-50/50 rounded-xl border-2 border-dashed border-slate-200">
                 <p className="text-slate-500 font-medium">Aucune donnée pour cette période</p>
             </div>
         );
@@ -37,32 +37,40 @@ export function HeatmapChart({ data }: HeatmapChartProps) {
     };
 
     return (
-        <div className="w-full overflow-x-auto pb-4 custom-scrollbar">
-            <div className="min-w-[800px] flex flex-col gap-1.5 p-2">
-                {/* Header row for hours */}
-                <div className="flex">
-                    <div className="w-24 shrink-0"></div>
-                    {HOURS.map(h => (
-                        <div key={h} className="flex-1 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+        <div className="w-full h-[350px] flex flex-col mb-2">
+            {/* Header row for days */}
+            <div className="flex gap-[2px] mb-1">
+                <div className="w-8 shrink-0"></div>
+                {DAYS.map((dayName) => (
+                    <div key={dayName} className="flex-1 text-center text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        {dayName}
+                    </div>
+                ))}
+            </div>
+            
+            {/* Data rows for hours */}
+            <div className="flex-1 flex flex-col gap-[2px]">
+                {HOURS.map(h => (
+                    <div key={h} className="flex flex-1 gap-[2px] items-center group">
+                        <div className="w-8 shrink-0 text-[10px] text-slate-500 font-medium text-right pr-2 group-hover:text-slate-900 transition-colors">
                             {h}h
                         </div>
-                    ))}
-                </div>
-                {/* Data rows */}
-                {DAYS.map((dayName, dIdx) => (
-                    <div key={dayName} className="flex gap-1.5 items-center group">
-                        <div className="w-24 shrink-0 text-xs text-slate-500 font-semibold text-right pr-4 group-hover:text-slate-900 transition-colors">
-                            {dayName}
-                        </div>
-                        {HOURS.map(h => {
+                        {DAYS.map((dayName, dIdx) => {
                             const val = getValue(dIdx, h);
                             return (
                                 <div
                                     key={`${dIdx}-${h}`}
-                                    className={`flex-1 aspect-square rounded-md border border-transparent transition-all duration-300 flex items-center justify-center text-[10px] sm:text-xs cursor-pointer hover:scale-110 hover:shadow-md ${getIntensityClass(val)}`}
-                                    title={`${val} appels le ${dayName} à ${h}h`}
+                                    className={`group/cell flex-1 h-full rounded-[2px] border border-transparent transition-all duration-300 flex items-center justify-center cursor-pointer hover:shadow-md relative ${getIntensityClass(val)}`}
                                 >
-                                    {val > 0 ? val : ""}
+                                    {/* Tooltip CSS élégant */}
+                                    <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 hidden group-hover/cell:flex flex-row items-center z-[100] pointer-events-none opacity-0 group-hover/cell:opacity-100 transition-opacity duration-200">
+                                        <div className="bg-slate-800 text-white text-[11px] leading-tight whitespace-nowrap px-2.5 py-1.5 rounded shadow-xl border border-slate-700">
+                                            <span className="font-bold text-emerald-400">{val} appels</span><br/>
+                                            <span className="text-slate-300">{dayName} à {h}h00</span>
+                                        </div>
+                                        {/* Petite flèche du tooltip vers la droite */}
+                                        <div className="w-0 h-0 border-y-[5px] border-y-transparent border-l-[5px] border-l-slate-800 -ml-[1px]"></div>
+                                    </div>
                                 </div>
                             );
                         })}

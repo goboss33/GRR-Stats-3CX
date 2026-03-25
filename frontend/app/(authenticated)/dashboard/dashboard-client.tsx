@@ -144,7 +144,7 @@ export default function DashboardClient() {
             </div>
 
             {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                 {/* Total Calls */}
                 <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-slate-50/50">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -243,32 +243,7 @@ export default function DashboardClient() {
                     </CardContent>
                 </Card>
 
-                {/* Ping Pong */}
-                <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-teal-50/10">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-semibold text-slate-600">Interlocuteurs</CardTitle>
-                        <Users2 className="h-5 w-5 text-teal-500 opacity-80" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl lg:text-3xl font-bold text-slate-900 flex items-center">
-                            {isInitialLoad ? <span className="animate-pulse">...</span> : (
-                                <>
-                                    {metrics?.avgAgentsPerCall || 0}
-                                    <TrendIndicator current={metrics?.avgAgentsPerCall || 0} prev={metrics?.prevAvgAgentsPerCall || 0} inverseGood={true} />
-                                </>
-                            )}
-                        </div>
-                        {metrics?.agentsDistribution ? (
-                            <div className="flex gap-1 mt-1.5 text-[10px] font-semibold text-slate-600">
-                                <span title="Traités par 1 agent" className="px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 shadow-sm">1: {metrics.agentsDistribution.oneAgent}</span>
-                                <span title="Transférés 1 fois" className="px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 shadow-sm">2: {metrics.agentsDistribution.twoAgents}</span>
-                                <span title="Transférés multiples fois" className="px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded border border-rose-100 shadow-sm">3+: {metrics.agentsDistribution.threePlusAgents}</span>
-                            </div>
-                        ) : (
-                            <div className="h-4 mt-1.5"></div>
-                        )}
-                    </CardContent>
-                </Card>
+
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
