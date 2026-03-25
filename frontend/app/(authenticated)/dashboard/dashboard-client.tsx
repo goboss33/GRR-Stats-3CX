@@ -8,21 +8,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { CallsChart } from "@/components/calls-chart";
-import { TopExtensionsTable } from "@/components/top-extensions-table";
-import { RecentCallsTable } from "@/components/recent-calls-table";
 
 import {
     getGlobalMetrics,
     getTimelineData,
-    getTopExtensions,
-    getRecentCalls,
 } from "@/services/stats.service";
 
 import type {
     GlobalMetrics,
     TimelineDataPoint,
-    ExtensionStats,
-    RecentCall,
 } from "@/types/stats.types";
 
 // Helper to format duration seconds to human readable
@@ -49,24 +43,18 @@ export default function DashboardClient() {
     // Data state
     const [metrics, setMetrics] = useState<GlobalMetrics | null>(null);
     const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([]);
-    const [topExtensions, setTopExtensions] = useState<ExtensionStats[]>([]);
-    const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
 
     // Fetch all data
     const fetchData = useCallback(async () => {
         startTransition(async () => {
             try {
-                const [metricsData, timeline, extensions, calls] = await Promise.all([
+                const [metricsData, timeline] = await Promise.all([
                     getGlobalMetrics(dateRange.startDate, dateRange.endDate),
                     getTimelineData(dateRange.startDate, dateRange.endDate),
-                    getTopExtensions(dateRange.startDate, dateRange.endDate, 10),
-                    getRecentCalls(50),
                 ]);
 
                 setMetrics(metricsData);
                 setTimelineData(timeline);
-                setTopExtensions(extensions);
-                setRecentCalls(calls);
                 setIsInitialLoad(false);
             } catch (error) {
                 console.error("Error fetching dashboard data:", error);
@@ -219,45 +207,6 @@ export default function DashboardClient() {
                     )}
                 </CardContent>
             </Card>
-
-            {/* Bottom Grid: Extensions & Recent Calls */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Top Extensions */}
-                <Card className="border-slate-200 shadow-sm">
-                    <CardHeader>
-                        <CardTitle className="text-lg font-semibold text-slate-900">
-                            Top Extensions
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {isPending && !isInitialLoad ? (
-                            <div className="h-[300px] flex items-center justify-center">
-                                <RefreshCw className="h-6 w-6 animate-spin text-slate-400" />
-                            </div>
-                        ) : (
-                            <TopExtensionsTable data={topExtensions} />
-                        )}
-                    </CardContent>
-                </Card>
-
-                {/* Recent Calls */}
-                <Card className="border-slate-200 shadow-sm">
-                    <CardHeader>
-                        <CardTitle className="text-lg font-semibold text-slate-900">
-                            Appels Récents
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {isPending && !isInitialLoad ? (
-                            <div className="h-[300px] flex items-center justify-center">
-                                <RefreshCw className="h-6 w-6 animate-spin text-slate-400" />
-                            </div>
-                        ) : (
-                            <RecentCallsTable data={recentCalls} />
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
         </div>
     );
 }
