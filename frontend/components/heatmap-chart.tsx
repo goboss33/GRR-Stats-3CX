@@ -58,9 +58,9 @@ export function HeatmapChart({ data }: HeatmapChartProps) {
                             const val = getValue(dIdx, h);
                             return (
                                 <div
-                                    key={\`\${dIdx}-\${h}\`}
-                                    className={\`flex-1 aspect-square rounded-md border border-transparent transition-all duration-300 flex items-center justify-center text-[10px] sm:text-xs cursor-pointer hover:scale-110 hover:shadow-md \${getIntensityClass(val)}\`}
-                                    title={\`\${val} appels le \${dayName} à \${h}h\`}
+                                    key={`${dIdx}-${h}`}
+                                    className={`flex-1 aspect-square rounded-md border border-transparent transition-all duration-300 flex items-center justify-center text-[10px] sm:text-xs cursor-pointer hover:scale-110 hover:shadow-md ${getIntensityClass(val)}`}
+                                    title={`${val} appels le ${dayName} à ${h}h`}
                                 >
                                     {val > 0 ? val : ""}
                                 </div>
