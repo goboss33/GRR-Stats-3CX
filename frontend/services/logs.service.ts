@@ -295,7 +295,7 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
     // 4. abandoned: not answered (for system types: answered by system but no human answer)
 
     // System types that need special handling
-    const systemTypes = "'queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking'";
+    const systemTypes = "'queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking', 'script'";
     const systemEntityTypes = "'queue', 'ivr'";
 
     if (statuses.includes('voicemail')) {
@@ -670,7 +670,7 @@ export async function getCallLogsSQL(
                 termination_reason_details
             FROM cdroutput
             WHERE ${whereClause}
-            ORDER BY call_history_id, cdr_ended_at DESC
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC
         ),
         answered_segments AS (
             SELECT DISTINCT ON (c.call_history_id)
@@ -793,11 +793,13 @@ export async function getCallLogsSQL(
                         CASE
                             WHEN c.destination_dn_type = 'queue' THEN COALESCE(qo.agent_name, qo.agent_number)
                             WHEN c.destination_dn_type = 'extension' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
+                            WHEN c.destination_dn_type IN ('provider', 'external_line') THEN COALESCE(c.destination_participant_phone_number, c.destination_dn_name, c.destination_dn_number)
                             ELSE NULL
                         END as agent_name,
                         CASE
                             WHEN c.destination_dn_type = 'queue' THEN qo.agent_number
                             WHEN c.destination_dn_type = 'extension' THEN c.destination_dn_number
+                            WHEN c.destination_dn_type IN ('provider', 'external_line') THEN c.destination_participant_phone_number
                             ELSE NULL
                         END as agent_number,
                         CASE
@@ -824,6 +826,7 @@ export async function getCallLogsSQL(
                       AND (
                           c.destination_entity_type = 'voicemail'
                           OR c.destination_dn_type = 'queue'
+                          OR c.destination_dn_type IN ('provider', 'external_line')
                           OR (
                               c.destination_dn_type = 'extension'
                               AND c.destination_entity_type != 'voicemail'
@@ -956,7 +959,7 @@ export async function getAggregatedCallLogs(
                     termination_reason_details
                 FROM cdroutput
                 WHERE ${whereClause}
-                ORDER BY call_history_id, cdr_ended_at DESC
+                ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC
             ),
             answered_segments AS (
                 SELECT DISTINCT ON (c.call_history_id)
@@ -1080,11 +1083,13 @@ export async function getAggregatedCallLogs(
                             CASE
                                 WHEN c.destination_dn_type = 'queue' THEN COALESCE(qo.agent_name, qo.agent_number)
                                 WHEN c.destination_dn_type = 'extension' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
+                                WHEN c.destination_dn_type IN ('provider', 'external_line') THEN COALESCE(c.destination_participant_phone_number, c.destination_dn_name, c.destination_dn_number)
                                 ELSE NULL
                             END as agent_name,
                             CASE
                                 WHEN c.destination_dn_type = 'queue' THEN qo.agent_number
                                 WHEN c.destination_dn_type = 'extension' THEN c.destination_dn_number
+                                WHEN c.destination_dn_type IN ('provider', 'external_line') THEN c.destination_participant_phone_number
                                 ELSE NULL
                             END as agent_number,
                             CASE
@@ -1111,6 +1116,7 @@ export async function getAggregatedCallLogs(
                           AND (
                               c.destination_entity_type = 'voicemail'
                               OR c.destination_dn_type = 'queue'
+                              OR c.destination_dn_type IN ('provider', 'external_line')
                               OR (
                                   c.destination_dn_type = 'extension'
                                   AND c.destination_entity_type != 'voicemail'
@@ -1305,11 +1311,13 @@ export async function getAggregatedCallLogs(
                             CASE
                                 WHEN c.destination_dn_type = 'queue' THEN COALESCE(qo.agent_name, qo.agent_number)
                                 WHEN c.destination_dn_type = 'extension' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
+                                WHEN c.destination_dn_type IN ('provider', 'external_line') THEN COALESCE(c.destination_participant_phone_number, c.destination_dn_name, c.destination_dn_number)
                                 ELSE NULL
                             END as agent_name,
                             CASE
                                 WHEN c.destination_dn_type = 'queue' THEN qo.agent_number
                                 WHEN c.destination_dn_type = 'extension' THEN c.destination_dn_number
+                                WHEN c.destination_dn_type IN ('provider', 'external_line') THEN c.destination_participant_phone_number
                                 ELSE NULL
                             END as agent_number,
                             CASE
@@ -1336,6 +1344,7 @@ export async function getAggregatedCallLogs(
                           AND (
                               c.destination_entity_type = 'voicemail'
                               OR c.destination_dn_type = 'queue'
+                              OR c.destination_dn_type IN ('provider', 'external_line')
                               OR (
                                   c.destination_dn_type = 'extension'
                                   AND c.destination_entity_type != 'voicemail'
@@ -1392,7 +1401,7 @@ export async function getAggregatedCallLogs(
                     termination_reason_details
                 FROM cdroutput
                 WHERE ${whereClause}
-                ORDER BY call_history_id, cdr_ended_at DESC
+                ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC
             ),
             answered_segments AS (
                 SELECT DISTINCT ON (c.call_history_id)
@@ -1497,7 +1506,7 @@ export async function getAggregatedCallLogs(
                 // Fix: specific check for system types (Queue, Ring Group, IVR)
                 // These segments often have an 'answered_at' time (system pick up) but should act as Abandoned
                 // unless a real human/extension answered later.
-                const isSystemType = ['queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking'].includes(lastDestType) ||
+                const isSystemType = ['queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking', 'script'].includes(lastDestType) ||
                     ['queue', 'ivr'].includes(lastDestEntityType);
 
                 if (isSystemType) {
