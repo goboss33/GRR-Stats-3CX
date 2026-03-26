@@ -119,19 +119,13 @@ const categoryConfig: Record<SegmentCategory, {
     },
 };
 
-// Group ringing segments together - including answered calls that started at same time
+// Group segments together - queue segments absorb their polling distributions
 interface SegmentGroup {
-    type: "single" | "ringing_group";
+    type: "single" | "queue_group";
     segments: CallChainSegment[];
     category: SegmentCategory;
     answeredSegment?: CallChainSegment; // The segment that was answered in this group
-}
-
-// Check if two segments started at approximately the same time (within 2 seconds)
-function sameTimeWindow(time1: string, time2: string): boolean {
-    const t1 = new Date(time1).getTime();
-    const t2 = new Date(time2).getTime();
-    return Math.abs(t1 - t2) < 2000; // 2 seconds tolerance
+    queueSegment?: CallChainSegment; // The parent queue segment (for queue_group)
 }
 
 // Check if segment is a queue distribution (route_to polling from queue)
@@ -145,70 +139,60 @@ function groupSegments(segments: CallChainSegment[]): SegmentGroup[] {
     const groups: SegmentGroup[] = [];
     const processed = new Set<string>();
 
+    // Build a map of queue segment IDs to their polling children
+    // polling segments have originating_cdr_id pointing to the queue CDR
+    const queueChildrenMap = new Map<string, CallChainSegment[]>();
+    for (const seg of segments) {
+        if (isQueueDistribution(seg) && seg.originatingCdrId) {
+            const children = queueChildrenMap.get(seg.originatingCdrId) || [];
+            children.push(seg);
+            queueChildrenMap.set(seg.originatingCdrId, children);
+        }
+    }
+
     for (let i = 0; i < segments.length; i++) {
         const seg = segments[i];
 
         // Skip if already processed
         if (processed.has(seg.id)) continue;
 
-        // Check if this is a queue distribution segment
-        if (isQueueDistribution(seg)) {
-            // Find all segments that belong to the same queue distribution
-            // They share the same originating_cdr_id (the queue segment)
-            const simultaneousSegments: CallChainSegment[] = [];
+        // Check if this is a queue segment that has polling children
+        if (seg.category === "queue" && queueChildrenMap.has(seg.id)) {
+            const pollingChildren = queueChildrenMap.get(seg.id)!;
             let answeredSeg: CallChainSegment | undefined;
 
-            // Get the originating CDR ID - this links all polling segments to their parent queue
-            const originatingId = seg.originatingCdrId;
-
-            for (let j = i; j < segments.length; j++) {
-                const other = segments[j];
-                if (processed.has(other.id)) continue;
-
-                // Check if it's part of same distribution:
-                // 1. Same originating_cdr_id (from same queue)
-                // 2. Or same time window (fallback for segments without originatingCdrId)
-                const sameOrigin = originatingId && other.originatingCdrId === originatingId;
-                const sameTime = !originatingId && sameTimeWindow(seg.startedAt, other.startedAt);
-
-                if (isQueueDistribution(other) && (sameOrigin || sameTime)) {
-                    simultaneousSegments.push(other);
-                    processed.add(other.id);
-
-                    // Track if this segment was answered
-                    if (other.answeredAt) {
-                        answeredSeg = other;
-                    }
-                }
-            }
-
-            // If we found multiple simultaneous segments, group them as ringing
-            if (simultaneousSegments.length > 1) {
-                groups.push({
-                    type: "ringing_group",
-                    segments: simultaneousSegments,
-                    category: "ringing",
-                    answeredSegment: answeredSeg
-                });
-
-                // If someone answered, add a separate conversation group
-                if (answeredSeg) {
-                    groups.push({
-                        type: "single",
-                        segments: [answeredSeg],
-                        category: "conversation"
-                    });
-                }
-                continue;
-            }
-
-            // Single segment - check if it's ringing or conversation
+            // Mark queue segment and all its children as processed
             processed.add(seg.id);
+            for (const child of pollingChildren) {
+                processed.add(child.id);
+                if (child.answeredAt) {
+                    answeredSeg = child;
+                }
+            }
+
+            // Create a unified queue_group
             groups.push({
-                type: "single",
-                segments: [seg],
-                category: seg.category
+                type: "queue_group",
+                segments: pollingChildren,
+                category: "queue",
+                queueSegment: seg,
+                answeredSegment: answeredSeg
             });
+
+            // If someone answered, add a separate conversation group
+            if (answeredSeg) {
+                groups.push({
+                    type: "single",
+                    segments: [answeredSeg],
+                    category: "conversation"
+                });
+            }
+            continue;
+        }
+
+        // Skip polling segments that were already absorbed by a queue_group
+        if (isQueueDistribution(seg) && seg.originatingCdrId && queueChildrenMap.has(seg.originatingCdrId)) {
+            processed.add(seg.id);
             continue;
         }
 
@@ -246,16 +230,16 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
     // Group all segments chronologically (combine ringing)
     const groupedSegments = useMemo(() => groupSegments(segments), [segments]);
 
-    // For each ringing group, find the next conversation segment to identify who answered
+    // For each queue group, find the next conversation segment to identify who answered
     const getNextAnsweringAgent = (groupIndex: number): string | null => {
-        // Look for the next conversation group after this ringing group
+        // Look for the next conversation group after this queue group
         for (let i = groupIndex + 1; i < groupedSegments.length; i++) {
             const nextGroup = groupedSegments[i];
             if (nextGroup.category === 'conversation' && nextGroup.segments[0]?.answeredAt) {
                 return nextGroup.segments[0].destinationNumber;
             }
-            // If we hit another ringing group, stop searching
-            if (nextGroup.type === 'ringing_group') {
+            // If we hit another queue group, stop searching
+            if (nextGroup.type === 'queue_group') {
                 break;
             }
         }
@@ -458,25 +442,24 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
         );
     };
 
-    const renderRingingGroup = (group: SegmentGroup, groupIndex: number) => {
-        const config = categoryConfig.ringing;
-        const Icon = config.icon;
+    const renderQueueGroup = (group: SegmentGroup, groupIndex: number) => {
+        const config = categoryConfig.queue;
         const answered = group.answeredSegment;
+        const queueSeg = group.queueSegment!;
         const ringDuration = Math.max(...group.segments.filter(s => !s.answeredAt).map(s => s.durationSeconds));
 
-        // Find who answered right after this ringing group
+        // Find who answered right after this queue group
         const nextAnsweringAgent = getNextAnsweringAgent(groupIndex);
 
         return (
-            <div className={`flex-1 bg-white rounded-lg p-4 border shadow-sm ${answered ? 'border-green-300' : 'border-amber-200'}`}>
+            <div className={`flex-1 bg-white rounded-lg p-4 border shadow-sm ${answered ? 'border-green-300' : 'border-blue-200'}`}>
                 <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium text-slate-900">
-                        {formatTime(group.segments[0].startedAt)}
+                        {formatTime(queueSeg.startedAt)}
                     </span>
                     <div className="flex items-center gap-2">
                         <Badge variant="outline" className={config.className}>
-                            <Bell className="h-3 w-3 mr-1" />
-                            {group.segments.length} agent{group.segments.length > 1 ? "s" : ""}
+                            File d&apos;attente
                         </Badge>
                         {answered && (
                             <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300">
@@ -487,21 +470,32 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
                     </div>
                 </div>
 
-                <div className="text-sm text-slate-600 mb-2">
-                    <span className="font-medium">Distribution simultanée:</span>
+                {/* Queue name + number */}
+                <div className="flex items-center gap-2 text-sm mb-2">
+                    <div className="flex-1">
+                        <div className="font-mono font-medium">{queueSeg.destinationNumber}</div>
+                        {queueSeg.destinationName && (
+                            <div className="text-xs text-slate-500">{queueSeg.destinationName}</div>
+                        )}
+                    </div>
+                    <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200">
+                        <Bell className="h-3 w-3 mr-1" />
+                        {group.segments.length} agent{group.segments.length > 1 ? "s" : ""}
+                    </Badge>
                 </div>
 
+                {/* Agent badges */}
                 <div className="flex flex-wrap gap-1 mb-2">
                     {group.segments.map(seg => {
                         const isAnsweredHere = seg.answeredAt !== null;
-                        // Check if this agent answered right after this ringing group
+                        // Check if this agent answered right after this queue group
                         const answeredNext = !isAnsweredHere && nextAnsweringAgent === seg.destinationNumber;
                         const showAsSuccess = isAnsweredHere || answeredNext;
                         // Check if this is a retry (agent was busy before)
                         const retryCount = retryCountMap.get(seg.id) || 0;
                         const isBusy = seg.terminationReasonDetails === 'busy';
 
-                        // Determine styling: green for success, violet for busy/retry, orange for elsewhere, amber for others
+                        // Determine styling: green for success, violet for busy/retry, amber for others
                         let badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
                         if (showAsSuccess) {
                             badgeClass = 'bg-green-50 text-green-700 border-green-300 font-medium';
@@ -533,10 +527,15 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
                     })}
                 </div>
 
+                {/* Footer: queue duration + ring duration + termination */}
                 <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
-                    <span>Sonnerie: ~{ringDuration || 11}s</span>
+                    <div className="flex items-center gap-3">
+                        <span>Durée: {queueSeg.durationFormatted}</span>
+                        <span className="text-slate-300">|</span>
+                        <span>Sonnerie: ~{ringDuration || 11}s</span>
+                    </div>
                     <span className="text-slate-400">
-                        {answered ? answered.terminationReason : (group.segments[0].terminationReasonDetails || "annulé")}
+                        {queueSeg.terminationReasonDetails || queueSeg.terminationReason}
                     </span>
                 </div>
             </div>
@@ -592,8 +591,8 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
                                         </div>
 
                                         {/* Content */}
-                                        {group.type === "ringing_group" ? (
-                                            renderRingingGroup(group, idx)
+                                        {group.type === "queue_group" ? (
+                                            renderQueueGroup(group, idx)
                                         ) : (
                                             renderSegment(group.segments[0], false, group.category)
                                         )}
