@@ -16,6 +16,8 @@ import {
     ArrowUpDown,
     ArrowUp,
     ArrowDown,
+    Users,
+    HelpCircle,
 } from "lucide-react";
 
 import {
@@ -124,27 +126,28 @@ const statusConfig: Record<CallStatus, { icon: typeof Phone; label: string; clas
 };
 
 // Journey step icon & style config — dynamic based on result
-function getJourneyStepStyle(step: JourneyStep): { icon: string; className: string } {
+function getJourneyStepStyle(step: JourneyStep): { icon: React.ReactNode; className: string } {
+    const iconClass = "w-4 h-4";
     switch (step.type) {
         case 'direct':
             switch (step.result) {
-                case 'answered': return { icon: '📞', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-                case 'busy': return { icon: '📞', className: 'bg-red-50 text-red-600 border-red-200' };
+                case 'answered': return { icon: <Phone className={iconClass} />, className: 'text-emerald-600' };
+                case 'busy': return { icon: <Phone className={iconClass} />, className: 'text-red-600' };
                 case 'not_answered':
-                default: return { icon: '📞', className: 'bg-slate-50 text-slate-500 border-slate-200' };
+                default: return { icon: <Phone className={iconClass} />, className: 'text-slate-400' };
             }
         case 'queue':
             switch (step.result) {
-                case 'answered': return { icon: '👥', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-                case 'overflow': return { icon: '👥', className: 'bg-amber-50 text-amber-600 border-amber-200' };
-                case 'abandoned': return { icon: '👥', className: 'bg-red-50 text-red-600 border-red-200' };
+                case 'answered': return { icon: <Users className={iconClass} />, className: 'text-emerald-600' };
+                case 'overflow': return { icon: <Users className={iconClass} />, className: 'text-amber-500' };
+                case 'abandoned': return { icon: <Users className={iconClass} />, className: 'text-red-600' };
                 case 'not_answered':
-                default: return { icon: '👥', className: 'bg-orange-50 text-orange-600 border-orange-200' };
+                default: return { icon: <Users className={iconClass} />, className: 'text-orange-500' };
             }
         case 'voicemail':
-            return { icon: '📫', className: 'bg-purple-50 text-purple-600 border-purple-200' };
+            return { icon: <Voicemail className={iconClass} />, className: 'text-purple-600' };
         default:
-            return { icon: '❓', className: 'bg-slate-50 text-slate-500 border-slate-200' };
+            return { icon: <HelpCircle className={iconClass} />, className: 'text-slate-400' };
     }
 }
 
@@ -595,7 +598,7 @@ export function LogsTable({
                                                                         <Tooltip>
                                                                             <TooltipTrigger asChild>
                                                                                 <span
-                                                                                    className={`inline-flex items-center justify-center w-6 h-6 rounded border text-xs cursor-default ${config.className}`}
+                                                                                    className={`inline-flex items-center justify-center cursor-default ${config.className}`}
                                                                                 >
                                                                                     {config.icon}
                                                                                 </span>

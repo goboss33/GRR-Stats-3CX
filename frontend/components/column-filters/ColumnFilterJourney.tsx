@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Filter, Plus, X, Settings2 } from "lucide-react";
+import { Filter, Plus, X, Settings2, Phone, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -32,10 +32,10 @@ interface ColumnFilterJourneyProps {
     className?: string;
 }
 
-const TYPE_OPTIONS: { value: string; label: string; icon: string }[] = [
-    { value: "_all", label: "Tous", icon: "" },
-    { value: "direct", label: "Direct", icon: "📞" },
-    { value: "queue", label: "Queue", icon: "👥" },
+const TYPE_OPTIONS: { value: string; label: string; icon: React.ReactNode }[] = [
+    { value: "_all", label: "Tous", icon: null },
+    { value: "direct", label: "Direct", icon: <Phone className="h-3.5 w-3.5" /> },
+    { value: "queue", label: "Queue", icon: <Users className="h-3.5 w-3.5" /> },
 ];
 
 const RESULT_OPTIONS: { value: string; label: string }[] = [
@@ -186,14 +186,35 @@ export function ColumnFilterJourney({
         if (!hasFilter) return "Parcours";
         if (conditions.length === 1) {
             const c = conditions[0];
-            const parts: string[] = [];
+            const parts: React.ReactNode[] = [];
             const typeOpt = TYPE_OPTIONS.find(o => o.value === c.type);
-            if (typeOpt && c.type) parts.push(typeOpt.icon + typeOpt.label);
-            if (c.queueNumber) parts.push(`Q${c.queueNumber}`);
-            if (c.agentNumber) parts.push(`Ag.${c.agentNumber}`);
+            if (typeOpt && c.type) {
+                if (typeOpt.icon) {
+                    parts.push(
+                        <span key="type" className="inline-flex items-center gap-1">
+                            {typeOpt.icon} <span>{typeOpt.label}</span>
+                        </span>
+                    );
+                } else {
+                    parts.push(<span key="type">{typeOpt.label}</span>);
+                }
+            }
+            if (c.queueNumber) parts.push(<span key="q">Q{c.queueNumber}</span>);
+            if (c.agentNumber) parts.push(<span key="ag">Ag.{c.agentNumber}</span>);
             const resultOpt = RESULT_OPTIONS.find(o => o.value === c.result);
-            if (resultOpt && c.result) parts.push(resultOpt.label);
-            return parts.join(' ') || "1 condition";
+            if (resultOpt && c.result) parts.push(<span key="res">{resultOpt.label}</span>);
+            
+            if (parts.length === 0) return "1 condition";
+            
+            return (
+                <span className="inline-flex items-center gap-1.5">
+                    {parts.map((part, i) => (
+                        <React.Fragment key={i}>
+                            {part}
+                        </React.Fragment>
+                    ))}
+                </span>
+            );
         }
         return `${conditions.length} conditions`;
     };
@@ -272,7 +293,14 @@ export function ColumnFilterJourney({
                                             <SelectContent>
                                                 {TYPE_OPTIONS.map(opt => (
                                                     <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                                        {opt.icon ? `${opt.icon} ${opt.label}` : opt.label}
+                                                        {opt.icon ? (
+                                                            <div className="flex items-center gap-1.5">
+                                                                {opt.icon}
+                                                                <span>{opt.label}</span>
+                                                            </div>
+                                                        ) : (
+                                                            opt.label
+                                                        )}
                                                     </SelectItem>
                                                 ))}
                                             </SelectContent>
