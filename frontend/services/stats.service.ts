@@ -6,6 +6,7 @@ import {
     TimelineDataPoint,
     HeatmapDataPoint,
 } from "@/types/stats.types";
+import { getSqlIsHumanAnswered } from "./shared/call-aggregation";
 
 interface PeriodMetrics {
     total_calls: bigint;
@@ -36,8 +37,8 @@ export async function getGlobalMetrics(
         WITH unique_calls AS (
             SELECT
                 call_history_id,
-                -- A call is "answered" if ANY segment was answered (priority-based)
-                bool_or(cdr_answered_at IS NOT NULL) AS was_answered,
+                -- A call is "answered" if ANY segment was answered by a human (ignoring scripts/IVRs)
+                bool_or(${getSqlIsHumanAnswered()}) AS was_answered,
                 
                 -- Human talk time (Only extension segments that are answered)
                 SUM(
@@ -136,7 +137,7 @@ export async function getTimelineData(
             SELECT
                 call_history_id,
                 MIN(cdr_started_at) AS first_started_at,
-                bool_or(cdr_answered_at IS NOT NULL) AS was_answered
+                bool_or(${getSqlIsHumanAnswered()}) AS was_answered
             FROM cdroutput
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}

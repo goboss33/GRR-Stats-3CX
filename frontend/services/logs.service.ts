@@ -11,6 +11,7 @@ import {
     CallChainSegment,
     SegmentCategory,
 } from "@/types/logs.types";
+import { SQL_SYSTEM_DEST_TYPES, SQL_SYSTEM_ENTITY_TYPES, isSystemType } from "./shared/call-aggregation";
 
 // ============================================
 // HELPER FUNCTIONS
@@ -295,8 +296,8 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
     // 4. abandoned: not answered (for system types: answered by system but no human answer)
 
     // System types that need special handling
-    const systemTypes = "'queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking', 'script'";
-    const systemEntityTypes = "'queue', 'ivr'";
+    const systemTypes = SQL_SYSTEM_DEST_TYPES;
+    const systemEntityTypes = SQL_SYSTEM_ENTITY_TYPES;
 
     if (statuses.includes('voicemail')) {
         // Messagerie: le dernier segment est du voicemail
@@ -1506,10 +1507,8 @@ export async function getAggregatedCallLogs(
                 // Fix: specific check for system types (Queue, Ring Group, IVR)
                 // These segments often have an 'answered_at' time (system pick up) but should act as Abandoned
                 // unless a real human/extension answered later.
-                const isSystemType = ['queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking', 'script'].includes(lastDestType) ||
-                    ['queue', 'ivr'].includes(lastDestEntityType);
 
-                if (isSystemType) {
+                if (isSystemType(lastDestType, lastDestEntityType)) {
                     // It's a system segment. Only consider Answered if we have a record of a human answer (from answered_segments CTE)
                     // answered_segments CTE filters for destination_dn_type = 'extension'
                     if (row.answered_at) {

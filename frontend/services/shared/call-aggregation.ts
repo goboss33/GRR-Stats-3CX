@@ -51,7 +51,8 @@ export const SYSTEM_DESTINATION_TYPES = [
     'ring_group_ring_all',
     'ivr',
     'process',
-    'parking'
+    'parking',
+    'script'
 ] as const;
 
 /**
@@ -75,6 +76,23 @@ export const SQL_SYSTEM_DEST_TYPES = SYSTEM_DESTINATION_TYPES
 export const SQL_SYSTEM_ENTITY_TYPES = SYSTEM_ENTITY_TYPES
     .map(t => `'${t}'`)
     .join(', ');
+
+// ============================================
+// SQL CONDITIONS
+// ============================================
+
+/**
+ * SQL condition to strictly determine if a segment represents a human answer.
+ * It ignores system answering segments (like IVR/script pickups).
+ * 
+ * @param alias - Optional table alias (e.g., 'c')
+ */
+export const getSqlIsHumanAnswered = (alias: string = '') => {
+    const p = alias ? `${alias}.` : '';
+    return `(${p}cdr_answered_at IS NOT NULL 
+             AND ${p}destination_dn_type NOT IN (${SQL_SYSTEM_DEST_TYPES})
+             AND ${p}destination_entity_type NOT IN (${SQL_SYSTEM_ENTITY_TYPES}))`;
+};
 
 // ============================================
 // SQL CTE BUILDERS
