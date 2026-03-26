@@ -132,17 +132,17 @@ function getJourneyStepStyle(step: JourneyStep): { icon: React.ReactNode; classN
         case 'direct':
             switch (step.result) {
                 case 'answered': return { icon: <Phone className={iconClass} />, className: 'text-emerald-600' };
-                case 'busy': return { icon: <Phone className={iconClass} />, className: 'text-red-600' };
+                case 'busy':
                 case 'not_answered':
-                default: return { icon: <Phone className={iconClass} />, className: 'text-slate-400' };
+                default: return { icon: <Phone className={iconClass} />, className: 'text-red-600' };
             }
         case 'queue':
             switch (step.result) {
                 case 'answered': return { icon: <Users className={iconClass} />, className: 'text-emerald-600' };
-                case 'overflow': return { icon: <Users className={iconClass} />, className: 'text-amber-500' };
-                case 'abandoned': return { icon: <Users className={iconClass} />, className: 'text-red-600' };
+                case 'overflow':
+                case 'abandoned':
                 case 'not_answered':
-                default: return { icon: <Users className={iconClass} />, className: 'text-orange-500' };
+                default: return { icon: <Users className={iconClass} />, className: 'text-red-600' };
             }
         case 'voicemail':
             return { icon: <Voicemail className={iconClass} />, className: 'text-purple-600' };
@@ -607,7 +607,7 @@ export function LogsTable({
                                                                                 <div className="flex flex-col gap-1">
                                                                                     <span>{step.detail}</span>
                                                                                     {step.agent && (
-                                                                                        <div className="flex items-center gap-1 text-green-600 font-medium">
+                                                                                        <div className={`flex items-center gap-1 font-medium ${config.className}`}>
                                                                                             <Phone className="w-3 h-3" />
                                                                                             <span>{step.agent}</span>
                                                                                         </div>
