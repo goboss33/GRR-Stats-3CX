@@ -90,8 +90,8 @@ export const SQL_SYSTEM_ENTITY_TYPES = SYSTEM_ENTITY_TYPES
 export const getSqlIsHumanAnswered = (alias: string = '') => {
     const p = alias ? `${alias}.` : '';
     return `(${p}cdr_answered_at IS NOT NULL 
-             AND ${p}destination_dn_type NOT IN (${SQL_SYSTEM_DEST_TYPES})
-             AND ${p}destination_entity_type NOT IN (${SQL_SYSTEM_ENTITY_TYPES}))`;
+             AND COALESCE(${p}destination_dn_type, '') NOT IN (${SQL_SYSTEM_DEST_TYPES})
+             AND COALESCE(${p}destination_entity_type, '') NOT IN (${SQL_SYSTEM_ENTITY_TYPES}))`;
 };
 
 // ============================================

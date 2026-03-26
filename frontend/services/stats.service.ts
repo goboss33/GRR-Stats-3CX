@@ -6,6 +6,7 @@ import {
     TimelineDataPoint,
     HeatmapDataPoint,
 } from "@/types/stats.types";
+import { Prisma } from "@prisma/client";
 import { getSqlIsHumanAnswered } from "./shared/call-aggregation";
 
 interface PeriodMetrics {
@@ -38,7 +39,7 @@ export async function getGlobalMetrics(
             SELECT
                 call_history_id,
                 -- A call is "answered" if ANY segment was answered by a human (ignoring scripts/IVRs)
-                bool_or(${getSqlIsHumanAnswered()}) AS was_answered,
+                bool_or(${Prisma.raw(getSqlIsHumanAnswered())}) AS was_answered,
                 
                 -- Human talk time (Only extension segments that are answered)
                 SUM(
@@ -137,7 +138,7 @@ export async function getTimelineData(
             SELECT
                 call_history_id,
                 MIN(cdr_started_at) AS first_started_at,
-                bool_or(${getSqlIsHumanAnswered()}) AS was_answered
+                bool_or(${Prisma.raw(getSqlIsHumanAnswered())}) AS was_answered
             FROM cdroutput
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
