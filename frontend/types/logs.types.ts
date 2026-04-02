@@ -1,202 +1,23 @@
-// Types for Call Logs module
-
-export type CallDirection = "inbound" | "outbound" | "internal" | "bridge";
-export type CallStatus = "answered" | "voicemail" | "abandoned" | "busy";
-export type EntityType = "extension" | "external" | "queue" | "ivr" | "script" | "unknown";
-export type SortDirection = "asc" | "desc";
-export type SortField = "startedAt" | "timeOfDay" | "duration" | "sourceNumber" | "destinationNumber";
-
-// Journey step types for the "Parcours" column
-export type JourneyStepType = "direct" | "queue" | "voicemail";
-export type JourneyStepResult = "answered" | "not_answered" | "busy" | "voicemail" | "abandoned" | "overflow";
-
-// Composable journey condition for filtering
-export interface JourneyCondition {
-    type?: JourneyStepType;        // undefined = any type
-    queueNumber?: string;          // Filter by specific queue (matches step label)
-    agentNumber?: string;          // Filter by specific agent extension
-    result?: JourneyStepResult;    // undefined = any result
-    // Advanced options
-    negate?: boolean;              // Invert the condition (NOT EXISTS instead of EXISTS)
-    passageMode?: 'all' | 'first' | 'multi';  // Queue: all/first passage/multi-passages (ping-pong)
-    hasOverflow?: boolean;         // Queue: redirected to other queues after this one
-}
-
-// Time slot for hour-of-day filtering
-export interface TimeSlot {
-    start: string; // "HH:MM" (e.g., "08:00")
-    end: string;   // "HH:MM" (e.g., "18:00")
-}
-
-export interface JourneyStep {
-    type: JourneyStepType;
-    label: string;   // Short label (e.g., "Queue 905")
-    detail: string;  // Full detail for tooltip (e.g., "Queue 905 — Gérance")
-    result: JourneyStepResult;  // Outcome: answered, not_answered, busy, voicemail
-    agent?: string;  // Name of the agent who answered (for queue steps)
-    agentNumber?: string;  // Extension number of the agent (for filtering)
-}
-
-// Aggregated call log (1 call = 1 row, grouped by call_history_id)
-export interface AggregatedCallLog {
-    callHistoryId: string;
-    callHistoryIdShort: string;
-    segmentCount: number;
-
-    // Timing
-    startedAt: string;
-    endedAt: string;
-    totalDurationSeconds: number;
-    totalDurationFormatted: string;
-    waitTimeSeconds: number;
-    waitTimeFormatted: string;
-
-    // Caller (1er segment)
-    callerNumber: string;
-    callerName: string | null;
-
-    // Callee (dernier segment - destination finale)
-    calleeNumber: string;
-    calleeName: string | null;
-
-    // Handled by (all agents who had conversation)
-    handledBy: Array<{ number: string; name: string }>;  // All agents with their numbers
-    handledByDisplay: string;  // Formatted for display (max 5 + "et N autres")
-    totalTalkDurationSeconds: number;  // Sum of all conversation durations
-    totalTalkDurationFormatted: string;
-
-    // Status
-    direction: CallDirection;
-    finalStatus: CallStatus;
-    wasTransferred: boolean;
-
-    // Queues that the call passed through
-    queues: Array<{ number: string; name: string }>;
-    queuesDisplay: string;  // Formatted for display
-
-    // Journey steps for "Parcours" column
-    journey: JourneyStep[];
-}
-
-// Legacy: Single segment call log (kept for call chain modal)
-export interface CallLog {
-    id: string;
-    callHistoryId: string;
-    callHistoryIdShort: string;
-    startedAt: string;
-    sourceNumber: string;
-    sourceName: string;
-    sourceType: string;
-    destinationNumber: string;
-    destinationName: string;
-    destinationType: string;
-    direction: CallDirection;
-    status: CallStatus;
-    durationSeconds: number;
-    durationFormatted: string;
-    ringDurationSeconds: number;
-    trunkDid: string;
-    terminationReason: string;
-}
-
-export interface LogsFilters {
-    directions: CallDirection[];
-    statuses: CallStatus[];
-    entityTypes: EntityType[];
-    callerSearch?: string;
-    calleeSearch?: string;
-    handledBySearch?: string;  // Filter by agent number/name
-    queueSearch?: string;      // Filter by queue number/name
-    idSearch?: string;         // Filter by call history ID (supports * wildcard)
-    segmentCountMin?: number;  // Min number of segments
-    segmentCountMax?: number;  // Max number of segments
-    durationMin?: number;
-    durationMax?: number;
-    waitTimeMin?: number;
-    waitTimeMax?: number;
-    // Composable journey conditions (AND-combined step predicates)
-    journeyConditions?: JourneyCondition[];
-    // Time slot filter (hour-of-day ranges)
-    timeSlots?: TimeSlot[];               // Multiple time ranges (OR'd together)
-}
-
-export interface LogsPagination {
-    page: number;
-    pageSize: number;
-}
-
-export interface LogsSort {
-    field: SortField;
-    direction: SortDirection;
-}
-
-export interface AggregatedCallLogsResponse {
-    logs: AggregatedCallLog[];
-    totalCount: number;
-    totalPages: number;
-    currentPage: number;
-}
-
-// Legacy response type (kept for compatibility)
-export interface CallLogsResponse {
-    logs: CallLog[];
-    totalCount: number;
-    totalPages: number;
-    currentPage: number;
-}
-
-// Column visibility settings
-export interface ColumnVisibility {
-    callHistoryId: boolean;
-    segmentCount: boolean;
-    dateTime: boolean;
-    timeSlot: boolean;
-    caller: boolean;
-    callee: boolean;
-    handledBy: boolean;
-    queues: boolean;
-    journey: boolean;
-    direction: boolean;
-    status: boolean;
-    duration: boolean;
-    waitTime: boolean;
-}
-
-// Segment category for display in modal
-export type SegmentCategory =
-    | "routing"      // System routing (outbound_rule, inbound_routing, ultra-short redirects)
-    | "ringing"      // Extension ringing but not answered
-    | "conversation" // Answered call with real interaction (= Répondu)
-    | "queue"        // Queue/waiting segment
-    | "voicemail"    // Voicemail segment (= Messagerie)
-    | "ivr"          // IVR/script interaction
-    | "bridge"       // Bridge (EDIFEA) segment
-    | "transfer"     // Transfer segment
-    | "abandoned"    // Call not answered (= Abandonné)
-    | "rejected"     // Call rejected by destination (= Rejeté)
-    | "busy"         // Recipient was busy (= Occupé)
-    | "unknown";     // Fallback
-
-// For call chain modal
-export interface CallChainSegment {
-    id: string;
-    startedAt: string;
-    answeredAt: string | null;
-    sourceNumber: string;
-    sourceName: string;
-    sourceType: string;
-    destinationNumber: string;
-    destinationName: string;
-    destinationType: string;
-    status: CallStatus;
-    durationSeconds: number;
-    durationFormatted: string;
-    terminationReason: string;
-    terminationReasonDetails: string;
-    creationMethod: string;
-    creationForwardReason: string;
-    originatingCdrId: string | null; // Links to the parent segment (e.g., queue) that spawned this
-    category: SegmentCategory;
-}
-
-
+// Re-export from unified domain types for backward compatibility
+export type {
+    CallDirection,
+    CallStatus,
+    EntityType,
+    SortDirection,
+    SortField,
+    JourneyStepType,
+    JourneyStepResult,
+    JourneyCondition,
+    TimeSlot,
+    JourneyStep,
+    AggregatedCallLog,
+    CallLog,
+    LogsFilters,
+    LogsPagination,
+    LogsSort,
+    AggregatedCallLogsResponse,
+    CallLogsResponse,
+    ColumnVisibility,
+    SegmentCategory,
+    CallChainSegment,
+} from "@/services/domain/call.types";

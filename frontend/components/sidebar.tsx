@@ -12,6 +12,7 @@ import {
     FileText,
     Users,
     BarChart3,
+    Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,12 @@ const navItems: NavItem[] = [
         href: "/queues",
         icon: Users,
         roles: ["ADMIN", "SUPERUSER", "USER"],
+    },
+    {
+        label: "Diagnostic",
+        href: "/diagnostic",
+        icon: Wrench,
+        roles: ["ADMIN"],
     },
     {
         label: "Paramètres",

@@ -1,13 +1,5 @@
-export interface QueueMember {
-    agentExtension: string;
-    agentName: string;
-    attemptsCount: number;
-    lastSeenAt: string;
-}
-
-export interface QueueInfo {
-    queueNumber: string;
-    queueName: string;
-    members: QueueMember[];
-    memberCount: number;
-}
+// Re-export from unified domain types for backward compatibility
+export type {
+    QueueMember,
+    QueueInfo,
+} from "@/services/domain/call.types";

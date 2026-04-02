@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useTransition } from "react";
-import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Users2, Hourglass } from "lucide-react";
+import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Users2, Hourglass, Voicemail, PhoneCall } from "lucide-react";
 import { subDays, startOfDay, endOfDay } from "date-fns";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -144,7 +144,7 @@ export default function DashboardClient() {
             </div>
 
             {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4">
                 {/* Total Calls */}
                 <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-slate-50/50">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -202,6 +202,44 @@ export default function DashboardClient() {
                             )}
                         </div>
                         <p className="text-xs text-slate-500 mt-1.5 font-medium">Appels non aboutis</p>
+                    </CardContent>
+                </Card>
+
+                {/* Voicemail */}
+                <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-purple-50/10">
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <CardTitle className="text-sm font-semibold text-slate-600">Messagerie</CardTitle>
+                        <Voicemail className="h-5 w-5 text-purple-500 opacity-80" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-3xl font-bold text-purple-600 flex items-center">
+                            {isInitialLoad ? <span className="animate-pulse">...</span> : (
+                                <>
+                                    <AnimatedNumber value={metrics?.voicemailCalls || 0} />
+                                    <TrendIndicator current={metrics?.voicemailCalls || 0} prev={metrics?.prevVoicemailCalls || 0} inverseGood={true} />
+                                </>
+                            )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1.5 font-medium">Vers messagerie vocale</p>
+                    </CardContent>
+                </Card>
+
+                {/* Busy */}
+                <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-orange-50/10">
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <CardTitle className="text-sm font-semibold text-slate-600">Occupé</CardTitle>
+                        <PhoneCall className="h-5 w-5 text-orange-500 opacity-80" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-3xl font-bold text-orange-600 flex items-center">
+                            {isInitialLoad ? <span className="animate-pulse">...</span> : (
+                                <>
+                                    <AnimatedNumber value={metrics?.busyCalls || 0} />
+                                    <TrendIndicator current={metrics?.busyCalls || 0} prev={metrics?.prevBusyCalls || 0} inverseGood={true} />
+                                </>
+                            )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1.5 font-medium">Ligne occupée</p>
                     </CardContent>
                 </Card>
 

@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import {
+import type {
     AggregatedCallLog,
     CallDirection,
     CallStatus,
@@ -10,211 +10,24 @@ import {
     AggregatedCallLogsResponse,
     CallChainSegment,
     SegmentCategory,
-} from "@/types/logs.types";
-import { SQL_SYSTEM_DEST_TYPES, SQL_SYSTEM_ENTITY_TYPES, isSystemType } from "./shared/call-aggregation";
+} from "@/services/domain/call.types";
+import {
+    SQL_SYSTEM_DEST_TYPES,
+    SQL_SYSTEM_ENTITY_TYPES,
+    isSystemType,
+    determineCallDirection,
+    determineCallStatus,
+    determineSegmentStatus,
+    determineSegmentCategory,
+    formatDuration,
+    getDisplayNumber,
+    getDisplayName,
+    INTERNAL_SYSTEM_DEST_TYPES,
+} from "@/services/domain/call-aggregation";
 
 // ============================================
-// HELPER FUNCTIONS
+// SEARCH PATTERN PARSER
 // ============================================
-
-function determineDirection(
-    sourceType: string | null,
-    firstDestType: string | null,
-    lastDestType: string | null
-): CallDirection {
-    // Bridge calls: if source, first destination, or last destination involves bridge
-    const srcIsBridge = sourceType?.toLowerCase() === "bridge";
-    const firstDestIsBridge = firstDestType?.toLowerCase() === "bridge";
-    const lastDestIsBridge = lastDestType?.toLowerCase() === "bridge";
-    if (srcIsBridge || firstDestIsBridge || lastDestIsBridge) return "bridge";
-
-    const srcIsExt = sourceType?.toLowerCase() === "extension";
-    const destIsExt = firstDestType?.toLowerCase() === "extension";
-    if (srcIsExt && destIsExt) return "internal";
-
-    // Check if destination is an internal system (Queue, IVR, RingGroup, etc.)
-    const internalSystemDestinations = ['queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking'];
-    if (srcIsExt && internalSystemDestinations.includes(firstDestType?.toLowerCase() || '')) {
-        return "internal";
-    }
-
-    if (srcIsExt && !destIsExt) return "outbound";
-    return "inbound";
-}
-
-function determineStatus(
-    answeredAt: Date | null,
-    startedAt: Date | null,
-    endedAt: Date | null,
-    destType: string | null,
-    destEntityType: string | null,
-    terminationReasonDetails: string | null
-): CallStatus {
-    // Check for voicemail
-    const isVoicemail = destType?.toLowerCase() === 'vmail_console' ||
-        destType?.toLowerCase() === 'voicemail' ||
-        destEntityType?.toLowerCase() === 'voicemail';
-    if (isVoicemail) {
-        return "voicemail";
-    }
-
-    // Check for busy
-    if (terminationReasonDetails?.toLowerCase()?.includes('busy')) {
-        return "busy";
-    }
-
-    if (answeredAt) {
-        // Check if answered by a human (extension) or by IVR/queue/script
-        const isHumanAnswer = destType?.toLowerCase() === "extension" &&
-            destEntityType?.toLowerCase() !== "voicemail";
-        return isHumanAnswer ? "answered" : "abandoned"; // If not human, treat as abandoned
-    }
-
-    // Not answered = abandoned
-    return "abandoned";
-}
-
-function determineSegmentCategory(
-    terminationReason: string | null,
-    terminationReasonDetails: string | null,
-    creationMethod: string | null,
-    creationForwardReason: string | null,
-    destinationType: string | null,
-    destinationEntityType: string | null,
-    sourceType: string | null,
-    durationSeconds: number,
-    wasAnswered: boolean
-): SegmentCategory {
-    const termReason = terminationReason?.toLowerCase() || "";
-    const termDetails = terminationReasonDetails?.toLowerCase() || "";
-    const createMethod = creationMethod?.toLowerCase() || "";
-    const createForward = creationForwardReason?.toLowerCase() || "";
-    const destType = destinationType?.toLowerCase() || "";
-    const destEntityType = destinationEntityType?.toLowerCase() || "";
-    const srcType = sourceType?.toLowerCase() || "";
-
-    // Bridge segments
-    if (srcType === "bridge" || destType === "bridge") {
-        return "bridge";
-    }
-
-    // Voicemail segments - check both destination_dn_type AND destination_entity_type
-    if (destType === "vmail_console" || destType === "voicemail" || destEntityType === "voicemail") {
-        return "voicemail";
-    }
-
-    // IVR/Script segments
-    if (destType === "script" || destType === "ivr") {
-        return "ivr";
-    }
-
-    // Queue segments
-    if (destType === "queue") {
-        return "queue";
-    }
-
-    // System routing segments: outbound_rule, inbound_routing, or ultra-short redirections
-    // These are internal system routing, not real call attempts
-    // destType === "unknown" covers outbound_rule and inbound_routing
-    if (destType === "unknown") {
-        return "routing";
-    }
-    if (termReason === "redirected" && durationSeconds < 1) {
-        return "routing";
-    }
-
-    // Ringing segments: agent polled but didn't answer (another agent answered)
-    // Important: cancelled + terminated_by_originator means CALLER hung up, not ringing
-    if (createMethod === "route_to" && createForward === "polling") {
-        if (termReason === "cancelled") {
-            // Check WHY it was cancelled
-            if (termDetails === "completed_elsewhere" || termDetails === "") {
-                // Empty details or completed_elsewhere = someone else answered
-                return "ringing";
-            }
-            if (termDetails === "terminated_by_originator") {
-                // Caller hung up before getting an answer
-                return "abandoned";
-            }
-        }
-    }
-
-    // Conversation: answered with significant duration
-    if (wasAnswered && destType === "extension" && durationSeconds > 1) {
-        return "conversation";
-    }
-
-    // Transfer segments
-    if (createMethod === "transfer" || createMethod === "divert") {
-        if (wasAnswered && durationSeconds > 1) {
-            return "conversation";
-        }
-        if (termReason === "continued_in") {
-            return "transfer";
-        }
-    }
-
-    // Busy segments - the recipient was busy
-    if (termDetails.includes("busy")) {
-        return "busy";
-    }
-
-    // Rejected segments - call was explicitly rejected by destination
-    if (termReason === "rejected") {
-        return "rejected";
-    }
-
-    // No route - routing failure
-    if (termDetails === "no_route") {
-        return "routing";
-    }
-
-    // Caller/destination hung up before answer
-    if (!wasAnswered && (termReason === "src_participant_terminated" || termReason === "dst_participant_terminated")) {
-        return "abandoned";
-    }
-
-    // Fallback based on answered status
-    if (wasAnswered) {
-        return "conversation";
-    }
-
-    return "unknown";
-}
-
-function formatDuration(seconds: number): string {
-    if (seconds < 0) seconds = 0;
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
-    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-}
-
-function getDisplayNumber(
-    dnNumber: string | null,
-    participantNumber: string | null,
-    presentation: string | null = null
-): string {
-    if (participantNumber && participantNumber.trim() !== "") {
-        return participantNumber;
-    }
-    if (presentation && presentation.trim() !== "" && !presentation.includes(":")) {
-        return presentation;
-    }
-    return dnNumber || "-";
-}
-
-function getDisplayName(
-    participantName: string | null,
-    dnName: string | null
-): string {
-    if (participantName && participantName.trim() !== "") {
-        return participantName.replace(/:$/, "").trim();
-    }
-    if (dnName && dnName.trim() !== "") {
-        return dnName;
-    }
-    return "";
-}
 
 function parseSearchPattern(input: string): { mode: 'exact' | 'startsWith' | 'endsWith' | 'contains'; value: string } {
     const trimmed = input.trim();
@@ -260,7 +73,7 @@ function buildSqlDirectionFilter(directions: CallDirection[] | undefined): strin
     // inbound: source is NOT extension (and not bridge)
     // outbound: source IS extension AND destination is NOT extension (and not bridge)
     // internal: source IS extension AND destination IS extension
-    const internalSystemTypes = "'queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking'";
+    const internalSystemTypes = INTERNAL_SYSTEM_DEST_TYPES.map(t => `'${t}'`).join(', ');
 
     if (directions.includes('bridge')) {
         conditions.push("(fs.source_dn_type = 'bridge' OR fs.destination_dn_type = 'bridge' OR ls.last_dest_type = 'bridge')");
@@ -671,7 +484,7 @@ export async function getCallLogsSQL(
                 termination_reason_details
             FROM cdroutput
             WHERE ${whereClause}
-            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
         ),
         answered_segments AS (
             SELECT DISTINCT ON (c.call_history_id)
@@ -688,7 +501,7 @@ export async function getCallLogsSQL(
               AND c.cdr_answered_at IS NOT NULL
               AND c.destination_dn_type = 'extension'
               AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-            ORDER BY c.call_history_id, c.cdr_answered_at ASC
+            ORDER BY c.call_history_id, c.cdr_answered_at ASC, c.cdr_id ASC
         ),
         handled_by AS (
             SELECT
@@ -740,7 +553,7 @@ export async function getCallLogsSQL(
               AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
               AND p.creation_forward_reason = 'polling'
               AND p.cdr_answered_at IS NOT NULL
-            ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC
+            ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC, p.cdr_id ASC
         ),
         queue_overflow AS (
             SELECT c.cdr_id
@@ -960,7 +773,7 @@ export async function getAggregatedCallLogs(
                     termination_reason_details
                 FROM cdroutput
                 WHERE ${whereClause}
-                ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC
+                ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
             ),
             answered_segments AS (
                 SELECT DISTINCT ON (c.call_history_id)
@@ -977,7 +790,7 @@ export async function getAggregatedCallLogs(
                   AND c.cdr_answered_at IS NOT NULL
                   AND c.destination_dn_type = 'extension'
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                ORDER BY c.call_history_id, c.cdr_answered_at ASC
+                ORDER BY c.call_history_id, c.cdr_answered_at ASC, c.cdr_id ASC
             ),
             handled_by AS (
                 SELECT 
@@ -1029,7 +842,7 @@ export async function getAggregatedCallLogs(
                   AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                   AND p.creation_forward_reason = 'polling'
                   AND p.cdr_answered_at IS NOT NULL
-                ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC
+                ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC, p.cdr_id ASC
             ),
             queue_overflow AS (
                 SELECT c.cdr_id
@@ -1258,7 +1071,7 @@ export async function getAggregatedCallLogs(
                   AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
                   AND p.creation_forward_reason = 'polling'
                   AND p.cdr_answered_at IS NOT NULL
-                ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC
+                ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC, p.cdr_id ASC
             ),
             queue_overflow AS (
                 SELECT c.cdr_id
@@ -1402,7 +1215,7 @@ export async function getAggregatedCallLogs(
                     termination_reason_details
                 FROM cdroutput
                 WHERE ${whereClause}
-                ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC
+                ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
             ),
             answered_segments AS (
                 SELECT DISTINCT ON (c.call_history_id)
@@ -1413,7 +1226,7 @@ export async function getAggregatedCallLogs(
                   AND c.cdr_answered_at IS NOT NULL
                   AND c.destination_dn_type = 'extension'
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                ORDER BY c.call_history_id, c.cdr_answered_at ASC
+                ORDER BY c.call_history_id, c.cdr_answered_at ASC, c.cdr_id ASC
             )${handledByCTEForCount}${callQueuesCTEForCount}${callJourneyCTEForCount}${calleeFilterCTE}
             SELECT COUNT(*) as total
             FROM call_aggregates ca
@@ -1470,64 +1283,24 @@ export async function getAggregatedCallLogs(
                 ? Math.round(((answeredByHuman || firstAnswered)!.getTime() - firstStarted.getTime()) / 1000)
                 : (firstStarted && lastEnded ? Math.round((lastEnded.getTime() - firstStarted.getTime()) / 1000) : 0);
 
-            // Determine final status using the SAME LOGIC as determineSegmentCategory
-            // This ensures consistency between aggregated table and modal
-            let finalStatus: CallStatus;
-            const termReason = row.termination_reason?.toLowerCase() || "";
-            const termDetails = row.termination_reason_details?.toLowerCase() || "";
-            const lastDestType = row.last_dest_type?.toLowerCase() || "";
-            const lastDestEntityType = row.last_dest_entity_type?.toLowerCase() || "";
-            const sourceType = row.source_dn_type?.toLowerCase() || "";
+            // Determine final status using the centralized domain function
+            const lastSegmentAnswered = row.answered_at !== null;
+            const finalStatus = determineCallStatus({
+                lastDestType: row.last_dest_type,
+                lastDestEntityType: row.last_dest_entity_type,
+                lastAnsweredAt: row.last_answered_at ? new Date(row.last_answered_at) : null,
+                lastStartedAt: row.last_started_at ? new Date(row.last_started_at) : null,
+                lastEndedAt: lastEnded,
+                terminationReasonDetails: row.termination_reason_details,
+                humanAnsweredAt: answeredByHuman,
+            });
 
-            // Check if the LAST segment was answered (any destination type, not just extensions)
-            const lastSegmentAnswered = row.last_answered_at !== null;
-
-            // Calculate duration of last segment
-            const lastStarted = row.last_started_at ? new Date(row.last_started_at) : null;
-            const lastDurationSeconds = lastStarted && lastEnded
-                ? (lastEnded.getTime() - lastStarted.getTime()) / 1000
-                : 0;
-
-            // Apply the SAME logic as determineSegmentCategory:
-
-            // 1. Voicemail check first
-            const isVoicemail = lastDestType === 'vmail_console' ||
-                lastDestType === 'voicemail' ||
-                lastDestEntityType === 'voicemail';
-
-            if (isVoicemail) {
-                finalStatus = "voicemail";
-            }
-            // 2. Busy check - recipient was busy
-            else if (termDetails.includes('busy')) {
-                finalStatus = "busy";
-            }
-            // 3. Answered - last segment was answered with real conversation
-            else if (lastSegmentAnswered && lastDurationSeconds > 1) {
-                // Fix: specific check for system types (Queue, Ring Group, IVR)
-                // These segments often have an 'answered_at' time (system pick up) but should act as Abandoned
-                // unless a real human/extension answered later.
-
-                if (isSystemType(lastDestType, lastDestEntityType)) {
-                    // It's a system segment. Only consider Answered if we have a record of a human answer (from answered_segments CTE)
-                    // answered_segments CTE filters for destination_dn_type = 'extension'
-                    if (row.answered_at) {
-                        finalStatus = "answered";
-                    } else {
-                        finalStatus = "abandoned";
-                    }
-                } else {
-                    // Standard logic for other types (Extension, External, etc.)
-                    finalStatus = "answered";
-                }
-            }
-            // 4. Not answered = abandoned (regardless of direction)
-            else {
-                finalStatus = "abandoned";
-            }
-
-            // Determine direction - check first and last segments for bridge
-            const direction = determineDirection(row.source_dn_type, row.first_dest_type, row.last_dest_type);
+            // Determine direction using centralized domain function
+            const direction = determineCallDirection({
+                sourceType: row.source_dn_type,
+                firstDestType: row.first_dest_type,
+                lastDestType: row.last_dest_type,
+            });
 
             // Was transferred if more than 1 segment
             const wasTransferred = Number(row.segment_count) > 1;
@@ -1696,17 +1469,17 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
                 : 0;
 
             // Determine segment category
-            const category = determineSegmentCategory(
-                seg.termination_reason,
-                seg.termination_reason_details,
-                seg.creation_method,
-                seg.creation_forward_reason,
-                seg.destination_dn_type,
-                seg.destination_entity_type,
-                seg.source_dn_type,
+            const category = determineSegmentCategory({
+                terminationReason: seg.termination_reason,
+                terminationReasonDetails: seg.termination_reason_details,
+                creationMethod: seg.creation_method,
+                creationForwardReason: seg.creation_forward_reason,
+                destinationType: seg.destination_dn_type,
+                destinationEntityType: seg.destination_entity_type,
+                sourceType: seg.source_dn_type,
                 durationSeconds,
-                !!answeredAt
-            );
+                wasAnswered: !!answeredAt,
+            });
 
             return {
                 id: seg.cdr_id,
@@ -1725,14 +1498,14 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
                         || (seg.source_participant_name?.trim().endsWith(':') ? getDisplayName(seg.source_participant_name, null) : ""))
                     : getDisplayName(seg.destination_participant_name, seg.destination_dn_name),
                 destinationType: seg.destination_dn_type || "-",
-                status: determineStatus(
-                    seg.cdr_answered_at,
-                    seg.cdr_started_at,
-                    seg.cdr_ended_at,
-                    seg.destination_dn_type,
-                    seg.destination_entity_type,
-                    seg.termination_reason_details
-                ),
+                status: determineSegmentStatus({
+                    answeredAt: seg.cdr_answered_at,
+                    startedAt: seg.cdr_started_at,
+                    endedAt: seg.cdr_ended_at,
+                    destType: seg.destination_dn_type,
+                    destEntityType: seg.destination_entity_type,
+                    terminationReasonDetails: seg.termination_reason_details,
+                }),
                 durationSeconds,
                 durationFormatted: formatDuration(Math.round(durationSeconds)),
                 terminationReason: seg.termination_reason || "-",
