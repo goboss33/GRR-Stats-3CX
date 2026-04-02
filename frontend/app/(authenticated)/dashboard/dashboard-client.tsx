@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useTransition } from "react";
 import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Users2, Hourglass, Voicemail, PhoneCall } from "lucide-react";
-import { subDays, startOfDay, endOfDay } from "date-fns";
+import { subDays, startOfDay, endOfDay, format } from "date-fns";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { DateRangePicker } from "@/components/date-range-picker";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
 
+import Link from "next/link";
 import {
     getGlobalMetrics,
     getTimelineData,
@@ -155,7 +156,12 @@ export default function DashboardClient() {
                         <div className="text-3xl font-bold text-slate-900 flex items-center">
                             {isInitialLoad ? <span className="animate-pulse">...</span> : (
                                 <>
-                                    <AnimatedNumber value={metrics?.totalCalls || 0} />
+                                    <Link
+                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}`}
+                                        className="hover:underline cursor-pointer"
+                                    >
+                                        <AnimatedNumber value={metrics?.totalCalls || 0} />
+                                    </Link>
                                     <TrendIndicator current={metrics?.totalCalls || 0} prev={metrics?.prevTotalCalls || 0} />
                                 </>
                             )}
@@ -174,7 +180,12 @@ export default function DashboardClient() {
                         <div className="text-3xl font-bold text-emerald-600 flex items-center">
                             {isInitialLoad ? <span className="animate-pulse">...</span> : (
                                 <>
-                                    <AnimatedNumber value={metrics?.answeredCalls || 0} />
+                                    <Link
+                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=answered`}
+                                        className="hover:underline cursor-pointer"
+                                    >
+                                        <AnimatedNumber value={metrics?.answeredCalls || 0} />
+                                    </Link>
                                     <TrendIndicator current={metrics?.answeredCalls || 0} prev={metrics?.prevAnsweredCalls || 0} />
                                 </>
                             )}
@@ -196,7 +207,12 @@ export default function DashboardClient() {
                         <div className="text-3xl font-bold text-rose-600 flex items-center">
                             {isInitialLoad ? <span className="animate-pulse">...</span> : (
                                 <>
-                                    <AnimatedNumber value={metrics?.missedCalls || 0} />
+                                    <Link
+                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=abandoned`}
+                                        className="hover:underline cursor-pointer"
+                                    >
+                                        <AnimatedNumber value={metrics?.missedCalls || 0} />
+                                    </Link>
                                     <TrendIndicator current={metrics?.missedCalls || 0} prev={metrics?.prevMissedCalls || 0} inverseGood={true} />
                                 </>
                             )}
@@ -215,7 +231,12 @@ export default function DashboardClient() {
                         <div className="text-3xl font-bold text-purple-600 flex items-center">
                             {isInitialLoad ? <span className="animate-pulse">...</span> : (
                                 <>
-                                    <AnimatedNumber value={metrics?.voicemailCalls || 0} />
+                                    <Link
+                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=voicemail`}
+                                        className="hover:underline cursor-pointer"
+                                    >
+                                        <AnimatedNumber value={metrics?.voicemailCalls || 0} />
+                                    </Link>
                                     <TrendIndicator current={metrics?.voicemailCalls || 0} prev={metrics?.prevVoicemailCalls || 0} inverseGood={true} />
                                 </>
                             )}
@@ -234,7 +255,12 @@ export default function DashboardClient() {
                         <div className="text-3xl font-bold text-orange-600 flex items-center">
                             {isInitialLoad ? <span className="animate-pulse">...</span> : (
                                 <>
-                                    <AnimatedNumber value={metrics?.busyCalls || 0} />
+                                    <Link
+                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=busy`}
+                                        className="hover:underline cursor-pointer"
+                                    >
+                                        <AnimatedNumber value={metrics?.busyCalls || 0} />
+                                    </Link>
                                     <TrendIndicator current={metrics?.busyCalls || 0} prev={metrics?.prevBusyCalls || 0} inverseGood={true} />
                                 </>
                             )}
