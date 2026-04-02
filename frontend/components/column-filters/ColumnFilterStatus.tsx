@@ -24,7 +24,7 @@ interface ColumnFilterStatusProps {
 const statusOptions: { value: CallStatus; label: string }[] = [
     { value: "answered", label: "Répondu" },
     { value: "voicemail", label: "Messagerie" },
-    { value: "abandoned", label: "Abandonné" },
+    { value: "abandoned", label: "Manqué" },
     { value: "busy", label: "Occupé" },
 ];
 

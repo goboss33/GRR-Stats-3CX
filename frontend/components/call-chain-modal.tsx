@@ -95,8 +95,8 @@ const categoryConfig: Record<SegmentCategory, {
     },
     abandoned: {
         icon: PhoneOff,
-        label: "Abandonné",
-        className: "bg-amber-100 text-amber-800 border-amber-200",
+        label: "Manqué",
+        className: "bg-red-100 text-red-800 border-red-200",
         description: "Appel non abouti"
     },
     rejected: {
