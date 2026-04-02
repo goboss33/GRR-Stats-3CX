@@ -42,7 +42,7 @@ const RESULT_OPTIONS: { value: string; label: string }[] = [
     { value: "_all", label: "Tous" },
     { value: "answered", label: "Répondu" },
     { value: "not_answered", label: "Non répondu" },
-    { value: "abandoned", label: "Abandonné" },
+    { value: "abandoned", label: "Manqué" },
     { value: "overflow", label: "Redirigé" },
     { value: "busy", label: "Occupé" },
     { value: "voicemail", label: "Messagerie" },
