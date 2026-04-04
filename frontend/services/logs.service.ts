@@ -106,7 +106,7 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
     // 2. busy: termination_reason_details contains 'busy'
     // 3. answered: for system types (queue, ring_group, etc.), requires ans.answered_at
     //              for other types, requires ls.cdr_answered_at AND duration > 1s
-    // 4. abandoned: not answered (for system types: answered by system but no human answer)
+    // 4. missed: not answered (for system types: answered by system but no human answer)
 
     // System types that need special handling
     const systemTypes = SQL_SYSTEM_DEST_TYPES;
@@ -123,44 +123,59 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
     if (statuses.includes('answered')) {
         // Répondu: 
         // - Pour les types système: ans.answered_at doit exister (un humain a répondu)
+        //   ET la durée du dernier segment doit être > 1s
         // - Pour les autres types: ls.cdr_answered_at ET durée > 1s
         conditions.push(`(
             COALESCE(ls.last_dest_entity_type, '') NOT IN ('voicemail') 
             AND COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%'
             AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail')
             AND (
-                -- System types: need human answer (from answered_segments)
-                (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
-                AND ans.answered_at IS NOT NULL
+                -- System types: need human answer (from answered_segments) AND duration > 1s
+                (
+                    (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
+                    AND ans.answered_at IS NOT NULL
+                    AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
+                )
                 OR
                 -- Non-system types: standard logic
-                (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
-                AND ls.cdr_answered_at IS NOT NULL 
-                AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
+                (
+                    (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
+                    AND ls.cdr_answered_at IS NOT NULL 
+                    AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
+                )
             )
         )`);
     }
-    if (statuses.includes('abandoned')) {
-        // Abandonné:
+    if (statuses.includes('missed')) {
+        // Manqué:
         // - Pour les types système: le système a répondu mais aucun humain n'a répondu (ans.answered_at IS NULL)
+        //   OU durée du dernier segment <= 1s
         // - Pour les autres types: ls.cdr_answered_at IS NULL ou durée <= 1s
         conditions.push(`(
             COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%' 
             AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail') 
             AND COALESCE(ls.last_dest_entity_type, '') != 'voicemail'
             AND (
-                -- System types: answered by system but no human answer
-                (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
-                AND ls.cdr_answered_at IS NOT NULL
-                AND ans.answered_at IS NULL
+                -- System types: answered by system but no human answer OR duration <= 1s
+                (
+                    (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
+                    AND (
+                        ans.answered_at IS NULL
+                        OR EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) <= 1
+                    )
+                )
                 OR
                 -- System types: not even answered by system
-                (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
-                AND ls.cdr_answered_at IS NULL
+                (
+                    (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
+                    AND ls.cdr_answered_at IS NULL
+                )
                 OR
-                -- Non-system types: not answered or very short
-                (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
-                AND (ls.cdr_answered_at IS NULL OR EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) <= 1)
+                -- Non-system types: not answered or duration <= 1s
+                (
+                    (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
+                    AND (ls.cdr_answered_at IS NULL OR EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) <= 1)
+                )
             )
         )`);
     }
@@ -1526,12 +1541,51 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
 // CSV EXPORT
 // ============================================
 
+/**
+ * Export ALL call logs without pagination limit (for CSV export).
+ * Fetches all pages and concatenates them.
+ */
+async function exportAllCallLogs(
+    startDate: Date,
+    endDate: Date,
+    filters: LogsFilters,
+): Promise<AggregatedCallLogsResponse> {
+    const PAGE_SIZE = 100;
+    const allLogs: AggregatedCallLog[] = [];
+    let page = 1;
+    let totalPages = 1;
+
+    while (page <= totalPages) {
+        const response = await getAggregatedCallLogs(startDate, endDate, filters, { page, pageSize: PAGE_SIZE });
+        allLogs.push(...response.logs);
+        totalPages = response.totalPages;
+        page++;
+    }
+
+    return {
+        logs: allLogs,
+        totalCount: allLogs.length,
+        totalPages: 1,
+        currentPage: 1,
+    };
+}
+
 export async function exportCallLogsCSV(
     startDate: Date,
     endDate: Date,
-    filters: LogsFilters
+    filters: LogsFilters,
+    idsOnly: boolean = false
 ): Promise<string> {
-    const response = await getAggregatedCallLogs(startDate, endDate, filters, { page: 1, pageSize: 5000 });
+    const response = await exportAllCallLogs(startDate, endDate, filters);
+
+    if (idsOnly) {
+        const rows = response.logs.map((log) => log.callHistoryId);
+        const csvContent = [
+            "call_history_id",
+            ...rows,
+        ].join("\n");
+        return csvContent;
+    }
 
     const headers = [
         "ID",

@@ -19,6 +19,12 @@ import {
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import { getAggregatedCallLogs, exportCallLogsCSV, getCallLogsSQL } from "@/services/logs.service";
 import { getQueueMembers } from "@/services/queues.service";
@@ -84,7 +90,7 @@ export default function AdminLogsPage() {
     const getInitialStatuses = (): CallStatus[] => {
         const param = searchParams.get("statuses");
         if (!param) return [];
-        return param.split(",").filter(s => ["answered", "voicemail", "abandoned", "busy"].includes(s)) as CallStatus[];
+        return param.split(",").filter(s => ["answered", "voicemail", "missed", "busy"].includes(s)) as CallStatus[];
     };
 
     const getInitialNumberParam = (key: string): number | undefined => {
@@ -348,6 +354,22 @@ export default function AdminLogsPage() {
         }
     };
 
+    const handleExportIdsOnly = async () => {
+        setIsExporting(true);
+        try {
+            const csv = await exportCallLogsCSV(dateRange.startDate, dateRange.endDate, effectiveFilters, true);
+            const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `call-ids-${new Date().toISOString().split("T")[0]}.csv`;
+            link.click();
+        } catch (error) {
+            console.error("Error exporting CSV:", error);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     const handleShowSQL = async () => {
         setShowSqlModal(true);
         setIsLoadingSql(true);
@@ -552,16 +574,29 @@ export default function AdminLogsPage() {
                         Actualiser
                     </Button>
 
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleExportCSV}
-                        disabled={isExporting || isLoading}
-                        className="gap-2"
-                    >
-                        <Download className={`h-4 w-4 ${isExporting ? "animate-pulse" : ""}`} />
-                        CSV
-                    </Button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={isExporting || isLoading}
+                                className="gap-2"
+                            >
+                                <Download className={`h-4 w-4 ${isExporting ? "animate-pulse" : ""}`} />
+                                CSV
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={handleExportCSV}>
+                                <FileText className="h-4 w-4 mr-2" />
+                                Export complet
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={handleExportIdsOnly}>
+                                <FileText className="h-4 w-4 mr-2" />
+                                IDs uniquement
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
 
                     <Button
                         variant="outline"

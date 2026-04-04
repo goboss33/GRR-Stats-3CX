@@ -72,7 +72,7 @@ export const INTERNAL_SYSTEM_DEST_TYPES = [
  * Determines the final status of an aggregated call based on its segments.
  * This is the ONLY function that should be used to determine call status across the app.
  * 
- * Priority: voicemail > busy > answered > abandoned
+ * Priority: voicemail > busy > answered > missed
  */
 export function determineCallStatus(params: {
     lastDestType: string | null;
@@ -110,14 +110,14 @@ export function determineCallStatus(params: {
     if (lastSegmentAnswered && lastDurationSeconds > 1) {
         // System types: only consider answered if a human (extension) answered
         if (isSystemType(lastDestType, lastDestEntityType)) {
-            return humanAnsweredAt ? 'answered' : 'abandoned';
+            return humanAnsweredAt ? 'answered' : 'missed';
         }
         // Non-system types: standard answered logic
         return 'answered';
     }
 
-    // 4. Not answered = abandoned
-    return 'abandoned';
+    // 4. Not answered = missed
+    return 'missed';
 }
 
 /**
@@ -149,10 +149,10 @@ export function determineSegmentStatus(params: {
     // Answered
     if (answeredAt) {
         const isHumanAnswer = destTypeLower === 'extension' && destEntityTypeLower !== 'voicemail';
-        return isHumanAnswer ? 'answered' : 'abandoned';
+        return isHumanAnswer ? 'answered' : 'missed';
     }
 
-    return 'abandoned';
+    return 'missed';
 }
 
 /**

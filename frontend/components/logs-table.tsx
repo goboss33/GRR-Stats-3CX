@@ -121,7 +121,7 @@ const directionConfig: Record<CallDirection, { icon: typeof ArrowDownLeft; label
 const statusConfig: Record<CallStatus, { icon: typeof Phone; label: string; className: string }> = {
     answered: { icon: Phone, label: "Répondu", className: "bg-emerald-100 text-emerald-700" },
     voicemail: { icon: Voicemail, label: "Messagerie", className: "bg-blue-100 text-blue-700" },
-    abandoned: { icon: PhoneOff, label: "Manqué", className: "bg-red-100 text-red-700" },
+    missed: { icon: PhoneOff, label: "Manqué", className: "bg-red-100 text-red-700" },
     busy: { icon: PhoneCall, label: "Occupé", className: "bg-red-100 text-red-700" },
 };
 

@@ -10,7 +10,7 @@
 // ============================================
 
 export type CallDirection = "inbound" | "outbound" | "internal" | "bridge";
-export type CallStatus = "answered" | "voicemail" | "abandoned" | "busy";
+export type CallStatus = "answered" | "voicemail" | "missed" | "busy";
 export type EntityType = "extension" | "external" | "queue" | "ivr" | "script" | "unknown";
 export type QueueCallOutcome = 'answered' | 'abandoned' | 'overflow';
 

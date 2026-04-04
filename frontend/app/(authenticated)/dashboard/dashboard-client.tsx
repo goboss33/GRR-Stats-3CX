@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useTransition } from "react";
-import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Users2, Hourglass, Voicemail, PhoneCall } from "lucide-react";
+import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Users2, Hourglass, Voicemail, PhoneCall, Download } from "lucide-react";
 import { subDays, startOfDay, endOfDay, format } from "date-fns";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,6 +56,14 @@ function AnimatedNumber({ value }: { value: number }) {
     }, [value]);
     
     return <span>{display.toLocaleString()}</span>;
+}
+
+// Helper to download CSV of call IDs for a given status
+function downloadCallIdsCsv(startDate: Date, endDate: Date, status: string) {
+    const start = format(startDate, 'yyyy-MM-dd');
+    const end = format(endDate, 'yyyy-MM-dd');
+    const url = `/api/export-call-ids?start=${start}&end=${end}&status=${status}`;
+    window.open(url, '_blank');
 }
 
 // Composant pour afficher l'évolution N-1 avec une petite flèche de couleur
@@ -174,7 +182,18 @@ export default function DashboardClient() {
                 <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-emerald-50/10">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="text-sm font-semibold text-slate-600">Répondus</CardTitle>
-                        <TrendingUp className="h-5 w-5 text-emerald-500 opacity-80" />
+                        <div className="flex items-center gap-1">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-slate-400 hover:text-emerald-600"
+                                title="Exporter CSV"
+                                onClick={() => downloadCallIdsCsv(dateRange.startDate, dateRange.endDate, 'answered')}
+                            >
+                                <Download className="h-3.5 w-3.5" />
+                            </Button>
+                            <TrendingUp className="h-5 w-5 text-emerald-500 opacity-80" />
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-emerald-600 flex items-center">
@@ -201,14 +220,25 @@ export default function DashboardClient() {
                 <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-rose-50/10">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="text-sm font-semibold text-slate-600">Manqués</CardTitle>
-                        <PhoneOff className="h-5 w-5 text-rose-500 opacity-80" />
+                        <div className="flex items-center gap-1">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-slate-400 hover:text-rose-600"
+                                title="Exporter CSV"
+                                onClick={() => downloadCallIdsCsv(dateRange.startDate, dateRange.endDate, 'missed')}
+                            >
+                                <Download className="h-3.5 w-3.5" />
+                            </Button>
+                            <PhoneOff className="h-5 w-5 text-rose-500 opacity-80" />
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-rose-600 flex items-center">
                             {isInitialLoad ? <span className="animate-pulse">...</span> : (
                                 <>
                                     <Link
-                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=abandoned`}
+                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=missed`}
                                         className="hover:underline cursor-pointer"
                                     >
                                         <AnimatedNumber value={metrics?.missedCalls || 0} />
@@ -225,7 +255,18 @@ export default function DashboardClient() {
                 <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-purple-50/10">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="text-sm font-semibold text-slate-600">Messagerie</CardTitle>
-                        <Voicemail className="h-5 w-5 text-purple-500 opacity-80" />
+                        <div className="flex items-center gap-1">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-slate-400 hover:text-purple-600"
+                                title="Exporter CSV"
+                                onClick={() => downloadCallIdsCsv(dateRange.startDate, dateRange.endDate, 'voicemail')}
+                            >
+                                <Download className="h-3.5 w-3.5" />
+                            </Button>
+                            <Voicemail className="h-5 w-5 text-purple-500 opacity-80" />
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-purple-600 flex items-center">
@@ -249,7 +290,18 @@ export default function DashboardClient() {
                 <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-orange-50/10">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="text-sm font-semibold text-slate-600">Occupé</CardTitle>
-                        <PhoneCall className="h-5 w-5 text-orange-500 opacity-80" />
+                        <div className="flex items-center gap-1">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-slate-400 hover:text-orange-600"
+                                title="Exporter CSV"
+                                onClick={() => downloadCallIdsCsv(dateRange.startDate, dateRange.endDate, 'busy')}
+                            >
+                                <Download className="h-3.5 w-3.5" />
+                            </Button>
+                            <PhoneCall className="h-5 w-5 text-orange-500 opacity-80" />
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-orange-600 flex items-center">
