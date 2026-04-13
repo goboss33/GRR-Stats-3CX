@@ -9,12 +9,10 @@ import type {
     LogsSort,
     AggregatedCallLogsResponse,
     CallChainSegment,
-    SegmentCategory,
 } from "@/services/domain/call.types";
 import {
     SQL_SYSTEM_DEST_TYPES,
     SQL_SYSTEM_ENTITY_TYPES,
-    isSystemType,
     determineCallDirection,
     determineCallStatus,
     determineSegmentStatus,
@@ -62,17 +60,9 @@ function buildSqlSearchCondition(field: string, pattern: ReturnType<typeof parse
     }
 }
 
-// Build SQL condition for direction filter (applied on aggregated data)
 function buildSqlDirectionFilter(directions: CallDirection[] | undefined): string {
-    if (!directions || directions.length === 0 || directions.length === 4) {
-        return ''; // No filter needed
-    }
+    if (!directions || directions.length === 0 || directions.length === 4) return '';
     const conditions: string[] = [];
-    // Direction is based on: source_dn_type (first segment) and first_dest_type
-    // bridge: source OR destination is bridge
-    // inbound: source is NOT extension (and not bridge)
-    // outbound: source IS extension AND destination is NOT extension (and not bridge)
-    // internal: source IS extension AND destination IS extension
     const internalSystemTypes = INTERNAL_SYSTEM_DEST_TYPES.map(t => `'${t}'`).join(', ');
 
     if (directions.includes('bridge')) {
@@ -82,62 +72,38 @@ function buildSqlDirectionFilter(directions: CallDirection[] | undefined): strin
         conditions.push("(fs.source_dn_type != 'extension' AND fs.source_dn_type != 'bridge' AND (ls.last_dest_type != 'bridge' OR ls.last_dest_type IS NULL))");
     }
     if (directions.includes('outbound')) {
-        // Outbound: extension -> external (previous logic was just != extension)
-        // Now we must ensure destination is NOT one of the internal system types either
         conditions.push(`(fs.source_dn_type = 'extension' AND fs.destination_dn_type NOT IN ('extension', 'bridge', ${internalSystemTypes}) AND (ls.last_dest_type != 'bridge' OR ls.last_dest_type IS NULL))`);
     }
     if (directions.includes('internal')) {
-        // Internal: extension -> extension OR extension -> internal system (queue, ivr, etc)
         conditions.push(`(fs.source_dn_type = 'extension' AND (fs.destination_dn_type = 'extension' OR fs.destination_dn_type IN (${internalSystemTypes})))`);
     }
     return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
 }
 
-// Build SQL condition for status filter (applied on aggregated data)
-// Uses the SAME LOGIC as determineSegmentCategory for consistency
 function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
-    if (!statuses || statuses.length === 0 || statuses.length === 5) {
-        return ''; // No filter needed
-    }
+    if (!statuses || statuses.length === 0 || statuses.length === 5) return '';
     const conditions: string[] = [];
-
-    // Status detection logic - MUST MATCH the finalStatus logic in getAggregatedCallLogs:
-    // 1. voicemail: last_dest_type or last_dest_entity_type is voicemail
-    // 2. busy: termination_reason_details contains 'busy'
-    // 3. answered: for system types (queue, ring_group, etc.), requires ans.answered_at
-    //              for other types, requires ls.cdr_answered_at AND duration > 1s
-    // 4. missed: not answered (for system types: answered by system but no human answer)
-
-    // System types that need special handling
     const systemTypes = SQL_SYSTEM_DEST_TYPES;
     const systemEntityTypes = SQL_SYSTEM_ENTITY_TYPES;
 
     if (statuses.includes('voicemail')) {
-        // Messagerie: le dernier segment est du voicemail
         conditions.push("(ls.last_dest_type IN ('vmail_console', 'voicemail') OR ls.last_dest_entity_type = 'voicemail')");
     }
     if (statuses.includes('busy')) {
-        // Occupé: le correspondant était occupé
         conditions.push("(ls.termination_reason_details ILIKE '%busy%')");
     }
     if (statuses.includes('answered')) {
-        // Répondu: 
-        // - Pour les types système: ans.answered_at doit exister (un humain a répondu)
-        //   ET la durée du dernier segment doit être > 1s
-        // - Pour les autres types: ls.cdr_answered_at ET durée > 1s
         conditions.push(`(
             COALESCE(ls.last_dest_entity_type, '') NOT IN ('voicemail') 
             AND COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%'
             AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail')
             AND (
-                -- System types: need human answer (from answered_segments) AND duration > 1s
                 (
                     (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
                     AND ans.answered_at IS NOT NULL
                     AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
                 )
                 OR
-                -- Non-system types: standard logic
                 (
                     (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
                     AND ls.cdr_answered_at IS NOT NULL 
@@ -147,16 +113,11 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
         )`);
     }
     if (statuses.includes('missed')) {
-        // Manqué:
-        // - Pour les types système: le système a répondu mais aucun humain n'a répondu (ans.answered_at IS NULL)
-        //   OU durée du dernier segment <= 1s
-        // - Pour les autres types: ls.cdr_answered_at IS NULL ou durée <= 1s
         conditions.push(`(
             COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%' 
             AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail') 
             AND COALESCE(ls.last_dest_entity_type, '') != 'voicemail'
             AND (
-                -- System types: answered by system but no human answer OR duration <= 1s
                 (
                     (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
                     AND (
@@ -165,13 +126,11 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
                     )
                 )
                 OR
-                -- System types: not even answered by system
                 (
                     (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
                     AND ls.cdr_answered_at IS NULL
                 )
                 OR
-                -- Non-system types: not answered or duration <= 1s
                 (
                     (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
                     AND (ls.cdr_answered_at IS NULL OR EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) <= 1)
@@ -182,33 +141,21 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
     return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
 }
 
-
-// Build ORDER BY clause from sort parameter
 function buildOrderByClause(sort?: LogsSort): string {
     if (!sort) return "ca.first_started_at DESC";
     const dir = sort.direction === "asc" ? "ASC" : "DESC";
     switch (sort.field) {
-        case "startedAt":
-            return `ca.first_started_at ${dir}`;
-        case "timeOfDay":
-            return `(ca.first_started_at AT TIME ZONE 'Europe/Zurich')::time ${dir}`;
-        case "duration":
-            return `(ca.last_ended_at - ca.first_started_at) ${dir}`;
-        case "sourceNumber":
-            return `fs.source_dn_number ${dir}`;
-        case "destinationNumber":
-            return `fs.first_dest_number ${dir}`;
-        default:
-            return "ca.first_started_at DESC";
+        case "startedAt": return `ca.first_started_at ${dir}`;
+        case "timeOfDay": return `(ca.first_started_at AT TIME ZONE 'Europe/Zurich')::time ${dir}`;
+        case "duration": return `(ca.last_ended_at - ca.first_started_at) ${dir}`;
+        case "sourceNumber": return `fs.source_dn_number ${dir}`;
+        case "destinationNumber": return `fs.first_dest_number ${dir}`;
+        default: return "ca.first_started_at DESC";
     }
 }
 
 // ============================================
-// MAIN FUNCTION: GET AGGREGATED CALL LOGS
-// ============================================
-
-// ============================================
-// QUERY BUILDER (shared between getAggregatedCallLogs and getCallLogsSQL)
+// QUERY BUILDER — shared parts (filters + pagination)
 // ============================================
 
 function buildAggregatedQueryParts(
@@ -217,21 +164,25 @@ function buildAggregatedQueryParts(
     filters: LogsFilters,
     pagination: { page: number; pageSize: number },
     sort?: LogsSort
-): { whereClause: string; dateOnlyWhereClause: string; aggregatedWhereConditions: string[]; calleeFilterCTE: string; calleeFilterJoin: string; limit: number; skip: number; sortClause: string } {
+): {
+    whereClause: string;
+    dateOnlyWhereClause: string;
+    aggregatedWhereConditions: string[];
+    calleeFilterCTE: string;
+    calleeFilterJoin: string;
+    limit: number;
+    skip: number;
+    sortClause: string;
+} {
     const pageNumber = Math.max(1, pagination.page);
     const limit = Math.min(100, Math.max(1, pagination.pageSize));
     const skip = (pageNumber - 1) * limit;
 
-    // Build WHERE conditions for segments
     const whereConditions: string[] = [
         `cdr_started_at >= '${startDate.toISOString()}'`,
         `cdr_started_at <= '${endDate.toISOString()}'`,
     ];
 
-    // Direction filter (applied on first segment later via subquery)
-    // Status filter (applied on final status after aggregation)
-
-    // Caller search (on first segment fields)
     if (filters.callerSearch?.trim()) {
         const pattern = parseSearchPattern(filters.callerSearch);
         whereConditions.push(`(
@@ -242,7 +193,6 @@ function buildAggregatedQueryParts(
         )`);
     }
 
-    // Callee search - filter calls based on the FIRST segment's destination (what's displayed)
     let calleeFilterCTE = '';
     let calleeFilterJoin = '';
     if (filters.calleeSearch?.trim()) {
@@ -272,81 +222,51 @@ function buildAggregatedQueryParts(
         calleeFilterJoin = 'JOIN callee_filter cf ON ca.call_history_id = cf.call_history_id';
     }
 
-    // Duration filter (total duration)
     if (filters.durationMin !== undefined) {
         whereConditions.push(`EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at)) >= ${filters.durationMin}`);
     }
     if (filters.durationMax !== undefined) {
         whereConditions.push(`EXTRACT(EPOCH FROM (cdr_ended_at - cdr_answered_at)) <= ${filters.durationMax}`);
     }
-
-    // ID search filter (on call_history_id - cast to text for ILIKE on UUID)
     if (filters.idSearch?.trim()) {
         const pattern = parseSearchPattern(filters.idSearch);
         whereConditions.push(buildSqlSearchCondition('call_history_id::text', pattern));
     }
 
     const whereClause = whereConditions.join(" AND ");
-
-    // Build a minimal WHERE clause for answered_segments and handled_by CTEs
-    // These CTEs should NOT include calleeSearch filter because the answered segment
-    // might have a different destination than the first segment that matches the search
     const dateOnlyWhereClause = [
         `cdr_started_at >= '${startDate.toISOString()}'`,
         `cdr_started_at <= '${endDate.toISOString()}'`,
     ].join(" AND ");
 
-    // Build aggregated-level filters (applied after CTEs join)
     const aggregatedWhereConditions: string[] = [];
     const directionFilter = buildSqlDirectionFilter(filters.directions);
     if (directionFilter) aggregatedWhereConditions.push(directionFilter);
     const statusFilter = buildSqlStatusFilter(filters.statuses);
     if (statusFilter) aggregatedWhereConditions.push(statusFilter);
 
-    // Handled by search filter (on handled_by CTE data)
-    // Always use contains mode for consistency with other search columns
     if (filters.handledBySearch?.trim()) {
         const pattern = parseSearchPattern(filters.handledBySearch);
-        const searchValue = pattern.value.replace(/'/g, "''"); // Escape quotes
-        // Always wrap with % for contains search (JSON text search needs this)
-        const likePattern = `%${searchValue}%`;
-        // Search in the JSON array of agents (number and name)
-        aggregatedWhereConditions.push(`(
-            hb.agents::text ILIKE '${likePattern}'
-        )`);
+        const searchValue = pattern.value.replace(/'/g, "''");
+        aggregatedWhereConditions.push(`(hb.agents::text ILIKE '%${searchValue}%')`);
     }
-
-    // Queue search filter (on call_queues CTE data)
-    // Always use contains mode for consistency with other search columns
     if (filters.queueSearch?.trim()) {
         const pattern = parseSearchPattern(filters.queueSearch);
-        const searchValue = pattern.value.replace(/'/g, "''"); // Escape quotes
-        // Always wrap with % for contains search (JSON text search needs this)
-        const likePattern = `%${searchValue}%`;
-        // Search in the JSON array of queues (number and name)
-        aggregatedWhereConditions.push(`(
-            cq.queues::text ILIKE '${likePattern}'
-        )`);
+        const searchValue = pattern.value.replace(/'/g, "''");
+        aggregatedWhereConditions.push(`(cq.queues::text ILIKE '%${searchValue}%')`);
     }
-
-    // Segment count filter (on aggregated data)
     if (filters.segmentCountMin !== undefined) {
         aggregatedWhereConditions.push(`ca.segment_count >= ${filters.segmentCountMin}`);
     }
     if (filters.segmentCountMax !== undefined) {
         aggregatedWhereConditions.push(`ca.segment_count <= ${filters.segmentCountMax}`);
     }
-
-    // Wait time filter (on aggregated data — wait = time from first start to first human answer)
     if (filters.waitTimeMin !== undefined) {
         aggregatedWhereConditions.push(`EXTRACT(EPOCH FROM (COALESCE(ans.answered_at, ca.first_answered_at) - ca.first_started_at)) >= ${Number(filters.waitTimeMin)}`);
     }
     if (filters.waitTimeMax !== undefined) {
         aggregatedWhereConditions.push(`EXTRACT(EPOCH FROM (COALESCE(ans.answered_at, ca.first_answered_at) - ca.first_started_at)) <= ${Number(filters.waitTimeMax)}`);
     }
-
-    // Time slot filter (multiple OR'd time ranges in Europe/Zurich local time)
-    // Applied on aggregated first_started_at so we don't break segment counts
     if (filters.timeSlots && filters.timeSlots.length > 0) {
         const slotConditions = filters.timeSlots.map(slot => {
             const startTime = slot.start.replace(/'/g, "");
@@ -356,15 +276,11 @@ function buildAggregatedQueryParts(
         });
         aggregatedWhereConditions.push(`(${slotConditions.join(' OR ')})`);
     }
-
-    // Journey conditions filter (composable step predicates)
     if (filters.journeyConditions && filters.journeyConditions.length > 0) {
+        const validTypes = ['direct', 'queue', 'voicemail'];
+        const validResults = ['answered', 'not_answered', 'busy', 'voicemail', 'abandoned', 'overflow'];
         for (const condition of filters.journeyConditions) {
-            const validTypes = ['direct', 'queue', 'voicemail'];
-            const validResults = ['answered', 'not_answered', 'busy', 'voicemail', 'abandoned', 'overflow'];
             const clauses: string[] = [];
-
-            // Build WHERE clauses for this condition
             if (condition.type && validTypes.includes(condition.type)) {
                 clauses.push(`elem->>'type' = '${condition.type}'`);
             }
@@ -380,11 +296,8 @@ function buildAggregatedQueryParts(
                 clauses.push(`elem->>'result' = '${condition.result}'`);
             }
 
-            // Handle passageMode for queue conditions
             if (condition.queueNumber && condition.passageMode === 'first' && condition.result) {
-                // First passage mode: check the result of the FIRST occurrence of this queue
                 const queueNum = condition.queueNumber.replace(/'/g, "''");
-                const result = condition.result;
                 const existsOp = condition.negate ? 'NOT' : '';
                 aggregatedWhereConditions.push(`
                     ${existsOp} (SELECT elem->>'result'
@@ -392,10 +305,9 @@ function buildAggregatedQueryParts(
                      WHERE elem->>'type' = 'queue' AND elem->>'label' = '${queueNum}'
                      ORDER BY idx ASC
                      LIMIT 1
-                    ) = '${result}'
+                    ) = '${condition.result}'
                 `);
             } else if (clauses.length > 0) {
-                // Standard EXISTS/NOT EXISTS condition
                 const existsOp = condition.negate ? 'NOT EXISTS' : 'EXISTS';
                 aggregatedWhereConditions.push(`
                     ${existsOp} (
@@ -405,7 +317,6 @@ function buildAggregatedQueryParts(
                 `);
             }
 
-            // Ping-pong filter (multi-passages through same queue)
             if (condition.queueNumber && condition.passageMode === 'multi') {
                 const queueNum = condition.queueNumber.replace(/'/g, "''");
                 aggregatedWhereConditions.push(`
@@ -415,8 +326,6 @@ function buildAggregatedQueryParts(
                        AND elem->>'label' = '${queueNum}') > 1
                 `);
             }
-
-            // Overflow filter (redirected to other queues after this one)
             if (condition.queueNumber && condition.hasOverflow !== undefined) {
                 const queueNum = condition.queueNumber.replace(/'/g, "''");
                 const countOp = condition.hasOverflow ? '> 0' : '= 0';
@@ -440,18 +349,15 @@ function buildAggregatedQueryParts(
 }
 
 // ============================================
-// GET SQL QUERY STRING (for debugging)
+// SHARED SQL BUILDER — Single source for CTEs body
+// Eliminates duplication between getCallLogsSQL() and getAggregatedCallLogs()
 // ============================================
 
-export async function getCallLogsSQL(
-    startDate: Date,
-    endDate: Date,
-    filters: LogsFilters,
-    pagination: { page: number; pageSize: number },
-    sort?: LogsSort
-): Promise<string> {
-    const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } = buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort);
-
+function buildAggregateCTEs(
+    whereClause: string,
+    dateOnlyWhereClause: string,
+    calleeFilterCTE: string
+): string {
     return `
         WITH call_aggregates AS (
             SELECT
@@ -673,7 +579,11 @@ export async function getCallLogsSQL(
                 WHERE all_steps.step_num <= 15
             ) j
             GROUP BY j.call_history_id
-        )${calleeFilterCTE}
+        )${calleeFilterCTE}`;
+}
+
+// Shared SELECT columns for data queries
+const DATA_SELECT = `
         SELECT
             ca.call_history_id,
             ca.segment_count,
@@ -714,7 +624,11 @@ export async function getCallLogsSQL(
             hb.agent_count as handled_by_count,
             cq.queues as call_queues,
             cq.queue_count,
-            cj.journey as call_journey
+            cj.journey as call_journey`;
+
+// Shared FROM + JOINs for data queries
+function buildDataJoins(calleeFilterJoin: string, aggregatedWhereConditions: string[], sortClause: string, limit: number, skip: number): string {
+    return `
         FROM call_aggregates ca
         JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
         JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
@@ -725,9 +639,341 @@ export async function getCallLogsSQL(
         ${calleeFilterJoin}
         ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
         ORDER BY ${sortClause}
-        LIMIT ${limit} OFFSET ${skip}
+        LIMIT ${limit} OFFSET ${skip}`;
+}
+
+// ============================================
+// GET SQL QUERY STRING (for debugging)
+// ============================================
+
+export async function getCallLogsSQL(
+    startDate: Date,
+    endDate: Date,
+    filters: LogsFilters,
+    pagination: { page: number; pageSize: number },
+    sort?: LogsSort
+): Promise<string> {
+    const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } =
+        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort);
+
+    return buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE)
+        + DATA_SELECT
+        + buildDataJoins(calleeFilterJoin, aggregatedWhereConditions, sortClause, limit, skip);
+}
+
+// ============================================
+// OPTIMIZED COUNT QUERY — conditional CTEs
+// Only includes expensive CTEs when actually filtering on them
+// ============================================
+
+function buildCountQuery(
+    whereClause: string,
+    dateOnlyWhereClause: string,
+    calleeFilterCTE: string,
+    calleeFilterJoin: string,
+    aggregatedWhereConditions: string[],
+    filters: LogsFilters
+): string {
+    const needsHandledBy = !!filters.handledBySearch?.trim();
+    const needsCallQueues = !!filters.queueSearch?.trim();
+    const needsCallJourney = !!(filters.journeyConditions && filters.journeyConditions.length > 0);
+
+    const handledByCTE = needsHandledBy ? `,
+        handled_by AS (
+            SELECT
+                c.call_history_id,
+                JSON_AGG(
+                    JSON_BUILD_OBJECT(
+                        'number', c.destination_dn_number,
+                        'name', COALESCE(c.destination_dn_name, c.destination_participant_name, c.destination_dn_number)
+                    ) ORDER BY c.cdr_answered_at DESC
+                ) as agents
+            FROM cdroutput c
+            WHERE ${dateOnlyWhereClause}
+              AND c.cdr_answered_at IS NOT NULL
+              AND c.destination_dn_type = 'extension'
+              AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+            GROUP BY c.call_history_id
+        )` : '';
+
+    const callQueuesCTE = needsCallQueues ? `,
+        call_queues AS (
+            SELECT
+                dq.call_history_id,
+                JSON_AGG(
+                    JSON_BUILD_OBJECT(
+                        'number', dq.destination_dn_number,
+                        'name', dq.queue_name
+                    )
+                ) as queues
+            FROM (
+                SELECT DISTINCT
+                    c.call_history_id,
+                    c.destination_dn_number,
+                    COALESCE(c.destination_dn_name, c.destination_dn_number) as queue_name
+                FROM cdroutput c
+                WHERE ${dateOnlyWhereClause}
+                  AND c.destination_dn_type = 'queue'
+                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+            ) dq
+            GROUP BY dq.call_history_id
+        )` : '';
+
+    const callJourneyCTE = needsCallJourney ? `,
+        queue_outcome AS (
+            SELECT DISTINCT ON (p.originating_cdr_id)
+                p.originating_cdr_id,
+                p.destination_dn_name as agent_name,
+                p.destination_dn_number as agent_number
+            FROM cdroutput p
+            WHERE ${dateOnlyWhereClause}
+              AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+              AND p.creation_forward_reason = 'polling'
+              AND p.cdr_answered_at IS NOT NULL
+            ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC, p.cdr_id ASC
+        ),
+        queue_overflow AS (
+            SELECT c.cdr_id
+            FROM cdroutput c
+            WHERE ${dateOnlyWhereClause}
+              AND c.destination_dn_type = 'queue'
+              AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+              AND NOT EXISTS (
+                  SELECT 1 FROM cdroutput p
+                  WHERE p.originating_cdr_id = c.cdr_id
+                    AND p.creation_forward_reason = 'polling'
+                    AND p.cdr_answered_at IS NOT NULL
+              )
+              AND EXISTS (
+                  SELECT 1 FROM cdroutput c2
+                  WHERE c2.call_history_id = c.call_history_id
+                    AND c2.destination_dn_type = 'queue'
+                    AND c2.destination_dn_number != c.destination_dn_number
+                    AND c2.cdr_started_at > c.cdr_started_at
+              )
+        ),
+        call_journey AS (
+            SELECT
+                j.call_history_id,
+                JSON_AGG(
+                    JSON_BUILD_OBJECT(
+                        'type', j.step_type, 'label', j.step_label,
+                        'detail', j.step_detail, 'result', j.step_result,
+                        'agent', j.agent_name, 'agentNumber', j.agent_number
+                    ) ORDER BY j.step_order
+                ) as journey
+            FROM (
+                SELECT * FROM (
+                    SELECT
+                        c.call_history_id,
+                        c.cdr_started_at as step_order,
+                        CASE WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
+                             WHEN c.destination_dn_type = 'queue' THEN 'queue' ELSE 'direct' END as step_type,
+                        c.destination_dn_number as step_label,
+                        COALESCE(c.destination_dn_name, c.destination_dn_number) as step_detail,
+                        COALESCE(qo.agent_name, qo.agent_number) as agent_name,
+                        qo.agent_number as agent_number,
+                        CASE WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
+                             WHEN c.destination_dn_type = 'queue' THEN
+                                 CASE WHEN qo.originating_cdr_id IS NOT NULL THEN 'answered'
+                                      WHEN qov.cdr_id IS NOT NULL THEN 'overflow' ELSE 'abandoned' END
+                             ELSE CASE WHEN c.cdr_answered_at IS NOT NULL THEN 'answered'
+                                       WHEN c.termination_reason_details = 'busy' THEN 'busy'
+                                       ELSE 'not_answered' END
+                        END as step_result,
+                        ROW_NUMBER() OVER (PARTITION BY c.call_history_id ORDER BY c.cdr_started_at) as step_num
+                    FROM cdroutput c
+                    LEFT JOIN queue_outcome qo ON c.cdr_id = qo.originating_cdr_id
+                    LEFT JOIN queue_overflow qov ON c.cdr_id = qov.cdr_id
+                    WHERE ${dateOnlyWhereClause}
+                      AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+                      AND (
+                          c.destination_entity_type = 'voicemail'
+                          OR c.destination_dn_type = 'queue'
+                          OR c.destination_dn_type IN ('provider', 'external_line')
+                          OR (
+                              c.destination_dn_type = 'extension'
+                              AND c.destination_entity_type != 'voicemail'
+                              AND c.creation_forward_reason IS DISTINCT FROM 'polling'
+                              AND (
+                                  c.creation_forward_reason = 'by_did'
+                                  OR NOT (c.cdr_answered_at IS NULL AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1)
+                              )
+                          )
+                      )
+                ) all_steps WHERE all_steps.step_num <= 15
+            ) j GROUP BY j.call_history_id
+        )` : '';
+
+    const handledByJoin = needsHandledBy ? 'LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id' : '';
+    const callQueuesJoin = needsCallQueues ? 'LEFT JOIN call_queues cq ON ca.call_history_id = cq.call_history_id' : '';
+    const callJourneyJoin = needsCallJourney ? 'LEFT JOIN call_journey cj ON ca.call_history_id = cj.call_history_id' : '';
+
+    return `
+        WITH call_aggregates AS (
+            SELECT
+                call_history_id,
+                COUNT(*) as segment_count,
+                MIN(cdr_started_at) as first_started_at,
+                MIN(cdr_answered_at) as first_answered_at
+            FROM cdroutput
+            WHERE ${whereClause}
+            GROUP BY call_history_id
+        ),
+        first_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                source_dn_type,
+                destination_dn_type
+            FROM cdroutput
+            WHERE ${dateOnlyWhereClause}
+              AND call_history_id IN (SELECT call_history_id FROM call_aggregates)
+            ORDER BY call_history_id, cdr_started_at ASC
+        ),
+        last_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                destination_dn_type as last_dest_type,
+                destination_entity_type as last_dest_entity_type,
+                cdr_answered_at,
+                cdr_started_at as last_started_at,
+                cdr_ended_at as last_ended_at,
+                termination_reason,
+                termination_reason_details
+            FROM cdroutput
+            WHERE ${whereClause}
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        ),
+        answered_segments AS (
+            SELECT DISTINCT ON (c.call_history_id)
+                c.call_history_id,
+                c.cdr_answered_at as answered_at
+            FROM cdroutput c
+            WHERE ${dateOnlyWhereClause}
+              AND c.cdr_answered_at IS NOT NULL
+              AND c.destination_dn_type = 'extension'
+              AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
+            ORDER BY c.call_history_id, c.cdr_answered_at ASC, c.cdr_id ASC
+        )${handledByCTE}${callQueuesCTE}${callJourneyCTE}${calleeFilterCTE}
+        SELECT COUNT(*) as total
+        FROM call_aggregates ca
+        JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
+        JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+        LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
+        ${handledByJoin}
+        ${callQueuesJoin}
+        ${callJourneyJoin}
+        ${calleeFilterJoin}
+        ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
     `;
 }
+
+// ============================================
+// TRANSFORM raw SQL row → AggregatedCallLog
+// ============================================
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function transformRow(row: any): AggregatedCallLog {
+    const firstStarted = row.first_started_at ? new Date(row.first_started_at) : null;
+    const lastEnded = row.last_ended_at ? new Date(row.last_ended_at) : null;
+    const firstAnswered = row.first_answered_at ? new Date(row.first_answered_at) : null;
+    const answeredByHuman = row.answered_at ? new Date(row.answered_at) : null;
+    const talkDurationSeconds = row.talk_duration_seconds ? Math.round(Number(row.talk_duration_seconds)) : 0;
+
+    let parsedHandledByAgents: Array<{ number: string; name: string }> = [];
+    if (row.handled_by_agents) {
+        try {
+            parsedHandledByAgents = typeof row.handled_by_agents === 'string'
+                ? JSON.parse(row.handled_by_agents)
+                : row.handled_by_agents;
+        } catch { parsedHandledByAgents = []; }
+    }
+    const parsedHandledByCount = Number(row.handled_by_count || 0);
+
+    const totalDurationSeconds = firstStarted && lastEnded
+        ? Math.round((lastEnded.getTime() - firstStarted.getTime()) / 1000)
+        : 0;
+    const waitTimeSeconds = firstStarted && (answeredByHuman || firstAnswered)
+        ? Math.round(((answeredByHuman || firstAnswered)!.getTime() - firstStarted.getTime()) / 1000)
+        : (firstStarted && lastEnded ? Math.round((lastEnded.getTime() - firstStarted.getTime()) / 1000) : 0);
+
+    const lastSegmentAnswered = row.answered_at !== null;
+    const finalStatus = determineCallStatus({
+        lastDestType: row.last_dest_type,
+        lastDestEntityType: row.last_dest_entity_type,
+        lastAnsweredAt: row.last_answered_at ? new Date(row.last_answered_at) : null,
+        lastStartedAt: row.last_started_at ? new Date(row.last_started_at) : null,
+        lastEndedAt: lastEnded,
+        terminationReasonDetails: row.termination_reason_details,
+        humanAnsweredAt: answeredByHuman,
+    });
+    const direction = determineCallDirection({
+        sourceType: row.source_dn_type,
+        firstDestType: row.first_dest_type,
+        lastDestType: row.last_dest_type,
+    });
+
+    const totalTalkSeconds = Math.round(Number(row.handled_by_total_talk || 0));
+
+    let handledByDisplay = "-";
+    if (parsedHandledByAgents.length > 0) {
+        const displayAgents = parsedHandledByAgents.slice(0, 5);
+        handledByDisplay = displayAgents.map(a => a.name || a.number).join(", ");
+        if (parsedHandledByCount > 5) {
+            handledByDisplay += ` (+${parsedHandledByCount - 5})`;
+        }
+    }
+
+    const parseJsonCol = (col: unknown): unknown[] => {
+        if (!col) return [];
+        try {
+            const parsed = typeof col === 'string' ? JSON.parse(col) : col;
+            return Array.isArray(parsed) ? parsed : [];
+        } catch { return []; }
+    };
+
+    const queues = parseJsonCol(row.call_queues) as Array<{ number: string; name: string }>;
+    const journey = parseJsonCol(row.call_journey);
+
+    return {
+        callHistoryId: row.call_history_id,
+        callHistoryIdShort: row.call_history_id?.slice(-4).toUpperCase() || "-",
+        segmentCount: Number(row.segment_count),
+        startedAt: row.first_started_at?.toISOString() || "",
+        endedAt: row.last_ended_at?.toISOString() || "",
+        totalDurationSeconds: lastSegmentAnswered ? totalTalkSeconds : totalDurationSeconds,
+        totalDurationFormatted: formatDuration(lastSegmentAnswered ? totalTalkSeconds : totalDurationSeconds),
+        waitTimeSeconds,
+        waitTimeFormatted: formatDuration(waitTimeSeconds),
+        callerNumber: getDisplayNumber(row.source_dn_number, row.source_participant_phone_number, row.source_presentation),
+        callerName: row.source_dn_type?.toLowerCase() === 'provider'
+            ? (row.source_participant_name && !row.source_participant_name.trim().endsWith(':')
+                ? getDisplayName(row.source_participant_name, null)
+                : null)
+            : (getDisplayName(row.source_participant_name, row.source_dn_name) || null),
+        calleeNumber: getDisplayNumber(row.first_dest_number, row.first_dest_participant_phone),
+        calleeName: row.source_dn_type?.toLowerCase() === 'provider'
+            ? (getDisplayName(row.first_dest_participant_name, row.first_dest_dn_name)
+                || (row.source_participant_name?.trim().endsWith(':') ? getDisplayName(row.source_participant_name, null) : null))
+            : (getDisplayName(row.first_dest_participant_name, row.first_dest_dn_name) || null),
+        handledBy: parsedHandledByAgents,
+        handledByDisplay,
+        totalTalkDurationSeconds: totalTalkSeconds,
+        totalTalkDurationFormatted: formatDuration(totalTalkSeconds),
+        direction,
+        finalStatus,
+        wasTransferred: Number(row.segment_count) > 1,
+        queues,
+        queuesDisplay: queues.length > 0
+            ? queues.map((q: { number: string; name: string }) => q.name || q.number).join(", ")
+            : "-",
+        journey: journey as import("@/services/domain/call.types").JourneyStep[],
+    };
+}
+
+// ============================================
+// GET AGGREGATED CALL LOGS (paginated)
+// ============================================
 
 export async function getAggregatedCallLogs(
     startDate: Date,
@@ -736,704 +982,34 @@ export async function getAggregatedCallLogs(
     pagination: { page: number; pageSize: number },
     sort?: LogsSort
 ): Promise<AggregatedCallLogsResponse> {
-    const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } = buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort);
+    const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } =
+        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort);
     const pageNumber = Math.max(1, pagination.page);
 
     try {
-        // Step 1: Get distinct call_history_ids with aggregated data
-        const aggregatedQuery = `
-            WITH call_aggregates AS (
-                SELECT 
-                    call_history_id,
-                    COUNT(*) as segment_count,
-                    MIN(cdr_started_at) as first_started_at,
-                    MAX(cdr_ended_at) as last_ended_at,
-                    MIN(cdr_answered_at) as first_answered_at
-                FROM cdroutput
-                WHERE ${whereClause}
-                GROUP BY call_history_id
-            ),
-            first_segments AS (
-                SELECT DISTINCT ON (c.call_history_id)
-                    c.call_history_id,
-                    c.source_dn_number,
-                    c.source_participant_phone_number,
-                    c.source_participant_name,
-                    c.source_dn_name,
-                    c.source_dn_type,
-                    c.source_presentation,
-                    c.destination_dn_number as first_dest_number,
-                    c.destination_participant_phone_number as first_dest_participant_phone,
-                    c.destination_participant_name as first_dest_participant_name,
-                    c.destination_dn_name as first_dest_dn_name,
-                    c.destination_dn_type
-                FROM cdroutput c
-                WHERE ${dateOnlyWhereClause}
-                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                ORDER BY c.call_history_id, c.cdr_started_at ASC
-            ),
-            last_segments AS (
-                SELECT DISTINCT ON (call_history_id)
-                    call_history_id,
-                    destination_dn_number,
-                    destination_participant_phone_number,
-                    destination_participant_name,
-                    destination_dn_name,
-                    destination_dn_type as last_dest_type,
-                    destination_entity_type as last_dest_entity_type,
-                    cdr_answered_at,
-                    cdr_started_at as last_started_at,
-                    cdr_ended_at as last_ended_at,
-                    termination_reason,
-                    termination_reason_details
-                FROM cdroutput
-                WHERE ${whereClause}
-                ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
-            ),
-            answered_segments AS (
-                SELECT DISTINCT ON (c.call_history_id)
-                    c.call_history_id,
-                    c.destination_dn_number as answered_dest_number,
-                    c.destination_participant_name as answered_dest_name,
-                    c.destination_dn_name as answered_dn_name,
-                    c.destination_dn_type as answered_dest_type,
-                    c.cdr_answered_at as answered_at,
-                    c.cdr_ended_at as answered_ended_at,
-                    EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) as talk_duration_seconds
-                FROM cdroutput c
-                WHERE ${dateOnlyWhereClause}
-                  AND c.cdr_answered_at IS NOT NULL
-                  AND c.destination_dn_type = 'extension'
-                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                ORDER BY c.call_history_id, c.cdr_answered_at ASC, c.cdr_id ASC
-            ),
-            handled_by AS (
-                SELECT 
-                    c.call_history_id,
-                    JSON_AGG(
-                        JSON_BUILD_OBJECT(
-                            'number', c.destination_dn_number,
-                            'name', COALESCE(c.destination_dn_name, c.destination_participant_name, c.destination_dn_number)
-                        ) ORDER BY c.cdr_answered_at DESC
-                    ) as agents,
-                    SUM(EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at))) as total_talk_seconds,
-                    COUNT(*) as agent_count
-                FROM cdroutput c
-                WHERE ${dateOnlyWhereClause}
-                  AND c.cdr_answered_at IS NOT NULL
-                  AND c.destination_dn_type = 'extension'
-                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                GROUP BY c.call_history_id
-            ),
-            call_queues AS (
-                SELECT 
-                    dq.call_history_id,
-                    JSON_AGG(
-                        JSON_BUILD_OBJECT(
-                            'number', dq.destination_dn_number,
-                            'name', dq.queue_name
-                        )
-                    ) as queues,
-                    COUNT(*) as queue_count
-                FROM (
-                    SELECT DISTINCT 
-                        c.call_history_id,
-                        c.destination_dn_number,
-                        COALESCE(c.destination_dn_name, c.destination_dn_number) as queue_name
-                    FROM cdroutput c
-                    WHERE ${dateOnlyWhereClause}
-                      AND c.destination_dn_type = 'queue'
-                      AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                ) dq
-                GROUP BY dq.call_history_id
-            ),
-            queue_outcome AS (
-                SELECT DISTINCT ON (p.originating_cdr_id)
-                    p.originating_cdr_id,
-                    p.destination_dn_name as agent_name,
-                    p.destination_dn_number as agent_number
-                FROM cdroutput p
-                WHERE ${dateOnlyWhereClause}
-                  AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                  AND p.creation_forward_reason = 'polling'
-                  AND p.cdr_answered_at IS NOT NULL
-                ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC, p.cdr_id ASC
-            ),
-            queue_overflow AS (
-                SELECT c.cdr_id
-                FROM cdroutput c
-                WHERE ${dateOnlyWhereClause}
-                  AND c.destination_dn_type = 'queue'
-                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                  AND NOT EXISTS (
-                      SELECT 1 FROM cdroutput p
-                      WHERE p.originating_cdr_id = c.cdr_id
-                        AND p.creation_forward_reason = 'polling'
-                        AND p.cdr_answered_at IS NOT NULL
-                  )
-                  AND EXISTS (
-                      SELECT 1 FROM cdroutput c2
-                      WHERE c2.call_history_id = c.call_history_id
-                        AND c2.destination_dn_type = 'queue'
-                        AND c2.destination_dn_number != c.destination_dn_number
-                        AND c2.cdr_started_at > c.cdr_started_at
-                  )
-            ),
-            call_journey AS (
-                SELECT
-                    j.call_history_id,
-                    JSON_AGG(
-                        JSON_BUILD_OBJECT(
-                            'type', j.step_type,
-                            'label', j.step_label,
-                            'detail', j.step_detail,
-                            'result', j.step_result,
-                            'agent', j.agent_name,
-                            'agentNumber', j.agent_number
-                        ) ORDER BY j.step_order
-                    ) as journey
-                FROM (
-                    SELECT * FROM (
-                        -- Regular steps: direct, queue, voicemail
-                        SELECT
-                            c.call_history_id,
-                            c.cdr_started_at as step_order,
-                            CASE
-                                WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
-                                WHEN c.destination_dn_type = 'queue' THEN 'queue'
-                                ELSE 'direct'
-                            END as step_type,
-                            c.destination_dn_number as step_label,
-                            CASE
-                                WHEN c.destination_entity_type = 'voicemail' THEN 'Messagerie ' || COALESCE(c.destination_dn_name, c.destination_dn_number)
-                                WHEN c.destination_dn_type = 'queue' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
-                                ELSE COALESCE(c.destination_dn_name, c.destination_dn_number)
-                            END as step_detail,
-                            CASE
-                                WHEN c.destination_dn_type = 'queue' THEN COALESCE(qo.agent_name, qo.agent_number)
-                                WHEN c.destination_dn_type = 'extension' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
-                                WHEN c.destination_dn_type IN ('provider', 'external_line') THEN COALESCE(c.destination_participant_phone_number, c.destination_dn_name, c.destination_dn_number)
-                                ELSE NULL
-                            END as agent_name,
-                            CASE
-                                WHEN c.destination_dn_type = 'queue' THEN qo.agent_number
-                                WHEN c.destination_dn_type = 'extension' THEN c.destination_dn_number
-                                WHEN c.destination_dn_type IN ('provider', 'external_line') THEN c.destination_participant_phone_number
-                                ELSE NULL
-                            END as agent_number,
-                            CASE
-                                WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
-                                WHEN c.destination_dn_type = 'queue' THEN
-                                    CASE
-                                        WHEN qo.originating_cdr_id IS NOT NULL THEN 'answered'
-                                        WHEN qov.cdr_id IS NOT NULL THEN 'overflow'
-                                        ELSE 'abandoned'
-                                    END
-                                ELSE
-                                    CASE
-                                        WHEN c.cdr_answered_at IS NOT NULL THEN 'answered'
-                                        WHEN c.termination_reason_details = 'busy' THEN 'busy'
-                                        ELSE 'not_answered'
-                                    END
-                            END as step_result,
-                            ROW_NUMBER() OVER (PARTITION BY c.call_history_id ORDER BY c.cdr_started_at) as step_num
-                        FROM cdroutput c
-                        LEFT JOIN queue_outcome qo ON c.cdr_id = qo.originating_cdr_id
-                        LEFT JOIN queue_overflow qov ON c.cdr_id = qov.cdr_id
-                        WHERE ${dateOnlyWhereClause}
-                          AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                          AND (
-                              c.destination_entity_type = 'voicemail'
-                              OR c.destination_dn_type = 'queue'
-                              OR c.destination_dn_type IN ('provider', 'external_line')
-                              OR (
-                                  c.destination_dn_type = 'extension'
-                                  AND c.destination_entity_type != 'voicemail'
-                                  AND c.creation_forward_reason IS DISTINCT FROM 'polling'
-                                  AND (
-                                      c.creation_forward_reason = 'by_did'
-                                      OR NOT (
-                                          c.cdr_answered_at IS NULL
-                                          AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
-                                      )
-                                  )
-                              )
-                          )
+        const dataQuery = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE)
+            + DATA_SELECT
+            + buildDataJoins(calleeFilterJoin, aggregatedWhereConditions, sortClause, limit, skip);
 
-                    ) all_steps
-                    WHERE all_steps.step_num <= 15
-                ) j
-                GROUP BY j.call_history_id
-            )${calleeFilterCTE}
-            SELECT 
-                ca.call_history_id,
-                ca.segment_count,
-                ca.first_started_at,
-                ca.last_ended_at,
-                ca.first_answered_at,
-                fs.source_dn_number,
-                fs.source_participant_phone_number,
-                fs.source_participant_name,
-                fs.source_dn_name,
-                fs.source_dn_type,
-                fs.source_presentation,
-                fs.first_dest_number,
-                fs.first_dest_participant_phone,
-                fs.first_dest_participant_name,
-                fs.first_dest_dn_name,
-                fs.destination_dn_type as first_dest_type,
-                ls.destination_dn_number,
-                ls.destination_participant_phone_number,
-                ls.destination_participant_name,
-                ls.destination_dn_name,
-                ls.last_dest_type,
-                ls.last_dest_entity_type,
-                ls.cdr_answered_at as last_answered_at,
-                ls.last_started_at,
-                ls.last_ended_at,
-                ls.termination_reason,
-                ls.termination_reason_details,
-                ans.answered_dest_number,
-                ans.answered_dest_name,
-                ans.answered_dn_name,
-                ans.answered_dest_type,
-                ans.answered_at,
-                ans.answered_ended_at,
-                ans.talk_duration_seconds,
-                hb.agents as handled_by_agents,
-                hb.total_talk_seconds as handled_by_total_talk,
-                hb.agent_count as handled_by_count,
-                cq.queues as call_queues,
-                cq.queue_count,
-                cj.journey as call_journey
-            FROM call_aggregates ca
-            JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
-            JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
-            LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
-            LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id
-            LEFT JOIN call_queues cq ON ca.call_history_id = cq.call_history_id
-            LEFT JOIN call_journey cj ON ca.call_history_id = cj.call_history_id
-            ${calleeFilterJoin}
-            ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
-            ORDER BY ${sortClause}
-            LIMIT ${limit} OFFSET ${skip}
-        `;
-
-        // Count query - optimize by only including expensive CTEs when filtering on them
-        const needsHandledBy = !!filters.handledBySearch?.trim();
-        const needsCallQueues = !!filters.queueSearch?.trim();
-        const needsCallJourney = !!(filters.journeyConditions && filters.journeyConditions.length > 0);
-
-        // Build conditional CTEs for count query
-        const handledByCTEForCount = needsHandledBy ? `,
-            handled_by AS (
-                SELECT 
-                    c.call_history_id,
-                    JSON_AGG(
-                        JSON_BUILD_OBJECT(
-                            'number', c.destination_dn_number,
-                            'name', COALESCE(c.destination_dn_name, c.destination_participant_name, c.destination_dn_number)
-                        ) ORDER BY c.cdr_answered_at DESC
-                    ) as agents
-                FROM cdroutput c
-                WHERE ${dateOnlyWhereClause}
-                  AND c.cdr_answered_at IS NOT NULL
-                  AND c.destination_dn_type = 'extension'
-                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                GROUP BY c.call_history_id
-            )` : '';
-
-        const callQueuesCTEForCount = needsCallQueues ? `,
-            call_queues AS (
-                SELECT 
-                    dq.call_history_id,
-                    JSON_AGG(
-                        JSON_BUILD_OBJECT(
-                            'number', dq.destination_dn_number,
-                            'name', dq.queue_name
-                        )
-                    ) as queues
-                FROM (
-                    SELECT DISTINCT 
-                        c.call_history_id,
-                        c.destination_dn_number,
-                        COALESCE(c.destination_dn_name, c.destination_dn_number) as queue_name
-                    FROM cdroutput c
-                    WHERE ${dateOnlyWhereClause}
-                      AND c.destination_dn_type = 'queue'
-                      AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                ) dq
-                GROUP BY dq.call_history_id
-            )` : '';
-
-        // Build conditional JOINs for count query
-        const handledByJoinForCount = needsHandledBy
-            ? 'LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id'
-            : '';
-        const callQueuesJoinForCount = needsCallQueues
-            ? 'LEFT JOIN call_queues cq ON ca.call_history_id = cq.call_history_id'
-            : '';
-
-        // Build conditional call_journey CTE and JOIN for count query
-        const callJourneyCTEForCount = needsCallJourney ? `,
-            queue_outcome AS (
-                SELECT DISTINCT ON (p.originating_cdr_id)
-                    p.originating_cdr_id,
-                    p.destination_dn_name as agent_name,
-                    p.destination_dn_number as agent_number
-                FROM cdroutput p
-                WHERE ${dateOnlyWhereClause}
-                  AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                  AND p.creation_forward_reason = 'polling'
-                  AND p.cdr_answered_at IS NOT NULL
-                ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC, p.cdr_id ASC
-            ),
-            queue_overflow AS (
-                SELECT c.cdr_id
-                FROM cdroutput c
-                WHERE ${dateOnlyWhereClause}
-                  AND c.destination_dn_type = 'queue'
-                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                  AND NOT EXISTS (
-                      SELECT 1 FROM cdroutput p
-                      WHERE p.originating_cdr_id = c.cdr_id
-                        AND p.creation_forward_reason = 'polling'
-                        AND p.cdr_answered_at IS NOT NULL
-                  )
-                  AND EXISTS (
-                      SELECT 1 FROM cdroutput c2
-                      WHERE c2.call_history_id = c.call_history_id
-                        AND c2.destination_dn_type = 'queue'
-                        AND c2.destination_dn_number != c.destination_dn_number
-                        AND c2.cdr_started_at > c.cdr_started_at
-                  )
-            ),
-            call_journey AS (
-                SELECT
-                    j.call_history_id,
-                    JSON_AGG(
-                        JSON_BUILD_OBJECT(
-                            'type', j.step_type,
-                            'label', j.step_label,
-                            'detail', j.step_detail,
-                            'result', j.step_result,
-                            'agent', j.agent_name,
-                            'agentNumber', j.agent_number
-                        ) ORDER BY j.step_order
-                    ) as journey
-                FROM (
-                    SELECT * FROM (
-                        SELECT
-                            c.call_history_id,
-                            c.cdr_started_at as step_order,
-                            CASE
-                                WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
-                                WHEN c.destination_dn_type = 'queue' THEN 'queue'
-                                ELSE 'direct'
-                            END as step_type,
-                            c.destination_dn_number as step_label,
-                            CASE
-                                WHEN c.destination_entity_type = 'voicemail' THEN 'Messagerie ' || COALESCE(c.destination_dn_name, c.destination_dn_number)
-                                WHEN c.destination_dn_type = 'queue' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
-                                ELSE COALESCE(c.destination_dn_name, c.destination_dn_number)
-                            END as step_detail,
-                            CASE
-                                WHEN c.destination_dn_type = 'queue' THEN COALESCE(qo.agent_name, qo.agent_number)
-                                WHEN c.destination_dn_type = 'extension' THEN COALESCE(c.destination_dn_name, c.destination_dn_number)
-                                WHEN c.destination_dn_type IN ('provider', 'external_line') THEN COALESCE(c.destination_participant_phone_number, c.destination_dn_name, c.destination_dn_number)
-                                ELSE NULL
-                            END as agent_name,
-                            CASE
-                                WHEN c.destination_dn_type = 'queue' THEN qo.agent_number
-                                WHEN c.destination_dn_type = 'extension' THEN c.destination_dn_number
-                                WHEN c.destination_dn_type IN ('provider', 'external_line') THEN c.destination_participant_phone_number
-                                ELSE NULL
-                            END as agent_number,
-                            CASE
-                                WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
-                                WHEN c.destination_dn_type = 'queue' THEN
-                                    CASE
-                                        WHEN qo.originating_cdr_id IS NOT NULL THEN 'answered'
-                                        WHEN qov.cdr_id IS NOT NULL THEN 'overflow'
-                                        ELSE 'abandoned'
-                                    END
-                                ELSE
-                                    CASE
-                                        WHEN c.cdr_answered_at IS NOT NULL THEN 'answered'
-                                        WHEN c.termination_reason_details = 'busy' THEN 'busy'
-                                        ELSE 'not_answered'
-                                    END
-                            END as step_result,
-                            ROW_NUMBER() OVER (PARTITION BY c.call_history_id ORDER BY c.cdr_started_at) as step_num
-                        FROM cdroutput c
-                        LEFT JOIN queue_outcome qo ON c.cdr_id = qo.originating_cdr_id
-                        LEFT JOIN queue_overflow qov ON c.cdr_id = qov.cdr_id
-                        WHERE ${dateOnlyWhereClause}
-                          AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                          AND (
-                              c.destination_entity_type = 'voicemail'
-                              OR c.destination_dn_type = 'queue'
-                              OR c.destination_dn_type IN ('provider', 'external_line')
-                              OR (
-                                  c.destination_dn_type = 'extension'
-                                  AND c.destination_entity_type != 'voicemail'
-                                  AND c.creation_forward_reason IS DISTINCT FROM 'polling'
-                                  AND (
-                                      c.creation_forward_reason = 'by_did'
-                                      OR NOT (
-                                          c.cdr_answered_at IS NULL
-                                          AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
-                                      )
-                                  )
-                              )
-                          )
-
-                    ) all_steps
-                    WHERE all_steps.step_num <= 15
-                ) j
-                GROUP BY j.call_history_id
-            )` : '';
-        const callJourneyJoinForCount = needsCallJourney
-            ? 'LEFT JOIN call_journey cj ON ca.call_history_id = cj.call_history_id'
-            : '';
-
-        const countQuery = `
-            WITH call_aggregates AS (
-                SELECT
-                    call_history_id,
-                    COUNT(*) as segment_count,
-                    MIN(cdr_started_at) as first_started_at,
-                    MIN(cdr_answered_at) as first_answered_at
-                FROM cdroutput
-                WHERE ${whereClause}
-                GROUP BY call_history_id
-            ),
-            first_segments AS (
-                SELECT DISTINCT ON (call_history_id)
-                    call_history_id,
-                    source_dn_type,
-                    destination_dn_type
-                FROM cdroutput
-                WHERE ${dateOnlyWhereClause}
-                  AND call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                ORDER BY call_history_id, cdr_started_at ASC
-            ),
-            last_segments AS (
-                SELECT DISTINCT ON (call_history_id)
-                    call_history_id,
-                    destination_dn_type as last_dest_type,
-                    destination_entity_type as last_dest_entity_type,
-                    cdr_answered_at,
-                    cdr_started_at as last_started_at,
-                    cdr_ended_at as last_ended_at,
-                    termination_reason,
-                    termination_reason_details
-                FROM cdroutput
-                WHERE ${whereClause}
-                ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
-            ),
-            answered_segments AS (
-                SELECT DISTINCT ON (c.call_history_id)
-                    c.call_history_id,
-                    c.cdr_answered_at as answered_at
-                FROM cdroutput c
-                WHERE ${dateOnlyWhereClause}
-                  AND c.cdr_answered_at IS NOT NULL
-                  AND c.destination_dn_type = 'extension'
-                  AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-                ORDER BY c.call_history_id, c.cdr_answered_at ASC, c.cdr_id ASC
-            )${handledByCTEForCount}${callQueuesCTEForCount}${callJourneyCTEForCount}${calleeFilterCTE}
-            SELECT COUNT(*) as total
-            FROM call_aggregates ca
-            JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
-            JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
-            LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
-            ${handledByJoinForCount}
-            ${callQueuesJoinForCount}
-            ${callJourneyJoinForCount}
-            ${calleeFilterJoin}
-            ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
-        `;
+        const countQuery = buildCountQuery(
+            whereClause, dateOnlyWhereClause, calleeFilterCTE, calleeFilterJoin,
+            aggregatedWhereConditions, filters
+        );
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const [rawResults, countResult] = await Promise.all([
-            prisma.$queryRawUnsafe<any[]>(aggregatedQuery),
+            prisma.$queryRawUnsafe<any[]>(dataQuery),
             prisma.$queryRawUnsafe<{ total: bigint }[]>(countQuery),
         ]);
 
         const totalCount = Number(countResult[0]?.total || 0);
         const totalPages = Math.ceil(totalCount / limit);
+        const logs = rawResults.map(transformRow);
 
-        // Transform results to AggregatedCallLog
-        const logs: AggregatedCallLog[] = rawResults.map((row) => {
-            const firstStarted = row.first_started_at ? new Date(row.first_started_at) : null;
-            const lastEnded = row.last_ended_at ? new Date(row.last_ended_at) : null;
-            const firstAnswered = row.first_answered_at ? new Date(row.first_answered_at) : null;
-
-            // Use answered_segment data if available (call was answered by human)
-            const answeredByHuman = row.answered_at ? new Date(row.answered_at) : null;
-            const answeredEndedAt = row.answered_ended_at ? new Date(row.answered_ended_at) : null;
-            const talkDurationSeconds = row.talk_duration_seconds ? Math.round(Number(row.talk_duration_seconds)) : 0;
-
-            // Parse handled_by_agents - PostgreSQL may return JSON as string
-            let parsedHandledByAgents: Array<{ number: string; name: string }> = [];
-            if (row.handled_by_agents) {
-                try {
-                    parsedHandledByAgents = typeof row.handled_by_agents === 'string'
-                        ? JSON.parse(row.handled_by_agents)
-                        : row.handled_by_agents;
-                } catch {
-                    parsedHandledByAgents = [];
-                }
-            }
-            const parsedHandledByCount = Number(row.handled_by_count || 0);
-
-            // Total duration = from first start to last end
-            const totalDurationSeconds = firstStarted && lastEnded
-                ? Math.round((lastEnded.getTime() - firstStarted.getTime()) / 1000)
-                : 0;
-
-            // Wait time = time until answered by human (or first answered segment)
-            const waitTimeSeconds = firstStarted && (answeredByHuman || firstAnswered)
-                ? Math.round(((answeredByHuman || firstAnswered)!.getTime() - firstStarted.getTime()) / 1000)
-                : (firstStarted && lastEnded ? Math.round((lastEnded.getTime() - firstStarted.getTime()) / 1000) : 0);
-
-            // Determine final status using the centralized domain function
-            const lastSegmentAnswered = row.answered_at !== null;
-            const finalStatus = determineCallStatus({
-                lastDestType: row.last_dest_type,
-                lastDestEntityType: row.last_dest_entity_type,
-                lastAnsweredAt: row.last_answered_at ? new Date(row.last_answered_at) : null,
-                lastStartedAt: row.last_started_at ? new Date(row.last_started_at) : null,
-                lastEndedAt: lastEnded,
-                terminationReasonDetails: row.termination_reason_details,
-                humanAnsweredAt: answeredByHuman,
-            });
-
-            // Determine direction using centralized domain function
-            const direction = determineCallDirection({
-                sourceType: row.source_dn_type,
-                firstDestType: row.first_dest_type,
-                lastDestType: row.last_dest_type,
-            });
-
-            // Was transferred if more than 1 segment
-            const wasTransferred = Number(row.segment_count) > 1;
-
-            // Process handledBy data - using already parsed values from above
-            const handledByAgents = parsedHandledByAgents;
-            const handledByCount = parsedHandledByCount;
-            const totalTalkSeconds = Math.round(Number(row.handled_by_total_talk || 0));
-
-            // Format display: max 5 agents + "et N autres"
-            let handledByDisplay = "-";
-            if (handledByAgents.length > 0) {
-                const displayAgents = handledByAgents.slice(0, 5);
-                const agentNames = displayAgents.map(a => a.name || a.number);
-                handledByDisplay = agentNames.join(", ");
-                if (handledByCount > 5) {
-                    handledByDisplay += ` (+${handledByCount - 5})`;
-                }
-            }
-
-            return {
-                callHistoryId: row.call_history_id,
-                callHistoryIdShort: row.call_history_id?.slice(-4).toUpperCase() || "-",
-                segmentCount: Number(row.segment_count),
-
-                startedAt: row.first_started_at?.toISOString() || "",
-                endedAt: row.last_ended_at?.toISOString() || "",
-                // Use talk duration for answered calls, otherwise show total duration
-                totalDurationSeconds: lastSegmentAnswered ? totalTalkSeconds : totalDurationSeconds,
-                totalDurationFormatted: formatDuration(lastSegmentAnswered ? totalTalkSeconds : totalDurationSeconds),
-                waitTimeSeconds,
-                waitTimeFormatted: formatDuration(waitTimeSeconds),
-
-                callerNumber: getDisplayNumber(row.source_dn_number, row.source_participant_phone_number, row.source_presentation),
-                // For 'provider' source: 
-                // - If source_participant_name ends with ':' → it's a SDA/rule name, caller is unknown
-                // - If source_participant_name does NOT end with ':' → it's the actual caller's name (recognized employee)
-                callerName: row.source_dn_type?.toLowerCase() === 'provider'
-                    ? (row.source_participant_name && !row.source_participant_name.trim().endsWith(':')
-                        ? getDisplayName(row.source_participant_name, null)
-                        : null)
-                    : (getDisplayName(row.source_participant_name, row.source_dn_name) || null),
-
-                // Use FIRST destination (initial recipient the caller tried to reach)
-                // For inbound calls: if destination name is empty, use SDA name from source_participant_name
-                calleeNumber: getDisplayNumber(row.first_dest_number, row.first_dest_participant_phone),
-                calleeName: row.source_dn_type?.toLowerCase() === 'provider'
-                    ? (getDisplayName(row.first_dest_participant_name, row.first_dest_dn_name)
-                        || (row.source_participant_name?.trim().endsWith(':') ? getDisplayName(row.source_participant_name, null) : null))
-                    : (getDisplayName(row.first_dest_participant_name, row.first_dest_dn_name) || null),
-
-                // Handled by data
-                handledBy: handledByAgents,
-                handledByDisplay,
-                totalTalkDurationSeconds: totalTalkSeconds,
-                totalTalkDurationFormatted: formatDuration(totalTalkSeconds),
-
-                direction,
-                finalStatus,
-                wasTransferred,
-
-                // Queues data - parse from JSON
-                queues: (() => {
-                    if (!row.call_queues) return [];
-                    try {
-                        const parsed = typeof row.call_queues === 'string'
-                            ? JSON.parse(row.call_queues)
-                            : row.call_queues;
-                        return Array.isArray(parsed) ? parsed : [];
-                    } catch {
-                        return [];
-                    }
-                })(),
-                queuesDisplay: (() => {
-                    if (!row.call_queues) return "-";
-                    try {
-                        const parsed = typeof row.call_queues === 'string'
-                            ? JSON.parse(row.call_queues)
-                            : row.call_queues;
-                        if (!Array.isArray(parsed) || parsed.length === 0) return "-";
-                        const queueNames = parsed.map((q: { number: string; name: string }) => q.name || q.number);
-                        return queueNames.join(", ");
-                    } catch {
-                        return "-";
-                    }
-                })(),
-
-                // Journey steps for "Parcours" column
-                journey: (() => {
-                    if (!row.call_journey) return [];
-                    try {
-                        const parsed = typeof row.call_journey === 'string'
-                            ? JSON.parse(row.call_journey)
-                            : row.call_journey;
-                        return Array.isArray(parsed) ? parsed : [];
-                    } catch {
-                        return [];
-                    }
-                })(),
-            };
-        });
-
-        // No post-query filtering needed - filters are applied in SQL
-
-        return {
-            logs,
-            totalCount,
-            totalPages,
-            currentPage: pageNumber,
-        };
+        return { logs, totalCount, totalPages, currentPage: pageNumber };
     } catch (error) {
         console.error("❌ Error fetching aggregated call logs:", error);
-        return {
-            logs: [],
-            totalCount: 0,
-            totalPages: 0,
-            currentPage: pageNumber,
-        };
+        return { logs: [], totalCount: 0, totalPages: 0, currentPage: pageNumber };
     }
 }
 
@@ -1477,13 +1053,10 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
             const startedAt = seg.cdr_started_at ? new Date(seg.cdr_started_at) : null;
             const endedAt = seg.cdr_ended_at ? new Date(seg.cdr_ended_at) : null;
             const answeredAt = seg.cdr_answered_at ? new Date(seg.cdr_answered_at) : null;
-
-            // Calculate duration in seconds (from start to end)
             const durationSeconds = startedAt && endedAt
                 ? Math.round((endedAt.getTime() - startedAt.getTime()) / 1000 * 10) / 10
                 : 0;
 
-            // Determine segment category
             const category = determineSegmentCategory({
                 terminationReason: seg.termination_reason,
                 terminationReasonDetails: seg.termination_reason_details,
@@ -1541,10 +1114,6 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
 // CSV EXPORT
 // ============================================
 
-/**
- * Export ALL call logs without pagination limit (for CSV export).
- * Fetches all pages and concatenates them.
- */
 async function exportAllCallLogs(
     startDate: Date,
     endDate: Date,
@@ -1562,12 +1131,7 @@ async function exportAllCallLogs(
         page++;
     }
 
-    return {
-        logs: allLogs,
-        totalCount: allLogs.length,
-        totalPages: 1,
-        currentPage: 1,
-    };
+    return { logs: allLogs, totalCount: allLogs.length, totalPages: 1, currentPage: 1 };
 }
 
 export async function exportCallLogsCSV(
@@ -1579,29 +1143,10 @@ export async function exportCallLogsCSV(
     const response = await exportAllCallLogs(startDate, endDate, filters);
 
     if (idsOnly) {
-        const rows = response.logs.map((log) => log.callHistoryId);
-        const csvContent = [
-            "call_history_id",
-            ...rows,
-        ].join("\n");
-        return csvContent;
+        return ["call_history_id", ...response.logs.map((log) => log.callHistoryId)].join("\n");
     }
 
-    const headers = [
-        "ID",
-        "Date/Heure",
-        "Appelant",
-        "Nom Appelant",
-        "Appelé",
-        "Nom Appelé",
-        "Direction",
-        "Statut",
-        "Durée Totale",
-        "Temps Attente",
-        "Segments",
-        "Transféré",
-    ];
-
+    const headers = ["ID", "Date/Heure", "Appelant", "Nom Appelant", "Appelé", "Nom Appelé", "Direction", "Statut", "Durée Totale", "Temps Attente", "Segments", "Transféré"];
     const rows = response.logs.map((log) => [
         log.callHistoryIdShort,
         log.startedAt,
@@ -1617,12 +1162,8 @@ export async function exportCallLogsCSV(
         log.wasTransferred ? "Oui" : "Non",
     ]);
 
-    const csvContent = [
+    return [
         headers.join(";"),
         ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(";")),
     ].join("\n");
-
-    return csvContent;
 }
-
-

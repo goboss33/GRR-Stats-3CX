@@ -15,7 +15,7 @@ import {
     getGlobalMetrics,
     getTimelineData,
     getHeatmapData,
-} from "@/services/stats.service";
+} from "@/services/dashboard.service";
 
 import type {
     GlobalMetrics,

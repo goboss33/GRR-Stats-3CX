@@ -6,7 +6,7 @@ import { BarChart3, RefreshCw, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QueueInfo } from "@/types/queues.types";
 import { QueueStatistics } from "@/types/statistics.types";
-import { getQueueStatistics } from "@/services/statistics.service";
+import { getQueueStatistics } from "@/services/queue-statistics.service";
 import { getQueueMembers } from "@/services/queues.service";
 import { AgentPerformanceTable } from "@/components/stats/agent-performance-table";
 import { TrendCharts } from "@/components/stats/trend-charts";

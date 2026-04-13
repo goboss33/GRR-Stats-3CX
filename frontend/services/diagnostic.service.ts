@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { getGlobalMetrics } from "@/services/stats.service";
+import { getGlobalMetrics } from "@/services/dashboard.service";
 import { determineCallStatus } from "@/services/domain/call-aggregation";
 
 export interface DiagnosticResult {

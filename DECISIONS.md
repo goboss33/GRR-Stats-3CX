@@ -2,7 +2,7 @@
 
 > Ce document recense les choix de conception effectués pour l'outil de statistiques 3CX.
 > Chaque décision est accompagnée de son contexte, de sa justification et des alternatives écartées.
-> Dernière mise à jour : 3 mars 2026
+> Dernière mise à jour : 13 avril 2026
 
 ---
 
@@ -792,3 +792,73 @@ Cet invariant garantit que le total de la colonne "Queue (résolu)" dans le tabl
 | **Les appels directs incluent les transferts reçus** | Le compteur "Directs" d'un agent peut inclure des appels transférés par un collègue | Un appel transféré vers l'agent crée un nouveau segment CDR identique à un appel direct. C'est acceptable car du point de vue charge de travail, c'est équivalent. |
 | **Le score ne prend pas en compte les heures de travail** | Un agent à mi-temps aura un score de volume plus bas | Les données CDR ne contiennent pas les plannings. Une pondération par temps de présence nécessiterait une intégration RH. |
 | **Les messageries vocales** | Les appels allant en messagerie ne sont pas comptabilisés dans les statistiques queue | Ils sont intentionnellement exclus car ils ne représentent pas un travail d'agent. |
+
+---
+
+## 5. Architecture de la Couche Service
+
+### 5.1 Renommage des services pour plus de clarté
+
+**Date de la décision :** 13 avril 2026
+
+**Problème :** Les fichiers `stats.service.ts` et `statistics.service.ts` avaient des noms trop proches et prêtaient à confusion. Il était difficile de savoir lequel utiliser pour chaque cas d'usage.
+
+**Décision :**
+- `stats.service.ts` → **`dashboard.service.ts`** (métriques globales du dashboard)
+- `statistics.service.ts` → **`queue-statistics.service.ts`** (statistiques par file d'attente)
+
+**Justification :**
+- Les noms décrivent maintenant clairement leur périmètre fonctionnel
+- Cohérence avec la terminologie de l'UI (page "Dashboard" vs page "Statistiques Queue")
+- Réduit le risque d'import erroné
+
+**Mesures de compatibilité :**
+- Les anciens fichiers (`stats.service.ts` et `statistics.service.ts`) sont conservés comme **barrels de re-export** avec un commentaire `@deprecated`. Cela garantit qu'aucun import existant et oublié ne casse.
+- Les imports connus ont été mis à jour pour pointer vers les nouveaux fichiers.
+
+---
+
+### 5.2 Repository Pattern — Source unique de vérité SQL
+
+**Date de la décision :** Mars 2026
+
+**Problème :** La logique SQL était dupliquée entre plusieurs services, causant des incohérences de données (notamment entre le dashboard et les logs).
+
+**Décision :** Un seul fichier exécute du SQL vers `cdroutput` : `services/repositories/cdr.repository.ts`.
+
+**Règle :**
+- Le **Repository** (`cdr.repository.ts`) = seul accès BDD, retourne des données brutes typées
+- Les **Services** (`dashboard.service.ts`, `queue-statistics.service.ts`, `logs.service.ts`) = orchestration et transformation métier
+- Les **Pages** = affichage uniquement, appellent les services
+
+**Exception documentée :** `logs.service.ts` contient encore du SQL inline (requête principale de la vue logs avec ses ~10 CTEs). Ce SQL est trop spécifique à la pagination et aux filtres complexes pour être facilement extrait. Un refactoring est prévu.
+
+**Pourquoi la cohérence dashboard ↔ logs est critique :**
+- Un clic sur un KPI du dashboard redirige vers les logs filtrés avec les mêmes critères
+- Les deux doivent utiliser la **même logique de calcul** de statut (voicemail, missed, answered, busy)
+- La logique de référence est dans `services/domain/call-aggregation.ts` (source de vérité métier)
+- Les logs sont la **source de vérité** : leur logique est la plus testée et la plus raffinée
+- Le dashboard s'aligne sur la logique des logs (et non l'inverse)
+
+---
+
+### 5.3 Persistance des filtres dans l'URL (Logs)
+
+**Date de la décision :** Avant mars 2026
+
+**Décision :** Tous les filtres de la page Logs d'appels sont sérialisés dans l'URL via `useSearchParams` et `router.replace()`.
+
+**Filtres persistés :**
+- `start`, `end` — plage de dates
+- `directions`, `statuses` — filtres direction/statut (listes séparées par virgules)
+- `caller`, `callee`, `handledBy`, `queue`, `id` — filtres texte
+- `segMin`, `segMax`, `durMin`, `durMax`, `waitMin`, `waitMax` — filtres numériques
+- `timeSlots` — créneaux horaires (format `HH:mm-HH:mm,HH:mm-HH:mm`)
+- `journeyFilter` — conditions de parcours (JSON encodé en URL)
+- `page` — page courante
+
+**Comportement :**
+- La mise à jour URL utilise les valeurs **debouncées** pour les champs texte (évite de polluer l'URL à chaque frappe)
+- L'initialisation de l'état React lit depuis `useSearchParams` → les filtres survivent à un refresh
+- Le dashboard peut créer des liens directs vers les logs avec des filtres pré-appliqués (ex: clic sur KPI "Manqués")
+
