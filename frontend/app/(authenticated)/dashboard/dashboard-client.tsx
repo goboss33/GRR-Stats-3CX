@@ -6,6 +6,7 @@ import { subDays, startOfDay, endOfDay, format } from "date-fns";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
@@ -162,7 +163,7 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-slate-900 flex items-center">
-                            {isInitialLoad ? <span className="animate-pulse">...</span> : (
+                            {isInitialLoad ? <Skeleton className="h-8 w-16" /> : (
                                 <>
                                     <Link
                                         href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}`}
@@ -197,7 +198,7 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-emerald-600 flex items-center">
-                            {isInitialLoad ? <span className="animate-pulse">...</span> : (
+                            {isInitialLoad ? <Skeleton className="h-8 w-16" /> : (
                                 <>
                                     <Link
                                         href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=answered`}
@@ -210,8 +211,10 @@ export default function DashboardClient() {
                             )}
                         </div>
                         <div className="flex items-center gap-1 mt-1.5 text-xs">
-                            <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{metrics?.answerRate}%</span>
-                            <span className="text-slate-500 font-medium">taux global</span>
+                            {isInitialLoad
+                                ? <Skeleton className="h-4 w-20" />
+                                : <><span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{metrics?.answerRate}%</span><span className="text-slate-500 font-medium">taux global</span></>
+                            }
                         </div>
                     </CardContent>
                 </Card>
@@ -235,7 +238,7 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-rose-600 flex items-center">
-                            {isInitialLoad ? <span className="animate-pulse">...</span> : (
+                            {isInitialLoad ? <Skeleton className="h-8 w-16" /> : (
                                 <>
                                     <Link
                                         href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=missed`}
@@ -270,7 +273,7 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-purple-600 flex items-center">
-                            {isInitialLoad ? <span className="animate-pulse">...</span> : (
+                            {isInitialLoad ? <Skeleton className="h-8 w-16" /> : (
                                 <>
                                     <Link
                                         href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=voicemail`}
@@ -305,7 +308,7 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-orange-600 flex items-center">
-                            {isInitialLoad ? <span className="animate-pulse">...</span> : (
+                            {isInitialLoad ? <Skeleton className="h-8 w-16" /> : (
                                 <>
                                     <Link
                                         href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=busy`}
@@ -329,7 +332,7 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl lg:text-3xl font-bold text-slate-900 flex items-center">
-                            {isInitialLoad ? <span className="animate-pulse">...</span> : (
+                            {isInitialLoad ? <Skeleton className="h-8 w-20" /> : (
                                 <>
                                     {formatDuration(metrics?.avgDurationSeconds || 0)}
                                     <TrendIndicator current={metrics?.avgDurationSeconds || 0} prev={metrics?.prevAvgDurationSeconds || 0} />
@@ -348,7 +351,7 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl lg:text-3xl font-bold text-slate-900 flex items-center">
-                            {isInitialLoad ? <span className="animate-pulse">...</span> : (
+                            {isInitialLoad ? <Skeleton className="h-8 w-20" /> : (
                                 <>
                                     {formatDuration(metrics?.avgWaitTimeSeconds || 0)}
                                     <TrendIndicator current={metrics?.avgWaitTimeSeconds || 0} prev={metrics?.prevAvgWaitTimeSeconds || 0} inverseGood={true} />
@@ -370,8 +373,16 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         {isPending && !isInitialLoad ? (
-                            <div className="h-[425px] flex items-center justify-center">
-                                <RefreshCw className="h-8 w-8 animate-spin text-slate-300" />
+                            <div className="h-[425px] space-y-3 pt-4">
+                                <div className="flex gap-2 items-end h-[380px]">
+                                    {Array.from({ length: 14 }).map((_, i) => (
+                                        <Skeleton
+                                            key={i}
+                                            className="flex-1 rounded-sm"
+                                            style={{ height: `${25 + Math.random() * 75}%` }}
+                                        />
+                                    ))}
+                                </div>
                             </div>
                         ) : (
                             <CallsChart data={timelineData} />
@@ -386,8 +397,10 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent className="px-4">
                         {isPending && !isInitialLoad ? (
-                            <div className="h-[425px] flex items-center justify-center">
-                                <RefreshCw className="h-8 w-8 animate-spin text-slate-300" />
+                            <div className="h-[425px] grid grid-cols-7 gap-1 pt-4">
+                                {Array.from({ length: 7 * 11 }).map((_, i) => (
+                                    <Skeleton key={i} className="rounded-sm" style={{ opacity: 0.3 + Math.random() * 0.7 }} />
+                                ))}
                             </div>
                         ) : (
                             <HeatmapChart data={heatmapData} />
