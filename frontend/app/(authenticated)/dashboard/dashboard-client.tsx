@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useTransition } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Users2, Hourglass, Voicemail, PhoneCall, Download } from "lucide-react";
 import { subDays, startOfDay, endOfDay, format } from "date-fns";
 
@@ -85,7 +85,7 @@ function TrendIndicator({ current, prev, inverseGood = false }: { current: numbe
 }
 
 export default function DashboardClient() {
-    const [isPending, startTransition] = useTransition();
+    const [isLoading, setIsLoading] = useState(true);
     const [isInitialLoad, setIsInitialLoad] = useState(true);
 
     const [dateRange, setDateRange] = useState({
@@ -98,23 +98,24 @@ export default function DashboardClient() {
     const [heatmapData, setHeatmapData] = useState<HeatmapDataPoint[]>([]);
 
     const fetchData = useCallback(async () => {
-        startTransition(async () => {
-            try {
-                const [metricsData, timeline, heatmap] = await Promise.all([
-                    getGlobalMetrics(dateRange.startDate, dateRange.endDate),
-                    getTimelineData(dateRange.startDate, dateRange.endDate),
-                    getHeatmapData(dateRange.startDate, dateRange.endDate),
-                ]);
+        setIsLoading(true);
+        try {
+            const [metricsData, timeline, heatmap] = await Promise.all([
+                getGlobalMetrics(dateRange.startDate, dateRange.endDate),
+                getTimelineData(dateRange.startDate, dateRange.endDate),
+                getHeatmapData(dateRange.startDate, dateRange.endDate),
+            ]);
 
-                setMetrics(metricsData);
-                setTimelineData(timeline);
-                setHeatmapData(heatmap);
-                setIsInitialLoad(false);
-            } catch (error) {
-                console.error("Error fetching dashboard data:", error);
-                setIsInitialLoad(false);
-            }
-        });
+            setMetrics(metricsData);
+            setTimelineData(timeline);
+            setHeatmapData(heatmap);
+            setIsInitialLoad(false);
+        } catch (error) {
+            console.error("Error fetching dashboard data:", error);
+            setIsInitialLoad(false);
+        } finally {
+            setIsLoading(false);
+        }
     }, [dateRange]);
 
     useEffect(() => {
@@ -145,10 +146,10 @@ export default function DashboardClient() {
                         variant="outline"
                         size="icon"
                         onClick={handleRefresh}
-                        disabled={isPending}
+                        disabled={isLoading}
                         className="bg-white shadow-sm hover:bg-slate-50 transition-colors"
                     >
-                        <RefreshCw className={`h-4 w-4 text-slate-600 ${isPending ? "animate-spin" : ""}`} />
+                        <RefreshCw className={`h-4 w-4 text-slate-600 ${isLoading ? "animate-spin" : ""}`} />
                     </Button>
                 </div>
             </div>
@@ -372,7 +373,7 @@ export default function DashboardClient() {
                         <CardTitle className="text-lg font-bold text-slate-900">Évolution du Volume</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        {isPending && !isInitialLoad ? (
+                        {isLoading && !isInitialLoad ? (
                             <div className="h-[425px] space-y-3 pt-4">
                                 <div className="flex gap-2 items-end h-[380px]">
                                     {Array.from({ length: 14 }).map((_, i) => (
@@ -396,7 +397,7 @@ export default function DashboardClient() {
                         <CardTitle className="text-lg font-bold text-slate-900">Carte des Affluences</CardTitle>
                     </CardHeader>
                     <CardContent className="px-4">
-                        {isPending && !isInitialLoad ? (
+                        {isLoading && !isInitialLoad ? (
                             <div className="h-[425px] grid grid-cols-7 gap-1 pt-4">
                                 {Array.from({ length: 7 * 11 }).map((_, i) => (
                                     <Skeleton key={i} className="rounded-sm" style={{ opacity: 0.3 + Math.random() * 0.7 }} />

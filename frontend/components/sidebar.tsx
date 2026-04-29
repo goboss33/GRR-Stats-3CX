@@ -5,14 +5,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
     LayoutDashboard,
-    Settings,
     ChevronLeft,
     ChevronRight,
     Phone,
     FileText,
-    Users,
     BarChart3,
-    Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,9 +19,16 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { SidebarProfileMenu } from "@/components/sidebar-profile-menu";
 
 interface SidebarProps {
     userRole: string;
+    user: {
+        firstName: string | null | undefined;
+        lastName: string | null | undefined;
+        email: string | null | undefined;
+    };
+    signOutAction: () => Promise<void>;
 }
 
 interface NavItem {
@@ -41,17 +45,10 @@ const navItems: NavItem[] = [
         icon: LayoutDashboard,
         roles: ["ADMIN", "SUPERUSER", "USER"],
     },
-
     {
         label: "Logs d'appels",
         href: "/admin/logs",
         icon: FileText,
-        roles: ["ADMIN"],
-    },
-    {
-        label: "Utilisateurs",
-        href: "/admin/users",
-        icon: Users,
         roles: ["ADMIN"],
     },
     {
@@ -60,27 +57,9 @@ const navItems: NavItem[] = [
         icon: BarChart3,
         roles: ["ADMIN", "SUPERUSER", "USER"],
     },
-    {
-        label: "Files d'attente",
-        href: "/queues",
-        icon: Users,
-        roles: ["ADMIN", "SUPERUSER", "USER"],
-    },
-    {
-        label: "Diagnostic",
-        href: "/diagnostic",
-        icon: Wrench,
-        roles: ["ADMIN"],
-    },
-    {
-        label: "Paramètres",
-        href: "/admin/settings",
-        icon: Settings,
-        roles: ["ADMIN"],
-    },
 ];
 
-export function Sidebar({ userRole }: SidebarProps) {
+export function Sidebar({ userRole, user, signOutAction }: SidebarProps) {
     const pathname = usePathname();
     const [collapsed, setCollapsed] = useState(false);
 
@@ -149,8 +128,17 @@ export function Sidebar({ userRole }: SidebarProps) {
                     })}
                 </nav>
 
-                {/* Collapse Button */}
+                {/* Profile Menu */}
                 <div className="p-2 border-t border-slate-800">
+                    <SidebarProfileMenu
+                        user={user}
+                        collapsed={collapsed}
+                        signOutAction={signOutAction}
+                    />
+                </div>
+
+                {/* Collapse Button */}
+                <div className="px-2 pb-2">
                     <Button
                         variant="ghost"
                         size="icon"

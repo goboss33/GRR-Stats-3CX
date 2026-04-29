@@ -49,6 +49,11 @@ interface UsersClientProps {
     currentUserId: string;
 }
 
+function getDisplayName(user: UserRow): string {
+    const parts = [user.firstName, user.lastName].filter(Boolean);
+    return parts.length > 0 ? parts.join(" ") : "—";
+}
+
 export function UsersClient({ users, currentUserId }: UsersClientProps) {
     const router = useRouter();
     const [formOpen, setFormOpen] = useState(false);
@@ -69,7 +74,8 @@ export function UsersClient({ users, currentUserId }: UsersClientProps) {
 
     const handleFormSubmit = async (data: {
         email: string;
-        name: string;
+        firstName: string;
+        lastName: string;
         role: Role;
         password?: string;
     }) => {
@@ -83,7 +89,8 @@ export function UsersClient({ users, currentUserId }: UsersClientProps) {
             }
             const result = await createUser({
                 email: data.email,
-                name: data.name,
+                firstName: data.firstName,
+                lastName: data.lastName,
                 role: data.role,
                 password: data.password,
             });
@@ -142,7 +149,7 @@ export function UsersClient({ users, currentUserId }: UsersClientProps) {
                             return (
                                 <TableRow key={user.id}>
                                     <TableCell className="font-medium">
-                                        {user.name || "—"}
+                                        {getDisplayName(user)}
                                         {isSelf && (
                                             <span className="ml-2 text-xs text-muted-foreground">
                                                 (vous)
@@ -231,7 +238,7 @@ export function UsersClient({ users, currentUserId }: UsersClientProps) {
                         <DialogDescription>
                             Êtes-vous sûr de vouloir supprimer{" "}
                             <span className="font-medium text-slate-900">
-                                {deleteTarget?.name || deleteTarget?.email}
+                                {deleteTarget && getDisplayName(deleteTarget)}
                             </span>{" "}
                             ? Cette action est irréversible.
                         </DialogDescription>

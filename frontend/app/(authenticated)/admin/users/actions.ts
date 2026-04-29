@@ -12,7 +12,8 @@ type ActionResult<T = void> =
 export type UserRow = {
     id: string;
     email: string;
-    name: string | null;
+    firstName: string | null;
+    lastName: string | null;
     role: Role;
     createdAt: Date;
 };
@@ -28,7 +29,7 @@ async function requireAdmin() {
 export async function getUsers(): Promise<UserRow[]> {
     await requireAdmin();
     return prisma.user.findMany({
-        select: { id: true, email: true, name: true, role: true, createdAt: true },
+        select: { id: true, email: true, firstName: true, lastName: true, role: true, createdAt: true },
         orderBy: { createdAt: "desc" },
     });
 }
@@ -36,7 +37,8 @@ export async function getUsers(): Promise<UserRow[]> {
 export async function createUser(data: {
     email: string;
     password: string;
-    name: string;
+    firstName: string;
+    lastName: string;
     role: Role;
 }): Promise<ActionResult<UserRow>> {
     await requireAdmin();
@@ -58,10 +60,11 @@ export async function createUser(data: {
         data: {
             email: data.email,
             password: hashedPassword,
-            name: data.name || null,
+            firstName: data.firstName || null,
+            lastName: data.lastName || null,
             role: data.role,
         },
-        select: { id: true, email: true, name: true, role: true, createdAt: true },
+        select: { id: true, email: true, firstName: true, lastName: true, role: true, createdAt: true },
     });
 
     return { success: true, data: user };
@@ -69,7 +72,7 @@ export async function createUser(data: {
 
 export async function updateUser(
     id: string,
-    data: { email: string; name: string; role: Role; password?: string }
+    data: { email: string; firstName: string; lastName: string; role: Role; password?: string }
 ): Promise<ActionResult> {
     const currentUser = await requireAdmin();
 
@@ -90,9 +93,10 @@ export async function updateUser(
         return { success: false, error: "Le mot de passe doit contenir au moins 4 caractères" };
     }
 
-    const updateData: { email: string; name: string | null; role: Role; password?: string } = {
+    const updateData: { email: string; firstName: string | null; lastName: string | null; role: Role; password?: string } = {
         email: data.email,
-        name: data.name || null,
+        firstName: data.firstName || null,
+        lastName: data.lastName || null,
         role: data.role,
     };
 

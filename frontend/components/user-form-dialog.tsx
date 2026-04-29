@@ -24,11 +24,12 @@ import type { UserRow } from "@/app/(authenticated)/admin/users/actions";
 interface UserFormDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    user: UserRow | null; // null = création, sinon modification
+    user: UserRow | null;
     currentUserId: string;
     onSubmit: (data: {
         email: string;
-        name: string;
+        firstName: string;
+        lastName: string;
         role: Role;
         password?: string;
     }) => Promise<{ success: boolean; error?: string }>;
@@ -41,7 +42,8 @@ export function UserFormDialog({
     currentUserId,
     onSubmit,
 }: UserFormDialogProps) {
-    const [name, setName] = useState("");
+    const [firstName, setFirstName] = useState("");
+    const [lastName, setLastName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [role, setRole] = useState<Role>("USER");
@@ -53,7 +55,8 @@ export function UserFormDialog({
 
     useEffect(() => {
         if (open) {
-            setName(user?.name ?? "");
+            setFirstName(user?.firstName ?? "");
+            setLastName(user?.lastName ?? "");
             setEmail(user?.email ?? "");
             setPassword("");
             setRole(user?.role ?? "USER");
@@ -66,9 +69,10 @@ export function UserFormDialog({
         setError("");
         setIsLoading(true);
 
-        const data: { email: string; name: string; role: Role; password?: string } = {
+        const data: { email: string; firstName: string; lastName: string; role: Role; password?: string } = {
             email,
-            name,
+            firstName,
+            lastName,
             role,
         };
         if (password) {
@@ -94,14 +98,25 @@ export function UserFormDialog({
                     </DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="name">Nom</Label>
-                        <Input
-                            id="name"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="Jean Dupont"
-                        />
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="firstName">Prénom</Label>
+                            <Input
+                                id="firstName"
+                                value={firstName}
+                                onChange={(e) => setFirstName(e.target.value)}
+                                placeholder="Jean"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="lastName">Nom</Label>
+                            <Input
+                                id="lastName"
+                                value={lastName}
+                                onChange={(e) => setLastName(e.target.value)}
+                                placeholder="Dupont"
+                            />
+                        </div>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="email">Email</Label>

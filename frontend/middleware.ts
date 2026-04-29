@@ -1,40 +1,36 @@
-import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-export default auth((req) => {
-    const { nextUrl } = req;
-    const isLoggedIn = !!req.auth;
+const SESSION_COOKIE_NAME =
+    process.env.NODE_ENV === "production"
+        ? "__Secure-authjs.session-token"
+        : "authjs.session-token";
 
-    // Protected routes
+export function middleware(request: NextRequest) {
+    const { pathname } = request.nextUrl;
+
+    const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME);
+    const isLoggedIn = !!sessionCookie?.value;
+
     const isProtectedRoute =
-        nextUrl.pathname.startsWith("/dashboard") ||
-        nextUrl.pathname.startsWith("/admin") ||
-        nextUrl.pathname.startsWith("/queues") ||
-        nextUrl.pathname.startsWith("/statistics");
+        pathname.startsWith("/dashboard") ||
+        pathname.startsWith("/admin") ||
+        pathname.startsWith("/queues") ||
+        pathname.startsWith("/statistics") ||
+        pathname.startsWith("/documentation");
 
-    // Auth routes (login page)
-    const isAuthRoute = nextUrl.pathname.startsWith("/login");
+    const isAuthRoute = pathname.startsWith("/login");
 
-    // Redirect to login if accessing protected route without auth
     if (isProtectedRoute && !isLoggedIn) {
-        return NextResponse.redirect(new URL("/login", nextUrl));
+        return NextResponse.redirect(new URL("/login", request.nextUrl));
     }
 
-    // Redirect to dashboard if already logged in and trying to access login
     if (isAuthRoute && isLoggedIn) {
-        return NextResponse.redirect(new URL("/dashboard", nextUrl));
-    }
-
-    // Check admin routes - only ADMIN role can access
-    if (nextUrl.pathname.startsWith("/admin") && isLoggedIn) {
-        const userRole = req.auth?.user?.role;
-        if (userRole !== "ADMIN") {
-            return NextResponse.redirect(new URL("/dashboard", nextUrl));
-        }
+        return NextResponse.redirect(new URL("/dashboard", request.nextUrl));
     }
 
     return NextResponse.next();
-});
+}
 
 export const config = {
     matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
