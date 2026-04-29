@@ -6,12 +6,18 @@ import { BookOpen, Settings, LogOut, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
+const roleLabels: Record<string, string> = {
+    ADMIN: "Administrateur",
+    SUPERUSER: "Manager",
+    USER: "Utilisateur",
+};
+
 interface SidebarProfileMenuProps {
     user: {
         firstName: string | null | undefined;
         lastName: string | null | undefined;
-        email: string | null | undefined;
     };
+    userRole: string;
     collapsed: boolean;
     signOutAction: () => Promise<void>;
 }
@@ -25,16 +31,12 @@ function getInitials(firstName: string | null | undefined, lastName: string | nu
     return "U";
 }
 
-function getDisplayName(firstName: string | null | undefined, lastName: string | null | undefined): string {
-    const f = (firstName || "").trim();
-    const l = (lastName || "").trim();
-    if (f && l) return `${f[0].toUpperCase()}.${l}`;
-    if (f) return f;
-    if (l) return l;
-    return "Utilisateur";
+function getFullName(firstName: string | null | undefined, lastName: string | null | undefined): string {
+    const parts = [firstName, lastName].filter(Boolean);
+    return parts.length > 0 ? parts.join(" ") : "Utilisateur";
 }
 
-export function SidebarProfileMenu({ user, collapsed, signOutAction }: SidebarProfileMenuProps) {
+export function SidebarProfileMenu({ user, userRole, collapsed, signOutAction }: SidebarProfileMenuProps) {
     const [open, setOpen] = useState(false);
     const [signingOut, setSigningOut] = useState(false);
 
@@ -42,6 +44,9 @@ export function SidebarProfileMenu({ user, collapsed, signOutAction }: SidebarPr
         setSigningOut(true);
         await signOutAction();
     };
+
+    const fullName = getFullName(user.firstName, user.lastName);
+    const roleLabel = roleLabels[userRole] || userRole;
 
     return (
         <>
@@ -63,8 +68,8 @@ export function SidebarProfileMenu({ user, collapsed, signOutAction }: SidebarPr
                 </Avatar>
                 {!collapsed && (
                     <div className="flex-1 min-w-0 text-left">
-                        <p className="text-sm font-medium text-white truncate">{getDisplayName(user.firstName, user.lastName)}</p>
-                        <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                        <p className="text-sm font-medium text-white truncate">{fullName}</p>
+                        <p className="text-xs text-slate-400 truncate">{roleLabel}</p>
                     </div>
                 )}
             </button>
@@ -75,8 +80,8 @@ export function SidebarProfileMenu({ user, collapsed, signOutAction }: SidebarPr
                     collapsed && "left-16"
                 )}>
                     <div className="p-3 border-b border-slate-700">
-                        <p className="text-sm font-medium text-white">{getDisplayName(user.firstName, user.lastName)}</p>
-                        <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                        <p className="text-sm font-medium text-white">{fullName}</p>
+                        <p className="text-xs text-slate-400 truncate">{roleLabel}</p>
                     </div>
                     <div className="py-1">
                         <Link

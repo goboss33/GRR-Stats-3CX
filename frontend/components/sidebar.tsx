@@ -26,7 +26,6 @@ interface SidebarProps {
     user: {
         firstName: string | null | undefined;
         lastName: string | null | undefined;
-        email: string | null | undefined;
     };
     signOutAction: () => Promise<void>;
 }
@@ -132,6 +131,7 @@ export function Sidebar({ userRole, user, signOutAction }: SidebarProps) {
                 <div className="p-2 border-t border-slate-800">
                     <SidebarProfileMenu
                         user={user}
+                        userRole={userRole}
                         collapsed={collapsed}
                         signOutAction={signOutAction}
                     />

@@ -21,6 +21,7 @@ export default async function AuthenticatedLayout({
         await signOut({ redirectTo: "/login" });
     };
 
+    const userRole = session.user?.role || "USER";
     const userFirstName = (session.user as any)?.firstName;
     const userLastName = (session.user as any)?.lastName;
     const userName = [userFirstName, userLastName].filter(Boolean).join(" ") || "Utilisateur";
@@ -28,16 +29,15 @@ export default async function AuthenticatedLayout({
     return (
         <div className="flex h-screen bg-slate-50">
             <Sidebar
-                userRole={session.user?.role || "USER"}
+                userRole={userRole}
                 user={{
                     firstName: userFirstName,
                     lastName: userLastName,
-                    email: session.user?.email,
                 }}
                 signOutAction={handleSignOut}
             />
             <div className="flex-1 flex flex-col overflow-hidden">
-                <Header userRole={session.user?.role || "USER"} userName={userName} />
+                <Header userRole={userRole} userName={userName} />
                 <main className="flex-1 overflow-y-auto p-6">
                     <Suspense fallback={<Loading />}>
                         {children}
