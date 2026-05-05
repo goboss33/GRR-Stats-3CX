@@ -140,7 +140,7 @@ function getJourneyStepStyle(step: JourneyStep): { icon: React.ReactNode; classN
         case 'queue':
             switch (step.result) {
                 case 'answered': return { icon: <Users className={iconClass} />, className: 'text-emerald-600' };
-                case 'overflow':
+                case 'overflow': return { icon: <Users className={iconClass} />, className: 'text-amber-500' };
                 case 'abandoned':
                 case 'not_answered':
                 default: return { icon: <Users className={iconClass} />, className: 'text-red-600' };
@@ -683,7 +683,11 @@ export function LogsTable({
                                                                 return (
                                                                     <React.Fragment key={idx}>
                                                                         {idx > 0 && (
-                                                                            <span className="text-slate-300 text-xs mx-0.5">→</span>
+                                                                            visibleSteps[idx - 1].result === 'overflow' ? (
+                                                                                <span className="text-amber-500 text-xs mx-0.5">↝</span>
+                                                                            ) : (
+                                                                                <span className="text-slate-300 text-xs mx-0.5">→</span>
+                                                                            )
                                                                         )}
                                                                         <Tooltip>
                                                                             <TooltipTrigger asChild>
