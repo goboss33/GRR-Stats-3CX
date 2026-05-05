@@ -668,10 +668,16 @@ export function LogsTable({
                                             <TableCell>
                                                 {log.journey && log.journey.length > 0 ? (() => {
                                                     const maxVisible = 8;
-                                                    const visibleSteps = log.journey.slice(0, maxVisible);
+                                                    const visibleSteps = log.journey.slice(-maxVisible);
                                                     const hiddenCount = log.journey.length - maxVisible;
                                                     return (
                                                         <div className="flex items-center gap-0.5">
+                                                            {hiddenCount > 0 && (
+                                                                <>
+                                                                    <span className="text-[10px] text-slate-400">[+{hiddenCount}]</span>
+                                                                    <span className="text-slate-300 text-xs mx-0.5">→</span>
+                                                                </>
+                                                            )}
                                                             {visibleSteps.map((step, idx) => {
                                                                 const config = getJourneyStepStyle(step);
                                                                 return (
@@ -702,9 +708,6 @@ export function LogsTable({
                                                                     </React.Fragment>
                                                                 );
                                                             })}
-                                                            {hiddenCount > 0 && (
-                                                                <span className="text-[10px] text-slate-400 ml-0.5">+{hiddenCount}</span>
-                                                            )}
                                                         </div>
                                                     );
                                                 })() : (
