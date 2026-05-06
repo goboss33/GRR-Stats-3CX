@@ -464,8 +464,7 @@ export async function getTeamDirectStatsRaw(
           AND c.cdr_started_at >= ${startDate}
           AND c.cdr_started_at <= ${endDate}
           AND (c.creation_forward_reason IS DISTINCT FROM 'polling')
-          AND NOT EXISTS (SELECT 1 FROM all_queue_passages aqp WHERE aqp.cdr_id = c.originating_cdr_id)
-          AND NOT (c.cdr_answered_at IS NULL AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1);
+          AND NOT EXISTS (SELECT 1 FROM all_queue_passages aqp WHERE aqp.cdr_id = c.originating_cdr_id);
     `;
     return result[0];
 }
@@ -558,10 +557,9 @@ export async function getAgentStatsRaw(
               AND c.destination_dn_number IN (SELECT extension FROM queue_agents)
               AND c.cdr_started_at >= ${startDate}
               AND c.cdr_started_at <= ${endDate}
-              AND (c.creation_forward_reason IS DISTINCT FROM 'polling')
-              AND NOT EXISTS (SELECT 1 FROM all_queue_passages aqp WHERE aqp.cdr_id = c.originating_cdr_id)
-              AND NOT (c.cdr_answered_at IS NULL AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1)
-            GROUP BY c.destination_dn_number
+               AND (c.creation_forward_reason IS DISTINCT FROM 'polling')
+               AND NOT EXISTS (SELECT 1 FROM all_queue_passages aqp WHERE aqp.cdr_id = c.originating_cdr_id)
+             GROUP BY c.destination_dn_number
         )
         SELECT
             COALESCE(ar.extension, dc.extension) as extension,
