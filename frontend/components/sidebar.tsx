@@ -52,12 +52,6 @@ const navItems: NavItem[] = [
     },
     {
         label: "Statistiques",
-        href: "/statistics",
-        icon: BarChart3,
-        roles: ["ADMIN", "SUPERUSER", "USER"],
-    },
-    {
-        label: "Statistiques V2",
         href: "/statistics-v2",
         icon: BarChart3,
         roles: ["ADMIN", "SUPERUSER", "USER"],
