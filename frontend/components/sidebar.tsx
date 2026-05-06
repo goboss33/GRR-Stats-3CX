@@ -56,6 +56,12 @@ const navItems: NavItem[] = [
         icon: BarChart3,
         roles: ["ADMIN", "SUPERUSER", "USER"],
     },
+    {
+        label: "Statistiques V2",
+        href: "/statistics-v2",
+        icon: BarChart3,
+        roles: ["ADMIN", "SUPERUSER", "USER"],
+    },
 ];
 
 export function Sidebar({ userRole, user, signOutAction }: SidebarProps) {

@@ -65,6 +65,7 @@ export interface LogsFilters {
     callerSearch?: string;
     calleeSearch?: string;
     handledBySearch?: string;
+    handledByMultiSearch?: string[]; // Multi-agents filter (Stat V2)
     queueSearch?: string;
     idSearch?: string;
     segmentCountMin?: number;

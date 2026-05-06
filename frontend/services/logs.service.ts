@@ -250,6 +250,12 @@ function buildAggregatedQueryParts(
         const searchValue = pattern.value.replace(/'/g, "''");
         aggregatedWhereConditions.push(`(hb.agents::text ILIKE '%${searchValue}%')`);
     }
+    if (filters.handledByMultiSearch && filters.handledByMultiSearch.length > 0) {
+        const agentNumbers = filters.handledByMultiSearch
+            .map(num => `'${num.replace(/'/g, "''")}'`)
+            .join(', ');
+        aggregatedWhereConditions.push(`(hb.agents::jsonb @? '$[*] ? (@.number in (${agentNumbers}))')`);
+    }
     if (filters.queueSearch?.trim()) {
         const pattern = parseSearchPattern(filters.queueSearch);
         const searchValue = pattern.value.replace(/'/g, "''");

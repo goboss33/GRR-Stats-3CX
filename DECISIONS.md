@@ -861,4 +861,3 @@ Cet invariant garantit que le total de la colonne "Queue (résolu)" dans le tabl
 - La mise à jour URL utilise les valeurs **debouncées** pour les champs texte (évite de polluer l'URL à chaque frappe)
 - L'initialisation de l'état React lit depuis `useSearchParams` → les filtres survivent à un refresh
 - Le dashboard peut créer des liens directs vers les logs avec des filtres pré-appliqués (ex: clic sur KPI "Manqués")
-
