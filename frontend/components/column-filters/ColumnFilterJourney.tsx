@@ -32,12 +32,6 @@ interface ColumnFilterJourneyProps {
     className?: string;
 }
 
-const TYPE_OPTIONS: { value: string; label: string; icon: React.ReactNode }[] = [
-    { value: "_all", label: "Tous", icon: null },
-    { value: "direct", label: "Direct", icon: <Phone className="h-3.5 w-3.5" /> },
-    { value: "queue", label: "Queue", icon: <Users className="h-3.5 w-3.5" /> },
-];
-
 const RESULT_OPTIONS: { value: string; label: string }[] = [
     { value: "_all", label: "Tous" },
     { value: "answered", label: "Répondu" },
@@ -110,30 +104,21 @@ export function ColumnFilterJourney({
         setLocalConditions(updated);
     };
 
-    const handleTypeChange = (index: number, value: string) => {
-        const type = value === "_all" ? undefined : value as JourneyStepType;
-        const updated = { ...localConditions[index], type };
-        // Clear target fields when type changes
-        if (type !== "queue") {
-            delete updated.queueNumber;
-            delete updated.passageMode;
-            delete updated.hasOverflow;
-        }
-        if (type === "queue") {
-            delete updated.agentNumber;
-        }
-        const all = [...localConditions];
-        all[index] = updated;
-        setLocalConditions(all);
-    };
-
     const handleResultChange = (index: number, value: string) => {
         const result = value === "_all" ? undefined : value as JourneyStepResult;
         handleUpdateCondition(index, { result });
     };
 
-    const handlePickerSelect = (index: number, item: { type: string; queueNumber: string; agentExtension?: string }) => {
-        if (item.type === 'queue') {
+    const handlePickerSelect = (index: number, item: { type: string; queueNumber: string; agentExtension?: string; journeyType?: "direct" | "queue" }) => {
+        if (item.type === 'type-only' && item.journeyType) {
+            handleUpdateCondition(index, {
+                type: item.journeyType,
+                queueNumber: undefined,
+                agentNumber: undefined,
+                passageMode: undefined,
+                hasOverflow: undefined,
+            });
+        } else if (item.type === 'queue') {
             handleUpdateCondition(index, {
                 queueNumber: item.queueNumber,
                 agentNumber: undefined,
@@ -143,6 +128,7 @@ export function ColumnFilterJourney({
             handleUpdateCondition(index, {
                 agentNumber: item.agentExtension,
                 queueNumber: undefined,
+                type: 'direct',
                 passageMode: undefined,
                 hasOverflow: undefined,
             });
@@ -187,18 +173,21 @@ export function ColumnFilterJourney({
         if (conditions.length === 1) {
             const c = conditions[0];
             const parts: React.ReactNode[] = [];
-            const typeOpt = TYPE_OPTIONS.find(o => o.value === c.type);
-            if (typeOpt && c.type) {
-                if (typeOpt.icon) {
-                    parts.push(
-                        <span key="type" className="inline-flex items-center gap-1">
-                            {typeOpt.icon} <span>{typeOpt.label}</span>
-                        </span>
-                    );
-                } else {
-                    parts.push(<span key="type">{typeOpt.label}</span>);
-                }
+            
+            if (c.type === 'direct' && !c.queueNumber && !c.agentNumber) {
+                parts.push(
+                    <span key="type" className="inline-flex items-center gap-1">
+                        <Phone className="h-3.5 w-3.5" /> <span>Directs</span>
+                    </span>
+                );
+            } else if (c.type === 'queue' && !c.queueNumber && !c.agentNumber) {
+                parts.push(
+                    <span key="type" className="inline-flex items-center gap-1">
+                        <Users className="h-3.5 w-3.5" /> <span>Queues</span>
+                    </span>
+                );
             }
+            
             if (c.queueNumber) parts.push(<span key="q">Q{c.queueNumber}</span>);
             if (c.agentNumber) parts.push(<span key="ag">Ag.{c.agentNumber}</span>);
             const resultOpt = RESULT_OPTIONS.find(o => o.value === c.result);
@@ -220,7 +209,7 @@ export function ColumnFilterJourney({
     };
 
     const hasShowQueueAdvanced = (c: JourneyCondition) =>
-        c.type === 'queue' && !!c.queueNumber;
+        !!c.queueNumber;
 
     return (
         <div className={cn("w-full min-w-[90px]", className)}>
@@ -238,7 +227,7 @@ export function ColumnFilterJourney({
                         <span className="truncate">{getLabel()}</span>
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[420px] p-3" align="start">
+                <PopoverContent className="w-[520px] p-3" align="end">
                     <div className="space-y-3">
                         {/* Header */}
                         <div className="flex items-center justify-between">
@@ -266,8 +255,7 @@ export function ColumnFilterJourney({
 
                             {/* Column headers */}
                             {localConditions.length > 0 && (
-                                <div className="grid grid-cols-[100px_1fr_100px_28px_28px] gap-1.5 px-0.5">
-                                    <span className="text-[10px] text-slate-400 font-medium">Type</span>
+                                <div className="grid grid-cols-[1fr_100px_28px_28px] gap-1.5 px-0.5">
                                     <span className="text-[10px] text-slate-400 font-medium">Cible</span>
                                     <span className="text-[10px] text-slate-400 font-medium">Résultat</span>
                                     <span></span>
@@ -280,41 +268,23 @@ export function ColumnFilterJourney({
                                     "rounded-md border border-slate-100 p-1.5",
                                     condition.negate && "bg-red-50/50 border-red-200"
                                 )}>
-                                    {/* Main row: Type | Target | Result | Advanced | Remove */}
-                                    <div className="grid grid-cols-[100px_1fr_100px_28px_28px] gap-1.5 items-center">
-                                        {/* Type select */}
-                                        <Select
-                                            value={condition.type || "_all"}
-                                            onValueChange={(v) => handleTypeChange(index, v)}
-                                        >
-                                            <SelectTrigger className="h-7 text-xs px-2">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {TYPE_OPTIONS.map(opt => (
-                                                    <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                                        {opt.icon ? (
-                                                            <div className="flex items-center gap-1.5">
-                                                                {opt.icon}
-                                                                <span>{opt.label}</span>
-                                                            </div>
-                                                        ) : (
-                                                            opt.label
-                                                        )}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-
+                                    {/* Main row: Target | Result | Advanced | Remove */}
+                                    <div className="grid grid-cols-[1fr_100px_28px_28px] gap-1.5 items-center">
                                         {/* Target (Queue/Agent picker) */}
                                         <div className="relative min-w-0">
-                                            {(condition.queueNumber || condition.agentNumber) ? (
+                                            {(condition.queueNumber || condition.agentNumber || (condition.type && !condition.queueNumber && !condition.agentNumber)) ? (
                                                 <div className="flex items-center h-7 text-xs border border-slate-200 rounded px-2 bg-white gap-1 w-full">
                                                     <span
                                                         className="truncate flex-1"
-                                                        title={getPickerDisplayValue(condition, queues)}
+                                                        title={getPickerDisplayValue(condition, queues) || (condition.type === 'direct' ? 'Tous les directs' : condition.type === 'queue' ? 'Toutes les queues' : '')}
                                                     >
-                                                        {getPickerDisplayValue(condition, queues)}
+                                                        {condition.queueNumber || condition.agentNumber 
+                                                            ? getPickerDisplayValue(condition, queues)
+                                                            : condition.type === 'direct' 
+                                                                ? 'Tous les directs' 
+                                                                : condition.type === 'queue' 
+                                                                    ? 'Toutes les queues' 
+                                                                    : ''}
                                                     </span>
                                                     <button
                                                         type="button"
@@ -327,7 +297,8 @@ export function ColumnFilterJourney({
                                             ) : (
                                                 <QueueAgentPicker
                                                     queues={queues}
-                                                    show={condition.type === 'queue' ? 'queues' : condition.type === 'direct' ? 'agents' : 'both'}
+                                                    show="both"
+                                                    showTypeOptions={true}
                                                     size="compact"
                                                     selectedQueueNumber={null}
                                                     onSelect={(item) => handlePickerSelect(index, item)}

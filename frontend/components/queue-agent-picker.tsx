@@ -27,7 +27,7 @@
 "use client";
 
 import * as React from "react";
-import { Search, X, Users, User, ChevronDown } from "lucide-react";
+import { Search, X, Users, User, ChevronDown, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { QueueInfo } from "@/types/queues.types";
@@ -39,13 +39,14 @@ import { QueueInfo } from "@/types/queues.types";
 export type ShowFilter = "queues" | "agents" | "both";
 
 export interface QueueAgentPickerItem {
-    type: "queue" | "agent";
+    type: "queue" | "agent" | "type-only";
     queueNumber: string;
     queueName: string;
     agentExtension?: string;
     agentName?: string;
     label: string;
     sublabel?: string;
+    journeyType?: "direct" | "queue";
 }
 
 export interface QueueAgentPickerProps {
@@ -67,6 +68,8 @@ export interface QueueAgentPickerProps {
     displayValue?: string;
     /** Additional CSS classes for the input element */
     inputClassName?: string;
+    /** Show special type-only options (for journey filter) */
+    showTypeOptions?: boolean;
 }
 
 // ============================================
@@ -83,6 +86,7 @@ export function QueueAgentPicker({
     className,
     displayValue,
     inputClassName,
+    showTypeOptions = false,
 }: QueueAgentPickerProps) {
     const [open, setOpen] = React.useState(false);
     const [inputValue, setInputValue] = React.useState("");
@@ -121,6 +125,26 @@ export function QueueAgentPicker({
     // Build searchable items from queues
     const searchItems = React.useMemo(() => {
         const items: QueueAgentPickerItem[] = [];
+
+        // Add type-only options at the top (for journey filter)
+        if (showTypeOptions) {
+            items.push({
+                type: "type-only",
+                queueNumber: "",
+                queueName: "",
+                label: "Tous les appels directs",
+                sublabel: "Appels sans passage en file",
+                journeyType: "direct",
+            });
+            items.push({
+                type: "type-only",
+                queueNumber: "",
+                queueName: "",
+                label: "Tous les passages en queue",
+                sublabel: "Toutes les files d'attente",
+                journeyType: "queue",
+            });
+        }
 
         queues.forEach((queue) => {
             // Add queue itself (if showing queues)
@@ -177,9 +201,10 @@ export function QueueAgentPicker({
 
     // Group filtered items
     const groupedItems = React.useMemo(() => {
+        const typeOnlyItems = filteredItems.filter((i) => i.type === "type-only");
         const queueItems = filteredItems.filter((i) => i.type === "queue");
         const agentItems = filteredItems.filter((i) => i.type === "agent");
-        return { queueItems, agentItems };
+        return { typeOnlyItems, queueItems, agentItems };
     }, [filteredItems]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -263,10 +288,49 @@ export function QueueAgentPicker({
                         </div>
                     ) : (
                         <div className="py-1">
+                            {/* Type-only section (for journey filter) */}
+                            {groupedItems.typeOnlyItems.length > 0 && (
+                                <>
+                                    <div className="px-3 py-2 text-xs font-semibold text-slate-500 bg-slate-50 border-b sticky top-0">
+                                        Type de parcours
+                                    </div>
+                                    {groupedItems.typeOnlyItems.map((item, index) => (
+                                        <button
+                                            key={`type-only-${item.journeyType}-${index}`}
+                                            type="button"
+                                            className="w-full px-3 py-2 text-left hover:bg-slate-100 flex items-center gap-3 transition-colors"
+                                            onClick={() => handleSelect(item)}
+                                        >
+                                            <div className={cn(
+                                                "p-1.5 rounded",
+                                                item.journeyType === "direct" ? "bg-emerald-100 text-emerald-600" : "bg-blue-100 text-blue-600"
+                                            )}>
+                                                {item.journeyType === "direct" ? (
+                                                    <Phone className="h-4 w-4" />
+                                                ) : (
+                                                    <Users className="h-4 w-4" />
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-slate-900 truncate">
+                                                    {item.label}
+                                                </p>
+                                                <p className="text-xs text-slate-500 truncate">
+                                                    {item.sublabel}
+                                                </p>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </>
+                            )}
+
                             {/* Queues section */}
                             {groupedItems.queueItems.length > 0 && (
                                 <>
-                                    <div className="px-3 py-2 text-xs font-semibold text-slate-500 bg-slate-50 border-b sticky top-0">
+                                    <div className={cn(
+                                        "px-3 py-2 text-xs font-semibold text-slate-500 bg-slate-50 border-b sticky top-0",
+                                        groupedItems.typeOnlyItems.length > 0 && "border-t"
+                                    )}>
                                         Files d&apos;attente ({groupedItems.queueItems.length})
                                     </div>
                                     {groupedItems.queueItems.map((item) => (
@@ -300,7 +364,7 @@ export function QueueAgentPicker({
                                 <>
                                     <div className={cn(
                                         "px-3 py-2 text-xs font-semibold text-slate-500 bg-slate-50 border-b sticky top-0",
-                                        groupedItems.queueItems.length > 0 && "border-t"
+                                        (groupedItems.queueItems.length > 0 || groupedItems.typeOnlyItems.length > 0) && "border-t"
                                     )}>
                                         Agents ({groupedItems.agentItems.length})
                                     </div>

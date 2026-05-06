@@ -1,0 +1,3 @@
+direct_received_team|direct_answered_team|
+--------------------+--------------------+
+                   0|                   0|

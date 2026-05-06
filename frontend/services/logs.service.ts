@@ -206,7 +206,9 @@ function buildAggregatedQueryParts(
                         destination_dn_number,
                         destination_participant_phone_number,
                         destination_participant_name,
-                        destination_dn_name
+                        destination_dn_name,
+                        source_participant_name,
+                        source_dn_type
                     FROM cdroutput
                     WHERE cdr_started_at >= '${startDate.toISOString()}'
                       AND cdr_started_at <= '${endDate.toISOString()}'
@@ -216,7 +218,10 @@ function buildAggregatedQueryParts(
                     ${buildSqlSearchCondition('destination_dn_number', pattern)} OR
                     ${buildSqlSearchCondition('destination_participant_phone_number', pattern)} OR
                     ${buildSqlSearchCondition('destination_participant_name', pattern)} OR
-                    ${buildSqlSearchCondition('destination_dn_name', pattern)}
+                    ${buildSqlSearchCondition('destination_dn_name', pattern)} OR
+                    (source_dn_type = 'provider'
+                     AND source_participant_name LIKE '%:%'
+                     AND ${buildSqlSearchCondition('source_participant_name', pattern)})
                 )
             )`;
         calleeFilterJoin = 'JOIN callee_filter cf ON ca.call_history_id = cf.call_history_id';
@@ -287,8 +292,14 @@ function buildAggregatedQueryParts(
         const validResults = ['answered', 'not_answered', 'busy', 'voicemail', 'abandoned', 'overflow'];
         for (const condition of filters.journeyConditions) {
             const clauses: string[] = [];
-            if (condition.type && validTypes.includes(condition.type)) {
-                clauses.push(`elem->>'type' = '${condition.type}'`);
+            
+            // Infer type from target if not explicitly set
+            const inferredType = condition.type 
+                || (condition.queueNumber ? 'queue' : undefined)
+                || (condition.agentNumber ? 'direct' : undefined);
+            
+            if (inferredType && validTypes.includes(inferredType)) {
+                clauses.push(`elem->>'type' = '${inferredType}'`);
             }
             if (condition.queueNumber) {
                 const queueNum = condition.queueNumber.replace(/'/g, "''");
@@ -302,6 +313,7 @@ function buildAggregatedQueryParts(
                 clauses.push(`elem->>'result' = '${condition.result}'`);
             }
 
+            // Use inferredType for passageMode and hasOverflow checks
             if (condition.queueNumber && condition.passageMode === 'first' && condition.result) {
                 const queueNum = condition.queueNumber.replace(/'/g, "''");
                 const existsOp = condition.negate ? 'NOT' : '';
