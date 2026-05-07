@@ -355,45 +355,29 @@ function buildSingleConditionSQL(condition: JourneyConditionNode): string | null
         clauses.push(`elem->>'result' = '${condition.result}'`);
     }
 
-    // Special case: first passage mode with result
-    if (condition.queueNumber && condition.passageMode === 'first' && condition.result) {
-        const queueNum = condition.queueNumber.replace(/'/g, "''");
-        const existsOp = condition.negate ? 'NOT' : '';
-        let whereClause = `elem->>'type' = 'queue' AND elem->>'label' = '${queueNum}'`;
-        if (condition.queueAgentNumber) {
-            const agentNum = condition.queueAgentNumber.replace(/'/g, "''");
-            whereClause += ` AND elem->>'agentNumber' = '${agentNum}'`;
-        }
-        return `${existsOp} (SELECT elem->>'result'
-             FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx)
-             WHERE ${whereClause}
-             ORDER BY idx ASC
-             LIMIT 1
-            ) = '${condition.result}'`;
+    if (clauses.length === 0 && !condition.firstSegment && !condition.lastSegment && !condition.overflowQueueNumber) {
+        return null;
     }
 
-    // Standard EXISTS/NOT EXISTS clause
-    if (clauses.length > 0) {
-        const existsOp = condition.negate ? 'NOT EXISTS' : 'EXISTS';
-        let sql = `${existsOp} (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) elem WHERE ${clauses.join(' AND ')})`;
+    const existsOp = condition.negate ? 'NOT EXISTS' : 'EXISTS';
+    const queueNum = condition.queueNumber ? condition.queueNumber.replace(/'/g, "''") : null;
 
-        // Additional: multi passage mode
-        if (condition.queueNumber && condition.passageMode === 'multi') {
-            const queueNum = condition.queueNumber.replace(/'/g, "''");
-            sql += ` AND (SELECT COUNT(*) FROM jsonb_array_elements(cj.journey::jsonb) elem WHERE elem->>'type' = 'queue' AND elem->>'label' = '${queueNum}') > 1`;
-        }
+    let baseWhereClause = clauses.length > 0 ? clauses.join(' AND ') : 'true';
 
-        // Additional: overflow check
-        if (condition.queueNumber && condition.hasOverflow !== undefined) {
-            const queueNum = condition.queueNumber.replace(/'/g, "''");
-            const countOp = condition.hasOverflow ? '> 0' : '= 0';
-            sql += ` AND (SELECT COUNT(DISTINCT elem->>'label') FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx) WHERE elem->>'type' = 'queue' AND elem->>'label' != '${queueNum}' AND idx > (SELECT MIN(idx2) FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t2(elem2, idx2) WHERE elem2->>'type' = 'queue' AND elem2->>'label' = '${queueNum}')) ${countOp}`;
-        }
-
-        return sql;
+    if (condition.firstSegment) {
+        return `${existsOp} (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx) WHERE (${baseWhereClause}) AND idx = 1)`;
     }
 
-    return null;
+    if (condition.lastSegment) {
+        return `${existsOp} (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx) WHERE (${baseWhereClause}) AND idx = (SELECT COUNT(*) FROM jsonb_array_elements(cj.journey::jsonb)))`;
+    }
+
+    if (condition.overflowQueueNumber) {
+        const overflowQueueNum = condition.overflowQueueNumber.replace(/'/g, "''");
+        return `${existsOp} (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx) WHERE (${baseWhereClause})) AND EXISTS (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(o_elem, o_idx) WHERE o_elem->>'type' = 'queue' AND o_elem->>'label' = '${overflowQueueNum}' AND o_idx > (SELECT MIN(idx2) FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t2(elem2, idx2) WHERE elem2->>'type' = 'queue' AND elem2->>'label' = '${queueNum}'))`;
+    }
+
+    return `${existsOp} (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) elem WHERE ${baseWhereClause})`;
 }
 
 // ============================================

@@ -6,8 +6,6 @@ import { Filter, Plus, X, Settings2, Phone, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
     Popover,
     PopoverContent,
@@ -23,7 +21,7 @@ import {
 import { QueueAgentPicker } from "@/components/queue-agent-picker";
 
 import type { JourneyFilter, JourneyGroupCondition, JourneyConditionNode, JourneyStepResult } from "@/types/logs.types";
-import type { QueueInfo } from "@/types/queues.types";
+import type { QueueInfo, QueueMember } from "@/types/queues.types";
 
 interface ColumnFilterJourneyProps {
     filter: JourneyFilter | null;
@@ -50,8 +48,9 @@ function createEmptyCondition(): JourneyConditionNode {
         agentNumber: undefined,
         result: undefined,
         negate: false,
-        passageMode: undefined,
-        hasOverflow: undefined,
+        firstSegment: false,
+        lastSegment: false,
+        overflowQueueNumber: undefined,
     };
 }
 
@@ -97,6 +96,21 @@ function getQueueAgentDisplayValue(
     return agentNumber;
 }
 
+function getQueueDisplayValue(
+    queueNumber: string | undefined,
+    queues: QueueInfo[]
+): string {
+    if (!queueNumber) return "";
+    const q = queues.find(q => q.queueNumber === queueNumber);
+    return q ? `${q.queueNumber} - ${q.queueName}` : queueNumber;
+}
+
+function getAgentsForQueue(queueNumber: string | undefined, queues: QueueInfo[]): QueueMember[] {
+    if (!queueNumber) return [];
+    const queue = queues.find(q => q.queueNumber === queueNumber);
+    return queue?.members || [];
+}
+
 function OperatorToggle({
     value,
     onChange,
@@ -127,6 +141,38 @@ function OperatorToggle({
                 !isAnd ? "bg-violet-500 text-white shadow-sm" : "text-slate-500"
             )}>OU</span>
         </div>
+    );
+}
+
+function Toggle({
+    checked,
+    onCheckedChange,
+    disabled = false,
+}: {
+    checked: boolean;
+    onCheckedChange: (checked: boolean) => void;
+    disabled?: boolean;
+}) {
+    return (
+        <button
+            type="button"
+            role="switch"
+            aria-checked={checked}
+            disabled={disabled}
+            onClick={() => !disabled && onCheckedChange(!checked)}
+            className={cn(
+                "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
+                checked ? "bg-blue-500" : "bg-slate-300",
+                disabled && "opacity-50 cursor-not-allowed"
+            )}
+        >
+            <span
+                className={cn(
+                    "pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ease-in-out",
+                    checked ? "translate-x-4" : "translate-x-0"
+                )}
+            />
+        </button>
     );
 }
 
@@ -210,8 +256,9 @@ export function ColumnFilterJourney({
                 type: item.journeyType,
                 queueNumber: undefined,
                 agentNumber: undefined,
-                passageMode: undefined,
-                hasOverflow: undefined,
+                firstSegment: false,
+                lastSegment: false,
+                overflowQueueNumber: undefined,
             });
         } else if (item.type === 'queue') {
             handleUpdateCondition(groupIndex, conditionIndex, {
@@ -224,8 +271,9 @@ export function ColumnFilterJourney({
                 agentNumber: item.agentExtension,
                 queueNumber: undefined,
                 type: 'direct',
-                passageMode: undefined,
-                hasOverflow: undefined,
+                firstSegment: false,
+                lastSegment: false,
+                overflowQueueNumber: undefined,
             });
         }
     };
@@ -236,8 +284,9 @@ export function ColumnFilterJourney({
             queueAgentNumber: undefined,
             agentNumber: undefined,
             type: undefined,
-            passageMode: undefined,
-            hasOverflow: undefined,
+            firstSegment: false,
+            lastSegment: false,
+            overflowQueueNumber: undefined,
         });
     };
 
@@ -248,6 +297,12 @@ export function ColumnFilterJourney({
 
     const handleQueueAgentChange = (groupIndex: number, conditionIndex: number, agentExtension: string | undefined) => {
         handleUpdateCondition(groupIndex, conditionIndex, { queueAgentNumber: agentExtension });
+    };
+
+    const handleOverflowQueueChange = (groupIndex: number, conditionIndex: number, item: { type: string; queueNumber: string }) => {
+        if (item.type === 'queue') {
+            handleUpdateCondition(groupIndex, conditionIndex, { overflowQueueNumber: item.queueNumber });
+        }
     };
 
     const toggleAdvanced = (groupIndex: number, conditionIndex: number) => {
@@ -318,7 +373,7 @@ export function ColumnFilterJourney({
                     ...fg.group,
                     conditions: fg.group.conditions.filter(gc => {
                         const c = gc.condition;
-                        return c.type || c.queueNumber || c.agentNumber || c.result;
+                        return c.type || c.queueNumber || c.agentNumber || c.result || c.firstSegment || c.lastSegment || c.overflowQueueNumber;
                     }),
                 },
             })).filter(fg => fg.group.conditions.length > 0),
@@ -364,6 +419,8 @@ export function ColumnFilterJourney({
             if (c.agentNumber) parts.push(<span key="ag">Ag.{c.agentNumber}</span>);
             const resultOpt = RESULT_OPTIONS.find(o => o.value === c.result);
             if (resultOpt && c.result) parts.push(<span key="res">{resultOpt.label}</span>);
+            if (c.firstSegment) parts.push(<span key="first">1er</span>);
+            if (c.lastSegment) parts.push(<span key="last">Dernier</span>);
 
             if (parts.length === 0) return "1 condition";
 
@@ -384,6 +441,8 @@ export function ColumnFilterJourney({
         const condition = gc.condition;
         const key = `g${groupIndex}-c${conditionIndex}`;
         const isExpanded = expandedAdvanced.has(key);
+
+        const queueAgents = getAgentsForQueue(condition.queueNumber, queues);
 
         return (
             <div key={key} className={cn(
@@ -462,7 +521,7 @@ export function ColumnFilterJourney({
                             isExpanded
                                 ? "text-blue-600 bg-blue-50"
                                 : "text-slate-400 hover:text-slate-600 hover:bg-slate-50",
-                            (condition.negate || condition.passageMode === 'first' || condition.passageMode === 'multi' || condition.hasOverflow !== undefined) &&
+                            (condition.negate || condition.firstSegment || condition.lastSegment || condition.queueAgentNumber || condition.overflowQueueNumber) &&
                             !isExpanded && "text-blue-500"
                         )}
                         title="Options avancées"
@@ -479,87 +538,127 @@ export function ColumnFilterJourney({
                     </button>
                 </div>
 
-                    {isExpanded && (
-                        <div className="mt-1.5 pt-1.5 border-t border-slate-100 space-y-1.5 pl-1">
-                            <div className="flex items-center gap-2">
-                                <Checkbox
-                                    id={`negate-${key}`}
-                                    checked={condition.negate || false}
-                                    onCheckedChange={(checked) =>
-                                        handleUpdateCondition(groupIndex, conditionIndex, { negate: checked as boolean || undefined })
-                                    }
-                                />
-                                <Label htmlFor={`negate-${key}`} className="text-xs cursor-pointer text-red-600 font-medium">
-                                    Exclure (inverser cette condition)
-                                </Label>
-                            </div>
-
-                            {hasShowQueueAdvanced(condition) && (
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] text-slate-500">Agent ayant répondu</Label>
-                                    <QueueAgentPicker
-                                        queues={queues}
-                                        show="agents"
-                                        size="compact"
-                                        selectedQueueNumber={null}
-                                        onSelect={(item) => {
-                                            if (item.agentExtension) {
-                                                handleQueueAgentChange(groupIndex, conditionIndex, item.agentExtension);
-                                            }
-                                        }}
-                                        placeholder="Tous les agents..."
-                                        displayValue={getQueueAgentDisplayValue(condition.queueAgentNumber, queues)}
-                                    />
-                                </div>
-                            )}
-
-                            {hasShowQueueAdvanced(condition) && (
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] text-slate-500">Passage</Label>
-                                    <RadioGroup
-                                        value={condition.passageMode || "all"}
-                                        onValueChange={(v) =>
-                                            handleUpdateCondition(groupIndex, conditionIndex, {
-                                                passageMode: v === 'all' ? undefined : v as 'first' | 'multi'
-                                            })
-                                        }
-                                        className="flex gap-3"
-                                    >
-                                        <div className="flex items-center space-x-1">
-                                            <RadioGroupItem value="all" id={`passage-all-${key}`} />
-                                            <Label htmlFor={`passage-all-${key}`} className="text-xs cursor-pointer font-normal">Tous</Label>
-                                        </div>
-                                        <div className="flex items-center space-x-1">
-                                            <RadioGroupItem value="first" id={`passage-first-${key}`} />
-                                            <Label htmlFor={`passage-first-${key}`} className="text-xs cursor-pointer font-normal">1er passage</Label>
-                                        </div>
-                                        <div className="flex items-center space-x-1">
-                                            <RadioGroupItem value="multi" id={`passage-multi-${key}`} />
-                                            <Label htmlFor={`passage-multi-${key}`} className="text-xs cursor-pointer font-normal">Multi (ping-pong)</Label>
-                                        </div>
-                                    </RadioGroup>
-                                </div>
-                            )}
-
-                            {hasShowQueueAdvanced(condition) && (
-                                <div className="flex items-center gap-2">
-                                    <Checkbox
-                                        id={`overflow-${key}`}
-                                        checked={condition.hasOverflow || false}
-                                        onCheckedChange={(checked) =>
-                                            handleUpdateCondition(groupIndex, conditionIndex, {
-                                                hasOverflow: checked as boolean || undefined
-                                            })
-                                        }
-                                    />
-                                    <Label htmlFor={`overflow-${key}`} className="text-xs cursor-pointer font-normal">
-                                        Redirigé vers autre queue après
-                                    </Label>
-                                </div>
-                            )}
+                {isExpanded && (
+                    <div className="mt-2 pt-2 border-t border-slate-100 space-y-3">
+                        <div className="flex items-center gap-3">
+                            <Toggle
+                                checked={condition.negate || false}
+                                onCheckedChange={(checked) =>
+                                    handleUpdateCondition(groupIndex, conditionIndex, { negate: checked })
+                                }
+                            />
+                            <Label className="text-sm cursor-pointer text-red-600 font-medium">
+                                Exclure (inverser cette condition)
+                            </Label>
                         </div>
-                    )}
-                </div>
+
+                        {hasShowQueueAdvanced(condition) && (
+                            <div className="flex items-center gap-3">
+                                <Toggle
+                                    checked={!!condition.queueAgentNumber}
+                                    onCheckedChange={(checked) => {
+                                        if (checked) {
+                                            if (queueAgents.length > 0) {
+                                                handleQueueAgentChange(groupIndex, conditionIndex, queueAgents[0].agentExtension);
+                                            }
+                                        } else {
+                                            handleQueueAgentChange(groupIndex, conditionIndex, undefined);
+                                        }
+                                    }}
+                                />
+                                <div className="flex-1">
+                                    <Label className="text-sm cursor-pointer">Répondu par</Label>
+                                    <div className={cn(
+                                        "mt-1 transition-opacity",
+                                        !condition.queueAgentNumber && "opacity-50 pointer-events-none"
+                                    )}>
+                                        <QueueAgentPicker
+                                            queues={queues.filter(q => q.queueNumber === condition.queueNumber)}
+                                            show="agents"
+                                            size="compact"
+                                            selectedQueueNumber={null}
+                                            onSelect={(item) => {
+                                                if (item.agentExtension) {
+                                                    handleQueueAgentChange(groupIndex, conditionIndex, item.agentExtension);
+                                                }
+                                            }}
+                                            placeholder="Sélectionner un agent..."
+                                            displayValue={getQueueAgentDisplayValue(condition.queueAgentNumber, queues)}
+                                            inputClassName="h-7 text-xs"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {hasShowQueueAdvanced(condition) && (
+                            <div className="flex items-center gap-3">
+                                <Toggle
+                                    checked={condition.firstSegment || false}
+                                    onCheckedChange={(checked) => {
+                                        handleUpdateCondition(groupIndex, conditionIndex, {
+                                            firstSegment: checked,
+                                            lastSegment: checked ? false : condition.lastSegment,
+                                        });
+                                    }}
+                                />
+                                <Label className="text-sm cursor-pointer">1er segment</Label>
+                            </div>
+                        )}
+
+                        {hasShowQueueAdvanced(condition) && (
+                            <div className="flex items-center gap-3">
+                                <Toggle
+                                    checked={condition.lastSegment || false}
+                                    onCheckedChange={(checked) => {
+                                        handleUpdateCondition(groupIndex, conditionIndex, {
+                                            lastSegment: checked,
+                                            firstSegment: checked ? false : condition.firstSegment,
+                                        });
+                                    }}
+                                />
+                                <Label className="text-sm cursor-pointer">Dernier segment</Label>
+                            </div>
+                        )}
+
+                        {hasShowQueueAdvanced(condition) && (
+                            <div className="flex items-center gap-3">
+                                <Toggle
+                                    checked={!!condition.overflowQueueNumber}
+                                    onCheckedChange={(checked) => {
+                                        if (checked) {
+                                            const otherQueues = queues.filter(q => q.queueNumber !== condition.queueNumber);
+                                            if (otherQueues.length > 0) {
+                                                handleUpdateCondition(groupIndex, conditionIndex, { overflowQueueNumber: otherQueues[0].queueNumber });
+                                            }
+                                        } else {
+                                            handleUpdateCondition(groupIndex, conditionIndex, { overflowQueueNumber: undefined });
+                                        }
+                                    }}
+                                />
+                                <div className="flex-1">
+                                    <Label className="text-sm cursor-pointer">Redirigé vers</Label>
+                                    <div className={cn(
+                                        "mt-1 transition-opacity",
+                                        !condition.overflowQueueNumber && "opacity-50 pointer-events-none"
+                                    )}>
+                                        <QueueAgentPicker
+                                            queues={queues.filter(q => q.queueNumber !== condition.queueNumber)}
+                                            show="queues"
+                                            size="compact"
+                                            selectedQueueNumber={null}
+                                            onSelect={(item) => handleOverflowQueueChange(groupIndex, conditionIndex, item)}
+                                            placeholder="Sélectionner une file..."
+                                            displayValue={getQueueDisplayValue(condition.overflowQueueNumber, queues)}
+                                            inputClassName="h-7 text-xs"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
         );
     };
 
@@ -625,7 +724,7 @@ export function ColumnFilterJourney({
                                                 </button>
                                             </div>
 
-                                            <div className="space-y-0">
+                                            <div className="space-y-2">
                                                 {filterGroup.group.conditions.map((gc, conditionIndex) =>
                                                     renderCondition(groupIndex, conditionIndex, gc)
                                                 )}

@@ -45,8 +45,9 @@ export interface JourneyConditionNode {
     agentNumber?: string;
     result?: JourneyStepResult;
     negate?: boolean;
-    passageMode?: 'all' | 'first' | 'multi';
-    hasOverflow?: boolean;
+    firstSegment?: boolean;
+    lastSegment?: boolean;
+    overflowQueueNumber?: string;
 }
 
 export interface JourneyGroupCondition {
