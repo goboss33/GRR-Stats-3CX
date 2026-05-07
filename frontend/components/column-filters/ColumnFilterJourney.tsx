@@ -46,6 +46,7 @@ function createEmptyCondition(): JourneyConditionNode {
     return {
         type: undefined,
         queueNumber: undefined,
+        queueAgentNumber: undefined,
         agentNumber: undefined,
         result: undefined,
         negate: false,
@@ -82,6 +83,18 @@ function getPickerDisplayValue(
         return condition.agentNumber;
     }
     return "";
+}
+
+function getQueueAgentDisplayValue(
+    agentNumber: string | undefined,
+    queues: QueueInfo[]
+): string {
+    if (!agentNumber) return "";
+    for (const q of queues) {
+        const member = q.members?.find((m: any) => m.agentExtension === agentNumber);
+        if (member) return `${member.agentExtension} - ${member.agentName}`;
+    }
+    return agentNumber;
 }
 
 function OperatorToggle({
@@ -220,6 +233,7 @@ export function ColumnFilterJourney({
     const handleClearTarget = (groupIndex: number, conditionIndex: number) => {
         handleUpdateCondition(groupIndex, conditionIndex, {
             queueNumber: undefined,
+            queueAgentNumber: undefined,
             agentNumber: undefined,
             type: undefined,
             passageMode: undefined,
@@ -230,6 +244,10 @@ export function ColumnFilterJourney({
     const handleResultChange = (groupIndex: number, conditionIndex: number, value: string) => {
         const result = value === "_all" ? undefined : value as JourneyStepResult;
         handleUpdateCondition(groupIndex, conditionIndex, { result });
+    };
+
+    const handleQueueAgentChange = (groupIndex: number, conditionIndex: number, agentExtension: string | undefined) => {
+        handleUpdateCondition(groupIndex, conditionIndex, { queueAgentNumber: agentExtension });
     };
 
     const toggleAdvanced = (groupIndex: number, conditionIndex: number) => {
@@ -342,6 +360,7 @@ export function ColumnFilterJourney({
             }
 
             if (c.queueNumber) parts.push(<span key="q">Q{c.queueNumber}</span>);
+            if (c.queueAgentNumber) parts.push(<span key="qa">Ag.{c.queueAgentNumber}</span>);
             if (c.agentNumber) parts.push(<span key="ag">Ag.{c.agentNumber}</span>);
             const resultOpt = RESULT_OPTIONS.find(o => o.value === c.result);
             if (resultOpt && c.result) parts.push(<span key="res">{resultOpt.label}</span>);
@@ -383,7 +402,7 @@ export function ColumnFilterJourney({
                     )}
 
                     <div className={cn("relative min-w-0", conditionIndex === 0 && "col-start-1 col-span-2")}>
-                        {(condition.queueNumber || condition.agentNumber || (condition.type && !condition.queueNumber && !condition.agentNumber)) ? (
+                        {(condition.queueNumber || condition.queueAgentNumber || condition.agentNumber || (condition.type && !condition.queueNumber && !condition.queueAgentNumber && !condition.agentNumber)) ? (
                             <div className="flex items-center h-7 text-xs border border-slate-200 rounded px-2 bg-white gap-1 w-full">
                                 <span
                                     className="truncate flex-1"
@@ -474,6 +493,25 @@ export function ColumnFilterJourney({
                                     Exclure (inverser cette condition)
                                 </Label>
                             </div>
+
+                            {hasShowQueueAdvanced(condition) && (
+                                <div className="space-y-1">
+                                    <Label className="text-[10px] text-slate-500">Agent ayant répondu</Label>
+                                    <QueueAgentPicker
+                                        queues={queues}
+                                        show="agents"
+                                        size="compact"
+                                        selectedQueueNumber={null}
+                                        onSelect={(item) => {
+                                            if (item.agentExtension) {
+                                                handleQueueAgentChange(groupIndex, conditionIndex, item.agentExtension);
+                                            }
+                                        }}
+                                        placeholder="Tous les agents..."
+                                        displayValue={getQueueAgentDisplayValue(condition.queueAgentNumber, queues)}
+                                    />
+                                </div>
+                            )}
 
                             {hasShowQueueAdvanced(condition) && (
                                 <div className="space-y-1">

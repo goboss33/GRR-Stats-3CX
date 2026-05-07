@@ -343,6 +343,10 @@ function buildSingleConditionSQL(condition: JourneyConditionNode): string | null
         const queueNum = condition.queueNumber.replace(/'/g, "''");
         clauses.push(`elem->>'label' = '${queueNum}'`);
     }
+    if (condition.queueAgentNumber) {
+        const agentNum = condition.queueAgentNumber.replace(/'/g, "''");
+        clauses.push(`elem->>'agentNumber' = '${agentNum}'`);
+    }
     if (condition.agentNumber) {
         const agentNum = condition.agentNumber.replace(/'/g, "''");
         clauses.push(`elem->>'agentNumber' = '${agentNum}'`);
@@ -355,9 +359,14 @@ function buildSingleConditionSQL(condition: JourneyConditionNode): string | null
     if (condition.queueNumber && condition.passageMode === 'first' && condition.result) {
         const queueNum = condition.queueNumber.replace(/'/g, "''");
         const existsOp = condition.negate ? 'NOT' : '';
+        let whereClause = `elem->>'type' = 'queue' AND elem->>'label' = '${queueNum}'`;
+        if (condition.queueAgentNumber) {
+            const agentNum = condition.queueAgentNumber.replace(/'/g, "''");
+            whereClause += ` AND elem->>'agentNumber' = '${agentNum}'`;
+        }
         return `${existsOp} (SELECT elem->>'result'
              FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx)
-             WHERE elem->>'type' = 'queue' AND elem->>'label' = '${queueNum}'
+             WHERE ${whereClause}
              ORDER BY idx ASC
              LIMIT 1
             ) = '${condition.result}'`;

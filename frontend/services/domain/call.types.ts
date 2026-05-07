@@ -41,6 +41,7 @@ export type SegmentCategory =
 export interface JourneyConditionNode {
     type?: JourneyStepType;
     queueNumber?: string;
+    queueAgentNumber?: string;
     agentNumber?: string;
     result?: JourneyStepResult;
     negate?: boolean;
