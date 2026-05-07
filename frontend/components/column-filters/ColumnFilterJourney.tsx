@@ -154,25 +154,24 @@ function Toggle({
     disabled?: boolean;
 }) {
     return (
-        <button
-            type="button"
-            role="switch"
-            aria-checked={checked}
-            disabled={disabled}
-            onClick={() => !disabled && onCheckedChange(!checked)}
+        <div
             className={cn(
-                "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
-                checked ? "bg-blue-500" : "bg-slate-300",
+                "inline-flex items-center rounded-lg border bg-slate-100 cursor-pointer select-none transition-all hover:shadow-sm",
+                "h-6 px-0.5 gap-0.5",
+                checked ? "border-slate-400" : "border-slate-200",
                 disabled && "opacity-50 cursor-not-allowed"
             )}
+            onClick={() => !disabled && onCheckedChange(!checked)}
         >
-            <span
-                className={cn(
-                    "pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ease-in-out",
-                    checked ? "translate-x-4" : "translate-x-0"
-                )}
-            />
-        </button>
+            <span className={cn(
+                "font-semibold transition-all rounded-md px-1.5 text-[10px]",
+                checked ? "bg-slate-800 text-white shadow-sm" : "text-slate-400"
+            )}>ON</span>
+            <span className={cn(
+                "font-semibold transition-all rounded-md px-1.5 text-[10px]",
+                !checked ? "bg-slate-400 text-white shadow-sm" : "text-slate-400"
+            )}>OFF</span>
+        </div>
     );
 }
 
@@ -539,7 +538,7 @@ export function ColumnFilterJourney({
                 </div>
 
                 {isExpanded && (
-                    <div className="mt-2 pt-2 border-t border-slate-100 space-y-3">
+                    <div className="mt-2 pt-2 border-t border-slate-100 space-y-2">
                         <div className="flex items-center gap-3">
                             <Toggle
                                 checked={condition.negate || false}
@@ -566,27 +565,25 @@ export function ColumnFilterJourney({
                                         }
                                     }}
                                 />
-                                <div className="flex-1">
-                                    <Label className="text-sm cursor-pointer">Répondu par</Label>
-                                    <div className={cn(
-                                        "mt-1 transition-opacity",
-                                        !condition.queueAgentNumber && "opacity-50 pointer-events-none"
-                                    )}>
-                                        <QueueAgentPicker
-                                            queues={queues.filter(q => q.queueNumber === condition.queueNumber)}
-                                            show="agents"
-                                            size="compact"
-                                            selectedQueueNumber={null}
-                                            onSelect={(item) => {
-                                                if (item.agentExtension) {
-                                                    handleQueueAgentChange(groupIndex, conditionIndex, item.agentExtension);
-                                                }
-                                            }}
-                                            placeholder="Sélectionner un agent..."
-                                            displayValue={getQueueAgentDisplayValue(condition.queueAgentNumber, queues)}
-                                            inputClassName="h-7 text-xs"
-                                        />
-                                    </div>
+                                <Label className="text-sm cursor-pointer whitespace-nowrap">Répondu par</Label>
+                                <div className={cn(
+                                    "flex-1 transition-opacity",
+                                    !condition.queueAgentNumber && "opacity-50 pointer-events-none"
+                                )}>
+                                    <QueueAgentPicker
+                                        queues={queues.filter(q => q.queueNumber === condition.queueNumber)}
+                                        show="agents"
+                                        size="compact"
+                                        selectedQueueNumber={null}
+                                        onSelect={(item) => {
+                                            if (item.agentExtension) {
+                                                handleQueueAgentChange(groupIndex, conditionIndex, item.agentExtension);
+                                            }
+                                        }}
+                                        placeholder="Sélectionner un agent..."
+                                        displayValue={getQueueAgentDisplayValue(condition.queueAgentNumber, queues)}
+                                        inputClassName="h-7 text-xs"
+                                    />
                                 </div>
                             </div>
                         )}
@@ -636,23 +633,21 @@ export function ColumnFilterJourney({
                                         }
                                     }}
                                 />
-                                <div className="flex-1">
-                                    <Label className="text-sm cursor-pointer">Redirigé vers</Label>
-                                    <div className={cn(
-                                        "mt-1 transition-opacity",
-                                        !condition.overflowQueueNumber && "opacity-50 pointer-events-none"
-                                    )}>
-                                        <QueueAgentPicker
-                                            queues={queues.filter(q => q.queueNumber !== condition.queueNumber)}
-                                            show="queues"
-                                            size="compact"
-                                            selectedQueueNumber={null}
-                                            onSelect={(item) => handleOverflowQueueChange(groupIndex, conditionIndex, item)}
-                                            placeholder="Sélectionner une file..."
-                                            displayValue={getQueueDisplayValue(condition.overflowQueueNumber, queues)}
-                                            inputClassName="h-7 text-xs"
-                                        />
-                                    </div>
+                                <Label className="text-sm cursor-pointer whitespace-nowrap">Redirigé vers</Label>
+                                <div className={cn(
+                                    "flex-1 transition-opacity",
+                                    !condition.overflowQueueNumber && "opacity-50 pointer-events-none"
+                                )}>
+                                    <QueueAgentPicker
+                                        queues={queues.filter(q => q.queueNumber !== condition.queueNumber)}
+                                        show="queues"
+                                        size="compact"
+                                        selectedQueueNumber={null}
+                                        onSelect={(item) => handleOverflowQueueChange(groupIndex, conditionIndex, item)}
+                                        placeholder="Sélectionner une file..."
+                                        displayValue={getQueueDisplayValue(condition.overflowQueueNumber, queues)}
+                                        inputClassName="h-7 text-xs"
+                                    />
                                 </div>
                             </div>
                         )}
