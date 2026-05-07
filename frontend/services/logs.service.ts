@@ -810,8 +810,18 @@ function buildCountQuery(
                              WHEN c.destination_dn_type = 'queue' THEN 'queue' ELSE 'direct' END as step_type,
                         c.destination_dn_number as step_label,
                         COALESCE(c.destination_dn_name, c.destination_dn_number) as step_detail,
-                        COALESCE(qo.agent_name, qo.agent_number) as agent_name,
-                        qo.agent_number as agent_number,
+                        CASE
+                            WHEN c.destination_dn_type = 'queue' THEN COALESCE(qo.agent_name, qo.agent_number)
+                            WHEN c.destination_dn_type = 'extension' THEN c.destination_dn_number
+                            WHEN c.destination_dn_type IN ('provider', 'external_line') THEN c.destination_participant_phone_number
+                            ELSE NULL
+                        END as agent_name,
+                        CASE
+                            WHEN c.destination_dn_type = 'queue' THEN qo.agent_number
+                            WHEN c.destination_dn_type = 'extension' THEN c.destination_dn_number
+                            WHEN c.destination_dn_type IN ('provider', 'external_line') THEN c.destination_participant_phone_number
+                            ELSE NULL
+                        END as agent_number,
                         CASE WHEN c.destination_entity_type = 'voicemail' THEN 'voicemail'
                              WHEN c.destination_dn_type = 'queue' THEN
                                  CASE WHEN qo.originating_cdr_id IS NOT NULL THEN 'answered'
