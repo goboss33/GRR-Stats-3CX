@@ -39,7 +39,7 @@ import { QueueInfo } from "@/types/queues.types";
 export type ShowFilter = "queues" | "agents" | "both";
 
 export interface QueueAgentPickerItem {
-    type: "queue" | "agent" | "type-only";
+    type: "queue" | "agent" | "type-only" | "any-agent" | "any-queue";
     queueNumber: string;
     queueName: string;
     agentExtension?: string;
@@ -70,6 +70,8 @@ export interface QueueAgentPickerProps {
     inputClassName?: string;
     /** Show special type-only options (for journey filter) */
     showTypeOptions?: boolean;
+    /** Show "any" option at top (for advanced filters) */
+    showAnyOption?: boolean;
 }
 
 // ============================================
@@ -87,6 +89,7 @@ export function QueueAgentPicker({
     displayValue,
     inputClassName,
     showTypeOptions = false,
+    showAnyOption = false,
 }: QueueAgentPickerProps) {
     const [open, setOpen] = React.useState(false);
     const [inputValue, setInputValue] = React.useState("");
@@ -125,6 +128,28 @@ export function QueueAgentPicker({
     // Build searchable items from queues
     const searchItems = React.useMemo(() => {
         const items: QueueAgentPickerItem[] = [];
+
+        // Add "any" option at the top (for advanced filters)
+        if (showAnyOption) {
+            if (show === "agents" || show === "both") {
+                items.push({
+                    type: "any-agent",
+                    queueNumber: "",
+                    queueName: "",
+                    label: "L'un des agents de la file",
+                    sublabel: "N'importe quel agent ayant répondu",
+                });
+            }
+            if (show === "queues" || show === "both") {
+                items.push({
+                    type: "any-queue",
+                    queueNumber: "",
+                    queueName: "",
+                    label: "L'une des files d'attente",
+                    sublabel: "N'importe quelle file de redirection",
+                });
+            }
+        }
 
         // Add type-only options at the top (for journey filter)
         if (showTypeOptions) {
@@ -183,17 +208,19 @@ export function QueueAgentPicker({
         if (!search) return searchItems;
 
         return searchItems.filter((item) => {
-            if (item.type === "queue") {
+            if (item.type === "queue" || item.type === "any-queue") {
                 return (
                     item.queueName.toLowerCase().includes(search) ||
-                    item.queueNumber.includes(search)
+                    item.queueNumber.includes(search) ||
+                    item.label.toLowerCase().includes(search)
                 );
             } else {
                 return (
                     item.agentName?.toLowerCase().includes(search) ||
                     item.agentExtension?.includes(search) ||
                     item.queueName.toLowerCase().includes(search) ||
-                    item.queueNumber.includes(search)
+                    item.queueNumber.includes(search) ||
+                    item.label.toLowerCase().includes(search)
                 );
             }
         });
@@ -201,10 +228,11 @@ export function QueueAgentPicker({
 
     // Group filtered items
     const groupedItems = React.useMemo(() => {
+        const anyItems = filteredItems.filter((i) => i.type === "any-agent" || i.type === "any-queue");
         const typeOnlyItems = filteredItems.filter((i) => i.type === "type-only");
         const queueItems = filteredItems.filter((i) => i.type === "queue");
         const agentItems = filteredItems.filter((i) => i.type === "agent");
-        return { typeOnlyItems, queueItems, agentItems };
+        return { anyItems, typeOnlyItems, queueItems, agentItems };
     }, [filteredItems]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -288,10 +316,42 @@ export function QueueAgentPicker({
                         </div>
                     ) : (
                         <div className="py-1">
+                            {/* Any option section (for advanced filters) */}
+                            {groupedItems.anyItems.length > 0 && (
+                                <>
+                                    <div className="px-3 py-2 text-xs font-semibold text-slate-500 bg-slate-50 border-b sticky top-0">
+                                        Option
+                                    </div>
+                                    {groupedItems.anyItems.map((item, index) => (
+                                        <button
+                                            key={`any-${item.type}-${index}`}
+                                            type="button"
+                                            className="w-full px-3 py-2 text-left hover:bg-slate-100 flex items-center gap-3 transition-colors"
+                                            onClick={() => handleSelect(item)}
+                                        >
+                                            <div className="p-1.5 rounded bg-slate-100 text-slate-600">
+                                                <Users className="h-4 w-4" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-slate-900 truncate">
+                                                    {item.label}
+                                                </p>
+                                                <p className="text-xs text-slate-500 truncate">
+                                                    {item.sublabel}
+                                                </p>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </>
+                            )}
+
                             {/* Type-only section (for journey filter) */}
                             {groupedItems.typeOnlyItems.length > 0 && (
                                 <>
-                                    <div className="px-3 py-2 text-xs font-semibold text-slate-500 bg-slate-50 border-b sticky top-0">
+                                    <div className={cn(
+                                        "px-3 py-2 text-xs font-semibold text-slate-500 bg-slate-50 border-b sticky top-0",
+                                        groupedItems.anyItems.length > 0 && "border-t"
+                                    )}>
                                         Type de parcours
                                     </div>
                                     {groupedItems.typeOnlyItems.map((item, index) => (

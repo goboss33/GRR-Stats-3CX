@@ -157,20 +157,20 @@ function Toggle({
         <div
             className={cn(
                 "inline-flex items-center rounded-lg border bg-slate-100 cursor-pointer select-none transition-all hover:shadow-sm",
-                "h-6 px-0.5 gap-0.5",
+                "h-5 px-0.5 gap-0.5",
                 checked ? "border-slate-400" : "border-slate-200",
                 disabled && "opacity-50 cursor-not-allowed"
             )}
             onClick={() => !disabled && onCheckedChange(!checked)}
         >
             <span className={cn(
-                "font-semibold transition-all rounded-md px-1.5 text-[10px]",
-                checked ? "bg-slate-800 text-white shadow-sm" : "text-slate-400"
-            )}>ON</span>
-            <span className={cn(
-                "font-semibold transition-all rounded-md px-1.5 text-[10px]",
+                "font-semibold transition-all rounded-md px-1.5 text-[9px]",
                 !checked ? "bg-slate-400 text-white shadow-sm" : "text-slate-400"
             )}>OFF</span>
+            <span className={cn(
+                "font-semibold transition-all rounded-md px-1.5 text-[9px]",
+                checked ? "bg-slate-800 text-white shadow-sm" : "text-slate-400"
+            )}>ON</span>
         </div>
     );
 }
@@ -298,10 +298,20 @@ export function ColumnFilterJourney({
         handleUpdateCondition(groupIndex, conditionIndex, { queueAgentNumber: agentExtension });
     };
 
+    const handleQueueAgentAny = (groupIndex: number, conditionIndex: number) => {
+        handleUpdateCondition(groupIndex, conditionIndex, { queueAgentNumber: '*' });
+    };
+
     const handleOverflowQueueChange = (groupIndex: number, conditionIndex: number, item: { type: string; queueNumber: string }) => {
         if (item.type === 'queue') {
             handleUpdateCondition(groupIndex, conditionIndex, { overflowQueueNumber: item.queueNumber });
+        } else if (item.type === 'any-queue') {
+            handleUpdateCondition(groupIndex, conditionIndex, { overflowQueueNumber: '*' });
         }
+    };
+
+    const handleOverflowQueueAny = (groupIndex: number, conditionIndex: number) => {
+        handleUpdateCondition(groupIndex, conditionIndex, { overflowQueueNumber: '*' });
     };
 
     const toggleAdvanced = (groupIndex: number, conditionIndex: number) => {
@@ -557,9 +567,7 @@ export function ColumnFilterJourney({
                                     checked={!!condition.queueAgentNumber}
                                     onCheckedChange={(checked) => {
                                         if (checked) {
-                                            if (queueAgents.length > 0) {
-                                                handleQueueAgentChange(groupIndex, conditionIndex, queueAgents[0].agentExtension);
-                                            }
+                                            handleQueueAgentAny(groupIndex, conditionIndex);
                                         } else {
                                             handleQueueAgentChange(groupIndex, conditionIndex, undefined);
                                         }
@@ -576,13 +584,16 @@ export function ColumnFilterJourney({
                                         size="compact"
                                         selectedQueueNumber={null}
                                         onSelect={(item) => {
-                                            if (item.agentExtension) {
+                                            if (item.type === 'any-agent') {
+                                                handleQueueAgentAny(groupIndex, conditionIndex);
+                                            } else if (item.agentExtension) {
                                                 handleQueueAgentChange(groupIndex, conditionIndex, item.agentExtension);
                                             }
                                         }}
                                         placeholder="Sélectionner un agent..."
-                                        displayValue={getQueueAgentDisplayValue(condition.queueAgentNumber, queues)}
+                                        displayValue={condition.queueAgentNumber === '*' ? 'L\'un des agents de la file' : getQueueAgentDisplayValue(condition.queueAgentNumber, queues)}
                                         inputClassName="h-7 text-xs"
+                                        showAnyOption={true}
                                     />
                                 </div>
                             </div>
@@ -624,10 +635,7 @@ export function ColumnFilterJourney({
                                     checked={!!condition.overflowQueueNumber}
                                     onCheckedChange={(checked) => {
                                         if (checked) {
-                                            const otherQueues = queues.filter(q => q.queueNumber !== condition.queueNumber);
-                                            if (otherQueues.length > 0) {
-                                                handleUpdateCondition(groupIndex, conditionIndex, { overflowQueueNumber: otherQueues[0].queueNumber });
-                                            }
+                                            handleOverflowQueueAny(groupIndex, conditionIndex);
                                         } else {
                                             handleUpdateCondition(groupIndex, conditionIndex, { overflowQueueNumber: undefined });
                                         }
@@ -645,8 +653,9 @@ export function ColumnFilterJourney({
                                         selectedQueueNumber={null}
                                         onSelect={(item) => handleOverflowQueueChange(groupIndex, conditionIndex, item)}
                                         placeholder="Sélectionner une file..."
-                                        displayValue={getQueueDisplayValue(condition.overflowQueueNumber, queues)}
+                                        displayValue={condition.overflowQueueNumber === '*' ? 'L\'une des files d\'attente' : getQueueDisplayValue(condition.overflowQueueNumber, queues)}
                                         inputClassName="h-7 text-xs"
+                                        showAnyOption={true}
                                     />
                                 </div>
                             </div>

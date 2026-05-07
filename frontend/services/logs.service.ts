@@ -343,7 +343,7 @@ function buildSingleConditionSQL(condition: JourneyConditionNode): string | null
         const queueNum = condition.queueNumber.replace(/'/g, "''");
         clauses.push(`elem->>'label' = '${queueNum}'`);
     }
-    if (condition.queueAgentNumber) {
+    if (condition.queueAgentNumber && condition.queueAgentNumber !== '*') {
         const agentNum = condition.queueAgentNumber.replace(/'/g, "''");
         clauses.push(`elem->>'agentNumber' = '${agentNum}'`);
     }
@@ -372,9 +372,13 @@ function buildSingleConditionSQL(condition: JourneyConditionNode): string | null
         return `${existsOp} (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx) WHERE (${baseWhereClause}) AND idx = (SELECT COUNT(*) FROM jsonb_array_elements(cj.journey::jsonb)))`;
     }
 
-    if (condition.overflowQueueNumber) {
+    if (condition.overflowQueueNumber && condition.overflowQueueNumber !== '*') {
         const overflowQueueNum = condition.overflowQueueNumber.replace(/'/g, "''");
         return `${existsOp} (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx) WHERE (${baseWhereClause})) AND EXISTS (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(o_elem, o_idx) WHERE o_elem->>'type' = 'queue' AND o_elem->>'label' = '${overflowQueueNum}' AND o_idx > (SELECT MIN(idx2) FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t2(elem2, idx2) WHERE elem2->>'type' = 'queue' AND elem2->>'label' = '${queueNum}'))`;
+    }
+
+    if (condition.overflowQueueNumber === '*') {
+        return `${existsOp} (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx) WHERE (${baseWhereClause})) AND EXISTS (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(o_elem, o_idx) WHERE o_elem->>'type' = 'queue' AND o_elem->>'label' != '${queueNum}' AND o_idx > (SELECT MIN(idx2) FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t2(elem2, idx2) WHERE elem2->>'type' = 'queue' AND elem2->>'label' = '${queueNum}'))`;
     }
 
     return `${existsOp} (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) elem WHERE ${baseWhereClause})`;
