@@ -8,7 +8,7 @@ import { fr } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-import type { CallDirection, CallStatus, JourneyCondition, LogsFilters } from "@/types/logs.types";
+import type { CallDirection, CallStatus, JourneyConditionNode, JourneyFilter, LogsFilters } from "@/types/logs.types";
 
 interface ActiveFiltersProps {
     dateRange: { startDate: Date; endDate: Date };
@@ -44,7 +44,7 @@ const statusLabels: Record<CallStatus, string> = {
 };
 
 function formatConditionLabel(
-    condition: JourneyCondition,
+    condition: JourneyConditionNode,
     typeLabels: Record<string, string>,
     resultLabels: Record<string, string>,
 ): string {
@@ -261,8 +261,8 @@ export function ActiveFilters({
         );
     }
 
-    // Journey conditions filter
-    if (filters.journeyConditions && filters.journeyConditions.length > 0 && onRemoveJourneyConditions) {
+    // Journey filter
+    if (filters.journeyFilter && filters.journeyFilter.groups.length > 0 && onRemoveJourneyConditions) {
         const typeLabels: Record<string, string> = {
             direct: "Direct",
             queue: "Queue",
@@ -277,9 +277,23 @@ export function ActiveFilters({
             voicemail: "Messagerie",
         };
 
-        const conditionLabel = filters.journeyConditions.length === 1
-            ? formatConditionLabel(filters.journeyConditions[0], typeLabels, resultLabels)
-            : `${filters.journeyConditions.length} conditions`;
+        const formatGroup = (fg: typeof filters.journeyFilter.groups[0]): string => {
+            const conditions = fg.group.conditions.map((gc, i) => {
+                const label = formatConditionLabel(gc.condition, typeLabels, resultLabels);
+                if (i === 0) return label;
+                const op = gc.operator === "AND" ? " ET " : " OU ";
+                return `${op}${label}`;
+            });
+            const joined = conditions.join("");
+            return conditions.length > 1 ? `(${joined})` : joined;
+        };
+
+        const groups = filters.journeyFilter.groups.map(formatGroup);
+        let filterLabel = groups[0];
+        for (let i = 1; i < groups.length; i++) {
+            const op = filters.journeyFilter.groups[i].operator === "AND" ? " ET " : " OU ";
+            filterLabel = `${filterLabel}${op}${groups[i]}`;
+        }
 
         activeFilters.push(
             <Badge
@@ -288,7 +302,7 @@ export function ActiveFilters({
                 className="bg-violet-100 text-violet-700 gap-1 px-2 py-1 cursor-pointer hover:bg-violet-200 transition-colors"
                 onClick={onRemoveJourneyConditions}
             >
-                Parcours: {conditionLabel}
+                Parcours: {filterLabel}
                 <X className="h-3 w-3" />
             </Badge>
         );

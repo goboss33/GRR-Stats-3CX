@@ -39,7 +39,7 @@ import type {
     SortField,
     ColumnVisibility,
     AggregatedCallLogsResponse,
-    JourneyCondition,
+    JourneyFilter,
     TimeSlot,
 } from "@/types/logs.types";
 
@@ -128,14 +128,14 @@ export default function AdminLogsPage() {
             return { start, end };
         }).filter(s => s.start && s.end);
     });
-    // Journey conditions (composable step predicates)
-    const [journeyConditions, setJourneyConditions] = useState<JourneyCondition[]>(() => {
+    // Journey filter (groups with AND/OR operators)
+    const [journeyFilter, setJourneyFilter] = useState<JourneyFilter | null>(() => {
         const param = searchParams.get("journeyFilter");
-        if (!param) return [];
+        if (!param) return null;
         try {
             return JSON.parse(decodeURIComponent(param));
         } catch {
-            return [];
+            return null;
         }
     });
 
@@ -179,8 +179,8 @@ export default function AdminLogsPage() {
         waitTimeMin,
         waitTimeMax,
         timeSlots: timeSlots.length > 0 ? timeSlots : undefined,
-        // Journey conditions (composable)
-        journeyConditions: journeyConditions.length > 0 ? journeyConditions : undefined,
+        // Journey filter (groups with AND/OR)
+        journeyFilter: journeyFilter || undefined,
     };
 
     // Update URL when filters change - uses DEBOUNCED values for text search
@@ -226,9 +226,9 @@ export default function AdminLogsPage() {
             params.set("timeSlots", timeSlots.map(s => `${s.start}-${s.end}`).join(","));
         }
 
-        // Journey conditions
-        if (journeyConditions.length > 0) {
-            params.set("journeyFilter", encodeURIComponent(JSON.stringify(journeyConditions)));
+        // Journey filter
+        if (journeyFilter) {
+            params.set("journeyFilter", encodeURIComponent(JSON.stringify(journeyFilter)));
         }
 
         router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
@@ -251,7 +251,7 @@ export default function AdminLogsPage() {
         waitTimeMin,
         waitTimeMax,
         timeSlots,
-        journeyConditions,
+        journeyFilter,
     ]);
 
     // Fetch data
@@ -293,7 +293,7 @@ export default function AdminLogsPage() {
         timeSlots,
         currentPage,
         sort,
-        journeyConditions,
+        journeyFilter,
     ]);
 
     // Fetch on filter/page change and update URL
@@ -475,13 +475,13 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
-    const handleJourneyConditionsChange = (conditions: JourneyCondition[]) => {
-        setJourneyConditions(conditions);
+    const handleJourneyFilterChange = (filter: JourneyFilter | null) => {
+        setJourneyFilter(filter);
         setCurrentPage(1);
     };
 
     const handleRemoveJourneyConditions = () => {
-        setJourneyConditions([]);
+        setJourneyFilter(null);
         setCurrentPage(1);
     };
 
@@ -501,7 +501,7 @@ export default function AdminLogsPage() {
         setWaitTimeMin(undefined);
         setWaitTimeMax(undefined);
         setTimeSlots([]);
-        setJourneyConditions([]);
+        setJourneyFilter(null);
         setCurrentPage(1);
         // Increment reset counter to trigger immediate refetch (bypasses debounce)
         setResetCounter(c => c + 1);
@@ -688,9 +688,9 @@ export default function AdminLogsPage() {
                         setSegmentCountMax(max);
                         setCurrentPage(1);
                     }}
-                    // Journey filter (composable conditions)
-                    journeyConditions={journeyConditions}
-                    onJourneyConditionsChange={handleJourneyConditionsChange}
+                    // Journey filter (groups with AND/OR operators)
+                    journeyFilter={journeyFilter}
+                    onJourneyFilterChange={handleJourneyFilterChange}
                     // Row click
                     onRowClick={handleRowClick}
                 />

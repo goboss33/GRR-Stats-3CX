@@ -59,7 +59,7 @@ import type {
     SortField,
     LogsSort,
     JourneyStep,
-    JourneyCondition,
+    JourneyFilter,
     TimeSlot,
 } from "@/types/logs.types";
 
@@ -105,9 +105,9 @@ interface LogsTableProps {
     segmentCountMin?: number;
     segmentCountMax?: number;
     onSegmentCountChange: (range: { min?: number; max?: number }) => void;
-    // Journey filter (composable conditions)
-    journeyConditions: JourneyCondition[];
-    onJourneyConditionsChange: (conditions: JourneyCondition[]) => void;
+    // Journey filter (groups with AND/OR operators)
+    journeyFilter: JourneyFilter | null;
+    onJourneyFilterChange: (filter: JourneyFilter | null) => void;
     // Row click
     onRowClick?: (callHistoryId: string) => void;
 }
@@ -264,9 +264,9 @@ export function LogsTable({
     segmentCountMin,
     segmentCountMax,
     onSegmentCountChange,
-    // Journey filter (composable conditions)
-    journeyConditions,
-    onJourneyConditionsChange,
+    // Journey filter (groups with AND/OR operators)
+    journeyFilter,
+    onJourneyFilterChange,
     // Row click
     onRowClick,
 }: LogsTableProps) {
@@ -494,8 +494,8 @@ export function LogsTable({
                             {columnVisibility.journey && (
                                 <TableHead className="py-2">
                                     <ColumnFilterJourney
-                                        conditions={journeyConditions}
-                                        onChange={onJourneyConditionsChange}
+                                        filter={journeyFilter}
+                                        onChange={onJourneyFilterChange}
                                         queues={queues}
                                     />
                                 </TableHead>

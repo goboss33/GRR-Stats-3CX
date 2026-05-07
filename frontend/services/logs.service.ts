@@ -9,6 +9,9 @@ import type {
     LogsSort,
     AggregatedCallLogsResponse,
     CallChainSegment,
+    JourneyFilter,
+    JourneyConditionNode,
+    JourneyGroupCondition,
 } from "@/services/domain/call.types";
 import {
     SQL_SYSTEM_DEST_TYPES,
@@ -287,83 +290,101 @@ function buildAggregatedQueryParts(
         });
         aggregatedWhereConditions.push(`(${slotConditions.join(' OR ')})`);
     }
-    if (filters.journeyConditions && filters.journeyConditions.length > 0) {
-        const validTypes = ['direct', 'queue', 'voicemail'];
-        const validResults = ['answered', 'not_answered', 'busy', 'voicemail', 'abandoned', 'overflow'];
-        for (const condition of filters.journeyConditions) {
-            const clauses: string[] = [];
-            
-            // Infer type from target if not explicitly set
-            const inferredType = condition.type 
-                || (condition.queueNumber ? 'queue' : undefined)
-                || (condition.agentNumber ? 'direct' : undefined);
-            
-            if (inferredType && validTypes.includes(inferredType)) {
-                clauses.push(`elem->>'type' = '${inferredType}'`);
-            }
-            if (condition.queueNumber) {
-                const queueNum = condition.queueNumber.replace(/'/g, "''");
-                clauses.push(`elem->>'label' = '${queueNum}'`);
-            }
-            if (condition.agentNumber) {
-                const agentNum = condition.agentNumber.replace(/'/g, "''");
-                clauses.push(`elem->>'agentNumber' = '${agentNum}'`);
-            }
-            if (condition.result && validResults.includes(condition.result)) {
-                clauses.push(`elem->>'result' = '${condition.result}'`);
-            }
+    if (filters.journeyFilter && filters.journeyFilter.groups.length > 0) {
+        const groupSqlParts = filters.journeyFilter.groups.map((filterGroup, gi) => {
+            const group = filterGroup.group;
+            const conditionSqlParts = group.conditions.map((gc, ci) => {
+                const sql = buildSingleConditionSQL(gc.condition);
+                if (!sql) return null;
+                if (ci === 0) return `( ${sql} )`;
+                const op = gc.operator === 'AND' ? ' AND ' : ' OR ';
+                return `${op}( ${sql} )`;
+            }).filter((s): s is string => s !== null);
 
-            // Use inferredType for passageMode and hasOverflow checks
-            if (condition.queueNumber && condition.passageMode === 'first' && condition.result) {
-                const queueNum = condition.queueNumber.replace(/'/g, "''");
-                const existsOp = condition.negate ? 'NOT' : '';
-                aggregatedWhereConditions.push(`
-                    ${existsOp} (SELECT elem->>'result'
-                     FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx)
-                     WHERE elem->>'type' = 'queue' AND elem->>'label' = '${queueNum}'
-                     ORDER BY idx ASC
-                     LIMIT 1
-                    ) = '${condition.result}'
-                `);
-            } else if (clauses.length > 0) {
-                const existsOp = condition.negate ? 'NOT EXISTS' : 'EXISTS';
-                aggregatedWhereConditions.push(`
-                    ${existsOp} (
-                        SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) elem
-                        WHERE ${clauses.join(' AND ')}
-                    )
-                `);
-            }
+            if (conditionSqlParts.length === 0) return null;
+            return `( ${conditionSqlParts.join('')} )`;
+        }).filter((s): s is string => s !== null);
 
-            if (condition.queueNumber && condition.passageMode === 'multi') {
-                const queueNum = condition.queueNumber.replace(/'/g, "''");
-                aggregatedWhereConditions.push(`
-                    (SELECT COUNT(*)
-                     FROM jsonb_array_elements(cj.journey::jsonb) elem
-                     WHERE elem->>'type' = 'queue'
-                       AND elem->>'label' = '${queueNum}') > 1
-                `);
-            }
-            if (condition.queueNumber && condition.hasOverflow !== undefined) {
-                const queueNum = condition.queueNumber.replace(/'/g, "''");
-                const countOp = condition.hasOverflow ? '> 0' : '= 0';
-                aggregatedWhereConditions.push(`
-                    (SELECT COUNT(DISTINCT elem->>'label')
-                     FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx)
-                     WHERE elem->>'type' = 'queue'
-                       AND elem->>'label' != '${queueNum}'
-                       AND idx > (
-                           SELECT MIN(idx2)
-                           FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t2(elem2, idx2)
-                           WHERE elem2->>'type' = 'queue' AND elem2->>'label' = '${queueNum}'
-                       )
-                    ) ${countOp}
-                `);
+        if (groupSqlParts.length > 0) {
+            if (groupSqlParts.length === 1) {
+                aggregatedWhereConditions.push(groupSqlParts[0]);
+            } else {
+                let combined = groupSqlParts[0];
+                for (let i = 1; i < groupSqlParts.length; i++) {
+                    const op = filters.journeyFilter.groups[i].operator === 'AND' ? ' AND ' : ' OR ';
+                    combined = `${combined}${op}${groupSqlParts[i]}`;
+                }
+                aggregatedWhereConditions.push(`( ${combined} )`);
             }
         }
     }
 
     return { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause: buildOrderByClause(sort) };
+}
+
+// ============================================
+// JOURNEY CONDITION SQL BUILDER
+// Builds SQL for a single journey condition node
+// ============================================
+
+function buildSingleConditionSQL(condition: JourneyConditionNode): string | null {
+    const validTypes = ['direct', 'queue', 'voicemail'];
+    const validResults = ['answered', 'not_answered', 'busy', 'voicemail', 'abandoned', 'overflow'];
+    const clauses: string[] = [];
+
+    const inferredType = condition.type
+        || (condition.queueNumber ? 'queue' : undefined)
+        || (condition.agentNumber ? 'direct' : undefined);
+
+    if (inferredType && validTypes.includes(inferredType)) {
+        clauses.push(`elem->>'type' = '${inferredType}'`);
+    }
+    if (condition.queueNumber) {
+        const queueNum = condition.queueNumber.replace(/'/g, "''");
+        clauses.push(`elem->>'label' = '${queueNum}'`);
+    }
+    if (condition.agentNumber) {
+        const agentNum = condition.agentNumber.replace(/'/g, "''");
+        clauses.push(`elem->>'agentNumber' = '${agentNum}'`);
+    }
+    if (condition.result && validResults.includes(condition.result)) {
+        clauses.push(`elem->>'result' = '${condition.result}'`);
+    }
+
+    // Special case: first passage mode with result
+    if (condition.queueNumber && condition.passageMode === 'first' && condition.result) {
+        const queueNum = condition.queueNumber.replace(/'/g, "''");
+        const existsOp = condition.negate ? 'NOT' : '';
+        return `${existsOp} (SELECT elem->>'result'
+             FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx)
+             WHERE elem->>'type' = 'queue' AND elem->>'label' = '${queueNum}'
+             ORDER BY idx ASC
+             LIMIT 1
+            ) = '${condition.result}'`;
+    }
+
+    // Standard EXISTS/NOT EXISTS clause
+    if (clauses.length > 0) {
+        const existsOp = condition.negate ? 'NOT EXISTS' : 'EXISTS';
+        let sql = `${existsOp} (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) elem WHERE ${clauses.join(' AND ')})`;
+
+        // Additional: multi passage mode
+        if (condition.queueNumber && condition.passageMode === 'multi') {
+            const queueNum = condition.queueNumber.replace(/'/g, "''");
+            sql += ` AND (SELECT COUNT(*) FROM jsonb_array_elements(cj.journey::jsonb) elem WHERE elem->>'type' = 'queue' AND elem->>'label' = '${queueNum}') > 1`;
+        }
+
+        // Additional: overflow check
+        if (condition.queueNumber && condition.hasOverflow !== undefined) {
+            const queueNum = condition.queueNumber.replace(/'/g, "''");
+            const countOp = condition.hasOverflow ? '> 0' : '= 0';
+            sql += ` AND (SELECT COUNT(DISTINCT elem->>'label') FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx) WHERE elem->>'type' = 'queue' AND elem->>'label' != '${queueNum}' AND idx > (SELECT MIN(idx2) FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t2(elem2, idx2) WHERE elem2->>'type' = 'queue' AND elem2->>'label' = '${queueNum}')) ${countOp}`;
+        }
+
+        return sql;
+    }
+
+    return null;
 }
 
 // ============================================
@@ -694,7 +715,7 @@ function buildCountQuery(
 ): string {
     const needsHandledBy = !!filters.handledBySearch?.trim();
     const needsCallQueues = !!filters.queueSearch?.trim();
-    const needsCallJourney = !!(filters.journeyConditions && filters.journeyConditions.length > 0);
+    const needsCallJourney = !!(filters.journeyFilter && filters.journeyFilter.groups.length > 0);
 
     const handledByCTE = needsHandledBy ? `,
         handled_by AS (

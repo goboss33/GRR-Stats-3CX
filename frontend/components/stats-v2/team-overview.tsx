@@ -51,7 +51,23 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate 
     };
 
     const buildJourneyFilter = (conditions: Array<{ type: string; queueNumber: string; result?: string; negate?: boolean }>) => {
-        return encodeURIComponent(JSON.stringify(conditions));
+        const filter = {
+            groups: [{
+                group: {
+                    conditions: conditions.map((c, i) => ({
+                        condition: {
+                            type: c.type as "queue" | "direct" | "voicemail",
+                            queueNumber: c.queueNumber,
+                            result: c.result as "answered" | "not_answered" | "busy" | "voicemail" | "abandoned" | "overflow" | undefined,
+                            negate: c.negate || false,
+                        },
+                        operator: i === 0 ? "AND" : "AND",
+                    })),
+                },
+                operator: "AND",
+            }],
+        };
+        return encodeURIComponent(JSON.stringify(filter));
     };
 
     // Anneau externe : KPIs (Répondus, Perdus, Redirigés)

@@ -21,6 +21,26 @@ interface UnifiedCallFlowProps {
 }
 
 export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDate }: UnifiedCallFlowProps) {
+    const buildJourneyFilter = (conditions: Array<{ type: string; queueNumber: string; result?: string; negate?: boolean }>) => {
+        const filter = {
+            groups: [{
+                group: {
+                    conditions: conditions.map((c, i) => ({
+                        condition: {
+                            type: c.type as "queue" | "direct" | "voicemail",
+                            queueNumber: c.queueNumber,
+                            result: c.result as "answered" | "not_answered" | "busy" | "voicemail" | "abandoned" | "overflow" | undefined,
+                            negate: c.negate || false,
+                        },
+                        operator: i === 0 ? "AND" : "AND",
+                    })),
+                },
+                operator: "AND",
+            }],
+        };
+        return encodeURIComponent(JSON.stringify(filter));
+    };
+
     // Primary metric: unique calls (callsReceived is now unique)
     const totalCalls = kpis.callsReceived;
     // Secondary: passages for ping-pong gauge
@@ -101,7 +121,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDa
                                 <div className="absolute inset-0 flex items-center justify-center">
                                     <div className="flex items-center gap-2 pointer-events-auto">
                                         <Link
-                                            href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${encodeURIComponent(JSON.stringify([{ type: "queue", queueNumber }]))}`}
+                                            href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${buildJourneyFilter([{ type: "queue", queueNumber }])}`}
                                             className="text-4xl font-bold text-slate-900 hover:text-blue-600 hover:underline transition-colors"
                                         >
                                             {totalCalls}
@@ -142,7 +162,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDa
                                     </span>
                                 </div>
                                 <Link
-                                    href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${encodeURIComponent(JSON.stringify([{ type: "queue", queueNumber, result: "answered" }]))}`}
+                                    href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${buildJourneyFilter([{ type: "queue", queueNumber, result: "answered" }])}`}
                                     className="text-2xl font-bold text-emerald-700 hover:text-emerald-500 hover:underline transition-colors"
                                 >
                                     {kpis.callsAnswered}
@@ -161,7 +181,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDa
                                     </span>
                                 </div>
                                 <Link
-                                    href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${encodeURIComponent(JSON.stringify([{ type: "queue", queueNumber, result: "overflow" }, { type: "queue", queueNumber, result: "answered", negate: true }]))}`}
+                                    href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${buildJourneyFilter([{ type: "queue", queueNumber, result: "overflow" }, { type: "queue", queueNumber, result: "answered", negate: true }])}`}
                                     className="text-2xl font-bold text-amber-700 hover:text-amber-500 hover:underline transition-colors"
                                 >
                                     {kpis.callsOverflow}
@@ -181,7 +201,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDa
                                 </div>
                                 <div className="flex items-baseline justify-between">
                                     <Link
-                                        href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${encodeURIComponent(JSON.stringify([{ type: "queue", queueNumber, result: "abandoned" }, { type: "queue", queueNumber, result: "answered", negate: true }, { type: "queue", queueNumber, result: "overflow", negate: true }]))}`}
+                                        href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${buildJourneyFilter([{ type: "queue", queueNumber, result: "abandoned" }, { type: "queue", queueNumber, result: "answered", negate: true }, { type: "queue", queueNumber, result: "overflow", negate: true }])}`}
                                         className="text-2xl font-bold text-red-700 hover:text-red-500 hover:underline transition-colors"
                                     >
                                         {kpis.callsAbandoned}

@@ -38,7 +38,7 @@ export type SegmentCategory =
 // FILTERS
 // ============================================
 
-export interface JourneyCondition {
+export interface JourneyConditionNode {
     type?: JourneyStepType;
     queueNumber?: string;
     agentNumber?: string;
@@ -47,6 +47,27 @@ export interface JourneyCondition {
     passageMode?: 'all' | 'first' | 'multi';
     hasOverflow?: boolean;
 }
+
+export interface JourneyGroupCondition {
+    condition: JourneyConditionNode;
+    operator: 'AND' | 'OR';
+}
+
+export interface JourneyGroup {
+    conditions: JourneyGroupCondition[];
+}
+
+export interface JourneyFilterGroup {
+    group: JourneyGroup;
+    operator: 'AND' | 'OR';
+}
+
+export interface JourneyFilter {
+    groups: JourneyFilterGroup[];
+}
+
+// Legacy alias for backward compatibility
+export type JourneyCondition = JourneyConditionNode;
 
 export interface TimeSlot {
     start: string;
@@ -74,7 +95,7 @@ export interface LogsFilters {
     durationMax?: number;
     waitTimeMin?: number;
     waitTimeMax?: number;
-    journeyConditions?: JourneyCondition[];
+    journeyFilter?: JourneyFilter;
     timeSlots?: TimeSlot[];
 }
 
