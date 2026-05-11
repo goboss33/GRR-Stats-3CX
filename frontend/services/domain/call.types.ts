@@ -254,6 +254,7 @@ export interface QueueKPIs {
     pingPongPercentage: number;
     teamDirectReceived: number;
     teamDirectAnswered: number;
+    directLost: number;
     overflowDestinations: OverflowDestination[];
     avgWaitTimeSeconds: number;
     avgTalkTimeSeconds: number;

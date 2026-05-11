@@ -2,10 +2,6 @@
 
 import {
     getQueueName,
-    getQueueKpisRaw,
-    getOverflowDestinationsRaw,
-    getTeamDirectStatsRaw,
-    getAgentStatsRaw,
     getDailyTrendRaw,
     getHourlyTrendRaw,
 } from "@/services/repositories/cdr.repository";
@@ -18,12 +14,58 @@ import type {
     OverflowDestination,
 } from "@/services/domain/call.types";
 
-/**
- * Statistics Service — Per-Queue Statistics
- * 
- * Orchestrates repository calls and formats data for the Statistics UI.
- * No SQL logic here — all queries are in cdr.repository.ts.
- */
+const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:3000";
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
+
+async function fetchApi<T>(endpoint: string, params: Record<string, string>): Promise<T> {
+    const url = new URL(`${INTERNAL_API_URL}${endpoint}`);
+    Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+
+    const res = await fetch(url.toString(), {
+        headers: { "X-API-Key": INTERNAL_API_KEY },
+    });
+
+    if (!res.ok) {
+        const errorText = await res.text().catch(() => "Unknown error");
+        throw new Error(`API ${endpoint} returned ${res.status}: ${errorText}`);
+    }
+
+    return res.json() as Promise<T>;
+}
+
+interface ApiQueueResponse {
+    queueNumber: string;
+    queueName: string;
+    callsReceived: number;
+    callsAnswered: number;
+    callsAbandoned: number;
+    abandonedBefore10s: number;
+    abandonedAfter10s: number;
+    callsOverflow: number;
+    totalPassages: number;
+    pingPongCount: number;
+    pingPongPercentage: number;
+    avgWaitTimeSeconds: number;
+    avgTalkTimeSeconds: number;
+    directReceived: number;
+    directAnswered: number;
+    directLost: number;
+    overflowDestinations: Array<{ destination: string; destinationName: string; count: number }>;
+}
+
+interface ApiAgentResponse {
+    agents: Array<{
+        extension: string;
+        name: string;
+        callsReceived: number;
+        answered: number;
+        queueTalkTimeSeconds: number;
+        directReceived: number;
+        directAnswered: number;
+        directTalkTimeSeconds: number;
+    }>;
+    queueNumber: string;
+}
 
 export async function getQueueStatistics(
     queueNumber: string,
@@ -57,41 +99,47 @@ async function computeQueueKPIs(
     startDate: Date,
     endDate: Date
 ): Promise<QueueKPIs> {
-    const [row, overflowDests, teamDirect] = await Promise.all([
-        getQueueKpisRaw(queueNumber, startDate, endDate),
-        getOverflowDestinationsRaw(queueNumber, startDate, endDate),
-        getTeamDirectStatsRaw(queueNumber, startDate, endDate),
+    const [apiData, agentsData] = await Promise.all([
+        fetchApi<ApiQueueResponse>("/api/analytics/queue", {
+            queueNumber,
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
+        }),
+        fetchApi<ApiAgentResponse>("/api/analytics/agents", {
+            queueNumber,
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
+        }),
     ]);
 
-    const uniqueCallsCount = Number(row.unique_calls || 0);
-    const totalPassages = Number(row.total_passages || 0);
-    const pingPongCount = totalPassages - uniqueCallsCount;
-    const pingPongPercentage = totalPassages > 0
-        ? Math.round((pingPongCount / totalPassages) * 100)
-        : 0;
+    const teamDirectReceived = apiData.directReceived;
+    const teamDirectAnswered = apiData.directAnswered;
+    const teamQueueAnswered = agentsData.agents.reduce((sum, a) => sum + a.answered, 0);
+    const totalAnswered = teamQueueAnswered + teamDirectAnswered;
 
-    const overflowDestinations: OverflowDestination[] = overflowDests.map((d) => ({
+    const overflowDestinations: OverflowDestination[] = apiData.overflowDestinations.map((d) => ({
         destination: d.destination,
-        destinationName: d.destination_name || d.destination,
-        count: Number(d.count),
+        destinationName: d.destinationName,
+        count: d.count,
     }));
 
     return {
-        callsReceived: uniqueCallsCount,
-        callsAnswered: Number(row.unique_answered || 0),
-        callsAbandoned: Number(row.unique_abandoned || 0),
-        abandonedBefore10s: Number(row.unique_abandoned_before_10s || 0),
-        abandonedAfter10s: Number(row.unique_abandoned_after_10s || 0),
+        callsReceived: apiData.callsReceived,
+        callsAnswered: teamQueueAnswered,
+        callsAbandoned: apiData.callsAbandoned,
+        abandonedBefore10s: apiData.abandonedBefore10s,
+        abandonedAfter10s: apiData.abandonedAfter10s,
         callsToVoicemail: 0,
-        callsOverflow: Number(row.unique_overflow || 0),
-        totalPassages,
-        pingPongCount,
-        pingPongPercentage,
-        teamDirectReceived: Number(teamDirect?.direct_received || 0),
-        teamDirectAnswered: Number(teamDirect?.direct_answered || 0),
+        callsOverflow: apiData.callsOverflow,
+        totalPassages: apiData.totalPassages,
+        pingPongCount: apiData.pingPongCount,
+        pingPongPercentage: apiData.pingPongPercentage,
+        teamDirectReceived,
+        teamDirectAnswered,
+        directLost: apiData.directLost,
         overflowDestinations,
-        avgWaitTimeSeconds: Math.round(Number(row.avg_wait_time || 0)),
-        avgTalkTimeSeconds: Math.round(Number(row.avg_talk_time || 0)),
+        avgWaitTimeSeconds: apiData.avgWaitTimeSeconds,
+        avgTalkTimeSeconds: apiData.avgTalkTimeSeconds,
     };
 }
 
@@ -100,30 +148,29 @@ async function computeAgentStats(
     startDate: Date,
     endDate: Date
 ): Promise<AgentStats[]> {
-    const result = await getAgentStatsRaw(queueNumber, startDate, endDate);
+    const apiData = await fetchApi<ApiAgentResponse>("/api/analytics/agents", {
+        queueNumber,
+        start: startDate.toISOString(),
+        end: endDate.toISOString(),
+    });
 
-    return result.map((row) => {
-        const callsReceived = Number(row.calls_received || 0);
-        const answered = Number(row.resolved || 0);
-        const directReceived = Number(row.direct_received || 0);
-        const directAnswered = Number(row.direct_answered || 0);
-        const directTalkTime = Math.round(Number(row.direct_talk_time || 0));
-        const queueTalkTime = Math.round(Number(row.total_handling_time || 0));
-
-        const totalReceived = callsReceived + directReceived;
-        const totalAnswered = answered + directAnswered;
+    return apiData.agents.map((agent) => {
+        const totalReceived = agent.callsReceived + agent.directReceived;
+        const totalAnswered = agent.answered + agent.directAnswered;
 
         return {
-            extension: row.extension,
-            name: row.name || row.extension,
-            callsReceived,
-            answered,
-            directReceived,
-            directAnswered,
-            directTalkTimeSeconds: directTalkTime,
+            extension: agent.extension,
+            name: agent.name,
+            callsReceived: agent.callsReceived,
+            answered: agent.answered,
+            directReceived: agent.directReceived,
+            directAnswered: agent.directAnswered,
+            directTalkTimeSeconds: agent.directTalkTimeSeconds,
             answerRate: totalReceived > 0 ? Math.round((totalAnswered / totalReceived) * 100) : 0,
-            avgHandlingTimeSeconds: totalAnswered > 0 ? Math.round((queueTalkTime + directTalkTime) / totalAnswered) : 0,
-            totalHandlingTimeSeconds: queueTalkTime + directTalkTime,
+            avgHandlingTimeSeconds: totalAnswered > 0
+                ? Math.round((agent.queueTalkTimeSeconds + agent.directTalkTimeSeconds) / totalAnswered)
+                : 0,
+            totalHandlingTimeSeconds: agent.queueTalkTimeSeconds + agent.directTalkTimeSeconds,
         };
     });
 }
@@ -136,8 +183,8 @@ async function computeDailyTrend(
     const result = await getDailyTrendRaw(queueNumber, startDate, endDate);
     return result.map((row) => {
         const dateStr = row.call_date
-            ? new Date(row.call_date).toISOString().split('T')[0]
-            : '';
+            ? new Date(row.call_date).toISOString().split("T")[0]
+            : "";
         return {
             date: dateStr,
             received: Number(row.received || 0),

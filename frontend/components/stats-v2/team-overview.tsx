@@ -27,7 +27,7 @@ const COLORS = {
 export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate }: TeamOverviewProps) {
     const totalReceived = kpis.callsReceived + kpis.teamDirectReceived;
     const totalAnswered = kpis.callsAnswered + kpis.teamDirectAnswered;
-    const totalLost = kpis.callsAbandoned;
+    const totalLost = kpis.callsAbandoned + kpis.directLost;
     const totalOverflow = kpis.callsOverflow;
     const performanceRate = totalReceived > 0
         ? Math.round((totalAnswered / totalReceived) * 100)
@@ -235,7 +235,7 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate 
                                 </div>
                                 <div className="text-2xl font-bold text-red-700">{totalLost}</div>
                                 <div className="text-[10px] text-slate-500 mt-0.5">
-                                    &lt;10s: {kpis.abandonedBefore10s} · ≥10s: {kpis.abandonedAfter10s}
+                                    File: {kpis.callsAbandoned} · Directs: {kpis.directLost}
                                 </div>
                             </Link>
 
