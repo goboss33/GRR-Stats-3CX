@@ -17,8 +17,8 @@ COPY prisma ./prisma
 # ✅ CORRECTIF : On garde le package-lock.json pour garantir des dépendances identiques
 # RUN rm -rf package-lock.json
 
-# Installation avec logs détaillés pour debug
-RUN npm ci --loglevel=verbose || npm install --loglevel=verbose
+# Installation des dépendances
+RUN npm install
 
 # Rebuild the source code only when needed
 FROM base AS builder
