@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getGlobalMetrics } from "@/services/dashboard.service";
-import { determineCallStatus } from "@/services/domain/call-aggregation";
+import { determineCallStatus, SQL_SYSTEM_DEST_TYPES, SQL_SYSTEM_ENTITY_TYPES } from "@/services/domain/call-aggregation";
 
 export interface DiagnosticResult {
     period: { start: string; end: string };
@@ -168,8 +168,8 @@ export async function runDiagnostic(
                 WHEN ls.last_answered_at IS NOT NULL
                      AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
                     THEN CASE
-                        WHEN ls.last_dest_type IN ('queue', 'ring_group', 'ring_group_ring_all', 'ivr', 'process', 'parking', 'script')
-                             OR ls.last_dest_entity_type IN ('queue', 'ivr')
+                        WHEN ls.last_dest_type IN (${SQL_SYSTEM_DEST_TYPES})
+                             OR ls.last_dest_entity_type IN (${SQL_SYSTEM_ENTITY_TYPES})
                             THEN CASE WHEN ans.answered_at IS NOT NULL THEN 'answered' ELSE 'abandoned' END
                         ELSE 'answered'
                         END

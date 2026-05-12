@@ -24,6 +24,7 @@ import {
     getDisplayNumber,
     getDisplayName,
     INTERNAL_SYSTEM_DEST_TYPES,
+    buildDirectSegmentWhereClause,
 } from "@/services/domain/call-aggregation";
 
 // ============================================
@@ -598,18 +599,7 @@ function buildAggregateCTEs(
                           c.destination_entity_type = 'voicemail'
                           OR c.destination_dn_type = 'queue'
                           OR c.destination_dn_type IN ('provider', 'external_line')
-                          OR (
-                              c.destination_dn_type = 'extension'
-                              AND c.destination_entity_type != 'voicemail'
-                              AND c.creation_forward_reason IS DISTINCT FROM 'polling'
-                              AND (
-                                  c.creation_forward_reason = 'by_did'
-                                  OR NOT (
-                                      c.cdr_answered_at IS NULL
-                                      AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1
-                                  )
-                              )
-                          )
+                          OR (${buildDirectSegmentWhereClause('c')})
                       )
                 ) all_steps
                 WHERE all_steps.step_num <= 15
@@ -837,15 +827,7 @@ function buildCountQuery(
                           c.destination_entity_type = 'voicemail'
                           OR c.destination_dn_type = 'queue'
                           OR c.destination_dn_type IN ('provider', 'external_line')
-                          OR (
-                              c.destination_dn_type = 'extension'
-                              AND c.destination_entity_type != 'voicemail'
-                              AND c.creation_forward_reason IS DISTINCT FROM 'polling'
-                              AND (
-                                  c.creation_forward_reason = 'by_did'
-                                  OR NOT (c.cdr_answered_at IS NULL AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1)
-                              )
-                          )
+                          OR (${buildDirectSegmentWhereClause('c')})
                       )
                 ) all_steps WHERE all_steps.step_num <= 15
             ) j GROUP BY j.call_history_id
