@@ -14,15 +14,23 @@ COPY package.json package-lock.json* ./
 # Copie du dossier prisma AVANT l'installation (Crucial !)
 COPY prisma ./prisma
 
-# Suppression du lock pour linux
-RUN rm -rf package-lock.json
+# ✅ CORRECTIF : On garde le package-lock.json pour garantir des dépendances identiques
+# RUN rm -rf package-lock.json
 
-# Installation
-RUN npm install
+# Installation avec logs détaillés pour debug
+RUN npm ci --loglevel=verbose || npm install --loglevel=verbose
 
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
+
+# Build arguments for environment variables needed during build
+ARG DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
+ARG NEXTAUTH_URL="http://localhost:3000"
+ARG NEXTAUTH_SECRET="build-time-secret-placeholder"
+ARG INTERNAL_API_URL="http://localhost:3000"
+ARG INTERNAL_API_KEY="sk_build_placeholder"
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
