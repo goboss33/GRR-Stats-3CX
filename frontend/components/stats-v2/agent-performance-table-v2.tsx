@@ -110,6 +110,8 @@ export function AgentPerformanceTableV2({
     );
 
     // Compute totals
+    // Note: direct totals use team-level deduplicated counts from props, not per-agent sums
+    // This avoids double-counting calls transferred between agents
     const totals = agents.reduce(
         (acc, agent) => ({
             answered: acc.answered + agent.answered,
@@ -119,8 +121,8 @@ export function AgentPerformanceTableV2({
         }),
         { answered: 0, directAnswered: 0, directReceived: 0, totalHandlingTimeSeconds: 0 }
     );
-    const totalAvgHandling = (totals.answered + totals.directAnswered) > 0
-        ? Math.round(totals.totalHandlingTimeSeconds / (totals.answered + totals.directAnswered))
+    const totalAvgHandling = (totals.answered + totalDirectCallsAnswered) > 0
+        ? Math.round((totals.totalHandlingTimeSeconds) / (totals.answered + totalDirectCallsAnswered))
         : 0;
 
     // Workload bar component
@@ -273,12 +275,21 @@ export function AgentPerformanceTableV2({
                                         <span className="text-slate-400 text-sm">/{totalQueueCallsReceived}</span>
                                     </td>
                                     <td className="px-3 py-3">
-                                        <span className="text-blue-700">{totals.directAnswered}</span>
-                                        <span className="text-slate-400 text-sm">/{totals.directReceived}</span>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <span className="text-blue-700 cursor-help">
+                                                    {totalDirectCallsAnswered}
+                                                    <span className="text-slate-400 text-sm">/{totalDirectCallsReceived}</span>
+                                                </span>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="max-w-xs text-xs">
+                                                Totaux dédupliqués au niveau équipe (un appel transféré entre agents compte une seule fois)
+                                            </TooltipContent>
+                                        </Tooltip>
                                     </td>
                                     <td className="px-3 py-3">
-                                        <span className="text-slate-900">{totals.answered + totals.directAnswered}</span>
-                                        <span className="text-slate-400 text-sm">/{totalQueueCallsReceived + totals.directReceived}</span>
+                                        <span className="text-slate-900">{totals.answered + totalDirectCallsAnswered}</span>
+                                        <span className="text-slate-400 text-sm">/{totalQueueCallsReceived + totalDirectCallsReceived}</span>
                                     </td>
                                     <td className="px-3 py-3 text-slate-800">
                                         {formatDurationHMS(totals.totalHandlingTimeSeconds)}
