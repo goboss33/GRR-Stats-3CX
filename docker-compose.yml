@@ -19,19 +19,6 @@ services:
       timeout: 5s
       retries: 5
 
-  migration:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: callcenter-migration
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/callcenter
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command: ["./node_modules/.bin/prisma", "db", "push", "--accept-data-loss"]
-    restart: "no"
-
   frontend:
     build:
       context: ./frontend
@@ -49,8 +36,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      migration:
-        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
