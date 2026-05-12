@@ -41,9 +41,6 @@ COPY . .
 # Generate Prisma Client before build
 RUN npx prisma generate
 
-# Sync database schema (runs during build when Prisma CLI is fully available)
-RUN ./node_modules/.bin/prisma db push --accept-data-loss || echo "⚠️  Warning: DB migration skipped (DB may not be accessible during build)"
-
 # Build the application
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
@@ -63,6 +60,10 @@ RUN mkdir .next
 RUN chown nextjs:nodejs .next
 
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+
+# Copy Prisma CLI for migrations (needed by migration service)
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 
 # Automatically leverage output traces to reduce image size
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
