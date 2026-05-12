@@ -31,6 +31,8 @@ services:
       - NEXTAUTH_URL=${NEXTAUTH_URL}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - AUTH_TRUST_HOST=true
+      - INTERNAL_API_URL=${INTERNAL_API_URL}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
