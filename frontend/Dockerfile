@@ -41,6 +41,9 @@ COPY . .
 # Generate Prisma Client before build
 RUN npx prisma generate
 
+# Sync database schema (runs during build when Prisma CLI is fully available)
+RUN ./node_modules/.bin/prisma db push --accept-data-loss || echo "⚠️  Warning: DB migration skipped (DB may not be accessible during build)"
+
 # Build the application
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
@@ -65,14 +68,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Copy Prisma CLI for runtime migrations
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-
-# Copy and setup entrypoint script
-COPY --chown=nextjs:nodejs entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh
-
 USER nextjs
 
 EXPOSE 3000
@@ -80,5 +75,4 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Use entrypoint to run migrations before starting the app
-CMD ["./entrypoint.sh"]
+CMD ["node", "server.js"]
