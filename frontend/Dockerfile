@@ -31,6 +31,10 @@ ARG NEXTAUTH_SECRET
 ARG INTERNAL_API_URL="http://localhost:3000"
 ARG INTERNAL_API_KEY
 
+# Propagate build args to runtime environment variables
+ENV INTERNAL_API_URL=${INTERNAL_API_URL}
+ENV INTERNAL_API_KEY=${INTERNAL_API_KEY}
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
