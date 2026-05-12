@@ -28,6 +28,7 @@ import {
     Search,
     TrendingUp,
     AlertTriangle,
+    Settings,
 } from "lucide-react";
 
 // ============================================
@@ -618,6 +619,60 @@ interface Decision {
 
 const decisions: Decision[] = [
     {
+        id: "1.10",
+        category: "Statistiques Queue",
+        title: "Cercle fermé : Total = Répondus + Perdus + Redirigés",
+        date: "12 mai 2026",
+        summary: "Invariant mathématique fondamental : la somme des trois catégories d'outcomes doit toujours égaler le nombre total d'appels reçus (File + Directs). Aucun appel ne doit être compté deux fois ni disparaître.",
+        justification: "Les cadres de direction utilisent ces chiffres pour évaluer la performance de l'équipe (règle métier : >20% d'appels perdus = pas de télétravail). Une incohérence entre le total et la somme des parts détruirait la confiance dans l'outil. L'analyse de 4 scénarios CDR réels a permis de définir des règles de comptage précises pour chaque cas limite.",
+        impact: "Refonte complète de la logique SQL dans route.ts (CTE call_outcomes, direct_calls_stats), du type QueueKPIs (ajout de directLost), et du composant team-overview.tsx (totalLost = callsAbandoned + directLost). Les logs restent inchangés.",
+    },
+    {
+        id: "1.11",
+        category: "Statistiques Queue",
+        title: "Overflow 'yo-yo' : un appel qui revient n'est pas redirigé",
+        date: "12 mai 2026",
+        summary: "Un appel qui quitte la file (overflow vers une autre file) mais revient ensuite et est traité par un agent de la file d'origine est compté comme 'Répondu', pas comme 'Redirigé'.",
+        justification: "Analyse du scénario N°1 : un appel passe par 993 → 900 (Lucia répond) → transfert → retour en 993 → Aude (164) répond. La file 993 a fait son travail : un de ses agents a décroché. Le classer 'Redirigé' serait incorrect car l'appel a été traité par la file.",
+        impact: "Modification du CTE call_outcomes dans route.ts : ajout de la condition `AND NOT bool_or(was_answered)` avant de classer un appel comme overflow. Élimine ~10 appels de double-comptage sur un mois.",
+    },
+    {
+        id: "1.12",
+        category: "Statistiques Queue",
+        title: "Perdus = File abandonnée + Directs non répondus",
+        date: "12 mai 2026",
+        summary: "Le KPI 'Perdus' englobe désormais les appels abandonnés dans la file ET les appels directs non répondus par les agents de l'équipe. Le détail affiche 'File: X · Directs: Y' au lieu de '<10s: X · ≥10s: Y'.",
+        justification: "Le détail <10s/≥10s n'était pas pertinent pour le management. En revanche, distinguer les perdus par canal (file vs direct) permet d'identifier si le problème vient du routage (file) ou de la disponibilité des agents (directs).",
+        impact: "Ajout du CTE direct_calls_stats dans route.ts. Le composant team-overview.tsx calcule totalLost = kpis.callsAbandoned + kpis.directLost. Le sous-titre de la carte Perdus affiche 'File: 83 · Directs: 700' au lieu de '<10s: 60 · ≥10s: 23'.",
+    },
+    {
+        id: "1.13",
+        category: "Statistiques Queue",
+        title: "Déduplication des directs au niveau équipe",
+        date: "12 mai 2026",
+        summary: "Le nombre d'appels directs reçus est compté au niveau équipe (COUNT DISTINCT call_history_id) et non par somme des agents. Un appel transféré entre deux agents de la même équipe compte comme 1 seul appel direct.",
+        justification: "L'ancienne logique sommant les directReceived par agent gonflait le total de ~71 appels (77 appels multi-agents identifiés). Un appel transféré de Lucia → Maxime était compté 1x pour Lucia + 1x pour Maxime = 2, alors qu'il s'agit d'un seul appel.",
+        impact: "Le CTE direct_calls_stats utilise COUNT(DISTINCT c.call_history_id). Le tableau des agents affiche les totaux dédupliqués de l'équipe (1347 au lieu de 1418), avec un tooltip explicatif. Les chiffres individuels par agent restent inchangés.",
+    },
+    {
+        id: "1.14",
+        category: "Statistiques Queue",
+        title: "Redirigé = sorti SANS retour traité",
+        date: "12 mai 2026",
+        summary: "Un appel n'est classé 'Redirigé' que s'il a quitté la file et n'est JAMAIS revenu y être traité. Si l'appel revient (par file ou par direct) et est décroché par un agent de la file, le statut 'Redirigé' est annulé au profit de 'Répondu'.",
+        justification: "Analyse du scénario N°3 : un appel arrive sur le DID de Maxime (forward_all activé) → ring group → script → file 993 → timeout → overflow vers 900 → Lucia répond → transfère à Maxime → Maxime répond. Maxime faisant partie de 993, l'appel est 'Répondu' pour 993, pas 'Redirigé'.",
+        impact: "La logique SQL vérifie bool_or(was_answered) au niveau du call_history_id global, pas au niveau du passage. Un appel yo-yo (993 → 900 → retour 993 → répondu) est correctement classé 'answered'.",
+    },
+    {
+        id: "1.15",
+        category: "Statistiques Queue",
+        title: "Direct = premier destinataire extension OU transfert vers extension",
+        date: "12 mai 2026",
+        summary: "Un appel est compté comme 'Direct' si son premier destinataire est une extension (DID direct) OU s'il est transféré vers une extension (peu importe le parcours précédent). Les forward_all, transferts, et appels en occupation comptent tous comme 'Direct'.",
+        justification: "Même si Maxime a forward_all activé (statut absent), l'appel lui était destiné. Le comptabiliser comme direct reflète la charge potentielle de l'agent. Exclure les forward_all diminuerait artificiellement le nombre de directs reçus.",
+        impact: "Le CTE direct_calls_stats inclut tous les segments vers une extension avec creation_forward_reason IS DISTINCT FROM 'polling'. Le filtre de bruit système (<1s non répondus) reste actif pour exclure les artefacts de routage.",
+    },
+    {
         id: "1.8",
         category: "Statistiques Queue",
         title: "Appels uniques comme métrique principale",
@@ -749,6 +804,11 @@ interface FAQItem {
 }
 
 const faqItems: FAQItem[] = [
+    {
+        question: "Pourquoi le total des appels reçus égale-t-il toujours la somme de Répondus + Perdus + Redirigés ?",
+        answer: "C'est un invariant mathématique fondamental de l'application, appelé 'cercle fermé'. Chaque appel est compté exactement une fois, quelque part. Cette propriété a été obtenue en analysant 4 scénarios CDR réels couvrant les cas limites : appels yo-yo (aller-retour entre files), transferts entre agents, forward_all, et abandons après retour. La règle est simple : si un agent de la file décroche (peu importe le parcours), c'est 'Répondu'. Si l'appelant raccroche, c'est 'Perdu'. Sinon, si l'appel quitte la file sans y revenir, c'est 'Redirigé'.",
+        tag: "Métriques",
+    },
     {
         question: "Pourquoi avons-nous développé une application sur mesure plutôt que d'utiliser Power BI ou Tableau ?",
         answer: "Les outils de BI généralistes ne comprennent pas la logique métier spécifique du CDR 3CX : le phénomène de ping-pong (passages multiples), la distinction entre overflow automatique et transfert manuel, ou le crédit 'résolveur final'. Une requête SQL standard dans Power BI compterait chaque passage comme un appel distinct, faussant totalement les statistiques. Notre application encode ces règles métier directement dans le code, garantissant des chiffres fiables et actionnables.",
@@ -1131,6 +1191,343 @@ export default function DocumentationPage() {
                                 </Card>
                             ))}
                     </div>
+                </section>
+
+                <hr className="border-slate-200" />
+
+                {/* CERCLE FERMÉ : SCÉNARIOS D'APPELS */}
+                <section>
+                    <SectionTitle
+                        icon={TrendingUp}
+                        title="Cercle fermé : scénarios d'appels analysés"
+                        subtitle="Comment chaque type d'appel est comptabilisé pour garantir Total = Répondus + Perdus + Redirigés"
+                    />
+
+                    <Card className="mb-6">
+                        <CardContent className="p-6">
+                            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">
+                                <h4 className="font-semibold text-emerald-900 mb-2 flex items-center gap-2">
+                                    <TrendingUp className="h-4 w-4" />
+                                    Invariant fondamental
+                                </h4>
+                                <p className="text-sm text-emerald-800">
+                                    <code className="font-mono font-bold">Total reçus = Répondus + Perdus + Redirigés</code>
+                                </p>
+                                <p className="text-xs text-emerald-700 mt-1">
+                                    Chaque appel doit être compté exactement une fois, quelque part. Aucun appel ne doit être double-compté ni disparaître.
+                                </p>
+                            </div>
+
+                            <p className="text-sm text-slate-600 mb-4">
+                                Quatre scénarios CDR réels ont été analysés pour définir les règles de comptage. Chaque scénario illustre un cas limite
+                                et la manière dont il est classé dans les KPIs.
+                            </p>
+                        </CardContent>
+                    </Card>
+
+                    {/* Scénario 1 */}
+                    <Card className="mb-4">
+                        <CardContent className="p-5">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Badge className="bg-blue-600 text-white text-xs">Scénario 1</Badge>
+                                <h3 className="font-semibold text-slate-900">Appel yo-yo : 993 → 900 → retour 993 → répondu</h3>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Parcours</p>
+                                    <div className="space-y-1 text-sm">
+                                        <p className="text-slate-600">1. Externe → IVR → <strong>Queue 900</strong> → Lucia répond ✅</p>
+                                        <p className="text-slate-600">2. Lucia transfère → Filip (174) → pas répondu</p>
+                                        <p className="text-slate-600">3. Ring group → Script → <strong>Queue 993</strong> → timeout</p>
+                                        <p className="text-slate-600">4. Overflow → Script → <strong>Queue 900</strong> → Lucia répond ✅</p>
+                                        <p className="text-slate-600">5. Lucia transfère → Filip → pas répondu</p>
+                                        <p className="text-slate-600">6. Ring group → Script → <strong>Queue 993</strong> → <strong>Aude (164) répond ✅</strong></p>
+                                    </div>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Comptabilisation pour 993</p>
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-emerald-600 font-bold">Répondu : 1</span>
+                                            <span className="text-slate-400">Aude (agent 993) a décroché au 2ème passage</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Perdu : 0</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Redirigé : 0</span>
+                                            <span className="text-slate-400">— l'appel est revenu et a été traité</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 bg-slate-50 rounded p-3 border border-slate-200">
+                                        <p className="text-xs text-slate-600">
+                                            <strong>Règle :</strong> Un appel est "Répondu" pour une file si au moins un agent de cette file a décroché, peu importe le nombre de passages ou les allers-retours.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Scénario 2 */}
+                    <Card className="mb-4">
+                        <CardContent className="p-5">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Badge className="bg-blue-600 text-white text-xs">Scénario 2</Badge>
+                                <h3 className="font-semibold text-slate-900">Appel multi-files : 900 → 993 → 900 → 905 → répondu ailleurs</h3>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Parcours</p>
+                                    <div className="space-y-1 text-sm">
+                                        <p className="text-slate-600">1. Externe → IVR → <strong>Queue 900</strong> → Lucia répond ✅</p>
+                                        <p className="text-slate-600">2. Lucia transfère → Damien (167) → pas répondu</p>
+                                        <p className="text-slate-600">3. Ring group → Script → <strong>Queue 993</strong> → timeout (162, 177, 174)</p>
+                                        <p className="text-slate-600">4. Overflow → Script → <strong>Queue 900</strong> → Lucia répond ✅</p>
+                                        <p className="text-slate-600">5. ... (boucles 900 ↔ 905) ...</p>
+                                        <p className="text-slate-600">6. <strong>Queue 905</strong> → Dylan (188) répond ✅</p>
+                                    </div>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Comptabilisation pour 993</p>
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Répondu : 0</span>
+                                            <span className="text-slate-400">— aucun agent 993 n'a décroché</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Perdu : 0</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-amber-600 font-bold">Redirigé : 1</span>
+                                            <span className="text-slate-400">— sorti de 993 sans y être traité</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 bg-slate-50 rounded p-3 border border-slate-200">
+                                        <p className="text-xs text-slate-600">
+                                            <strong>Règle :</strong> Un appel est "Redirigé" s'il a quitté la file SANS y être traité ET sans y revenir. Ici, 993 n'a traité personne → Redirigé.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Scénario 3 */}
+                    <Card className="mb-4">
+                        <CardContent className="p-5">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Badge className="bg-blue-600 text-white text-xs">Scénario 3</Badge>
+                                <h3 className="font-semibold text-slate-900">Direct forward_all : DID Maxime → file 993 → overflow → retour Maxime</h3>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Parcours</p>
+                                    <div className="space-y-1 text-sm">
+                                        <p className="text-slate-600">1. Externe → <strong>DID Maxime (162)</strong> → forward_all activé</p>
+                                        <p className="text-slate-600">2. Ring group → Script → <strong>Queue 993</strong> → timeout (164, 163, 174, 177)</p>
+                                        <p className="text-slate-600">3. Overflow → Script → <strong>Queue 900</strong> → Lucia répond ✅</p>
+                                        <p className="text-slate-600">4. Lucia transfère → <strong>Maxime (162)</strong> → <strong>Maxime répond ✅</strong></p>
+                                    </div>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Comptabilisation pour 993</p>
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-emerald-600 font-bold">Répondu : 1</span>
+                                            <span className="text-slate-400">Maxime (agent 993) a répondu via transfert</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Perdu : 0</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Redirigé : 0</span>
+                                            <span className="text-slate-400">— l'appel est revenu via direct</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 bg-slate-50 rounded p-3 border border-slate-200">
+                                        <p className="text-xs text-slate-600">
+                                            <strong>Règle :</strong> Un transfert vers un agent de la file annule le statut "Redirigé". Maxime faisant partie de 993, l'appel est "Répondu" pour 993.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Scénario 4 */}
+                    <Card className="mb-4">
+                        <CardContent className="p-5">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Badge className="bg-blue-600 text-white text-xs">Scénario 4</Badge>
+                                <h3 className="font-semibold text-slate-900">Perdu après retour : 993 → 900 → retour 993 → appelant raccroche</h3>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Parcours</p>
+                                    <div className="space-y-1 text-sm">
+                                        <p className="text-slate-600">1. Externe → Script → <strong>Queue 993</strong> → timeout (174, 164)</p>
+                                        <p className="text-slate-600">2. Overflow → Script → <strong>Queue 900</strong> → Céline (106) répond ✅</p>
+                                        <p className="text-slate-600">3. Céline transfère → Filip (174) → pas répondu</p>
+                                        <p className="text-slate-600">4. Ring group → Script → <strong>Queue 993</strong> → Filip (174), Aude (164) sonnent</p>
+                                        <p className="text-slate-600">5. <strong>Appelant raccroche</strong> (terminated_by_originator) pendant l'attente</p>
+                                    </div>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Comptabilisation pour 993</p>
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Répondu : 0</span>
+                                            <span className="text-slate-400">— aucun agent 993 n'a décroché</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-red-600 font-bold">Perdu : 1</span>
+                                            <span className="text-slate-400">— appelant a raccroché dans 993</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Redirigé : 0</span>
+                                            <span className="text-slate-400">— "Perdu" annule "Redirigé"</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 bg-slate-50 rounded p-3 border border-slate-200">
+                                        <p className="text-xs text-slate-600">
+                                            <strong>Règle :</strong> Si l'appelant raccroche dans la file, c'est "Perdu", même si l'appel était précédemment allé ailleurs. Le résultat final prime.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Résumé des règles */}
+                    <Card>
+                        <CardContent className="p-6">
+                            <h4 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                                <FileText className="h-4 w-4 text-blue-600" />
+                                Résumé des règles de comptage
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                                    <h5 className="font-semibold text-emerald-900 mb-2">Répondu ✅</h5>
+                                    <p className="text-sm text-emerald-800">
+                                        Un agent de la file a décroché, peu importe le parcours (file ou direct, 1er ou 2ème passage).
+                                    </p>
+                                </div>
+                                <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                                    <h5 className="font-semibold text-red-900 mb-2">Perdu ❌</h5>
+                                    <p className="text-sm text-red-800">
+                                        File abandonnée (appelant raccroche) OU direct non répondu (y compris forward_all, occupation).
+                                    </p>
+                                </div>
+                                <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                                    <h5 className="font-semibold text-amber-900 mb-2">Redirigé ↗️</h5>
+                                    <p className="text-sm text-amber-800">
+                                        Appel sorti de la file SANS y être traité ET sans y revenir. Si l'appel revient et est traité → annulé.
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </section>
+
+                <hr className="border-slate-200" />
+
+                {/* RÈGLES MÉTIER CONFIGURABLES */}
+                <section>
+                    <SectionTitle
+                        icon={Settings}
+                        title="Règles métier configurables"
+                        subtitle="Paramètres ajustables sans redéploiement via l'onglet 'Règles métier' dans /admin/settings"
+                    />
+                    <Card>
+                        <CardContent className="p-6 space-y-6">
+                            <p className="text-sm text-slate-600">
+                                Certaines règles métier ont été rendues configurables pour permettre aux administrateurs d'ajuster le comportement de l'application
+                                sans intervention technique. Ces paramètres sont stockés en base de données (table <code>AppSettings</code>) et appliqués
+                                dynamiquement dans les requêtes SQL et la logique TypeScript.
+                            </p>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div className="bg-slate-50 rounded-lg p-5 border border-slate-200">
+                                    <h4 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                                        <TrendingUp className="h-4 w-4 text-blue-600" />
+                                        Durée minimale significative (seuil de bruit)
+                                    </h4>
+                                    <p className="text-sm text-slate-600 mb-3">
+                                        Définit la durée minimale (en secondes) qu'un segment d'appel doit atteindre pour être considéré comme significatif
+                                        et inclus dans les statistiques de performance.
+                                    </p>
+                                    <div className="bg-blue-50 rounded p-3 border border-blue-100 mb-3">
+                                        <p className="text-xs font-semibold text-blue-900 mb-1">Valeur par défaut</p>
+                                        <p className="text-xs text-blue-800">1 seconde</p>
+                                    </div>
+                                    <div className="bg-amber-50 rounded p-3 border border-amber-100">
+                                        <p className="text-xs font-semibold text-amber-900 mb-1">Pourquoi ce seuil ?</p>
+                                        <p className="text-xs text-amber-800 leading-relaxed">
+                                            Les segments de moins d'une seconde correspondent généralement à du bruit système : renvoi d'appel automatique,
+                                            établissement de connexion, ou transfert technique. Les inclure fausserait les métriques de performance
+                                            (ex: 25 segments &lt;1s non répondus comptabilisés comme appels manqués).
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-slate-50 rounded-lg p-5 border border-slate-200">
+                                    <h4 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                                        <AlertTriangle className="h-4 w-4 text-emerald-600" />
+                                        Types de destination système (lecture seule)
+                                    </h4>
+                                    <p className="text-sm text-slate-600 mb-3">
+                                        Liste des destinations techniques automatiques exclues du comptage des transferts manuels et des appels directs.
+                                        Ces types sont centralisés dans <code>call-aggregation.ts</code> pour garantir la cohérence entre stats et logs.
+                                    </p>
+                                    <div className="bg-emerald-50 rounded p-3 border border-emerald-100">
+                                        <p className="text-xs font-semibold text-emerald-900 mb-1">Types exclus</p>
+                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                            <Badge variant="secondary" className="text-xs">queue</Badge>
+                                            <Badge variant="secondary" className="text-xs">ring_group</Badge>
+                                            <Badge variant="secondary" className="text-xs">ivr</Badge>
+                                            <Badge variant="secondary" className="text-xs">parking</Badge>
+                                            <Badge variant="secondary" className="text-xs">voicemail</Badge>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-50 rounded-lg p-5 border border-slate-200">
+                                <h4 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                                    <FileText className="h-4 w-4 text-purple-600" />
+                                    Architecture d'implémentation
+                                </h4>
+                                <div className="space-y-3 text-sm text-slate-600">
+                                    <p>
+                                        <strong>Modèle Prisma :</strong> <code>AppSettings</code> dans <code>prisma/schema.prisma</code> avec champ <code>minSignificantDurationSec</code>.
+                                    </p>
+                                    <p>
+                                        <strong>API :</strong> <code>/api/admin/settings</code> (GET/PUT) pour lecture et modification des paramètres.
+                                    </p>
+                                    <p>
+                                        <strong>Logique partagée :</strong> <code>buildDirectSegmentWhereClause()</code> dans <code>call-aggregation.ts</code> génère les clauses SQL WHERE pour les appels directs valides, utilisée par <code>cdr.repository.ts</code>, <code>logs.service.ts</code>, et <code>diagnostic.service.ts</code>.
+                                    </p>
+                                    <p>
+                                        <strong>Interface :</strong> Onglet "Règles métier" dans <code>/admin/settings</code> avec formulaire de seuil et affichage des types système en badges.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                <h4 className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    Points de vigilance
+                                </h4>
+                                <ul className="space-y-1.5 text-sm text-amber-800 list-disc list-inside">
+                                    <li>Le seuil d'abandon rapide (10s) reste codé en dur : c'est un standard call center qui ne doit pas être modifié sans analyse approfondie</li>
+                                    <li>Toute modification du seuil de durée significative impacte rétroactivement toutes les requêtes statistiques et logs</li>
+                                    <li>Les types de destination système sont en lecture seule dans l'UI pour éviter les modifications accidentelles</li>
+                                    <li>Après modification d'un paramètre, il est recommandé de relancer un diagnostic pour vérifier la cohérence des données</li>
+                                </ul>
+                            </div>
+                        </CardContent>
+                    </Card>
                 </section>
 
                 <hr className="border-slate-200" />
