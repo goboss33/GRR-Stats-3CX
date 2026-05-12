@@ -27,9 +27,9 @@ WORKDIR /app
 # Build arguments for environment variables needed during build
 ARG DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
 ARG NEXTAUTH_URL="http://localhost:3000"
-ARG NEXTAUTH_SECRET="build-time-secret-placeholder"
+ARG NEXTAUTH_SECRET
 ARG INTERNAL_API_URL="http://localhost:3000"
-ARG INTERNAL_API_KEY="sk_build_placeholder"
+ARG INTERNAL_API_KEY
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -38,15 +38,15 @@ COPY . .
 RUN npx prisma generate
 
 # Build the application
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
 WORKDIR /app
 
-ENV NODE_ENV production
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
@@ -65,7 +65,7 @@ USER nextjs
 
 EXPOSE 3000
 
-ENV PORT 3000
-ENV HOSTNAME "0.0.0.0"
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
