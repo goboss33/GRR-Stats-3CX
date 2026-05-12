@@ -431,3 +431,85 @@ export const SQL_OVERFLOW_CASE = (queueNumberParam: string = '$1') => `
              AND other_q.cdr_started_at > uqc.cdr_started_at
         THEN 1 ELSE 0 
     END`;
+
+// ============================================
+// BUSINESS RULES — Configurable thresholds
+// ============================================
+
+/**
+ * Default business rules configuration.
+ * These values should match the defaults in the AppSettings database model.
+ */
+export const DEFAULT_BUSINESS_RULES = {
+    /**
+     * Minimum duration (in seconds) for a direct call segment to be considered "significant".
+     * 
+     * Direct call segments shorter than this threshold that were NOT answered are
+     * considered "system noise" and excluded from statistics.
+     * 
+     * Rationale: A 9ms segment to extension 164 where the agent had call forwarding
+     * active is not a real call attempt — it's a routing artifact.
+     * 
+     * Used in:
+     * - services/analytics/query-builder.ts (CTE builders)
+     * - app/api/analytics/agents/route.ts (direct calls CTE)
+     * - app/api/analytics/queue/route.ts (direct calls CTE)
+     * - services/logs.service.ts (call_journey CTE)
+     */
+    minSignificantDurationSec: 1,
+};
+
+/**
+ * Builds the SQL WHERE clause for identifying valid direct call segments.
+ * 
+ * A "valid direct segment" is a CDR segment that represents a genuine call attempt
+ * to an agent's extension, excluding:
+ * - Queue polling segments (creation_forward_reason = 'polling')
+ * - Segments originating from a queue passage (if excludeQueueOriginated is true)
+ * - Very short unanswered segments (< minSignificantDurationSec) that are system noise
+ * 
+ * @param alias - Table alias to use (default: 'c')
+ * @param options.excludeQueueOriginated - Exclude segments that originated from a queue passage
+ * @param options.queuePassagesCTEName - Name of the CTE containing queue passages
+ * @param options.durationThreshold - Minimum duration in seconds (default: from DEFAULT_BUSINESS_RULES)
+ * 
+ * @returns SQL WHERE clause string
+ * 
+ * @example
+ * // Basic usage
+ * buildDirectSegmentWhereClause('c')
+ * // Returns: "c.destination_dn_type = 'extension' AND ..."
+ * 
+ * @example
+ * // With queue exclusion
+ * buildDirectSegmentWhereClause('c', { excludeQueueOriginated: true, queuePassagesCTEName: 'all_queue_passages' })
+ */
+export function buildDirectSegmentWhereClause(
+    alias: string = 'c',
+    options: {
+        excludeQueueOriginated?: boolean;
+        queuePassagesCTEName?: string;
+        durationThreshold?: number;
+    } = {}
+): string {
+    const {
+        excludeQueueOriginated = false,
+        queuePassagesCTEName = 'all_queue_passages',
+        durationThreshold = DEFAULT_BUSINESS_RULES.minSignificantDurationSec,
+    } = options;
+
+    const p = alias ? `${alias}.` : '';
+
+    const conditions = [
+        `${p}destination_dn_type = 'extension'`,
+        `COALESCE(${p}destination_entity_type, '') != 'voicemail'`,
+        `${p}creation_forward_reason IS DISTINCT FROM 'polling'`,
+        `(${p}creation_forward_reason = 'by_did' OR NOT (${p}cdr_answered_at IS NULL AND EXTRACT(EPOCH FROM (${p}cdr_ended_at - ${p}cdr_started_at)) < ${durationThreshold}))`,
+    ];
+
+    if (excludeQueueOriginated) {
+        conditions.push(`NOT EXISTS (SELECT 1 FROM ${queuePassagesCTEName} aqp WHERE aqp.cdr_id = ${p}originating_cdr_id)`);
+    }
+
+    return conditions.join(' AND ');
+}
