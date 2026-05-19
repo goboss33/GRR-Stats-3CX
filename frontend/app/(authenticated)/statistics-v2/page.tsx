@@ -40,11 +40,19 @@ export default function StatisticsV2Page() {
 
     // Load statistics when queue or date changes
     useEffect(() => {
+        console.log("[StatisticsV2] useEffect triggered:", { selectedQueueNumber, startDate: dateRange.startDate, endDate: dateRange.endDate });
         if (!selectedQueueNumber) return;
 
         setIsLoading(true);
+        console.log("[StatisticsV2] Calling getQueueStatistics with:", { queueNumber: selectedQueueNumber, startDate: dateRange.startDate, endDate: dateRange.endDate });
         getQueueStatistics(selectedQueueNumber, dateRange.startDate, dateRange.endDate)
-            .then(setStatistics)
+            .then((data) => {
+                console.log("[StatisticsV2] getQueueStatistics success:", data);
+                setStatistics(data);
+            })
+            .catch((error) => {
+                console.error("[StatisticsV2] getQueueStatistics error:", error);
+            })
             .finally(() => setIsLoading(false));
     }, [selectedQueueNumber, dateRange]);
 
@@ -57,6 +65,7 @@ export default function StatisticsV2Page() {
     };
 
     const handleQueueSelect = (queueNumber: string, queueName: string) => {
+        console.log("[QueueSelector] handleQueueSelect called:", { queueNumber, queueName });
         setSelectedQueueNumber(queueNumber);
         setSelectedQueueName(queueName);
     };

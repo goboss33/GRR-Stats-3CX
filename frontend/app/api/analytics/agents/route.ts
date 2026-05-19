@@ -16,12 +16,14 @@ export async function GET(request: NextRequest) {
     try {
         const url = new URL(request.url);
         const queueNumber = url.searchParams.get("queueNumber");
+        console.log("[agents/route] Received queueNumber:", queueNumber);
         if (!queueNumber) {
             return NextResponse.json({ error: "queueNumber parameter is required" }, { status: 400 });
         }
 
         const start = parseDateParam(url.searchParams.get("start"), new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
         const end = parseDateParam(url.searchParams.get("end"), new Date());
+        console.log("[agents/route] Date range:", { start, end });
         const qn = queueNumber.replace(/'/g, "''");
 
         const query = `
@@ -106,7 +108,9 @@ export async function GET(request: NextRequest) {
             ORDER BY qa.extension
         `;
 
+        console.log("[agents/route] Executing query with queueNumber:", qn);
         const rawResults = await prisma.$queryRawUnsafe(query);
+        console.log("[agents/route] Query returned", (rawResults as any[]).length, "agents");
 
         const agents = (rawResults as any[]).map((row) => ({
             extension: row.extension,
@@ -119,9 +123,10 @@ export async function GET(request: NextRequest) {
             directTalkTimeSeconds: Math.round(Number(row.direct_talk_time)),
         }));
 
+        console.log("[agents/route] Returning agents:", agents.map(a => a.extension));
         return NextResponse.json({ agents, queueNumber });
     } catch (error) {
-        console.error("Error in /api/analytics/agents:", error);
+        console.error("[agents/route] Error:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }
 }

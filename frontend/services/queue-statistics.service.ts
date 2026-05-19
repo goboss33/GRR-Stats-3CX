@@ -21,16 +21,21 @@ async function fetchApi<T>(endpoint: string, params: Record<string, string>): Pr
     const url = new URL(`${INTERNAL_API_URL}${endpoint}`);
     Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
 
+    console.log("[fetchApi] Calling:", url.toString());
+
     const res = await fetch(url.toString(), {
         headers: { "X-API-Key": INTERNAL_API_KEY },
     });
 
     if (!res.ok) {
         const errorText = await res.text().catch(() => "Unknown error");
+        console.error("[fetchApi] Error:", { status: res.status, error: errorText, url: url.toString() });
         throw new Error(`API ${endpoint} returned ${res.status}: ${errorText}`);
     }
 
-    return res.json() as Promise<T>;
+    const data = await res.json() as T;
+    console.log("[fetchApi] Success:", { endpoint, data });
+    return data;
 }
 
 interface ApiQueueResponse {
