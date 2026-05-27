@@ -5,7 +5,7 @@ import SettingsClient from "./settings-client";
 export default async function AdminSettingsPage() {
     const session = await auth();
 
-    if (!session?.user || session.user.role !== "ADMIN") {
+    if (!session?.user || (session.user.role !== "ADMIN" && session.user.role !== "MODERATOR")) {
         redirect("/dashboard");
     }
 

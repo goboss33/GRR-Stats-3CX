@@ -157,6 +157,7 @@ model temptable_pbx_cdroutput {
 enum Role {
   ADMIN
   SUPERUSER
+  MODERATOR
   USER
 }
 

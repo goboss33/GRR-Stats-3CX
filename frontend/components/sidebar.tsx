@@ -42,19 +42,19 @@ const navItems: NavItem[] = [
         label: "Dashboard",
         href: "/dashboard",
         icon: LayoutDashboard,
-        roles: ["ADMIN", "SUPERUSER", "USER"],
+        roles: ["ADMIN", "SUPERUSER", "USER", "MODERATOR"],
     },
     {
         label: "Logs d'appels",
         href: "/admin/logs",
         icon: FileText,
-        roles: ["ADMIN"],
+        roles: ["ADMIN", "MODERATOR"],
     },
     {
         label: "Statistiques",
         href: "/statistics-v2",
         icon: BarChart3,
-        roles: ["ADMIN", "SUPERUSER", "USER"],
+        roles: ["ADMIN", "SUPERUSER", "USER", "MODERATOR"],
     },
 ];
 

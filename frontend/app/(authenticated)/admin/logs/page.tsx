@@ -5,7 +5,7 @@ import LogsClient from "./logs-client";
 export default async function AdminLogsPage() {
     const session = await auth();
 
-    if (!session?.user || session.user.role !== "ADMIN") {
+    if (!session?.user || (session.user.role !== "ADMIN" && session.user.role !== "MODERATOR")) {
         redirect("/dashboard");
     }
 

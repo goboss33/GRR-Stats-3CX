@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Users, Phone, AlertCircle, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight, UserX, Save, KeyRound, Pencil, Trash2, Settings, Copy } from "lucide-react";
+import { Users, Phone, AlertCircle, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight, UserX, Save, KeyRound, Pencil, Trash2, Settings, Copy, UserPlus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -191,7 +191,7 @@ function PersonalInfoTab() {
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="role">Rôle</Label>
-                        <Input id="role" value={profile?.role === "ADMIN" ? "Administrateur" : profile?.role === "SUPERUSER" ? "Manager" : "Utilisateur"} disabled className="bg-slate-100" />
+                        <Input id="role" value={profile?.role === "ADMIN" ? "Administrateur" : profile?.role === "SUPERUSER" ? "Manager" : profile?.role === "MODERATOR" ? "Modérateur" : "Utilisateur"} disabled className="bg-slate-100" />
                     </div>
                     <Button onClick={handleSave} disabled={saving}>
                         {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sauvegarde...</> : <><Save className="mr-2 h-4 w-4" /> Enregistrer</>}
@@ -222,11 +222,15 @@ function UsersTab() {
     const [users, setUsers] = useState<AppUser[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [currentUserRole, setCurrentUserRole] = useState<string>("USER");
     const [editUser, setEditUser] = useState<AppUser | null>(null);
     const [editForm, setEditForm] = useState({ firstName: "", lastName: "", email: "", role: "" });
     const [editLoading, setEditLoading] = useState(false);
     const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const [createDialogOpen, setCreateDialogOpen] = useState(false);
+    const [createForm, setCreateForm] = useState({ firstName: "", lastName: "", email: "", password: "", role: "USER" });
+    const [createLoading, setCreateLoading] = useState(false);
 
     const loadUsers = () => {
         fetch("/api/admin/users")
@@ -243,7 +247,10 @@ function UsersTab() {
         fetch("/api/profile")
             .then((res) => res.json())
             .then((data) => {
-                if (data.user) setCurrentUserId(data.user.id);
+                if (data.user) {
+                    setCurrentUserId(data.user.id);
+                    setCurrentUserRole(data.user.role || "USER");
+                }
             });
     }, []);
 
@@ -295,6 +302,30 @@ function UsersTab() {
         }
     };
 
+    const handleCreate = async () => {
+        setCreateLoading(true);
+        try {
+            const res = await fetch("/api/admin/users", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(createForm),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setMessage({ type: "error", text: data.error || "Erreur lors de la création" });
+            } else {
+                setMessage({ type: "success", text: "Utilisateur créé avec succès" });
+                setCreateDialogOpen(false);
+                setCreateForm({ firstName: "", lastName: "", email: "", password: "", role: "USER" });
+                loadUsers();
+            }
+        } catch {
+            setMessage({ type: "error", text: "Erreur lors de la création" });
+        } finally {
+            setCreateLoading(false);
+        }
+    };
+
     const getDisplayName = (user: AppUser) => {
         const parts = [user.firstName, user.lastName].filter(Boolean);
         return parts.length > 0 ? parts.join(" ") : "—";
@@ -327,6 +358,10 @@ function UsersTab() {
                     <h2 className="text-xl font-semibold text-slate-900">Gestion des utilisateurs</h2>
                     <p className="text-sm text-slate-500">{users.length} utilisateur(s) enregistré(s)</p>
                 </div>
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Ajouter un utilisateur
+                </Button>
             </div>
 
             <Card>
@@ -345,6 +380,10 @@ function UsersTab() {
                             <tbody className="divide-y">
                                 {users.map((user) => {
                                     const isSelf = user.id === currentUserId;
+                                    const isTargetAdmin = user.role === "ADMIN";
+                                    const isModerator = currentUserRole === "MODERATOR";
+                                    const canEdit = !isModerator || !isTargetAdmin;
+                                    const canDelete = !isSelf && (!isModerator || !isTargetAdmin);
                                     return (
                                         <tr key={user.id} className="hover:bg-slate-50">
                                             <td className="py-3 px-4 font-medium">{getDisplayName(user)}</td>
@@ -355,25 +394,28 @@ function UsersTab() {
                                                     className={cn(
                                                         user.role === "ADMIN" && "bg-red-50 text-red-700 border-red-200",
                                                         user.role === "SUPERUSER" && "bg-amber-50 text-amber-700 border-amber-200",
+                                                        user.role === "MODERATOR" && "bg-blue-50 text-blue-700 border-blue-200",
                                                         user.role === "USER" && "bg-green-50 text-green-700 border-green-200"
                                                     )}
                                                 >
-                                                    {user.role === "ADMIN" ? "Administrateur" : user.role === "SUPERUSER" ? "Manager" : "Utilisateur"}
+                                                    {user.role === "ADMIN" ? "Administrateur" : user.role === "SUPERUSER" ? "Manager" : user.role === "MODERATOR" ? "Modérateur" : "Utilisateur"}
                                                 </Badge>
                                             </td>
                                             <td className="py-3 px-4 text-slate-500">{new Date(user.createdAt).toLocaleDateString("fr-FR")}</td>
                                             <td className="py-3 px-4">
                                                 <div className="flex items-center justify-end gap-2">
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(user)}>
-                                                        <Pencil className="h-4 w-4" />
-                                                    </Button>
-                                                    {!isSelf && (
+                                                    {isSelf && (
+                                                        <span className="text-xs text-slate-400 italic">Vous</span>
+                                                    )}
+                                                    {!isSelf && canEdit && (
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(user)}>
+                                                            <Pencil className="h-4 w-4" />
+                                                        </Button>
+                                                    )}
+                                                    {!isSelf && canDelete && (
                                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(user.id)} disabled={deleteLoading === user.id}>
                                                             {deleteLoading === user.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                                                         </Button>
-                                                    )}
-                                                    {isSelf && (
-                                                        <span className="text-xs text-slate-400 italic">Vous</span>
                                                     )}
                                                 </div>
                                             </td>
@@ -422,8 +464,9 @@ function UsersTab() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="USER">Utilisateur</SelectItem>
+                                    <SelectItem value="MODERATOR">Modérateur</SelectItem>
                                     <SelectItem value="SUPERUSER">Manager</SelectItem>
-                                    <SelectItem value="ADMIN">Administrateur</SelectItem>
+                                    {currentUserRole === "ADMIN" && <SelectItem value="ADMIN">Administrateur</SelectItem>}
                                 </SelectContent>
                             </Select>
                         </div>
@@ -432,6 +475,55 @@ function UsersTab() {
                         <Button variant="outline" onClick={() => setEditUser(null)}>Annuler</Button>
                         <Button onClick={handleEdit} disabled={editLoading}>
                             {editLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sauvegarde...</> : "Enregistrer"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Create Dialog */}
+            <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Ajouter un utilisateur</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Prénom</Label>
+                                <Input value={createForm.firstName} onChange={(e) => setCreateForm({ ...createForm, firstName: e.target.value })} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Nom</Label>
+                                <Input value={createForm.lastName} onChange={(e) => setCreateForm({ ...createForm, lastName: e.target.value })} />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Email</Label>
+                            <Input type="email" value={createForm.email} onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Mot de passe</Label>
+                            <Input type="password" value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} placeholder="Minimum 4 caractères" />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Rôle</Label>
+                            <Select value={createForm.role} onValueChange={(v) => setCreateForm({ ...createForm, role: v })}>
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="USER">Utilisateur</SelectItem>
+                                    <SelectItem value="MODERATOR">Modérateur</SelectItem>
+                                    <SelectItem value="SUPERUSER">Manager</SelectItem>
+                                    {currentUserRole === "ADMIN" && <SelectItem value="ADMIN">Administrateur</SelectItem>}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Annuler</Button>
+                        <Button onClick={handleCreate} disabled={createLoading}>
+                            {createLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Création...</> : "Créer"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
