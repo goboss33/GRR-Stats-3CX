@@ -228,7 +228,7 @@ export default function AdminLogsPage() {
 
         // Journey filter
         if (journeyFilter) {
-            params.set("journeyFilter", encodeURIComponent(JSON.stringify(journeyFilter)));
+            params.set("journeyFilter", JSON.stringify(journeyFilter));
         }
 
         router.replace(`/admin/logs?${params.toString()}`, { scroll: false });

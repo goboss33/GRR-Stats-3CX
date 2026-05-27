@@ -312,7 +312,7 @@ function buildAggregatedQueryParts(
             } else {
                 let combined = groupSqlParts[0];
                 for (let i = 1; i < groupSqlParts.length; i++) {
-                    const op = filters.journeyFilter.groups[i].operator === 'AND' ? ' AND ' : ' OR ';
+                    const op = filters.journeyFilter.groups[i - 1].operator === 'AND' ? ' AND ' : ' OR ';
                     combined = `${combined}${op}${groupSqlParts[i]}`;
                 }
                 aggregatedWhereConditions.push(`( ${combined} )`);
@@ -334,8 +334,7 @@ function buildSingleConditionSQL(condition: JourneyConditionNode): string | null
     const clauses: string[] = [];
 
     const inferredType = condition.type
-        || (condition.queueNumber ? 'queue' : undefined)
-        || (condition.agentNumber ? 'direct' : undefined);
+        || (condition.queueNumber ? 'queue' : undefined);
 
     if (inferredType && validTypes.includes(inferredType)) {
         clauses.push(`elem->>'type' = '${inferredType}'`);

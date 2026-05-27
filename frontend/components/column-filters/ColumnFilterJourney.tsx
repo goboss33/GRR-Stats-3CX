@@ -446,6 +446,9 @@ export function ColumnFilterJourney({
 
     const hasShowQueueAdvanced = (c: JourneyConditionNode) => !!c.queueNumber;
 
+    const hasShowSegmentOptions = (c: JourneyConditionNode) =>
+        !!c.type || !!c.queueNumber || !!c.agentNumber;
+
     const renderCondition = (groupIndex: number, conditionIndex: number, gc: JourneyGroupCondition) => {
         const condition = gc.condition;
         const key = `g${groupIndex}-c${conditionIndex}`;
@@ -599,7 +602,7 @@ export function ColumnFilterJourney({
                             </div>
                         )}
 
-                        {hasShowQueueAdvanced(condition) && (
+                        {hasShowSegmentOptions(condition) && (
                             <div className="flex items-center gap-3">
                                 <Toggle
                                     checked={condition.firstSegment || false}
@@ -614,7 +617,7 @@ export function ColumnFilterJourney({
                             </div>
                         )}
 
-                        {hasShowQueueAdvanced(condition) && (
+                        {hasShowSegmentOptions(condition) && (
                             <div className="flex items-center gap-3">
                                 <Toggle
                                     checked={condition.lastSegment || false}
