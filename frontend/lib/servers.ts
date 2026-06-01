@@ -1,17 +1,19 @@
-import { ServerId, SERVERS } from "./prisma-cdr";
+import { ServerId, getServers } from "./prisma-cdr";
 
 export function getAvailableServers(): ServerId[] {
-    return (Object.keys(SERVERS) as ServerId[]).filter(
-        (id) => SERVERS[id].databaseUrl.length > 0
+    const servers = getServers();
+    return (Object.keys(servers) as ServerId[]).filter(
+        (id) => servers[id].databaseUrl.length > 0
     );
 }
 
 export function isValidServer(serverId: string): serverId is ServerId {
-    return serverId in SERVERS && SERVERS[serverId as ServerId].databaseUrl.length > 0;
+    const servers = getServers();
+    return serverId in servers && servers[serverId as ServerId].databaseUrl.length > 0;
 }
 
 export function getServerName(serverId: ServerId): string {
-    return SERVERS[serverId].name;
+    return getServers()[serverId].name;
 }
 
 export function getDefaultServer(): ServerId {
