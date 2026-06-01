@@ -15,6 +15,13 @@ import { Badge } from "@/components/ui/badge";
 import { QueueInfo } from "@/types/queues.types";
 import { getQueueMembers } from "@/services/queues.service";
 import { QueueSearchCombobox } from "@/components/queue-search-combobox";
+import { ServerId } from "@/lib/prisma-cdr";
+
+function getSelectedServer(): ServerId {
+    if (typeof document === "undefined") return "gerofinance";
+    const match = document.cookie.match(/selectedServer=([^;]+)/);
+    return (match?.[1] as ServerId) || "gerofinance";
+}
 
 export default function QueuesPage() {
     const [queues, setQueues] = useState<QueueInfo[]>([]);
@@ -22,7 +29,8 @@ export default function QueuesPage() {
     const [searchTerm, setSearchTerm] = useState("");
 
     useEffect(() => {
-        getQueueMembers()
+        const serverId = getSelectedServer();
+        getQueueMembers(serverId)
             .then(setQueues)
             .finally(() => setIsLoading(false));
     }, []);

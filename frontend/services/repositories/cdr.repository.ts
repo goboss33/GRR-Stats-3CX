@@ -11,7 +11,7 @@
 
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import {
     SQL_SYSTEM_DEST_TYPES,
     SQL_SYSTEM_ENTITY_TYPES,
@@ -55,9 +55,11 @@ export interface QueueMemberRow {
 // ============================================
 
 export async function getTimelineDataRaw(
+    serverId: ServerId,
     startDate: Date,
     endDate: Date
 ): Promise<TimelineRow[]> {
+    const prisma = getPrismaCdr(serverId);
     const diffMs = endDate.getTime() - startDate.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
     const interval = diffDays <= 2 ? "hour" : "day";
@@ -128,9 +130,11 @@ export async function getTimelineDataRaw(
 }
 
 export async function getHeatmapDataRaw(
+    serverId: ServerId,
     startDate: Date,
     endDate: Date
 ): Promise<HeatmapRow[]> {
+    const prisma = getPrismaCdr(serverId);
     return prisma.$queryRaw<HeatmapRow[]>`
         WITH unique_calls AS (
             SELECT
@@ -155,10 +159,12 @@ export async function getHeatmapDataRaw(
 // ============================================
 
 export async function getDailyTrendRaw(
+    serverId: ServerId,
     queueNumber: string,
     startDate: Date,
     endDate: Date
 ): Promise<TrendRow[]> {
+    const prisma = getPrismaCdr(serverId);
     return prisma.$queryRaw<TrendRow[]>`
         WITH unique_queue_calls AS (
             SELECT DISTINCT ON (call_history_id)
@@ -186,10 +192,12 @@ export async function getDailyTrendRaw(
 }
 
 export async function getHourlyTrendRaw(
+    serverId: ServerId,
     queueNumber: string,
     startDate: Date,
     endDate: Date
 ): Promise<TrendRow[]> {
+    const prisma = getPrismaCdr(serverId);
     return prisma.$queryRaw<TrendRow[]>`
         WITH unique_queue_calls AS (
             SELECT DISTINCT ON (call_history_id)
@@ -220,7 +228,8 @@ export async function getHourlyTrendRaw(
 // SIMPLE LOOKUPS
 // ============================================
 
-export async function getQueueName(queueNumber: string): Promise<string> {
+export async function getQueueName(serverId: ServerId, queueNumber: string): Promise<string> {
+    const prisma = getPrismaCdr(serverId);
     const queueInfo = await prisma.$queryRaw<any[]>`
         SELECT DISTINCT destination_dn_name AS queue_name
         FROM cdroutput
@@ -231,7 +240,8 @@ export async function getQueueName(queueNumber: string): Promise<string> {
     return queueInfo[0]?.queue_name || queueNumber;
 }
 
-export async function getQueueMembersRaw(): Promise<QueueMemberRow[]> {
+export async function getQueueMembersRaw(serverId: ServerId): Promise<QueueMemberRow[]> {
+    const prisma = getPrismaCdr(serverId);
     return prisma.$queryRaw<QueueMemberRow[]>`
         WITH QueueMembers AS (
             SELECT 
@@ -281,7 +291,8 @@ export interface CallSegmentRow {
     originating_cdr_id: string | null;
 }
 
-export async function getCallSegments(callHistoryId: string): Promise<CallSegmentRow[]> {
+export async function getCallSegments(serverId: ServerId, callHistoryId: string): Promise<CallSegmentRow[]> {
+    const prisma = getPrismaCdr(serverId);
     return prisma.cdroutput.findMany({
         where: { call_history_id: callHistoryId },
         orderBy: { cdr_started_at: "asc" },

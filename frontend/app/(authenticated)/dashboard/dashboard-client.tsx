@@ -17,12 +17,19 @@ import {
     getTimelineData,
     getHeatmapData,
 } from "@/services/dashboard.service";
+import { ServerId } from "@/lib/prisma-cdr";
 
 import type {
     GlobalMetrics,
     TimelineDataPoint,
     HeatmapDataPoint,
 } from "@/types/stats.types";
+
+function getSelectedServer(): ServerId {
+    if (typeof document === "undefined") return "gerofinance";
+    const match = document.cookie.match(/selectedServer=([^;]+)/);
+    return (match?.[1] as ServerId) || "gerofinance";
+}
 
 // Helper to format duration seconds to human readable
 function formatDuration(seconds: number): string {
@@ -100,10 +107,11 @@ export default function DashboardClient() {
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
+            const serverId = getSelectedServer();
             const [metricsData, timeline, heatmap] = await Promise.all([
-                getGlobalMetrics(dateRange.startDate, dateRange.endDate),
-                getTimelineData(dateRange.startDate, dateRange.endDate),
-                getHeatmapData(dateRange.startDate, dateRange.endDate),
+                getGlobalMetrics(serverId, dateRange.startDate, dateRange.endDate),
+                getTimelineData(serverId, dateRange.startDate, dateRange.endDate),
+                getHeatmapData(serverId, dateRange.startDate, dateRange.endDate),
             ]);
 
             setMetrics(metricsData);

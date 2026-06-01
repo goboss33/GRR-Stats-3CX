@@ -29,6 +29,7 @@ import {
 import { getAggregatedCallLogs, exportCallLogsCSV, getCallLogsSQL } from "@/services/logs.service";
 import { getQueueMembers } from "@/services/queues.service";
 import { useDebounce } from "@/lib/use-debounce";
+import { ServerId } from "@/lib/prisma-cdr";
 import type { QueueInfo } from "@/types/queues.types";
 import type {
     AggregatedCallLog,
@@ -44,6 +45,12 @@ import type {
 } from "@/types/logs.types";
 
 const PAGE_SIZE = 50;
+
+function getSelectedServer(): ServerId {
+    if (typeof document === "undefined") return "gerofinance";
+    const match = document.cookie.match(/selectedServer=([^;]+)/);
+    return (match?.[1] as ServerId) || "gerofinance";
+}
 
 const defaultColumnVisibility: ColumnVisibility = {
     callHistoryId: false,
@@ -258,7 +265,9 @@ export default function AdminLogsPage() {
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
+            const serverId = getSelectedServer();
             const result = await getAggregatedCallLogs(
+                serverId,
                 dateRange.startDate,
                 dateRange.endDate,
                 effectiveFilters,
@@ -306,7 +315,8 @@ export default function AdminLogsPage() {
     useEffect(() => {
         const loadQueues = async () => {
             try {
-                const queueList = await getQueueMembers();
+                const serverId = getSelectedServer();
+                const queueList = await getQueueMembers(serverId);
                 setQueues(queueList);
             } catch (error) {
                 console.error("Error loading queues:", error);
@@ -341,7 +351,8 @@ export default function AdminLogsPage() {
     const handleExportCSV = async () => {
         setIsExporting(true);
         try {
-            const csv = await exportCallLogsCSV(dateRange.startDate, dateRange.endDate, effectiveFilters);
+            const serverId = getSelectedServer();
+            const csv = await exportCallLogsCSV(serverId, dateRange.startDate, dateRange.endDate, effectiveFilters);
             const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
@@ -357,7 +368,8 @@ export default function AdminLogsPage() {
     const handleExportIdsOnly = async () => {
         setIsExporting(true);
         try {
-            const csv = await exportCallLogsCSV(dateRange.startDate, dateRange.endDate, effectiveFilters, true);
+            const serverId = getSelectedServer();
+            const csv = await exportCallLogsCSV(serverId, dateRange.startDate, dateRange.endDate, effectiveFilters, true);
             const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
@@ -374,7 +386,8 @@ export default function AdminLogsPage() {
         setShowSqlModal(true);
         setIsLoadingSql(true);
         try {
-            const sql = await getCallLogsSQL(dateRange.startDate, dateRange.endDate, effectiveFilters, { page: currentPage, pageSize: PAGE_SIZE }, sort);
+            const serverId = getSelectedServer();
+            const sql = await getCallLogsSQL(serverId, dateRange.startDate, dateRange.endDate, effectiveFilters, { page: currentPage, pageSize: PAGE_SIZE }, sort);
             setSqlQuery(sql);
         } catch (error) {
             console.error("Error fetching SQL:", error);

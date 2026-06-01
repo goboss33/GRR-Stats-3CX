@@ -1,5 +1,6 @@
 "use server";
 
+import { ServerId } from "@/lib/prisma-cdr";
 import {
     getQueueName,
     getDailyTrendRaw,
@@ -73,16 +74,17 @@ interface ApiAgentResponse {
 }
 
 export async function getQueueStatistics(
+    serverId: ServerId,
     queueNumber: string,
     startDate: Date,
     endDate: Date
 ): Promise<QueueStatistics> {
     const [queueName, kpis, agents, dailyTrend, hourlyTrend] = await Promise.all([
-        getQueueName(queueNumber),
-        computeQueueKPIs(queueNumber, startDate, endDate),
-        computeAgentStats(queueNumber, startDate, endDate),
-        computeDailyTrend(queueNumber, startDate, endDate),
-        computeHourlyTrend(queueNumber, startDate, endDate),
+        getQueueName(serverId, queueNumber),
+        computeQueueKPIs(serverId, queueNumber, startDate, endDate),
+        computeAgentStats(serverId, queueNumber, startDate, endDate),
+        computeDailyTrend(serverId, queueNumber, startDate, endDate),
+        computeHourlyTrend(serverId, queueNumber, startDate, endDate),
     ]);
 
     return {
@@ -100,17 +102,20 @@ export async function getQueueStatistics(
 }
 
 async function computeQueueKPIs(
+    serverId: ServerId,
     queueNumber: string,
     startDate: Date,
     endDate: Date
 ): Promise<QueueKPIs> {
     const [apiData, agentsData] = await Promise.all([
         fetchApi<ApiQueueResponse>("/api/analytics/queue", {
+            server: serverId,
             queueNumber,
             start: startDate.toISOString(),
             end: endDate.toISOString(),
         }),
         fetchApi<ApiAgentResponse>("/api/analytics/agents", {
+            server: serverId,
             queueNumber,
             start: startDate.toISOString(),
             end: endDate.toISOString(),
@@ -149,11 +154,13 @@ async function computeQueueKPIs(
 }
 
 async function computeAgentStats(
+    serverId: ServerId,
     queueNumber: string,
     startDate: Date,
     endDate: Date
 ): Promise<AgentStats[]> {
     const apiData = await fetchApi<ApiAgentResponse>("/api/analytics/agents", {
+        server: serverId,
         queueNumber,
         start: startDate.toISOString(),
         end: endDate.toISOString(),
@@ -181,11 +188,12 @@ async function computeAgentStats(
 }
 
 async function computeDailyTrend(
+    serverId: ServerId,
     queueNumber: string,
     startDate: Date,
     endDate: Date
 ): Promise<DailyTrend[]> {
-    const result = await getDailyTrendRaw(queueNumber, startDate, endDate);
+    const result = await getDailyTrendRaw(serverId, queueNumber, startDate, endDate);
     return result.map((row) => {
         const dateStr = row.call_date
             ? new Date(row.call_date).toISOString().split("T")[0]
@@ -200,11 +208,12 @@ async function computeDailyTrend(
 }
 
 async function computeHourlyTrend(
+    serverId: ServerId,
     queueNumber: string,
     startDate: Date,
     endDate: Date
 ): Promise<HourlyTrend[]> {
-    const result = await getHourlyTrendRaw(queueNumber, startDate, endDate);
+    const result = await getHourlyTrendRaw(serverId, queueNumber, startDate, endDate);
 
     const hourlyMap = new Map<number, HourlyTrend>();
     for (let h = 0; h < 24; h++) {

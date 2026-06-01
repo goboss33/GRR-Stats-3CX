@@ -1,5 +1,6 @@
 "use server";
 
+import { ServerId } from "@/lib/prisma-cdr";
 import { getQueueMembersRaw } from "@/services/repositories/cdr.repository";
 import type { QueueInfo, QueueMember } from "@/services/domain/call.types";
 
@@ -9,8 +10,8 @@ import type { QueueInfo, QueueMember } from "@/services/domain/call.types";
  * Orchestrates repository calls and formats data for the Queues UI.
  */
 
-export async function getQueueMembers(): Promise<QueueInfo[]> {
-    const result = await getQueueMembersRaw();
+export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> {
+    const result = await getQueueMembersRaw(serverId);
 
     const queuesMap = new Map<string, QueueInfo>();
     const queueMembersMap = new Map<string, Map<string, QueueMember>>();

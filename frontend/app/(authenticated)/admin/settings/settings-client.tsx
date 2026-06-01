@@ -16,6 +16,13 @@ import { getQueueMembers } from "@/services/queues.service";
 import { QueueSearchCombobox } from "@/components/queue-search-combobox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ServerId } from "@/lib/prisma-cdr";
+
+function getSelectedServer(): ServerId {
+    if (typeof document === "undefined") return "gerofinance";
+    const match = document.cookie.match(/selectedServer=([^;]+)/);
+    return (match?.[1] as ServerId) || "gerofinance";
+}
 
 type TabId = "personal" | "users" | "queues" | "business-rules" | "api-keys" | "tenant" | "diagnostic";
 
@@ -540,7 +547,8 @@ function QueuesTab() {
     const [searchTerm, setSearchTerm] = useState("");
 
     useEffect(() => {
-        getQueueMembers()
+        const serverId = getSelectedServer();
+        getQueueMembers(serverId)
             .then(setQueues)
             .finally(() => setIsLoading(false));
     }, []);

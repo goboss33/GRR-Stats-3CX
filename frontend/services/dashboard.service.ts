@@ -1,5 +1,6 @@
 "use server";
 
+import { ServerId } from "@/lib/prisma-cdr";
 import {
     getTimelineDataRaw,
     getHeatmapDataRaw,
@@ -53,10 +54,12 @@ interface ApiGlobalResponse {
 }
 
 export async function getGlobalMetrics(
+    serverId: ServerId,
     startDate: Date,
     endDate: Date
 ): Promise<GlobalMetrics> {
     const apiData = await fetchApi<ApiGlobalResponse>("/api/analytics/global", {
+        server: serverId,
         start: startDate.toISOString(),
         end: endDate.toISOString(),
         includePrevious: "true",
@@ -99,6 +102,7 @@ export async function getGlobalMetrics(
 }
 
 export async function getTimelineData(
+    serverId: ServerId,
     startDate: Date,
     endDate: Date
 ): Promise<TimelineDataPoint[]> {
@@ -106,7 +110,7 @@ export async function getTimelineData(
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
     const interval = diffDays <= 2 ? "hour" : "day";
 
-    const rawData = await getTimelineDataRaw(startDate, endDate);
+    const rawData = await getTimelineDataRaw(serverId, startDate, endDate);
 
     return rawData.map((row) => {
         const date = new Date(row.date_group);
@@ -126,10 +130,11 @@ export async function getTimelineData(
 }
 
 export async function getHeatmapData(
+    serverId: ServerId,
     startDate: Date,
     endDate: Date
 ): Promise<HeatmapDataPoint[]> {
-    const rawData = await getHeatmapDataRaw(startDate, endDate);
+    const rawData = await getHeatmapDataRaw(serverId, startDate, endDate);
     return rawData.map((row) => ({
         dayOfWeek: row.day_of_week,
         hourOfDay: row.hour_of_day,

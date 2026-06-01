@@ -14,6 +14,13 @@ import { UnifiedCallFlow } from "@/components/stats/unified-call-flow";
 import { TeamBanner } from "@/components/stats/team-banner";
 import { QueueSelector } from "@/components/stats/queue-selector";
 import { DateRangePicker } from "@/components/date-range-picker";
+import { ServerId } from "@/lib/prisma-cdr";
+
+function getSelectedServer(): ServerId {
+    if (typeof document === "undefined") return "gerofinance";
+    const match = document.cookie.match(/selectedServer=([^;]+)/);
+    return (match?.[1] as ServerId) || "gerofinance";
+}
 
 export default function StatisticsPage() {
     const [queues, setQueues] = useState<QueueInfo[]>([]);
@@ -34,7 +41,8 @@ export default function StatisticsPage() {
 
     // Load queues on mount
     useEffect(() => {
-        getQueueMembers()
+        const serverId = getSelectedServer();
+        getQueueMembers(serverId)
             .then(setQueues)
             .finally(() => setIsLoadingQueues(false));
     }, []);
@@ -44,7 +52,8 @@ export default function StatisticsPage() {
         if (!selectedQueueNumber) return;
 
         setIsLoading(true);
-        getQueueStatistics(selectedQueueNumber, dateRange.startDate, dateRange.endDate)
+        const serverId = getSelectedServer();
+        getQueueStatistics(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate)
             .then(setStatistics)
             .finally(() => setIsLoading(false));
     }, [selectedQueueNumber, dateRange]);
@@ -52,7 +61,8 @@ export default function StatisticsPage() {
     const handleRefresh = () => {
         if (!selectedQueueNumber) return;
         setIsLoading(true);
-        getQueueStatistics(selectedQueueNumber, dateRange.startDate, dateRange.endDate)
+        const serverId = getSelectedServer();
+        getQueueStatistics(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate)
             .then(setStatistics)
             .finally(() => setIsLoading(false));
     };

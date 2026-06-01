@@ -31,7 +31,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 import { getCallChain } from "@/services/logs.service";
+import { ServerId } from "@/lib/prisma-cdr";
 import type { CallChainSegment, SegmentCategory } from "@/types/logs.types";
+
+function getSelectedServer(): ServerId {
+    if (typeof document === "undefined") return "gerofinance";
+    const match = document.cookie.match(/selectedServer=([^;]+)/);
+    return (match?.[1] as ServerId) || "gerofinance";
+}
 
 interface CallChainModalProps {
     callHistoryId: string | null;
@@ -221,7 +228,8 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
     useEffect(() => {
         if (callHistoryId) {
             setIsLoading(true);
-            getCallChain(callHistoryId)
+            const serverId = getSelectedServer();
+            getCallChain(serverId, callHistoryId)
                 .then(setSegments)
                 .finally(() => setIsLoading(false));
         }

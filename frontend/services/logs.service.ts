@@ -1,6 +1,6 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import type {
     AggregatedCallLog,
     CallDirection,
@@ -672,6 +672,7 @@ function buildDataJoins(calleeFilterJoin: string, aggregatedWhereConditions: str
 // ============================================
 
 export async function getCallLogsSQL(
+    serverId: ServerId,
     startDate: Date,
     endDate: Date,
     filters: LogsFilters,
@@ -1003,12 +1004,14 @@ function transformRow(row: any): AggregatedCallLog {
 // ============================================
 
 export async function getAggregatedCallLogs(
+    serverId: ServerId,
     startDate: Date,
     endDate: Date,
     filters: LogsFilters,
     pagination: { page: number; pageSize: number },
     sort?: LogsSort
 ): Promise<AggregatedCallLogsResponse> {
+    const prisma = getPrismaCdr(serverId);
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } =
         buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort);
     const pageNumber = Math.max(1, pagination.page);
@@ -1044,10 +1047,11 @@ export async function getAggregatedCallLogs(
 // GET CALL CHAIN (for modal - shows all segments)
 // ============================================
 
-export async function getCallChain(callHistoryId: string): Promise<CallChainSegment[]> {
+export async function getCallChain(serverId: ServerId, callHistoryId: string): Promise<CallChainSegment[]> {
     if (!callHistoryId) return [];
 
     try {
+        const prisma = getPrismaCdr(serverId);
         const segments = await prisma.cdroutput.findMany({
             where: { call_history_id: callHistoryId },
             orderBy: { cdr_started_at: "asc" },
@@ -1142,6 +1146,7 @@ export async function getCallChain(callHistoryId: string): Promise<CallChainSegm
 // ============================================
 
 async function exportAllCallLogs(
+    serverId: ServerId,
     startDate: Date,
     endDate: Date,
     filters: LogsFilters,
@@ -1152,7 +1157,7 @@ async function exportAllCallLogs(
     let totalPages = 1;
 
     while (page <= totalPages) {
-        const response = await getAggregatedCallLogs(startDate, endDate, filters, { page, pageSize: PAGE_SIZE });
+        const response = await getAggregatedCallLogs(serverId, startDate, endDate, filters, { page, pageSize: PAGE_SIZE });
         allLogs.push(...response.logs);
         totalPages = response.totalPages;
         page++;
@@ -1162,12 +1167,13 @@ async function exportAllCallLogs(
 }
 
 export async function exportCallLogsCSV(
+    serverId: ServerId,
     startDate: Date,
     endDate: Date,
     filters: LogsFilters,
     idsOnly: boolean = false
 ): Promise<string> {
-    const response = await exportAllCallLogs(startDate, endDate, filters);
+    const response = await exportAllCallLogs(serverId, startDate, endDate, filters);
 
     if (idsOnly) {
         return ["call_history_id", ...response.logs.map((log) => log.callHistoryId)].join("\n");

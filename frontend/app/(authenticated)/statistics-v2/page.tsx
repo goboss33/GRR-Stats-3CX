@@ -12,7 +12,14 @@ import { AgentPerformanceTableV2 } from "@/components/stats-v2/agent-performance
 import { OverflowIndicator } from "@/components/stats-v2/overflow-indicator";
 import { QueueSelector } from "@/components/stats/queue-selector";
 import { DateRangePicker } from "@/components/date-range-picker";
+import { ServerId } from "@/lib/prisma-cdr";
 import type { QueueStatistics } from "@/types/statistics.types";
+
+function getSelectedServer(): ServerId {
+    if (typeof document === "undefined") return "gerofinance";
+    const match = document.cookie.match(/selectedServer=([^;]+)/);
+    return (match?.[1] as ServerId) || "gerofinance";
+}
 
 export default function StatisticsV2Page() {
     const [queues, setQueues] = useState<QueueInfo[]>([]);
@@ -33,7 +40,8 @@ export default function StatisticsV2Page() {
 
     // Load queues on mount
     useEffect(() => {
-        getQueueMembers()
+        const serverId = getSelectedServer();
+        getQueueMembers(serverId)
             .then(setQueues)
             .finally(() => setIsLoadingQueues(false));
     }, []);
@@ -44,8 +52,9 @@ export default function StatisticsV2Page() {
         if (!selectedQueueNumber) return;
 
         setIsLoading(true);
-        console.log("[StatisticsV2] Calling getQueueStatistics with:", { queueNumber: selectedQueueNumber, startDate: dateRange.startDate, endDate: dateRange.endDate });
-        getQueueStatistics(selectedQueueNumber, dateRange.startDate, dateRange.endDate)
+        const serverId = getSelectedServer();
+        console.log("[StatisticsV2] Calling getQueueStatistics with:", { serverId, queueNumber: selectedQueueNumber, startDate: dateRange.startDate, endDate: dateRange.endDate });
+        getQueueStatistics(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate)
             .then((data) => {
                 console.log("[StatisticsV2] getQueueStatistics success:", data);
                 setStatistics(data);
@@ -59,7 +68,8 @@ export default function StatisticsV2Page() {
     const handleRefresh = () => {
         if (!selectedQueueNumber) return;
         setIsLoading(true);
-        getQueueStatistics(selectedQueueNumber, dateRange.startDate, dateRange.endDate)
+        const serverId = getSelectedServer();
+        getQueueStatistics(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate)
             .then(setStatistics)
             .finally(() => setIsLoading(false));
     };

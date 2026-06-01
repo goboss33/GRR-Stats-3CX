@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiKey } from "../auth";
-import { prisma } from "@/lib/prisma";
+import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
+import { getDefaultServer, isValidServer } from "@/lib/servers";
 import { buildDirectSegmentWhereClause } from "@/services/domain/call-aggregation";
 
 function parseDateParam(param: string | null, defaultDate: Date): Date {
@@ -15,6 +16,13 @@ export async function GET(request: NextRequest) {
 
     try {
         const url = new URL(request.url);
+        const serverParam = url.searchParams.get("server");
+        const serverId: ServerId = serverParam && isValidServer(serverParam) 
+            ? serverParam as ServerId 
+            : getDefaultServer();
+        
+        const prisma = getPrismaCdr(serverId);
+        
         const queueNumber = url.searchParams.get("queueNumber");
         console.log("[agents/route] Received queueNumber:", queueNumber);
         if (!queueNumber) {

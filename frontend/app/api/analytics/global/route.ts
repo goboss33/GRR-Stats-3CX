@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiKey } from "../auth";
-import { prisma } from "@/lib/prisma";
+import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
+import { getDefaultServer, isValidServer } from "@/lib/servers";
 import {
     SQL_SYSTEM_DEST_TYPES,
     SQL_SYSTEM_ENTITY_TYPES,
@@ -25,6 +26,13 @@ export async function GET(request: NextRequest) {
 
     try {
         const url = new URL(request.url);
+        const serverParam = url.searchParams.get("server");
+        const serverId: ServerId = serverParam && isValidServer(serverParam) 
+            ? serverParam as ServerId 
+            : getDefaultServer();
+        
+        const prisma = getPrismaCdr(serverId);
+        
         const start = parseDateParam(url.searchParams.get("start"), new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
         const end = parseDateParam(url.searchParams.get("end"), new Date());
         const includePrevious = url.searchParams.get("includePrevious") !== "false";
