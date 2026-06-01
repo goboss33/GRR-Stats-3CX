@@ -8,18 +8,31 @@ export interface ServerConfig {
     databaseUrl: string;
 }
 
-export const SERVERS: Record<ServerId, ServerConfig> = {
-    gerofinance: {
-        id: "gerofinance",
-        name: "Gérofinance",
-        databaseUrl: process.env.DATABASE_URL_GEROFINANCE || "",
+let _servers: Record<ServerId, ServerConfig> | null = null;
+
+export function getServers(): Record<ServerId, ServerConfig> {
+    if (!_servers) {
+        _servers = {
+            gerofinance: {
+                id: "gerofinance",
+                name: "Gérofinance",
+                databaseUrl: process.env.DATABASE_URL_GEROFINANCE || "",
+            },
+            edifea: {
+                id: "edifea",
+                name: "Edifea",
+                databaseUrl: process.env.DATABASE_URL_EDIFEA || "",
+            },
+        };
+    }
+    return _servers;
+}
+
+export const SERVERS = new Proxy({} as Record<ServerId, ServerConfig>, {
+    get(_, prop) {
+        return getServers()[prop as ServerId];
     },
-    edifea: {
-        id: "edifea",
-        name: "Edifea",
-        databaseUrl: process.env.DATABASE_URL_EDIFEA || "",
-    },
-};
+});
 
 const globalForPrismaCdr = globalThis as unknown as {
     prismaCdrClients: Partial<Record<ServerId, PrismaClient>> | undefined;
@@ -53,5 +66,3 @@ export function getPrismaCdr(serverId: ServerId): PrismaClient {
 
     return clients[serverId]!;
 }
-
-export const prismaCdr = getPrismaCdr("gerofinance");
