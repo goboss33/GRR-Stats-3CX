@@ -10,7 +10,10 @@
     "db:push": "prisma db push",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "postinstall": "prisma generate"
+    "prisma:generate": "prisma generate --schema=prisma/auth/schema.prisma && prisma generate --schema=prisma/cdr/schema.prisma",
+    "prisma:generate:auth": "prisma generate --schema=prisma/auth/schema.prisma",
+    "prisma:generate:cdr": "prisma generate --schema=prisma/cdr/schema.prisma",
+    "postinstall": "npm run prisma:generate"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",

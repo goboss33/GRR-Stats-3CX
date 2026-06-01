@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: callcenter-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: callcenter_auth
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: callcenter-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/callcenter_gerofinance
+      - DATABASE_URL_AUTH=postgresql://postgres:postgres@postgres:5432/callcenter_auth
+      - DATABASE_URL_GEROFINANCE=postgresql://postgres:postgres@postgres:5432/callcenter_gerofinance
+      - DATABASE_URL_EDIFEA=postgresql://postgres:postgres@postgres:5432/callcenter_edifea
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - AUTH_TRUST_HOST=true
+      - INTERNAL_API_URL=${INTERNAL_API_URL}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

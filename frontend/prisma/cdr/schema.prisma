@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/.prisma/cdr-client"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL_CDR")
+}
+
+model cdroutput {
+  cdr_id                                       String    @id @db.Uuid
+  call_history_id                              String?   @db.Uuid
+  source_participant_id                        String?   @db.Uuid
+  source_entity_type                           String?   @db.VarChar
+  source_dn_number                             String?   @db.VarChar
+  source_dn_type                               String?   @db.VarChar
+  source_dn_name                               String?   @db.VarChar
+  source_participant_name                      String?   @db.VarChar
+  source_participant_phone_number              String?   @db.VarChar
+  source_participant_trunk_did                 String?   @db.VarChar
+  source_participant_is_incoming               Boolean?
+  source_participant_is_already_connected      Boolean?
+  source_participant_group_name                String?   @db.VarChar
+  source_participant_billing_suffix            String?   @db.VarChar
+  destination_participant_id                   String?   @db.Uuid
+  destination_entity_type                      String?   @db.VarChar
+  destination_dn_number                        String?   @db.VarChar
+  destination_dn_type                          String?   @db.VarChar
+  destination_dn_name                          String?   @db.VarChar
+  destination_participant_name                 String?   @db.VarChar
+  destination_participant_phone_number         String?   @db.VarChar
+  destination_participant_trunk_did            String?   @db.VarChar
+  destination_participant_is_incoming          Boolean?
+  destination_participant_is_already_connected Boolean?
+  destination_participant_group_name           String?   @db.VarChar
+  destination_participant_billing_suffix       String?   @db.VarChar
+  base_cdr_id                                  String?   @db.Uuid
+  originating_cdr_id                           String?   @db.Uuid
+  creation_method                              String?   @db.VarChar
+  creation_forward_reason                      String?   @db.VarChar
+  termination_reason                           String?   @db.VarChar
+  terminated_by_participant_id                 String?   @db.Uuid
+  continued_in_cdr_id                          String?   @db.Uuid
+  cdr_started_at                               DateTime? @db.Timestamptz(6)
+  cdr_ended_at                                 DateTime? @db.Timestamptz(6)
+  cdr_answered_at                              DateTime? @db.Timestamptz(6)
+  termination_reason_details                   String?   @db.VarChar
+  processed                                    Boolean?
+  migrated                                     Boolean?
+  main_call_history_id                         String?   @db.Uuid
+  source_presentation                          String?   @db.VarChar
+  offload_id                                   BigInt?   @ignore
+
+  @@index([cdr_started_at])
+  @@index([destination_dn_number])
+  @@index([source_dn_number])
+  @@index([cdr_started_at, destination_dn_number])
+  @@index([cdr_started_at, destination_dn_type])
+  @@index([call_history_id, cdr_started_at])
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model cdrbilling {
+  cdr_id                     String?                  @db.Uuid
+  source_bill_code           String?                  @db.VarChar
+  source_bill_rate_name      String?                  @db.VarChar
+  source_bill_rate           Decimal?                 @db.Decimal
+  source_bill_duration       Unsupported("interval")?
+  destination_bill_code      String?                  @db.VarChar
+  destination_bill_rate_name String?                  @db.VarChar
+  destination_bill_rate      Decimal?                 @db.Decimal
+  destination_bill_duration  Unsupported("interval")?
+  migrated                   Boolean?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model temptable_pbx_cdrbilling {
+  cdr_id                     String?                  @db.Uuid
+  source_bill_code           String?                  @db.VarChar
+  source_bill_rate_name      String?                  @db.VarChar
+  source_bill_rate           Decimal?                 @db.Decimal
+  source_bill_duration       Unsupported("interval")?
+  destination_bill_code      String?                  @db.VarChar
+  destination_bill_rate_name String?                  @db.VarChar
+  destination_bill_rate      Decimal?                 @db.Decimal
+  destination_bill_duration  Unsupported("interval")?
+  migrated                   Boolean?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model temptable_pbx_cdroutput {
+  cdr_id                                       String?   @db.Uuid
+  call_history_id                              String?   @db.Uuid
+  source_participant_id                        String?   @db.Uuid
+  source_entity_type                           String?   @db.VarChar
+  source_dn_number                             String?   @db.VarChar
+  source_dn_type                               String?   @db.VarChar
+  source_dn_name                               String?   @db.VarChar
+  source_participant_name                      String?   @db.VarChar
+  source_participant_phone_number              String?   @db.VarChar
+  source_participant_trunk_did                 String?   @db.VarChar
+  source_participant_is_incoming               Boolean?
+  source_participant_is_already_connected      Boolean?
+  source_participant_group_name                String?   @db.VarChar
+  source_participant_billing_suffix            String?   @db.VarChar
+  destination_participant_id                   String?   @db.Uuid
+  destination_entity_type                      String?   @db.VarChar
+  destination_dn_number                        String?   @db.VarChar
+  destination_dn_type                          String?   @db.VarChar
+  destination_dn_name                          String?   @db.VarChar
+  destination_participant_name                 String?   @db.VarChar
+  destination_participant_phone_number         String?   @db.VarChar
+  destination_participant_trunk_did            String?   @db.VarChar
+  destination_participant_is_incoming          Boolean?
+  destination_participant_is_already_connected Boolean?
+  destination_participant_group_name           String?   @db.VarChar
+  destination_participant_billing_suffix       String?   @db.VarChar
+  base_cdr_id                                  String?   @db.Uuid
+  originating_cdr_id                           String?   @db.Uuid
+  creation_method                              String?   @db.VarChar
+  creation_forward_reason                      String?   @db.VarChar
+  termination_reason                           String?   @db.VarChar
+  terminated_by_participant_id                 String?   @db.Uuid
+  continued_in_cdr_id                          String?   @db.Uuid
+  cdr_started_at                               DateTime? @db.Timestamptz(6)
+  cdr_ended_at                                 DateTime? @db.Timestamptz(6)
+  cdr_answered_at                              DateTime? @db.Timestamptz(6)
+  termination_reason_details                   String?   @db.VarChar
+  processed                                    Boolean?
+  migrated                                     Boolean?
+  main_call_history_id                         String?   @db.Uuid
+  source_presentation                          String?   @db.VarChar
+  offload_id                                   BigInt?
+
+  @@ignore
+}

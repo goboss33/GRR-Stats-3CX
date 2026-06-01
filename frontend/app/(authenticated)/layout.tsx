@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
 import { Suspense } from "react";
 import Loading from "./loading";
+import { getSelectedServer } from "@/lib/server-context";
 
 export default async function AuthenticatedLayout({
     children,
@@ -25,6 +26,7 @@ export default async function AuthenticatedLayout({
     const userFirstName = (session.user as any)?.firstName;
     const userLastName = (session.user as any)?.lastName;
     const userName = [userFirstName, userLastName].filter(Boolean).join(" ") || "Utilisateur";
+    const currentServer = await getSelectedServer();
 
     return (
         <div className="flex h-screen bg-slate-50">
@@ -35,6 +37,7 @@ export default async function AuthenticatedLayout({
                     lastName: userLastName,
                 }}
                 signOutAction={handleSignOut}
+                currentServer={currentServer}
             />
             <div className="flex-1 flex flex-col overflow-hidden">
                 <Header userRole={userRole} userName={userName} />
