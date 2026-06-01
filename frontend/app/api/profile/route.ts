@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { prismaAuth } from "@/lib/prisma-auth";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
@@ -9,7 +9,7 @@ export async function GET() {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const user = await prisma.user.findUnique({
+    const user = await prismaAuth.user.findUnique({
         where: { id: session.user.id },
         select: { id: true, email: true, firstName: true, lastName: true, role: true, createdAt: true },
     });
@@ -34,7 +34,7 @@ export async function PUT(request: Request) {
         return NextResponse.json({ error: "Email invalide" }, { status: 400 });
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prismaAuth.user.findUnique({ where: { email } });
     if (existing && existing.id !== session.user.id) {
         return NextResponse.json({ error: "Un utilisateur avec cet email existe déjà" }, { status: 400 });
     }
@@ -49,7 +49,7 @@ export async function PUT(request: Request) {
         updateData.password = await bcrypt.hash(password, 10);
     }
 
-    const updated = await prisma.user.update({
+    const updated = await prismaAuth.user.update({
         where: { id: session.user.id },
         data: updateData,
         select: { id: true, email: true, firstName: true, lastName: true, role: true, createdAt: true },

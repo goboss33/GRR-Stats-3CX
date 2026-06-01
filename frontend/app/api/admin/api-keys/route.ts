@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { prismaAuth } from "@/lib/prisma-auth";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
@@ -23,7 +23,7 @@ export async function GET() {
         return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    const keys = await prisma.apiKey.findMany({
+    const keys = await prismaAuth.apiKey.findMany({
         orderBy: { createdAt: "desc" },
     });
 
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     const plainKey = generateApiKey();
     const keyHash = await bcrypt.hash(plainKey, 10);
 
-    const apiKey = await prisma.apiKey.create({
+    const apiKey = await prismaAuth.apiKey.create({
         data: {
             keyHash,
             name: name.trim(),
@@ -106,7 +106,7 @@ export async function PUT(request: NextRequest) {
     if (quotaPerMinute !== undefined) updateData.quotaPerMinute = quotaPerMinute;
     if (isActive !== undefined) updateData.isActive = isActive;
 
-    await prisma.apiKey.update({ where: { id }, data: updateData });
+    await prismaAuth.apiKey.update({ where: { id }, data: updateData });
     return NextResponse.json({ success: true });
 }
 
@@ -125,7 +125,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const session = await auth();
-    await prisma.apiKey.update({
+    await prismaAuth.apiKey.update({
         where: { id },
         data: {
             isActive: false,

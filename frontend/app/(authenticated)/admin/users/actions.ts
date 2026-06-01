@@ -1,7 +1,7 @@
 "use server";
 
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { prismaAuth } from "@/lib/prisma-auth";
 import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
 
@@ -28,7 +28,7 @@ async function requireAdmin() {
 
 export async function getUsers(): Promise<UserRow[]> {
     await requireAdmin();
-    return prisma.user.findMany({
+    return prismaAuth.user.findMany({
         select: { id: true, email: true, firstName: true, lastName: true, role: true, createdAt: true },
         orderBy: { createdAt: "desc" },
     });
@@ -50,13 +50,13 @@ export async function createUser(data: {
         return { success: false, error: "Le mot de passe doit contenir au moins 4 caractères" };
     }
 
-    const existing = await prisma.user.findUnique({ where: { email: data.email } });
+    const existing = await prismaAuth.user.findUnique({ where: { email: data.email } });
     if (existing) {
         return { success: false, error: "Un utilisateur avec cet email existe déjà" };
     }
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
-    const user = await prisma.user.create({
+    const user = await prismaAuth.user.create({
         data: {
             email: data.email,
             password: hashedPassword,
@@ -84,7 +84,7 @@ export async function updateUser(
         return { success: false, error: "Email invalide" };
     }
 
-    const existing = await prisma.user.findUnique({ where: { email: data.email } });
+    const existing = await prismaAuth.user.findUnique({ where: { email: data.email } });
     if (existing && existing.id !== id) {
         return { success: false, error: "Un utilisateur avec cet email existe déjà" };
     }
@@ -104,7 +104,7 @@ export async function updateUser(
         updateData.password = await bcrypt.hash(data.password, 10);
     }
 
-    await prisma.user.update({ where: { id }, data: updateData });
+    await prismaAuth.user.update({ where: { id }, data: updateData });
     return { success: true, data: undefined };
 }
 
@@ -115,6 +115,6 @@ export async function deleteUser(id: string): Promise<ActionResult> {
         return { success: false, error: "Vous ne pouvez pas supprimer votre propre compte" };
     }
 
-    await prisma.user.delete({ where: { id } });
+    await prismaAuth.user.delete({ where: { id } });
     return { success: true, data: undefined };
 }

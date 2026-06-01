@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prismaAuth } from "@/lib/prisma-auth";
 import bcrypt from "bcryptjs";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -14,7 +14,7 @@ export async function validateApiKey(request: NextRequest): Promise<{ valid: tru
         };
     }
 
-    const apiKeys = await prisma.apiKey.findMany({
+    const apiKeys = await prismaAuth.apiKey.findMany({
         where: { isActive: true },
     });
 
@@ -42,7 +42,7 @@ export async function validateApiKey(request: NextRequest): Promise<{ valid: tru
     }
 
     const oneMinuteAgo = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
-    const recentCalls = await prisma.apiKey.findUnique({
+    const recentCalls = await prismaAuth.apiKey.findUnique({
         where: { id: matchedKey.id },
         select: { lastUsedAt: true },
     });
@@ -62,7 +62,7 @@ export async function validateApiKey(request: NextRequest): Promise<{ valid: tru
         }
     }
 
-    await prisma.apiKey.update({
+    await prismaAuth.apiKey.update({
         where: { id: matchedKey.id },
         data: { lastUsedAt: new Date() },
     });

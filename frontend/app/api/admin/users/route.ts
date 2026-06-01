@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { prismaAuth } from "@/lib/prisma-auth";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
@@ -19,7 +19,7 @@ export async function GET() {
         return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    const users = await prisma.user.findMany({
+    const users = await prismaAuth.user.findMany({
         select: { id: true, email: true, firstName: true, lastName: true, role: true, createdAt: true },
         orderBy: { createdAt: "desc" },
     });
@@ -48,14 +48,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Un modérateur ne peut pas créer un administrateur" }, { status: 403 });
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prismaAuth.user.findUnique({ where: { email } });
     if (existing) {
         return NextResponse.json({ error: "Un utilisateur avec cet email existe déjà" }, { status: 400 });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await prisma.user.create({
+    await prismaAuth.user.create({
         data: {
             email,
             firstName: firstName || null,
@@ -81,7 +81,7 @@ export async function PUT(request: Request) {
         return NextResponse.json({ error: "ID utilisateur requis" }, { status: 400 });
     }
 
-    const targetUser = await prisma.user.findUnique({ where: { id } });
+    const targetUser = await prismaAuth.user.findUnique({ where: { id } });
     if (!targetUser) {
         return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
     }
@@ -94,7 +94,7 @@ export async function PUT(request: Request) {
         return NextResponse.json({ error: "Email invalide" }, { status: 400 });
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prismaAuth.user.findUnique({ where: { email } });
     if (existing && existing.id !== id) {
         return NextResponse.json({ error: "Un utilisateur avec cet email existe déjà" }, { status: 400 });
     }
@@ -110,7 +110,7 @@ export async function PUT(request: Request) {
         updateData.password = await bcrypt.hash(password, 10);
     }
 
-    await prisma.user.update({ where: { id }, data: updateData });
+    await prismaAuth.user.update({ where: { id }, data: updateData });
     return NextResponse.json({ success: true });
 }
 
@@ -131,7 +131,7 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: "Vous ne pouvez pas supprimer votre propre compte" }, { status: 400 });
     }
 
-    const targetUser = await prisma.user.findUnique({ where: { id } });
+    const targetUser = await prismaAuth.user.findUnique({ where: { id } });
     if (!targetUser) {
         return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
     }
@@ -140,6 +140,6 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: "Un modérateur ne peut pas supprimer un administrateur" }, { status: 403 });
     }
 
-    await prisma.user.delete({ where: { id } });
+    await prismaAuth.user.delete({ where: { id } });
     return NextResponse.json({ success: true });
 }
