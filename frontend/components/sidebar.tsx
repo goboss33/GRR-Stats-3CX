@@ -20,13 +20,6 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { SidebarProfileMenu } from "@/components/sidebar-profile-menu";
-import { ServerSelector } from "@/components/server-selector";
-import { ServerId } from "@/lib/prisma-cdr";
-
-interface ServerInfo {
-    id: ServerId;
-    name: string;
-}
 
 interface SidebarProps {
     userRole: string;
@@ -35,8 +28,6 @@ interface SidebarProps {
         lastName: string | null | undefined;
     };
     signOutAction: () => Promise<void>;
-    currentServer: ServerId;
-    availableServers: ServerInfo[];
 }
 
 interface NavItem {
@@ -67,7 +58,7 @@ const navItems: NavItem[] = [
     },
 ];
 
-export function Sidebar({ userRole, user, signOutAction, currentServer, availableServers }: SidebarProps) {
+export function Sidebar({ userRole, user, signOutAction }: SidebarProps) {
     const pathname = usePathname();
     const [collapsed, setCollapsed] = useState(false);
 
@@ -96,13 +87,6 @@ export function Sidebar({ userRole, user, signOutAction, currentServer, availabl
                         )}
                     </div>
                 </div>
-
-                {/* Server Selector */}
-                {!collapsed && (
-                    <div className="px-3 py-3 border-b border-slate-800">
-                        <ServerSelector currentServer={currentServer} availableServers={availableServers} />
-                    </div>
-                )}
 
                 {/* Navigation */}
                 <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
