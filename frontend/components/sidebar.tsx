@@ -23,6 +23,11 @@ import { SidebarProfileMenu } from "@/components/sidebar-profile-menu";
 import { ServerSelector } from "@/components/server-selector";
 import { ServerId } from "@/lib/prisma-cdr";
 
+interface ServerInfo {
+    id: ServerId;
+    name: string;
+}
+
 interface SidebarProps {
     userRole: string;
     user: {
@@ -31,6 +36,7 @@ interface SidebarProps {
     };
     signOutAction: () => Promise<void>;
     currentServer: ServerId;
+    availableServers: ServerInfo[];
 }
 
 interface NavItem {
@@ -61,7 +67,7 @@ const navItems: NavItem[] = [
     },
 ];
 
-export function Sidebar({ userRole, user, signOutAction, currentServer }: SidebarProps) {
+export function Sidebar({ userRole, user, signOutAction, currentServer, availableServers }: SidebarProps) {
     const pathname = usePathname();
     const [collapsed, setCollapsed] = useState(false);
 
@@ -94,7 +100,7 @@ export function Sidebar({ userRole, user, signOutAction, currentServer }: Sideba
                 {/* Server Selector */}
                 {!collapsed && (
                     <div className="px-3 py-3 border-b border-slate-800">
-                        <ServerSelector currentServer={currentServer} />
+                        <ServerSelector currentServer={currentServer} availableServers={availableServers} />
                     </div>
                 )}
 

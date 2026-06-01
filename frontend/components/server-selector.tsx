@@ -2,8 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ServerId, SERVERS } from "@/lib/prisma-cdr";
-import { getAvailableServers } from "@/lib/servers";
+import { ServerId } from "@/lib/prisma-cdr";
 import {
     Select,
     SelectContent,
@@ -13,15 +12,19 @@ import {
 } from "@/components/ui/select";
 import { Building2 } from "lucide-react";
 
-interface ServerSelectorProps {
-    currentServer: ServerId;
+interface ServerInfo {
+    id: ServerId;
+    name: string;
 }
 
-export function ServerSelector({ currentServer }: ServerSelectorProps) {
+interface ServerSelectorProps {
+    currentServer: ServerId;
+    availableServers: ServerInfo[];
+}
+
+export function ServerSelector({ currentServer, availableServers }: ServerSelectorProps) {
     const router = useRouter();
     const [isPending, startTransition] = useTransition();
-
-    const availableServers = getAvailableServers();
 
     function handleServerChange(value: string) {
         const serverId = value as ServerId;
@@ -37,7 +40,7 @@ export function ServerSelector({ currentServer }: ServerSelectorProps) {
     }
 
     if (availableServers.length === 1) {
-        const server = SERVERS[availableServers[0]];
+        const server = availableServers[0];
         return (
             <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-300">
                 <Building2 className="h-4 w-4" />
@@ -55,18 +58,15 @@ export function ServerSelector({ currentServer }: ServerSelectorProps) {
                 </div>
             </SelectTrigger>
             <SelectContent className="bg-slate-800 border-slate-700">
-                {availableServers.map((serverId) => {
-                    const server = SERVERS[serverId];
-                    return (
-                        <SelectItem
-                            key={serverId}
-                            value={serverId}
-                            className="text-white focus:bg-slate-700 focus:text-white"
-                        >
-                            {server.name}
-                        </SelectItem>
-                    );
-                })}
+                {availableServers.map((server) => (
+                    <SelectItem
+                        key={server.id}
+                        value={server.id}
+                        className="text-white focus:bg-slate-700 focus:text-white"
+                    >
+                        {server.name}
+                    </SelectItem>
+                ))}
             </SelectContent>
         </Select>
     );
