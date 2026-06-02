@@ -161,11 +161,11 @@ export default function AdminLogsPage() {
     // Queues state for filter
     const [queues, setQueues] = useState<QueueInfo[]>([]);
 
-    // Debounce search inputs (500ms)
-    const debouncedCallerSearch = useDebounce(callerSearch, 500);
-    const debouncedCalleeSearch = useDebounce(calleeSearch, 500);
-    const debouncedHandledBySearch = useDebounce(handledBySearch, 500);
-    const debouncedIdSearch = useDebounce(idSearch, 500);
+    // Debounce search inputs (1000ms)
+    const debouncedCallerSearch = useDebounce(callerSearch, 1000);
+    const debouncedCalleeSearch = useDebounce(calleeSearch, 1000);
+    const debouncedHandledBySearch = useDebounce(handledBySearch, 1000);
+    const debouncedIdSearch = useDebounce(idSearch, 1000);
 
     // Build effective filters
     // Key fix: if actual value is empty, use it immediately (for reset case)
