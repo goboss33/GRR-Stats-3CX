@@ -187,23 +187,29 @@ export async function getConcurrentCallsData(
                 HAVING MIN(cdr_started_at) IS NOT NULL
                    AND MAX(cdr_ended_at) IS NOT NULL
             ),
-            events AS (
-                SELECT call_start AS event_time, 1 AS change FROM call_spans
+            bucketed_events AS (
+                SELECT 
+                    date_trunc('minute', call_start) AS bucket,
+                    1 AS change
+                FROM call_spans
                 UNION ALL
-                SELECT call_end AS event_time, -1 AS change FROM call_spans
+                SELECT 
+                    date_trunc('minute', call_end) AS bucket,
+                    -1 AS change
+                FROM call_spans
             ),
-            timeline AS (
-                SELECT
-                    event_time,
-                    SUM(change) OVER (ORDER BY event_time ASC, change DESC) AS concurrent_calls
-                FROM events
+            bucket_changes AS (
+                SELECT 
+                    bucket,
+                    SUM(change) AS net_change
+                FROM bucketed_events
+                GROUP BY bucket
             )
             SELECT
-                date_trunc('minute', event_time) AS timestamp,
-                MAX(concurrent_calls)::bigint AS concurrent_calls
-            FROM timeline
-            GROUP BY timestamp
-            ORDER BY timestamp ASC
+                bucket AS timestamp,
+                SUM(net_change) OVER (ORDER BY bucket ASC)::bigint AS concurrent_calls
+            FROM bucket_changes
+            ORDER BY bucket ASC
         `;
     } else if (diffDays <= 7) {
         return prisma.$queryRaw<ConcurrentCallsRow[]>`
@@ -220,23 +226,29 @@ export async function getConcurrentCallsData(
                 HAVING MIN(cdr_started_at) IS NOT NULL
                    AND MAX(cdr_ended_at) IS NOT NULL
             ),
-            events AS (
-                SELECT call_start AS event_time, 1 AS change FROM call_spans
+            bucketed_events AS (
+                SELECT 
+                    date_trunc('hour', call_start) + (EXTRACT(MINUTE FROM call_start)::int / 5) * INTERVAL '5 minutes' AS bucket,
+                    1 AS change
+                FROM call_spans
                 UNION ALL
-                SELECT call_end AS event_time, -1 AS change FROM call_spans
+                SELECT 
+                    date_trunc('hour', call_end) + (EXTRACT(MINUTE FROM call_end)::int / 5) * INTERVAL '5 minutes' AS bucket,
+                    -1 AS change
+                FROM call_spans
             ),
-            timeline AS (
-                SELECT
-                    event_time,
-                    SUM(change) OVER (ORDER BY event_time ASC, change DESC) AS concurrent_calls
-                FROM events
+            bucket_changes AS (
+                SELECT 
+                    bucket,
+                    SUM(change) AS net_change
+                FROM bucketed_events
+                GROUP BY bucket
             )
             SELECT
-                date_trunc('hour', event_time) + (EXTRACT(MINUTE FROM event_time)::int / 5) * INTERVAL '5 minutes' AS timestamp,
-                MAX(concurrent_calls)::bigint AS concurrent_calls
-            FROM timeline
-            GROUP BY timestamp
-            ORDER BY timestamp ASC
+                bucket AS timestamp,
+                SUM(net_change) OVER (ORDER BY bucket ASC)::bigint AS concurrent_calls
+            FROM bucket_changes
+            ORDER BY bucket ASC
         `;
     } else {
         return prisma.$queryRaw<ConcurrentCallsRow[]>`
@@ -253,23 +265,29 @@ export async function getConcurrentCallsData(
                 HAVING MIN(cdr_started_at) IS NOT NULL
                    AND MAX(cdr_ended_at) IS NOT NULL
             ),
-            events AS (
-                SELECT call_start AS event_time, 1 AS change FROM call_spans
+            bucketed_events AS (
+                SELECT 
+                    date_trunc('hour', call_start) AS bucket,
+                    1 AS change
+                FROM call_spans
                 UNION ALL
-                SELECT call_end AS event_time, -1 AS change FROM call_spans
+                SELECT 
+                    date_trunc('hour', call_end) AS bucket,
+                    -1 AS change
+                FROM call_spans
             ),
-            timeline AS (
-                SELECT
-                    event_time,
-                    SUM(change) OVER (ORDER BY event_time ASC, change DESC) AS concurrent_calls
-                FROM events
+            bucket_changes AS (
+                SELECT 
+                    bucket,
+                    SUM(change) AS net_change
+                FROM bucketed_events
+                GROUP BY bucket
             )
             SELECT
-                date_trunc('hour', event_time) AS timestamp,
-                MAX(concurrent_calls)::bigint AS concurrent_calls
-            FROM timeline
-            GROUP BY timestamp
-            ORDER BY timestamp ASC
+                bucket AS timestamp,
+                SUM(net_change) OVER (ORDER BY bucket ASC)::bigint AS concurrent_calls
+            FROM bucket_changes
+            ORDER BY bucket ASC
         `;
     }
 }
