@@ -1240,20 +1240,55 @@ export async function getExtensionAggregatedStats(
 
     const ctes = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE);
 
+    const systemTypes = SQL_SYSTEM_DEST_TYPES;
+    const systemEntityTypes = SQL_SYSTEM_ENTITY_TYPES;
+
     const statsQuery = `${ctes}
         SELECT
             COUNT(*) as total_count,
             COUNT(*) FILTER (WHERE fs.source_dn_type = 'provider' OR (fs.source_dn_type != 'extension' AND fs.source_dn_type != 'bridge')) as inbound_count,
             COUNT(*) FILTER (WHERE fs.source_dn_type = 'extension') as outbound_count,
             COUNT(*) FILTER (WHERE
-                (ls.last_dest_type NOT IN ('vmail_console', 'voicemail') AND ls.last_dest_entity_type != 'voicemail')
-                AND ls.cdr_answered_at IS NOT NULL
+                COALESCE(ls.last_dest_entity_type, '') NOT IN ('voicemail')
+                AND COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%'
+                AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail')
+                AND (
+                    (
+                        (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
+                        AND ans.answered_at IS NOT NULL
+                        AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
+                    )
+                    OR
+                    (
+                        (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
+                        AND ls.cdr_answered_at IS NOT NULL
+                        AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
+                    )
+                )
             ) as answered_count,
             COUNT(*) FILTER (WHERE
-                ls.cdr_answered_at IS NULL
-                AND ls.last_dest_type NOT IN ('vmail_console', 'voicemail')
-                AND ls.last_dest_entity_type != 'voicemail'
-                AND (ls.termination_reason_details IS NULL OR ls.termination_reason_details NOT ILIKE '%busy%')
+                COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%'
+                AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail')
+                AND COALESCE(ls.last_dest_entity_type, '') != 'voicemail'
+                AND (
+                    (
+                        (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
+                        AND (
+                            ans.answered_at IS NULL
+                            OR EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) <= 1
+                        )
+                    )
+                    OR
+                    (
+                        (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
+                        AND ls.cdr_answered_at IS NULL
+                    )
+                    OR
+                    (
+                        (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
+                        AND ls.cdr_answered_at IS NULL
+                    )
+                )
             ) as missed_count,
             COUNT(*) FILTER (WHERE
                 ls.last_dest_type IN ('vmail_console', 'voicemail')
