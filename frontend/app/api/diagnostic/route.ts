@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runDiagnostic } from "@/services/diagnostic.service";
+import { ServerId } from "@/lib/prisma-cdr";
+import { getDefaultServer, isValidServer } from "@/lib/servers";
 
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { startDate, endDate } = body;
+        const { startDate, endDate, server } = body;
 
         if (!startDate || !endDate) {
             return NextResponse.json(
@@ -13,8 +15,12 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        console.log("[DIAGNOSTIC] Running diagnostic from", startDate, "to", endDate);
-        const result = await runDiagnostic(new Date(startDate), new Date(endDate));
+        const serverId: ServerId = server && isValidServer(server) 
+            ? server as ServerId 
+            : getDefaultServer();
+
+        console.log("[DIAGNOSTIC] Running diagnostic from", startDate, "to", endDate, "for server", serverId);
+        const result = await runDiagnostic(serverId, new Date(startDate), new Date(endDate));
         console.log("[DIAGNOSTIC] Success:", result.summary.totalCalls, "calls,", result.summary.divergences, "divergences");
         return NextResponse.json(result);
     } catch (error) {

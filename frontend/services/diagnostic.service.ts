@@ -1,6 +1,6 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import { getGlobalMetrics } from "@/services/dashboard.service";
 import { determineCallStatus, SQL_SYSTEM_DEST_TYPES, SQL_SYSTEM_ENTITY_TYPES } from "@/services/domain/call-aggregation";
 
@@ -53,11 +53,14 @@ export interface SegmentSummary {
 }
 
 export async function runDiagnostic(
+    serverId: ServerId,
     startDate: Date,
     endDate: Date
 ): Promise<DiagnosticResult> {
+    const prisma = getPrismaCdr(serverId);
+    
     // Step 1: Real Dashboard metrics
-    const dashboardMetrics = await getGlobalMetrics(startDate, endDate);
+    const dashboardMetrics = await getGlobalMetrics(serverId, startDate, endDate);
 
     // Step 2: All call aggregates
     const callAggregates = await prisma.$queryRaw<

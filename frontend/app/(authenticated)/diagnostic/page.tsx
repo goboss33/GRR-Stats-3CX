@@ -5,6 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { ServerId } from "@/lib/prisma-cdr";
+
+function getSelectedServer(): ServerId {
+    if (typeof document === "undefined") return "gerofinance";
+    const match = document.cookie.match(/selectedServer=([^;]+)/);
+    return (match?.[1] as ServerId) || "gerofinance";
+}
 
 interface SegmentSummary {
     cdrId: string;
@@ -98,11 +105,12 @@ export default function DiagnosticPage() {
         setExpandedCall(null);
 
         const { start, end } = getDateRange();
+        const serverId = getSelectedServer();
         try {
             const response = await fetch("/api/diagnostic", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ startDate: start.toISOString(), endDate: end.toISOString() }),
+                body: JSON.stringify({ startDate: start.toISOString(), endDate: end.toISOString(), server: serverId }),
             });
 
             if (!response.ok) {

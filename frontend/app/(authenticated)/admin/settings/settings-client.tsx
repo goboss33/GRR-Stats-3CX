@@ -692,11 +692,12 @@ function DiagnosticTab() {
         setError(null);
         setExpandedCall(null);
         const { start, end } = getDateRange();
+        const serverId = getSelectedServer();
         try {
             const response = await fetch("/api/diagnostic", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ startDate: start.toISOString(), endDate: end.toISOString() }),
+                body: JSON.stringify({ startDate: start.toISOString(), endDate: end.toISOString(), server: serverId }),
             });
             if (!response.ok) {
                 const errorText = await response.text();
