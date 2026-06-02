@@ -181,7 +181,12 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-slate-900 flex items-center">
-                            {isInitialLoad ? <Skeleton className="h-8 w-16" /> : (
+                            {isLoading ? (
+                                <div className="flex items-center gap-2">
+                                    <Skeleton className="h-8 w-16" />
+                                    <Skeleton className="h-5 w-12" />
+                                </div>
+                            ) : (
                                 <>
                                     <Link
                                         href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}`}
@@ -216,7 +221,12 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-emerald-600 flex items-center">
-                            {isInitialLoad ? <Skeleton className="h-8 w-16" /> : (
+                            {isLoading ? (
+                                <div className="flex items-center gap-2">
+                                    <Skeleton className="h-8 w-16" />
+                                    <Skeleton className="h-5 w-12" />
+                                </div>
+                            ) : (
                                 <>
                                     <Link
                                         href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=answered`}
@@ -229,7 +239,7 @@ export default function DashboardClient() {
                             )}
                         </div>
                         <div className="flex items-center gap-1 mt-1.5 text-xs">
-                            {isInitialLoad
+                            {isLoading
                                 ? <Skeleton className="h-4 w-20" />
                                 : <><span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{metrics?.answerRate}%</span><span className="text-slate-500 font-medium">taux global</span></>
                             }
@@ -256,7 +266,12 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-rose-600 flex items-center">
-                            {isInitialLoad ? <Skeleton className="h-8 w-16" /> : (
+                            {isLoading ? (
+                                <div className="flex items-center gap-2">
+                                    <Skeleton className="h-8 w-16" />
+                                    <Skeleton className="h-5 w-12" />
+                                </div>
+                            ) : (
                                 <>
                                     <Link
                                         href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=missed`}
@@ -291,7 +306,12 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-purple-600 flex items-center">
-                            {isInitialLoad ? <Skeleton className="h-8 w-16" /> : (
+                            {isLoading ? (
+                                <div className="flex items-center gap-2">
+                                    <Skeleton className="h-8 w-16" />
+                                    <Skeleton className="h-5 w-12" />
+                                </div>
+                            ) : (
                                 <>
                                     <Link
                                         href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=voicemail`}
@@ -326,7 +346,12 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold text-orange-600 flex items-center">
-                            {isInitialLoad ? <Skeleton className="h-8 w-16" /> : (
+                            {isLoading ? (
+                                <div className="flex items-center gap-2">
+                                    <Skeleton className="h-8 w-16" />
+                                    <Skeleton className="h-5 w-12" />
+                                </div>
+                            ) : (
                                 <>
                                     <Link
                                         href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=busy`}
@@ -349,10 +374,15 @@ export default function DashboardClient() {
                         <Clock className="h-5 w-5 text-indigo-500 opacity-80" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl lg:text-3xl font-bold text-slate-900 flex items-center">
-                            {isInitialLoad ? <Skeleton className="h-8 w-20" /> : (
+                        <div className="text-2xl lg:text-3xl font-bold text-slate-900 flex items-center min-w-0">
+                            {isLoading ? (
+                                <div className="flex items-center gap-2">
+                                    <Skeleton className="h-8 w-20" />
+                                    <Skeleton className="h-5 w-12" />
+                                </div>
+                            ) : (
                                 <>
-                                    {formatDuration(metrics?.avgDurationSeconds || 0)}
+                                    <span className="truncate">{formatDuration(metrics?.avgDurationSeconds || 0)}</span>
                                     <TrendIndicator current={metrics?.avgDurationSeconds || 0} prev={metrics?.prevAvgDurationSeconds || 0} />
                                 </>
                             )}
@@ -368,10 +398,15 @@ export default function DashboardClient() {
                         <Hourglass className="h-5 w-5 text-amber-500 opacity-80" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl lg:text-3xl font-bold text-slate-900 flex items-center">
-                            {isInitialLoad ? <Skeleton className="h-8 w-20" /> : (
+                        <div className="text-2xl lg:text-3xl font-bold text-slate-900 flex items-center min-w-0">
+                            {isLoading ? (
+                                <div className="flex items-center gap-2">
+                                    <Skeleton className="h-8 w-20" />
+                                    <Skeleton className="h-5 w-12" />
+                                </div>
+                            ) : (
                                 <>
-                                    {formatDuration(metrics?.avgWaitTimeSeconds || 0)}
+                                    <span className="truncate">{formatDuration(metrics?.avgWaitTimeSeconds || 0)}</span>
                                     <TrendIndicator current={metrics?.avgWaitTimeSeconds || 0} prev={metrics?.prevAvgWaitTimeSeconds || 0} inverseGood={true} />
                                 </>
                             )}
