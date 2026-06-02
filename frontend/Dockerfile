@@ -65,6 +65,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 
+# Copy Prisma query engines for multi-schema clients (auth + cdr)
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma/auth-client ./node_modules/.prisma/auth-client
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma/cdr-client ./node_modules/.prisma/cdr-client
+
 # Automatically leverage output traces to reduce image size
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
