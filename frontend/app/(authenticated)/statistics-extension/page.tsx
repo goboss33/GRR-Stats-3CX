@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { startOfMonth, endOfMonth } from "date-fns";
-import { Hash, Search, TrendingUp, PhoneIncoming, PhoneOutgoing, Clock } from "lucide-react";
+import { Hash, Search, TrendingUp, PhoneIncoming, PhoneOutgoing, Clock, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { ExtensionSearchTable } from "@/components/stats-extension/extension-search-table";
 import { ExtensionResultsTable } from "@/components/stats-extension/extension-results-table";
 import { getExtensionStatistics } from "@/services/extension-statistics.service";
+import { generateExtensionStatsPDF } from "@/services/extension-pdf-export";
 import { ServerId } from "@/lib/prisma-cdr";
 import { formatDuration } from "@/services/domain/call-aggregation";
 import type { ExtensionStatisticsResponse } from "@/types/extension-stats.types";
@@ -166,7 +167,17 @@ export default function StatisticsExtensionPage() {
 
                     <Card>
                         <CardHeader>
-                            <CardTitle>Détails par Extension</CardTitle>
+                            <div className="flex items-center justify-between">
+                                <CardTitle>Détails par Extension</CardTitle>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => generateExtensionStatsPDF(results)}
+                                >
+                                    <FileDown className="h-4 w-4 mr-2" />
+                                    Export PDF
+                                </Button>
+                            </div>
                         </CardHeader>
                         <CardContent>
                             <ExtensionResultsTable extensions={results.extensions} />
