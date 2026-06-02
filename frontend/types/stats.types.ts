@@ -4,6 +4,8 @@ export type {
     GlobalMetrics,
     TimelineDataPoint,
     HeatmapDataPoint,
+    ConcurrentCallsDataPoint,
+    ConcurrentCallsSummary,
     ExtensionStats,
     RecentCall,
     SerializedDateRange,

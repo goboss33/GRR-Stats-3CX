@@ -6,6 +6,7 @@ export interface ServerConfig {
     id: ServerId;
     name: string;
     databaseUrl: string;
+    licenceThreshold: number;
 }
 
 let _servers: Record<ServerId, ServerConfig> | null = null;
@@ -17,11 +18,13 @@ export function getServers(): Record<ServerId, ServerConfig> {
                 id: "gerofinance",
                 name: "Gérofinance",
                 databaseUrl: process.env.DATABASE_URL_GEROFINANCE || "",
+                licenceThreshold: 64,
             },
             edifea: {
                 id: "edifea",
                 name: "Edifea",
                 databaseUrl: process.env.DATABASE_URL_EDIFEA || "",
+                licenceThreshold: 16,
             },
         };
     }

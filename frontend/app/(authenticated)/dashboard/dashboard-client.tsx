@@ -10,12 +10,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
+import { ConcurrentCallsChart } from "@/components/concurrent-calls-chart";
 
 import Link from "next/link";
 import {
     getGlobalMetrics,
     getTimelineData,
     getHeatmapData,
+    getConcurrentCallsChartData,
 } from "@/services/dashboard.service";
 import { ServerId } from "@/lib/prisma-cdr";
 
@@ -23,6 +25,8 @@ import type {
     GlobalMetrics,
     TimelineDataPoint,
     HeatmapDataPoint,
+    ConcurrentCallsDataPoint,
+    ConcurrentCallsSummary,
 } from "@/types/stats.types";
 
 function getSelectedServer(): ServerId {
@@ -103,20 +107,25 @@ export default function DashboardClient() {
     const [metrics, setMetrics] = useState<GlobalMetrics | null>(null);
     const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([]);
     const [heatmapData, setHeatmapData] = useState<HeatmapDataPoint[]>([]);
+    const [concurrentCallsData, setConcurrentCallsData] = useState<ConcurrentCallsDataPoint[]>([]);
+    const [concurrentCallsSummary, setConcurrentCallsSummary] = useState<ConcurrentCallsSummary | null>(null);
 
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
             const serverId = getSelectedServer();
-            const [metricsData, timeline, heatmap] = await Promise.all([
+            const [metricsData, timeline, heatmap, concurrentCalls] = await Promise.all([
                 getGlobalMetrics(serverId, dateRange.startDate, dateRange.endDate),
                 getTimelineData(serverId, dateRange.startDate, dateRange.endDate),
                 getHeatmapData(serverId, dateRange.startDate, dateRange.endDate),
+                getConcurrentCallsChartData(serverId, dateRange.startDate, dateRange.endDate),
             ]);
 
             setMetrics(metricsData);
             setTimelineData(timeline);
             setHeatmapData(heatmap);
+            setConcurrentCallsData(concurrentCalls.data);
+            setConcurrentCallsSummary(concurrentCalls.summary);
             setIsInitialLoad(false);
         } catch (error) {
             console.error("Error fetching dashboard data:", error);
@@ -417,6 +426,27 @@ export default function DashboardClient() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Concurrent Calls - ECG Style */}
+            <Card className="border-none shadow-md bg-gradient-to-b from-white to-slate-50/50">
+                <CardHeader>
+                    <CardTitle className="text-lg font-bold text-slate-900">Appels Simultanés — Monitoring Licence</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {isLoading && !isInitialLoad ? (
+                        <div className="h-[400px] space-y-4 pt-4">
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                                {Array.from({ length: 4 }).map((_, i) => (
+                                    <Skeleton key={i} className="h-20 rounded-xl" />
+                                ))}
+                            </div>
+                            <Skeleton className="h-[300px] rounded-xl" />
+                        </div>
+                    ) : concurrentCallsSummary ? (
+                        <ConcurrentCallsChart data={concurrentCallsData} summary={concurrentCallsSummary} />
+                    ) : null}
+                </CardContent>
+            </Card>
         </div>
     );
 }

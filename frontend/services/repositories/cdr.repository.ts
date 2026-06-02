@@ -33,6 +33,11 @@ export interface HeatmapRow {
     volume: bigint;
 }
 
+export interface ConcurrentCallsRow {
+    timestamp: Date;
+    concurrent_calls: bigint;
+}
+
 export interface TrendRow {
     call_date: Date | null;
     call_hour: number | null;
@@ -152,6 +157,121 @@ export async function getHeatmapDataRaw(
         FROM unique_calls
         GROUP BY day_of_week, hour_of_day
     `;
+}
+
+// ============================================
+// CONCURRENT CALLS (Licence monitoring)
+// ============================================
+
+export async function getConcurrentCallsData(
+    serverId: ServerId,
+    startDate: Date,
+    endDate: Date
+): Promise<ConcurrentCallsRow[]> {
+    const prisma = getPrismaCdr(serverId);
+    const diffMs = endDate.getTime() - startDate.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+    if (diffDays <= 1) {
+        return prisma.$queryRaw<ConcurrentCallsRow[]>`
+            WITH call_spans AS (
+                SELECT
+                    call_history_id,
+                    MIN(cdr_started_at) AS call_start,
+                    MAX(cdr_ended_at) AS call_end
+                FROM cdroutput
+                WHERE cdr_started_at >= ${startDate}
+                  AND cdr_started_at <= ${endDate}
+                  AND call_history_id IS NOT NULL
+                GROUP BY call_history_id
+                HAVING MIN(cdr_started_at) IS NOT NULL
+                   AND MAX(cdr_ended_at) IS NOT NULL
+            ),
+            events AS (
+                SELECT call_start AS event_time, 1 AS change FROM call_spans
+                UNION ALL
+                SELECT call_end AS event_time, -1 AS change FROM call_spans
+            ),
+            timeline AS (
+                SELECT
+                    event_time,
+                    SUM(change) OVER (ORDER BY event_time ASC, change DESC) AS concurrent_calls
+                FROM events
+            )
+            SELECT
+                date_trunc('minute', event_time) AS timestamp,
+                MAX(concurrent_calls)::bigint AS concurrent_calls
+            FROM timeline
+            GROUP BY timestamp
+            ORDER BY timestamp ASC
+        `;
+    } else if (diffDays <= 7) {
+        return prisma.$queryRaw<ConcurrentCallsRow[]>`
+            WITH call_spans AS (
+                SELECT
+                    call_history_id,
+                    MIN(cdr_started_at) AS call_start,
+                    MAX(cdr_ended_at) AS call_end
+                FROM cdroutput
+                WHERE cdr_started_at >= ${startDate}
+                  AND cdr_started_at <= ${endDate}
+                  AND call_history_id IS NOT NULL
+                GROUP BY call_history_id
+                HAVING MIN(cdr_started_at) IS NOT NULL
+                   AND MAX(cdr_ended_at) IS NOT NULL
+            ),
+            events AS (
+                SELECT call_start AS event_time, 1 AS change FROM call_spans
+                UNION ALL
+                SELECT call_end AS event_time, -1 AS change FROM call_spans
+            ),
+            timeline AS (
+                SELECT
+                    event_time,
+                    SUM(change) OVER (ORDER BY event_time ASC, change DESC) AS concurrent_calls
+                FROM events
+            )
+            SELECT
+                date_trunc('hour', event_time) + (EXTRACT(MINUTE FROM event_time)::int / 5) * INTERVAL '5 minutes' AS timestamp,
+                MAX(concurrent_calls)::bigint AS concurrent_calls
+            FROM timeline
+            GROUP BY timestamp
+            ORDER BY timestamp ASC
+        `;
+    } else {
+        return prisma.$queryRaw<ConcurrentCallsRow[]>`
+            WITH call_spans AS (
+                SELECT
+                    call_history_id,
+                    MIN(cdr_started_at) AS call_start,
+                    MAX(cdr_ended_at) AS call_end
+                FROM cdroutput
+                WHERE cdr_started_at >= ${startDate}
+                  AND cdr_started_at <= ${endDate}
+                  AND call_history_id IS NOT NULL
+                GROUP BY call_history_id
+                HAVING MIN(cdr_started_at) IS NOT NULL
+                   AND MAX(cdr_ended_at) IS NOT NULL
+            ),
+            events AS (
+                SELECT call_start AS event_time, 1 AS change FROM call_spans
+                UNION ALL
+                SELECT call_end AS event_time, -1 AS change FROM call_spans
+            ),
+            timeline AS (
+                SELECT
+                    event_time,
+                    SUM(change) OVER (ORDER BY event_time ASC, change DESC) AS concurrent_calls
+                FROM events
+            )
+            SELECT
+                date_trunc('hour', event_time) AS timestamp,
+                MAX(concurrent_calls)::bigint AS concurrent_calls
+            FROM timeline
+            GROUP BY timestamp
+            ORDER BY timestamp ASC
+        `;
+    }
 }
 
 // ============================================

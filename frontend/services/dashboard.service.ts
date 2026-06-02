@@ -4,12 +4,16 @@ import { ServerId } from "@/lib/prisma-cdr";
 import {
     getTimelineDataRaw,
     getHeatmapDataRaw,
+    getConcurrentCallsData,
 } from "@/services/repositories/cdr.repository";
 import type {
     GlobalMetrics,
     TimelineDataPoint,
     HeatmapDataPoint,
+    ConcurrentCallsDataPoint,
+    ConcurrentCallsSummary,
 } from "@/services/domain/call.types";
+import { SERVERS } from "@/lib/prisma-cdr";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:3000";
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
@@ -140,4 +144,53 @@ export async function getHeatmapData(
         hourOfDay: row.hour_of_day,
         value: Number(row.volume),
     }));
+}
+
+export async function getConcurrentCallsChartData(
+    serverId: ServerId,
+    startDate: Date,
+    endDate: Date
+): Promise<{ data: ConcurrentCallsDataPoint[]; summary: ConcurrentCallsSummary }> {
+    const rawData = await getConcurrentCallsData(serverId, startDate, endDate);
+    const threshold = SERVERS[serverId].licenceThreshold;
+
+    const data: ConcurrentCallsDataPoint[] = rawData.map((row) => {
+        const date = new Date(row.timestamp);
+        const diffMs = endDate.getTime() - startDate.getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+        let label: string;
+        if (diffDays <= 1) {
+            label = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+        } else if (diffDays <= 7) {
+            label = `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+        } else {
+            label = `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}h`;
+        }
+
+        return {
+            timestamp: date.toISOString(),
+            label,
+            concurrentCalls: Number(row.concurrent_calls),
+        };
+    });
+
+    let peak = 0;
+    let peakTime = "";
+    let sum = 0;
+
+    for (const point of data) {
+        sum += point.concurrentCalls;
+        if (point.concurrentCalls > peak) {
+            peak = point.concurrentCalls;
+            peakTime = point.timestamp;
+        }
+    }
+
+    const avg = data.length > 0 ? Math.round(sum / data.length) : 0;
+
+    return {
+        data,
+        summary: { peak, peakTime, avg, threshold },
+    };
 }

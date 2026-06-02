@@ -231,6 +231,19 @@ export interface HeatmapDataPoint {
     value: number;
 }
 
+export interface ConcurrentCallsDataPoint {
+    timestamp: string;
+    label: string;
+    concurrentCalls: number;
+}
+
+export interface ConcurrentCallsSummary {
+    peak: number;
+    peakTime: string;
+    avg: number;
+    threshold: number;
+}
+
 // ============================================
 // QUEUE STATISTICS
 // ============================================
