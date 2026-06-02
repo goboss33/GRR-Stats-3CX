@@ -1200,3 +1200,90 @@ export async function exportCallLogsCSV(
         ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(";")),
     ].join("\n");
 }
+
+// ============================================
+// EXTENSION STATISTICS — Aggregated stats for a single extension
+// Reuses the same CTEs and filters as the logs page to ensure
+// numbers match exactly what users see in the call logs.
+// ============================================
+
+export interface ExtensionAggregatedStats {
+    totalCount: number;
+    inboundCount: number;
+    outboundCount: number;
+    answeredCount: number;
+    missedCount: number;
+    voicemailCount: number;
+    busyCount: number;
+    totalDurationSeconds: number;
+    avgDurationSeconds: number;
+    maxDurationSeconds: number;
+}
+
+/**
+ * Returns aggregated statistics for calls matching the given filters.
+ * This function reuses the exact same CTEs and filter logic as getAggregatedCallLogs()
+ * to ensure consistency with the call logs page.
+ *
+ * Used by extension-statistics.service.ts to compute per-extension stats.
+ */
+export async function getExtensionAggregatedStats(
+    serverId: ServerId,
+    startDate: Date,
+    endDate: Date,
+    filters: LogsFilters
+): Promise<ExtensionAggregatedStats> {
+    const prisma = getPrismaCdr(serverId);
+
+    const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin } =
+        buildAggregatedQueryParts(startDate, endDate, filters, { page: 1, pageSize: 1 });
+
+    const ctes = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE);
+
+    const statsQuery = `${ctes}
+        SELECT
+            COUNT(*) as total_count,
+            COUNT(*) FILTER (WHERE fs.source_dn_type = 'provider' OR (fs.source_dn_type != 'extension' AND fs.source_dn_type != 'bridge')) as inbound_count,
+            COUNT(*) FILTER (WHERE fs.source_dn_type = 'extension') as outbound_count,
+            COUNT(*) FILTER (WHERE
+                (ls.last_dest_type NOT IN ('vmail_console', 'voicemail') AND ls.last_dest_entity_type != 'voicemail')
+                AND ls.cdr_answered_at IS NOT NULL
+            ) as answered_count,
+            COUNT(*) FILTER (WHERE
+                ls.cdr_answered_at IS NULL
+                AND ls.last_dest_type NOT IN ('vmail_console', 'voicemail')
+                AND ls.last_dest_entity_type != 'voicemail'
+                AND (ls.termination_reason_details IS NULL OR ls.termination_reason_details NOT ILIKE '%busy%')
+            ) as missed_count,
+            COUNT(*) FILTER (WHERE
+                ls.last_dest_type IN ('vmail_console', 'voicemail')
+                OR ls.last_dest_entity_type = 'voicemail'
+            ) as voicemail_count,
+            COUNT(*) FILTER (WHERE ls.termination_reason_details ILIKE '%busy%') as busy_count,
+            COALESCE(SUM(EXTRACT(EPOCH FROM (ls.last_ended_at - ca.first_started_at))), 0) as total_duration_seconds,
+            COALESCE(AVG(EXTRACT(EPOCH FROM (ls.last_ended_at - ca.first_started_at))), 0) as avg_duration_seconds,
+            COALESCE(MAX(EXTRACT(EPOCH FROM (ls.last_ended_at - ca.first_started_at))), 0) as max_duration_seconds
+        FROM call_aggregates ca
+        JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
+        JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+        LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
+        ${calleeFilterJoin}
+        ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
+    `;
+
+    const result = await prisma.$queryRawUnsafe(statsQuery);
+    const row = (result as any[])[0];
+
+    return {
+        totalCount: Number(row.total_count || 0),
+        inboundCount: Number(row.inbound_count || 0),
+        outboundCount: Number(row.outbound_count || 0),
+        answeredCount: Number(row.answered_count || 0),
+        missedCount: Number(row.missed_count || 0),
+        voicemailCount: Number(row.voicemail_count || 0),
+        busyCount: Number(row.busy_count || 0),
+        totalDurationSeconds: Math.round(Number(row.total_duration_seconds || 0)),
+        avgDurationSeconds: Math.round(Number(row.avg_duration_seconds || 0)),
+        maxDurationSeconds: Math.round(Number(row.max_duration_seconds || 0)),
+    };
+}

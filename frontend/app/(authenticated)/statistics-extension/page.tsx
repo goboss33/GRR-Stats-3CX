@@ -2,11 +2,22 @@
 
 import { useState } from "react";
 import { startOfMonth, endOfMonth } from "date-fns";
-import { Hash, Search } from "lucide-react";
+import { Hash, Search, TrendingUp, PhoneIncoming, PhoneOutgoing, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { ExtensionSearchTable } from "@/components/stats-extension/extension-search-table";
+import { ExtensionResultsTable } from "@/components/stats-extension/extension-results-table";
+import { getExtensionStatistics } from "@/services/extension-statistics.service";
+import { ServerId } from "@/lib/prisma-cdr";
+import { formatDuration } from "@/services/domain/call-aggregation";
+import type { ExtensionStatisticsResponse } from "@/types/extension-stats.types";
+
+function getSelectedServer(): ServerId {
+    if (typeof document === "undefined") return "gerofinance";
+    const match = document.cookie.match(/selectedServer=([^;]+)/);
+    return (match?.[1] as ServerId) || "gerofinance";
+}
 
 export default function StatisticsExtensionPage() {
     const [extensions, setExtensions] = useState<string[]>([]);
@@ -17,9 +28,26 @@ export default function StatisticsExtensionPage() {
             endDate: endOfMonth(now),
         };
     });
+    const [results, setResults] = useState<ExtensionStatisticsResponse | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleSearch = () => {
-        console.log("Recherche:", { extensions, dateRange });
+    const handleSearch = async () => {
+        if (extensions.length === 0) return;
+
+        setIsLoading(true);
+        setError(null);
+        setResults(null);
+
+        try {
+            const serverId = getSelectedServer();
+            const data = await getExtensionStatistics(serverId, extensions, dateRange.startDate, dateRange.endDate);
+            setResults(data);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Une erreur est survenue");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -50,28 +78,116 @@ export default function StatisticsExtensionPage() {
 
                         <Button
                             onClick={handleSearch}
-                            disabled={extensions.length === 0}
+                            disabled={extensions.length === 0 || isLoading}
                             size="lg"
                             className="h-12 px-8"
                         >
-                            <Search className="h-5 w-5 mr-2" />
-                            Rechercher
+                            {isLoading ? (
+                                <>
+                                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2" />
+                                    Recherche...
+                                </>
+                            ) : (
+                                <>
+                                    <Search className="h-5 w-5 mr-2" />
+                                    Rechercher
+                                </>
+                            )}
                         </Button>
                     </div>
                 </CardContent>
             </Card>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Résultats</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="border border-dashed rounded-lg p-12 text-center text-slate-400">
-                        <Search className="h-10 w-10 mx-auto mb-3 opacity-50" />
-                        <p className="text-sm">Ajoutez des extensions et lancez une recherche pour voir les statistiques</p>
+            {error && (
+                <Card className="border-red-200 bg-red-50">
+                    <CardContent className="pt-6">
+                        <p className="text-red-600">{error}</p>
+                    </CardContent>
+                </Card>
+            )}
+
+            {results && (
+                <>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <Card>
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle className="text-sm font-medium">Total Appels</CardTitle>
+                                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                            </CardHeader>
+                            <CardContent>
+                                <div className="text-2xl font-bold">{results.totals.totalCalls}</div>
+                                <p className="text-xs text-muted-foreground">
+                                    {results.totals.totalInbound} entrants, {results.totals.totalOutbound} sortants
+                                </p>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle className="text-sm font-medium">Appels Répondus</CardTitle>
+                                <PhoneIncoming className="h-4 w-4 text-muted-foreground" />
+                            </CardHeader>
+                            <CardContent>
+                                <div className="text-2xl font-bold">{results.totals.totalAnswered}</div>
+                                <p className="text-xs text-muted-foreground">
+                                    Taux de réponse: {results.totals.overallAnswerRate}%
+                                </p>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle className="text-sm font-medium">Appels Manqués</CardTitle>
+                                <PhoneOutgoing className="h-4 w-4 text-muted-foreground" />
+                            </CardHeader>
+                            <CardContent>
+                                <div className="text-2xl font-bold">{results.totals.totalMissed}</div>
+                                <p className="text-xs text-muted-foreground">
+                                    Sur {results.totals.totalInbound} appels entrants
+                                </p>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle className="text-sm font-medium">Durée Moyenne</CardTitle>
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                            </CardHeader>
+                            <CardContent>
+                                <div className="text-2xl font-bold">
+                                    {formatDuration(results.totals.averageDurationSeconds)}
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    Total: {formatDuration(results.totals.totalDurationSeconds)}
+                                </p>
+                            </CardContent>
+                        </Card>
                     </div>
-                </CardContent>
-            </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Détails par Extension</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <ExtensionResultsTable extensions={results.extensions} />
+                        </CardContent>
+                    </Card>
+                </>
+            )}
+
+            {!results && !error && !isLoading && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Résultats</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="border border-dashed rounded-lg p-12 text-center text-slate-400">
+                            <Search className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                            <p className="text-sm">Ajoutez des extensions et lancez une recherche pour voir les statistiques</p>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
         </div>
     );
 }
