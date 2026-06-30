@@ -928,6 +928,7 @@ interface TenantInfo {
     id: string;
     name: string;
     timezone: string;
+    licenceThreshold: number;
 }
 
 const COMMON_TIMEZONES = [
@@ -1001,6 +1002,29 @@ function TenantTab() {
             } else {
                 setAvailableServers(prev => prev.map(s => s.id === serverId ? { ...s, timezone } : s));
                 setMessage({ type: "success", text: "Fuseau horaire mis à jour avec succès" });
+            }
+        } catch {
+            setMessage({ type: "error", text: "Erreur lors de la sauvegarde" });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleLicenceThresholdChange = async (serverId: string, licenceThreshold: number) => {
+        setSaving(true);
+        setMessage(null);
+        try {
+            const res = await fetch("/api/admin/tenants", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ serverId, licenceThreshold }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setMessage({ type: "error", text: data.error || "Erreur lors de la sauvegarde" });
+            } else {
+                setAvailableServers(prev => prev.map(s => s.id === serverId ? { ...s, licenceThreshold } : s));
+                setMessage({ type: "success", text: "Seuil de licence mis à jour avec succès" });
             }
         } catch {
             setMessage({ type: "error", text: "Erreur lors de la sauvegarde" });
@@ -1102,6 +1126,27 @@ function TenantTab() {
                                             </SelectContent>
                                         </Select>
                                     </div>
+
+                                    <div className="ml-12 flex items-center gap-3">
+                                        <Label htmlFor={`lt-${server.id}`} className="text-sm text-slate-600 whitespace-nowrap">
+                                            Appels simultanés (licence) :
+                                        </Label>
+                                        <Input
+                                            id={`lt-${server.id}`}
+                                            type="number"
+                                            min={1}
+                                            max={10000}
+                                            value={server.licenceThreshold}
+                                            onChange={(e) => {
+                                                const val = parseInt(e.target.value);
+                                                if (!isNaN(val) && val >= 1 && val <= 10000) {
+                                                    handleLicenceThresholdChange(server.id, val);
+                                                }
+                                            }}
+                                            disabled={saving}
+                                            className="w-24 text-center"
+                                        />
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -1112,6 +1157,7 @@ function TenantTab() {
                         <ul className="list-disc list-inside space-y-1 text-slate-600">
                             <li>Le tenant sélectionné détermine quelles données sont affichées dans le dashboard, les logs et les statistiques</li>
                             <li>Le fuseau horaire est utilisé pour convertir les timestamps UTC des données 3CX en heure locale (heatmap, timeline, appels simultanés, créneaux horaires)</li>
+                            <li>Le seuil d&apos;appels simultanés correspond au nombre maximum de licences 3CX. Il est affiché comme ligne de référence sur le graphique des appels simultanés</li>
                             <li>La sélection est sauvegardée dans votre navigateur</li>
                             <li>La page se rechargera automatiquement après le changement de tenant</li>
                         </ul>

@@ -13,12 +13,13 @@ export async function GET() {
         const servers = getServers();
         
         const tenantSettings = await prismaAuth.tenantSettings.findMany();
-        const timezoneMap = new Map(tenantSettings.map(s => [s.serverId, s.timezone]));
+        const settingsMap = new Map(tenantSettings.map(s => [s.serverId, s]));
 
         const availableServers = availableServerIds.map(id => ({
             id,
             name: servers[id].name,
-            timezone: timezoneMap.get(id) || servers[id].timezone,
+            timezone: settingsMap.get(id)?.timezone || servers[id].timezone,
+            licenceThreshold: settingsMap.get(id)?.licenceThreshold ?? servers[id].licenceThreshold,
         }));
 
         return NextResponse.json({
@@ -36,7 +37,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
     try {
-        const { serverId, timezone } = await request.json();
+        const { serverId, timezone, licenceThreshold } = await request.json();
         
         if (!serverId || typeof serverId !== "string") {
             return NextResponse.json(
@@ -70,6 +71,23 @@ export async function POST(request: Request) {
             });
 
             return NextResponse.json({ success: true, serverId, timezone });
+        }
+
+        if (licenceThreshold !== undefined) {
+            if (typeof licenceThreshold !== "number" || licenceThreshold < 1 || licenceThreshold > 10000) {
+                return NextResponse.json(
+                    { error: "Invalid licenceThreshold. Must be between 1 and 10000." },
+                    { status: 400 }
+                );
+            }
+
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: { licenceThreshold },
+                create: { serverId, licenceThreshold },
+            });
+
+            return NextResponse.json({ success: true, serverId, licenceThreshold });
         }
 
         const cookieStore = await cookies();

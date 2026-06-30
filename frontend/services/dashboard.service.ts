@@ -13,8 +13,7 @@ import type {
     ConcurrentCallsDataPoint,
     ConcurrentCallsSummary,
 } from "@/services/domain/call.types";
-import { SERVERS } from "@/lib/prisma-cdr";
-import { getServerTimezone } from "@/lib/servers";
+import { getServerTimezone, getServerLicenceThreshold } from "@/lib/servers";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:3000";
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
@@ -156,7 +155,7 @@ export async function getConcurrentCallsChartData(
 ): Promise<{ data: ConcurrentCallsDataPoint[]; summary: ConcurrentCallsSummary }> {
     const timezone = await getServerTimezone(serverId);
     const rawData = await getConcurrentCallsData(serverId, startDate, endDate, timezone);
-    const threshold = SERVERS[serverId].licenceThreshold;
+    const threshold = await getServerLicenceThreshold(serverId);
 
     const data: ConcurrentCallsDataPoint[] = rawData.map((row) => {
         const date = new Date(row.timestamp);

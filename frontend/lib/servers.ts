@@ -32,3 +32,14 @@ export async function getServerTimezone(serverId: ServerId): Promise<string> {
         return getServers()[serverId].timezone;
     }
 }
+
+export async function getServerLicenceThreshold(serverId: ServerId): Promise<number> {
+    try {
+        const settings = await prismaAuth.tenantSettings.findUnique({
+            where: { serverId },
+        });
+        return settings?.licenceThreshold ?? getServers()[serverId].licenceThreshold;
+    } catch {
+        return getServers()[serverId].licenceThreshold;
+    }
+}
