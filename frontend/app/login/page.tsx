@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Phone } from "lucide-react";
@@ -15,16 +15,26 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+function AccessDeniedBanner() {
+    const searchParams = useSearchParams();
+    const errorParam = searchParams.get("error");
+    const accessDenied = errorParam === "AccessDenied";
+
+    if (!accessDenied) return null;
+
+    return (
+        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            Accès refusé. Votre compte n&apos;est pas autorisé à accéder à cette application. Contactez votre administrateur.
+        </div>
+    );
+}
+
 export default function LoginPage() {
     const router = useRouter();
-    const searchParams = useSearchParams();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-
-    const errorParam = searchParams.get("error");
-    const accessDenied = errorParam === "AccessDenied";
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -70,11 +80,9 @@ export default function LoginPage() {
                     </div>
                 </CardHeader>
                 <CardContent>
-                    {accessDenied && (
-                        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                            Accès refusé. Votre compte n&apos;est pas autorisé à accéder à cette application. Contactez votre administrateur.
-                        </div>
-                    )}
+                    <Suspense>
+                        <AccessDeniedBanner />
+                    </Suspense>
                     
                     <Button
                         type="button"
