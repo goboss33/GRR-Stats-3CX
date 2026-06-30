@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,10 +17,14 @@ import { Label } from "@/components/ui/label";
 
 export default function LoginPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+
+    const errorParam = searchParams.get("error");
+    const accessDenied = errorParam === "AccessDenied";
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -66,6 +70,36 @@ export default function LoginPage() {
                     </div>
                 </CardHeader>
                 <CardContent>
+                    {accessDenied && (
+                        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                            Accès refusé. Votre compte n&apos;est pas autorisé à accéder à cette application. Contactez votre administrateur.
+                        </div>
+                    )}
+                    
+                    <Button
+                        type="button"
+                        onClick={() => signIn("microsoft-entra-id", { callbackUrl: "/dashboard" })}
+                        className="w-full bg-[#2f2f2f] hover:bg-[#3f3f3f] text-white font-medium py-2.5 transition-all duration-200 mb-4"
+                    >
+                        <svg className="w-5 h-5 mr-2" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M0 0h10v10H0zM11 0h10v10h-10zM0 11h10v10H0zM11 11h10v10h-10z" fill="#f25022" />
+                            <path d="M0 0h10v10H0z" fill="#7fba00" />
+                            <path d="M11 0h10v10h-10z" fill="#f25022" />
+                            <path d="M0 11h10v10H0z" fill="#00a4ef" />
+                            <path d="M11 11h10v10h-10z" fill="#ffb900" />
+                        </svg>
+                        Se connecter avec Microsoft
+                    </Button>
+
+                    <div className="relative mb-4">
+                        <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-slate-600"></div>
+                        </div>
+                        <div className="relative flex justify-center text-sm">
+                            <span className="px-2 bg-slate-800/50 text-slate-400">ou</span>
+                        </div>
+                    </div>
+
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div className="space-y-2">
                             <Label htmlFor="email" className="text-slate-200">
