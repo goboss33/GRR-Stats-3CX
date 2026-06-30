@@ -38,6 +38,7 @@ model TenantSettings {
   serverId           String   @id
   timezone           String   @default("Europe/Zurich")
   licenceThreshold   Int?
+  trunkThreshold     Int?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }

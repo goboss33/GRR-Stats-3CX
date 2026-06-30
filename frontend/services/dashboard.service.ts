@@ -13,7 +13,7 @@ import type {
     ConcurrentCallsDataPoint,
     ConcurrentCallsSummary,
 } from "@/services/domain/call.types";
-import { getServerTimezone, getServerLicenceThreshold } from "@/lib/servers";
+import { getServerTimezone, getServerLicenceThreshold, getServerTrunkThreshold } from "@/lib/servers";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:3000";
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
@@ -156,6 +156,7 @@ export async function getConcurrentCallsChartData(
     const timezone = await getServerTimezone(serverId);
     const rawData = await getConcurrentCallsData(serverId, startDate, endDate, timezone);
     const threshold = await getServerLicenceThreshold(serverId);
+    const trunkThreshold = await getServerTrunkThreshold(serverId);
 
     const data: ConcurrentCallsDataPoint[] = rawData.map((row) => {
         const date = new Date(row.timestamp);
@@ -194,6 +195,6 @@ export async function getConcurrentCallsChartData(
 
     return {
         data,
-        summary: { peak, peakTime, avg, threshold },
+        summary: { peak, peakTime, avg, threshold, trunkThreshold },
     };
 }

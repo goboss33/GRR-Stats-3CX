@@ -43,3 +43,14 @@ export async function getServerLicenceThreshold(serverId: ServerId): Promise<num
         return getServers()[serverId].licenceThreshold;
     }
 }
+
+export async function getServerTrunkThreshold(serverId: ServerId): Promise<number> {
+    try {
+        const settings = await prismaAuth.tenantSettings.findUnique({
+            where: { serverId },
+        });
+        return settings?.trunkThreshold ?? getServers()[serverId].trunkThreshold;
+    } catch {
+        return getServers()[serverId].trunkThreshold;
+    }
+}

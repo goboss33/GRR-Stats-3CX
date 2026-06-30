@@ -110,15 +110,16 @@ export function ConcurrentCallsChart({ data, summary }: ConcurrentCallsChartProp
 
     const margin = summary.threshold - summary.peak;
     const isOverThreshold = summary.peak >= summary.threshold;
+    const isOverTrunk = summary.trunkThreshold > 0 && summary.peak >= summary.trunkThreshold;
     const peakDate = summary.peakTime ? new Date(summary.peakTime) : null;
     const peakDateFormatted = peakDate ? format(peakDate, "dd MMM yyyy 'à' HH:mm", { locale: fr }) : "N/A";
 
     const maxDataValue = Math.max(...data.map((d) => d.concurrentCalls));
-    const yAxisMax = Math.max(maxDataValue, summary.threshold) + 5;
+    const yAxisMax = Math.max(maxDataValue, summary.threshold, summary.trunkThreshold) + 5;
 
     return (
         <div className="space-y-4">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                 <KpiCard
                     icon={TrendingUp}
                     label="Pic maximum"
@@ -140,6 +141,15 @@ export function ConcurrentCallsChart({ data, summary }: ConcurrentCallsChartProp
                     subtext="appels simultanés"
                     color="amber"
                 />
+                {summary.trunkThreshold > 0 && (
+                    <KpiCard
+                        icon={Shield}
+                        label="Seuil trunk"
+                        value={summary.trunkThreshold}
+                        subtext="appels simultanés"
+                        color={isOverTrunk ? "rose" : "amber"}
+                    />
+                )}
                 <KpiCard
                     icon={isOverThreshold ? AlertTriangle : Shield}
                     label="Marge"
@@ -212,6 +222,21 @@ export function ConcurrentCallsChart({ data, summary }: ConcurrentCallsChartProp
                                 fontWeight: 600,
                             }}
                         />
+                        {summary.trunkThreshold > 0 && (
+                            <ReferenceLine
+                                y={summary.trunkThreshold}
+                                stroke="#f59e0b"
+                                strokeDasharray="4 4"
+                                strokeWidth={2}
+                                label={{
+                                    value: `Trunk ${summary.trunkThreshold} SC`,
+                                    position: "insideTopLeft",
+                                    fill: "#f59e0b",
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                }}
+                            />
+                        )}
                         <Line
                             type="monotone"
                             dataKey="concurrentCalls"

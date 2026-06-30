@@ -20,6 +20,7 @@ export async function GET() {
             name: servers[id].name,
             timezone: settingsMap.get(id)?.timezone || servers[id].timezone,
             licenceThreshold: settingsMap.get(id)?.licenceThreshold ?? servers[id].licenceThreshold,
+            trunkThreshold: settingsMap.get(id)?.trunkThreshold ?? servers[id].trunkThreshold,
         }));
 
         return NextResponse.json({
@@ -37,7 +38,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
     try {
-        const { serverId, timezone, licenceThreshold } = await request.json();
+        const { serverId, timezone, licenceThreshold, trunkThreshold } = await request.json();
         
         if (!serverId || typeof serverId !== "string") {
             return NextResponse.json(
@@ -88,6 +89,23 @@ export async function POST(request: Request) {
             });
 
             return NextResponse.json({ success: true, serverId, licenceThreshold });
+        }
+
+        if (trunkThreshold !== undefined) {
+            if (typeof trunkThreshold !== "number" || trunkThreshold < 0 || trunkThreshold > 10000) {
+                return NextResponse.json(
+                    { error: "Invalid trunkThreshold. Must be between 0 and 10000." },
+                    { status: 400 }
+                );
+            }
+
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: { trunkThreshold },
+                create: { serverId, trunkThreshold },
+            });
+
+            return NextResponse.json({ success: true, serverId, trunkThreshold });
         }
 
         const cookieStore = await cookies();

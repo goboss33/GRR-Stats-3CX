@@ -242,6 +242,7 @@ export interface ConcurrentCallsSummary {
     peakTime: string;
     avg: number;
     threshold: number;
+    trunkThreshold: number;
 }
 
 // ============================================
