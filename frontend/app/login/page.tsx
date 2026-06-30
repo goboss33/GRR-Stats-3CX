@@ -86,7 +86,25 @@ export default function LoginPage() {
                     
                     <Button
                         type="button"
-                        onClick={() => signIn("microsoft-entra-id", { callbackUrl: "/dashboard" })}
+                        onClick={() => {
+                            const width = 500;
+                            const height = 600;
+                            const left = window.screen.width / 2 - width / 2;
+                            const top = window.screen.height / 2 - height / 2;
+                            
+                            const popup = window.open(
+                                `/api/auth/signin/microsoft-entra-id`,
+                                "Microsoft Login",
+                                `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes,resizable=yes`
+                            );
+                            
+                            const checkPopup = setInterval(() => {
+                                if (!popup || popup.closed) {
+                                    clearInterval(checkPopup);
+                                    window.location.href = "/dashboard";
+                                }
+                            }, 500);
+                        }}
                         className="w-full bg-[#2f2f2f] hover:bg-[#3f3f3f] text-white font-medium py-2.5 transition-all duration-200 mb-4"
                     >
                         <svg className="w-5 h-5 mr-2" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">

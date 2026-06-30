@@ -63,11 +63,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         MicrosoftEntraID({
             clientId: process.env.AUTH_MICROSOFT_ENTRA_ID_ID!,
             clientSecret: process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET!,
-            tenantId: process.env.AUTH_MICROSOFT_ENTRA_ID_TENANT_ID!,
+            issuer: `https://login.microsoftonline.com/${process.env.AUTH_MICROSOFT_ENTRA_ID_TENANT_ID}/v2.0`,
             authorization: {
+                url: `https://login.microsoftonline.com/${process.env.AUTH_MICROSOFT_ENTRA_ID_TENANT_ID}/oauth2/v2.0/authorize`,
                 params: {
                     scope: "openid profile email User.Read",
                 },
+            },
+            token: {
+                url: `https://login.microsoftonline.com/${process.env.AUTH_MICROSOFT_ENTRA_ID_TENANT_ID}/oauth2/v2.0/token`,
+            },
+            userinfo: {
+                url: "https://graph.microsoft.com/oidc/userinfo",
             },
         }),
     ],
