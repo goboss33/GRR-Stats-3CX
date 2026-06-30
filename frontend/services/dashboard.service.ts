@@ -14,6 +14,7 @@ import type {
     ConcurrentCallsSummary,
 } from "@/services/domain/call.types";
 import { SERVERS } from "@/lib/prisma-cdr";
+import { getServerTimezone } from "@/lib/servers";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:3000";
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
@@ -113,16 +114,17 @@ export async function getTimelineData(
     const diffMs = endDate.getTime() - startDate.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
     const interval = diffDays <= 2 ? "hour" : "day";
+    const timezone = await getServerTimezone(serverId);
 
-    const rawData = await getTimelineDataRaw(serverId, startDate, endDate);
+    const rawData = await getTimelineDataRaw(serverId, startDate, endDate, timezone);
 
     return rawData.map((row) => {
         const date = new Date(row.date_group);
         let label = "";
         if (interval === "hour") {
-            label = `${String(date.getHours()).padStart(2, "0")}:00`;
+            label = `${String(date.getUTCHours()).padStart(2, "0")}:00`;
         } else {
-            label = `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}`;
+            label = `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
         }
         return {
             date: date.toISOString(),
@@ -138,7 +140,8 @@ export async function getHeatmapData(
     startDate: Date,
     endDate: Date
 ): Promise<HeatmapDataPoint[]> {
-    const rawData = await getHeatmapDataRaw(serverId, startDate, endDate);
+    const timezone = await getServerTimezone(serverId);
+    const rawData = await getHeatmapDataRaw(serverId, startDate, endDate, timezone);
     return rawData.map((row) => ({
         dayOfWeek: row.day_of_week,
         hourOfDay: row.hour_of_day,
@@ -151,7 +154,8 @@ export async function getConcurrentCallsChartData(
     startDate: Date,
     endDate: Date
 ): Promise<{ data: ConcurrentCallsDataPoint[]; summary: ConcurrentCallsSummary }> {
-    const rawData = await getConcurrentCallsData(serverId, startDate, endDate);
+    const timezone = await getServerTimezone(serverId);
+    const rawData = await getConcurrentCallsData(serverId, startDate, endDate, timezone);
     const threshold = SERVERS[serverId].licenceThreshold;
 
     const data: ConcurrentCallsDataPoint[] = rawData.map((row) => {
@@ -161,11 +165,11 @@ export async function getConcurrentCallsChartData(
 
         let label: string;
         if (diffDays <= 1) {
-            label = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+            label = `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}`;
         } else if (diffDays <= 7) {
-            label = `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+            label = `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")} ${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}`;
         } else {
-            label = `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}h`;
+            label = `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")} ${String(date.getUTCHours()).padStart(2, "0")}h`;
         }
 
         return {

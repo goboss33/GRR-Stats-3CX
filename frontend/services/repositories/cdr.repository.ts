@@ -62,7 +62,8 @@ export interface QueueMemberRow {
 export async function getTimelineDataRaw(
     serverId: ServerId,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    timezone: string = "Europe/Zurich"
 ): Promise<TimelineRow[]> {
     const prisma = getPrismaCdr(serverId);
     const diffMs = endDate.getTime() - startDate.getTime();
@@ -125,7 +126,7 @@ export async function getTimelineDataRaw(
             LEFT JOIN answered_segments ans ON ans.call_history_id = ca.call_history_id
         )
         SELECT
-            date_trunc(${interval}, first_started_at) AS date_group,
+            date_trunc(${interval}, first_started_at AT TIME ZONE ${timezone}) AS date_group,
             COUNT(*) FILTER (WHERE outcome = 'answered') AS answered,
             COUNT(*) FILTER (WHERE outcome IN ('abandoned', 'busy')) AS missed
         FROM call_outcomes
@@ -137,7 +138,8 @@ export async function getTimelineDataRaw(
 export async function getHeatmapDataRaw(
     serverId: ServerId,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    timezone: string = "Europe/Zurich"
 ): Promise<HeatmapRow[]> {
     const prisma = getPrismaCdr(serverId);
     return prisma.$queryRaw<HeatmapRow[]>`
@@ -151,8 +153,8 @@ export async function getHeatmapDataRaw(
             GROUP BY call_history_id
         )
         SELECT
-            EXTRACT(ISODOW FROM first_started_at)::int AS day_of_week,
-            EXTRACT(HOUR FROM first_started_at)::int AS hour_of_day,
+            EXTRACT(ISODOW FROM first_started_at AT TIME ZONE ${timezone})::int AS day_of_week,
+            EXTRACT(HOUR FROM first_started_at AT TIME ZONE ${timezone})::int AS hour_of_day,
             COUNT(*) AS volume
         FROM unique_calls
         GROUP BY day_of_week, hour_of_day
@@ -166,7 +168,8 @@ export async function getHeatmapDataRaw(
 export async function getConcurrentCallsData(
     serverId: ServerId,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    timezone: string = "Europe/Zurich"
 ): Promise<ConcurrentCallsRow[]> {
     const prisma = getPrismaCdr(serverId);
     const diffMs = endDate.getTime() - startDate.getTime();
@@ -189,12 +192,12 @@ export async function getConcurrentCallsData(
             ),
             bucketed_events AS (
                 SELECT 
-                    date_trunc('minute', call_start) AS bucket,
+                    date_trunc('minute', call_start AT TIME ZONE ${timezone}) AS bucket,
                     1 AS change
                 FROM call_spans
                 UNION ALL
                 SELECT 
-                    date_trunc('minute', call_end) AS bucket,
+                    date_trunc('minute', call_end AT TIME ZONE ${timezone}) AS bucket,
                     -1 AS change
                 FROM call_spans
             ),
@@ -228,12 +231,12 @@ export async function getConcurrentCallsData(
             ),
             bucketed_events AS (
                 SELECT 
-                    date_trunc('hour', call_start) + (EXTRACT(MINUTE FROM call_start)::int / 5) * INTERVAL '5 minutes' AS bucket,
+                    date_trunc('hour', call_start AT TIME ZONE ${timezone}) + (EXTRACT(MINUTE FROM call_start)::int / 5) * INTERVAL '5 minutes' AS bucket,
                     1 AS change
                 FROM call_spans
                 UNION ALL
                 SELECT 
-                    date_trunc('hour', call_end) + (EXTRACT(MINUTE FROM call_end)::int / 5) * INTERVAL '5 minutes' AS bucket,
+                    date_trunc('hour', call_end AT TIME ZONE ${timezone}) + (EXTRACT(MINUTE FROM call_end)::int / 5) * INTERVAL '5 minutes' AS bucket,
                     -1 AS change
                 FROM call_spans
             ),
@@ -267,12 +270,12 @@ export async function getConcurrentCallsData(
             ),
             bucketed_events AS (
                 SELECT 
-                    date_trunc('hour', call_start) AS bucket,
+                    date_trunc('hour', call_start AT TIME ZONE ${timezone}) AS bucket,
                     1 AS change
                 FROM call_spans
                 UNION ALL
                 SELECT 
-                    date_trunc('hour', call_end) AS bucket,
+                    date_trunc('hour', call_end AT TIME ZONE ${timezone}) AS bucket,
                     -1 AS change
                 FROM call_spans
             ),
@@ -300,13 +303,14 @@ export async function getDailyTrendRaw(
     serverId: ServerId,
     queueNumber: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    timezone: string = "Europe/Zurich"
 ): Promise<TrendRow[]> {
     const prisma = getPrismaCdr(serverId);
     return prisma.$queryRaw<TrendRow[]>`
         WITH unique_queue_calls AS (
             SELECT DISTINCT ON (call_history_id)
-                call_history_id, cdr_id, DATE(cdr_started_at) as call_date
+                call_history_id, cdr_id, DATE(cdr_started_at AT TIME ZONE ${timezone}) as call_date
             FROM cdroutput
             WHERE destination_dn_number = ${queueNumber}
               AND destination_dn_type = 'queue'
@@ -333,13 +337,14 @@ export async function getHourlyTrendRaw(
     serverId: ServerId,
     queueNumber: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    timezone: string = "Europe/Zurich"
 ): Promise<TrendRow[]> {
     const prisma = getPrismaCdr(serverId);
     return prisma.$queryRaw<TrendRow[]>`
         WITH unique_queue_calls AS (
             SELECT DISTINCT ON (call_history_id)
-                call_history_id, cdr_id, EXTRACT(HOUR FROM cdr_started_at) as call_hour
+                call_history_id, cdr_id, EXTRACT(HOUR FROM cdr_started_at AT TIME ZONE ${timezone}) as call_hour
             FROM cdroutput
             WHERE destination_dn_number = ${queueNumber}
               AND destination_dn_type = 'queue'

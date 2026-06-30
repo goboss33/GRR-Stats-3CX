@@ -1,6 +1,7 @@
 "use server";
 
 import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
+import { getServerTimezone } from "@/lib/servers";
 import type {
     AggregatedCallLog,
     CallDirection,
@@ -145,12 +146,12 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
     return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
 }
 
-function buildOrderByClause(sort?: LogsSort): string {
+function buildOrderByClause(sort?: LogsSort, timezone: string = "Europe/Zurich"): string {
     if (!sort) return "ca.first_started_at DESC";
     const dir = sort.direction === "asc" ? "ASC" : "DESC";
     switch (sort.field) {
         case "startedAt": return `ca.first_started_at ${dir}`;
-        case "timeOfDay": return `(ca.first_started_at AT TIME ZONE 'Europe/Zurich')::time ${dir}`;
+        case "timeOfDay": return `(ca.first_started_at AT TIME ZONE '${timezone}')::time ${dir}`;
         case "duration": return `(ca.last_ended_at - ca.first_started_at) ${dir}`;
         case "sourceNumber": return `fs.source_dn_number ${dir}`;
         case "destinationNumber": return `fs.first_dest_number ${dir}`;
@@ -167,7 +168,8 @@ function buildAggregatedQueryParts(
     endDate: Date,
     filters: LogsFilters,
     pagination: { page: number; pageSize: number },
-    sort?: LogsSort
+    sort?: LogsSort,
+    timezone: string = "Europe/Zurich"
 ): {
     whereClause: string;
     dateOnlyWhereClause: string;
@@ -286,8 +288,8 @@ function buildAggregatedQueryParts(
         const slotConditions = filters.timeSlots.map(slot => {
             const startTime = slot.start.replace(/'/g, "");
             const endTime = slot.end.replace(/'/g, "");
-            return `((ca.first_started_at AT TIME ZONE 'Europe/Zurich')::time >= '${startTime}'::time
-                AND (ca.first_started_at AT TIME ZONE 'Europe/Zurich')::time < '${endTime}'::time)`;
+            return `((ca.first_started_at AT TIME ZONE '${timezone}')::time >= '${startTime}'::time
+                AND (ca.first_started_at AT TIME ZONE '${timezone}')::time < '${endTime}'::time)`;
         });
         aggregatedWhereConditions.push(`(${slotConditions.join(' OR ')})`);
     }
@@ -320,7 +322,7 @@ function buildAggregatedQueryParts(
         }
     }
 
-    return { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause: buildOrderByClause(sort) };
+    return { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause: buildOrderByClause(sort, timezone) };
 }
 
 // ============================================
@@ -679,8 +681,9 @@ export async function getCallLogsSQL(
     pagination: { page: number; pageSize: number },
     sort?: LogsSort
 ): Promise<string> {
+    const timezone = await getServerTimezone(serverId);
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } =
-        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort);
+        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone);
 
     return buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE)
         + DATA_SELECT
@@ -1012,8 +1015,9 @@ export async function getAggregatedCallLogs(
     sort?: LogsSort
 ): Promise<AggregatedCallLogsResponse> {
     const prisma = getPrismaCdr(serverId);
+    const timezone = await getServerTimezone(serverId);
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } =
-        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort);
+        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone);
     const pageNumber = Math.max(1, pagination.page);
 
     try {

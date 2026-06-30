@@ -1,6 +1,7 @@
 "use server";
 
 import { ServerId } from "@/lib/prisma-cdr";
+import { getServerTimezone } from "@/lib/servers";
 import {
     getQueueName,
     getDailyTrendRaw,
@@ -193,7 +194,8 @@ async function computeDailyTrend(
     startDate: Date,
     endDate: Date
 ): Promise<DailyTrend[]> {
-    const result = await getDailyTrendRaw(serverId, queueNumber, startDate, endDate);
+    const timezone = await getServerTimezone(serverId);
+    const result = await getDailyTrendRaw(serverId, queueNumber, startDate, endDate, timezone);
     return result.map((row) => {
         const dateStr = row.call_date
             ? new Date(row.call_date).toISOString().split("T")[0]
@@ -213,7 +215,8 @@ async function computeHourlyTrend(
     startDate: Date,
     endDate: Date
 ): Promise<HourlyTrend[]> {
-    const result = await getHourlyTrendRaw(serverId, queueNumber, startDate, endDate);
+    const timezone = await getServerTimezone(serverId);
+    const result = await getHourlyTrendRaw(serverId, queueNumber, startDate, endDate, timezone);
 
     const hourlyMap = new Map<number, HourlyTrend>();
     for (let h = 0; h < 24; h++) {

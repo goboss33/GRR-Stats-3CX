@@ -372,12 +372,12 @@ export function buildAnalyticsCountQuery(
         FROM call_aggregates ca`;
 }
 
-export function buildAnalyticsOrderByClause(sort?: LogsSort): string {
+export function buildAnalyticsOrderByClause(sort?: LogsSort, timezone: string = "Europe/Zurich"): string {
     if (!sort) return "ca.first_started_at DESC";
     const dir = sort.direction === "asc" ? "ASC" : "DESC";
     switch (sort.field) {
         case "startedAt": return `ca.first_started_at ${dir}`;
-        case "timeOfDay": return `(ca.first_started_at AT TIME ZONE 'Europe/Zurich')::time ${dir}`;
+        case "timeOfDay": return `(ca.first_started_at AT TIME ZONE '${timezone}')::time ${dir}`;
         case "duration": return `(ca.last_ended_at - ca.first_started_at) ${dir}`;
         case "sourceNumber": return `fs.source_dn_number ${dir}`;
         case "destinationNumber": return `fs.first_dest_number ${dir}`;

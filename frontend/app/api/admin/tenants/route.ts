@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getServers } from "@/lib/prisma-cdr";
 import { getAvailableServers } from "@/lib/servers";
+import { prismaAuth } from "@/lib/prisma-auth";
 
 export async function GET() {
     try {
@@ -11,9 +12,13 @@ export async function GET() {
         const availableServerIds = getAvailableServers();
         const servers = getServers();
         
+        const tenantSettings = await prismaAuth.tenantSettings.findMany();
+        const timezoneMap = new Map(tenantSettings.map(s => [s.serverId, s.timezone]));
+
         const availableServers = availableServerIds.map(id => ({
             id,
             name: servers[id].name,
+            timezone: timezoneMap.get(id) || servers[id].timezone,
         }));
 
         return NextResponse.json({
@@ -31,7 +36,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
     try {
-        const { serverId } = await request.json();
+        const { serverId, timezone } = await request.json();
         
         if (!serverId || typeof serverId !== "string") {
             return NextResponse.json(
@@ -46,6 +51,25 @@ export async function POST(request: Request) {
                 { error: "Server not available" },
                 { status: 400 }
             );
+        }
+
+        if (timezone && typeof timezone === "string") {
+            try {
+                Intl.DateTimeFormat(undefined, { timeZone: timezone });
+            } catch {
+                return NextResponse.json(
+                    { error: "Invalid timezone" },
+                    { status: 400 }
+                );
+            }
+
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: { timezone },
+                create: { serverId, timezone },
+            });
+
+            return NextResponse.json({ success: true, serverId, timezone });
         }
 
         const cookieStore = await cookies();

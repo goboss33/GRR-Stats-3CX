@@ -927,7 +927,21 @@ function DiagnosticTab() {
 interface TenantInfo {
     id: string;
     name: string;
+    timezone: string;
 }
+
+const COMMON_TIMEZONES = [
+    { value: "Europe/Zurich", label: "Europe/Zurich (Suisse)" },
+    { value: "Europe/Paris", label: "Europe/Paris (France)" },
+    { value: "Europe/London", label: "Europe/London (UK)" },
+    { value: "Europe/Berlin", label: "Europe/Berlin (Allemagne)" },
+    { value: "Europe/Brussels", label: "Europe/Brussels (Belgique)" },
+    { value: "UTC", label: "UTC" },
+    { value: "America/New_York", label: "America/New_York (US East)" },
+    { value: "America/Los_Angeles", label: "America/Los_Angeles (US West)" },
+    { value: "Asia/Tokyo", label: "Asia/Tokyo (Japon)" },
+    { value: "Asia/Dubai", label: "Asia/Dubai (Golfe)" },
+];
 
 function TenantTab() {
     const router = useRouter();
@@ -964,6 +978,29 @@ function TenantTab() {
                 setCurrentServer(serverId);
                 setMessage({ type: "success", text: "Tenant changé avec succès. La page va se recharger..." });
                 setTimeout(() => router.refresh(), 1500);
+            }
+        } catch {
+            setMessage({ type: "error", text: "Erreur lors de la sauvegarde" });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleTimezoneChange = async (serverId: string, timezone: string) => {
+        setSaving(true);
+        setMessage(null);
+        try {
+            const res = await fetch("/api/admin/tenants", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ serverId, timezone }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setMessage({ type: "error", text: data.error || "Erreur lors de la sauvegarde" });
+            } else {
+                setAvailableServers(prev => prev.map(s => s.id === serverId ? { ...s, timezone } : s));
+                setMessage({ type: "success", text: "Fuseau horaire mis à jour avec succès" });
             }
         } catch {
             setMessage({ type: "error", text: "Erreur lors de la sauvegarde" });
@@ -1012,37 +1049,60 @@ function TenantTab() {
                     ) : (
                         <div className="space-y-3">
                             {availableServers.map((server) => (
-                                <button
-                                    key={server.id}
-                                    onClick={() => handleServerChange(server.id)}
-                                    disabled={saving}
-                                    className={cn(
-                                        "w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-all",
-                                        currentServer === server.id
-                                            ? "border-blue-600 bg-blue-50 shadow-sm"
-                                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-                                    )}
-                                >
-                                    <Building2 className={cn(
-                                        "h-8 w-8 flex-shrink-0",
-                                        currentServer === server.id ? "text-blue-600" : "text-slate-400"
-                                    )} />
-                                    <div className="flex-1 text-left">
-                                        <p className={cn(
-                                            "font-semibold",
-                                            currentServer === server.id ? "text-blue-900" : "text-slate-900"
-                                        )}>
-                                            {server.name}
-                                        </p>
-                                        <p className="text-sm text-slate-500 font-mono">{server.id}</p>
+                                <div key={server.id} className="space-y-3">
+                                    <button
+                                        onClick={() => handleServerChange(server.id)}
+                                        disabled={saving}
+                                        className={cn(
+                                            "w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-all",
+                                            currentServer === server.id
+                                                ? "border-blue-600 bg-blue-50 shadow-sm"
+                                                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                                        )}
+                                    >
+                                        <Building2 className={cn(
+                                            "h-8 w-8 flex-shrink-0",
+                                            currentServer === server.id ? "text-blue-600" : "text-slate-400"
+                                        )} />
+                                        <div className="flex-1 text-left">
+                                            <p className={cn(
+                                                "font-semibold",
+                                                currentServer === server.id ? "text-blue-900" : "text-slate-900"
+                                            )}>
+                                                {server.name}
+                                            </p>
+                                            <p className="text-sm text-slate-500 font-mono">{server.id}</p>
+                                        </div>
+                                        {currentServer === server.id && (
+                                            <CheckCircle2 className="h-6 w-6 text-blue-600 flex-shrink-0" />
+                                        )}
+                                        {saving && currentServer !== server.id && (
+                                            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+                                        )}
+                                    </button>
+
+                                    <div className="ml-12 flex items-center gap-3">
+                                        <Label htmlFor={`tz-${server.id}`} className="text-sm text-slate-600 whitespace-nowrap">
+                                            Fuseau horaire :
+                                        </Label>
+                                        <Select
+                                            value={server.timezone}
+                                            onValueChange={(tz) => handleTimezoneChange(server.id, tz)}
+                                            disabled={saving}
+                                        >
+                                            <SelectTrigger id={`tz-${server.id}`} className="w-64">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {COMMON_TIMEZONES.map((tz) => (
+                                                    <SelectItem key={tz.value} value={tz.value}>
+                                                        {tz.label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
                                     </div>
-                                    {currentServer === server.id && (
-                                        <CheckCircle2 className="h-6 w-6 text-blue-600 flex-shrink-0" />
-                                    )}
-                                    {saving && currentServer !== server.id && (
-                                        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
-                                    )}
-                                </button>
+                                </div>
                             ))}
                         </div>
                     )}
@@ -1051,8 +1111,9 @@ function TenantTab() {
                         <p className="font-medium text-slate-700 mb-2">Information :</p>
                         <ul className="list-disc list-inside space-y-1 text-slate-600">
                             <li>Le tenant sélectionné détermine quelles données sont affichées dans le dashboard, les logs et les statistiques</li>
+                            <li>Le fuseau horaire est utilisé pour convertir les timestamps UTC des données 3CX en heure locale (heatmap, timeline, appels simultanés, créneaux horaires)</li>
                             <li>La sélection est sauvegardée dans votre navigateur</li>
-                            <li>La page se rechargera automatiquement après le changement</li>
+                            <li>La page se rechargera automatiquement après le changement de tenant</li>
                         </ul>
                     </div>
                 </CardContent>

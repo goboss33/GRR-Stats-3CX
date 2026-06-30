@@ -1,4 +1,5 @@
 import { ServerId, getServers } from "./prisma-cdr";
+import { prismaAuth } from "./prisma-auth";
 
 export function getAvailableServers(): ServerId[] {
     const servers = getServers();
@@ -19,4 +20,15 @@ export function getServerName(serverId: ServerId): string {
 export function getDefaultServer(): ServerId {
     const available = getAvailableServers();
     return available[0] || "gerofinance";
+}
+
+export async function getServerTimezone(serverId: ServerId): Promise<string> {
+    try {
+        const settings = await prismaAuth.tenantSettings.findUnique({
+            where: { serverId },
+        });
+        return settings?.timezone || getServers()[serverId].timezone;
+    } catch {
+        return getServers()[serverId].timezone;
+    }
 }

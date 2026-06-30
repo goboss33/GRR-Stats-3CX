@@ -7,6 +7,7 @@ export interface ServerConfig {
     name: string;
     databaseUrl: string;
     licenceThreshold: number;
+    timezone: string;
 }
 
 let _servers: Record<ServerId, ServerConfig> | null = null;
@@ -19,12 +20,14 @@ export function getServers(): Record<ServerId, ServerConfig> {
                 name: "Gérofinance",
                 databaseUrl: process.env.DATABASE_URL_GEROFINANCE || "",
                 licenceThreshold: 64,
+                timezone: "Europe/Zurich",
             },
             edifea: {
                 id: "edifea",
                 name: "Edifea",
                 databaseUrl: process.env.DATABASE_URL_EDIFEA || "",
                 licenceThreshold: 16,
+                timezone: "Europe/Zurich",
             },
         };
     }

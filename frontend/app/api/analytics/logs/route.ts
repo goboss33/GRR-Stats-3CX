@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiKey } from "../auth";
 import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
-import { getDefaultServer, isValidServer } from "@/lib/servers";
+import { getDefaultServer, isValidServer, getServerTimezone } from "@/lib/servers";
 import {
     buildAnalyticsCTEs,
     ANALYTICS_DATA_SELECT,
@@ -57,7 +57,8 @@ export async function GET(request: NextRequest) {
         const skip = (page - 1) * pageSize;
 
         const ctes = buildAnalyticsCTEs(start, end, queueNumber);
-        const orderBy = buildAnalyticsOrderByClause(sort);
+        const timezone = await getServerTimezone(serverId);
+        const orderBy = buildAnalyticsOrderByClause(sort, timezone);
         const countQuery = buildAnalyticsCountQuery(start, end, queueNumber, []);
 
         const dataQuery = ctes + ANALYTICS_DATA_SELECT + buildAnalyticsDataJoins([], orderBy, pageSize, skip);
