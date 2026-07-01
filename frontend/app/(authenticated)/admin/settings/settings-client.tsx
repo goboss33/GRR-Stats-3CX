@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Users, Phone, AlertCircle, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight, UserX, Save, KeyRound, Pencil, Trash2, Settings, Copy, UserPlus, Building2 } from "lucide-react";
+import { Users, Phone, AlertCircle, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight, UserX, Save, KeyRound, Pencil, Trash2, Settings, Copy, UserPlus, Building2, Lock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,10 +88,15 @@ type PeriodPreset = "today" | "yesterday" | "last7days" | "last30days" | "custom
 
 interface UserProfile {
     id: string;
+    email: string;
     firstName: string | null;
     lastName: string | null;
-    email: string;
     role: string;
+    authProvider: string;
+    jobTitle: string | null;
+    department: string | null;
+    mobilePhone: string | null;
+    officeLocation: string | null;
     createdAt: string;
 }
 
@@ -101,6 +106,7 @@ interface AppUser {
     firstName: string | null;
     lastName: string | null;
     role: string;
+    authProvider: string;
     createdAt: string;
 }
 
@@ -166,6 +172,8 @@ function PersonalInfoTab() {
         );
     }
 
+    const isMicrosoft = profile?.authProvider === "MICROSOFT";
+
     return (
         <div className="space-y-6 max-w-2xl">
             {message && (
@@ -180,49 +188,124 @@ function PersonalInfoTab() {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Profil</CardTitle>
-                    <CardDescription>Vos informations personnelles</CardDescription>
+                    <CardTitle className="flex items-center gap-2">
+                        Profil
+                        {isMicrosoft && (
+                            <svg className="h-5 w-5" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M0 0h10v10H0z" fill="#f25022" />
+                                <path d="M11 0h10v10h-10z" fill="#7fba00" />
+                                <path d="M0 11h10v10H0z" fill="#00a4ef" />
+                                <path d="M11 11h10v10h-10z" fill="#ffb900" />
+                            </svg>
+                        )}
+                    </CardTitle>
+                    <CardDescription>
+                        {isMicrosoft
+                            ? "Vos informations sont synchronisées depuis votre compte Microsoft"
+                            : "Vos informations personnelles"}
+                    </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label htmlFor="firstName">Prénom</Label>
-                            <Input id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Votre prénom" />
+                            <Input
+                                id="firstName"
+                                value={firstName}
+                                onChange={(e) => setFirstName(e.target.value)}
+                                placeholder="Votre prénom"
+                                disabled={isMicrosoft}
+                                className={isMicrosoft ? "bg-slate-100" : ""}
+                            />
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="lastName">Nom</Label>
-                            <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Votre nom" />
+                            <Input
+                                id="lastName"
+                                value={lastName}
+                                onChange={(e) => setLastName(e.target.value)}
+                                placeholder="Votre nom"
+                                disabled={isMicrosoft}
+                                className={isMicrosoft ? "bg-slate-100" : ""}
+                            />
                         </div>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="email">Email</Label>
-                        <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="votre@email.com" />
+                        <Input
+                            id="email"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="votre@email.com"
+                            disabled={isMicrosoft}
+                            className={isMicrosoft ? "bg-slate-100" : ""}
+                        />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="role">Rôle</Label>
-                        <Input id="role" value={profile?.role === "ADMIN" ? "Administrateur" : profile?.role === "SUPERUSER" ? "Manager" : profile?.role === "MODERATOR" ? "Modérateur" : "Utilisateur"} disabled className="bg-slate-100" />
+                        <Input
+                            id="role"
+                            value={profile?.role === "ADMIN" ? "Administrateur" : profile?.role === "SUPERUSER" ? "Manager" : profile?.role === "MODERATOR" ? "Modérateur" : "Utilisateur"}
+                            disabled
+                            className="bg-slate-100"
+                        />
                     </div>
-                    <Button onClick={handleSave} disabled={saving}>
-                        {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sauvegarde...</> : <><Save className="mr-2 h-4 w-4" /> Enregistrer</>}
-                    </Button>
+
+                    {isMicrosoft && (
+                        <>
+                            {profile?.jobTitle && (
+                                <div className="space-y-2">
+                                    <Label htmlFor="jobTitle">Fonction</Label>
+                                    <Input id="jobTitle" value={profile.jobTitle} disabled className="bg-slate-100" />
+                                </div>
+                            )}
+                            {profile?.department && (
+                                <div className="space-y-2">
+                                    <Label htmlFor="department">Département</Label>
+                                    <Input id="department" value={profile.department} disabled className="bg-slate-100" />
+                                </div>
+                            )}
+                            {profile?.mobilePhone && (
+                                <div className="space-y-2">
+                                    <Label htmlFor="mobilePhone">Téléphone mobile</Label>
+                                    <Input id="mobilePhone" value={profile.mobilePhone} disabled className="bg-slate-100" />
+                                </div>
+                            )}
+                            {profile?.officeLocation && (
+                                <div className="space-y-2">
+                                    <Label htmlFor="officeLocation">Bureau</Label>
+                                    <Input id="officeLocation" value={profile.officeLocation} disabled className="bg-slate-100" />
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {!isMicrosoft && (
+                        <Button onClick={handleSave} disabled={saving}>
+                            {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sauvegarde...</> : <><Save className="mr-2 h-4 w-4" /> Enregistrer</>}
+                        </Button>
+                    )}
                 </CardContent>
             </Card>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <KeyRound className="h-5 w-5" />
-                        Changer le mot de passe
-                    </CardTitle>
-                    <CardDescription>Laissez vide si vous ne souhaitez pas le modifier</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="new-password">Nouveau mot de passe</Label>
-                        <Input id="new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimum 4 caractères" />
-                    </div>
-                </CardContent>
-            </Card>
+            {!isMicrosoft && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <KeyRound className="h-5 w-5" />
+                            Changer le mot de passe
+                        </CardTitle>
+                        <CardDescription>Laissez vide si vous ne souhaitez pas le modifier</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="new-password">Nouveau mot de passe</Label>
+                            <Input id="new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimum 4 caractères" />
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
         </div>
     );
 }
@@ -382,6 +465,7 @@ function UsersTab() {
                                     <th className="text-left py-3 px-4 font-medium text-slate-600">Nom</th>
                                     <th className="text-left py-3 px-4 font-medium text-slate-600">Email</th>
                                     <th className="text-left py-3 px-4 font-medium text-slate-600">Rôle</th>
+                                    <th className="text-left py-3 px-4 font-medium text-slate-600">Connexion</th>
                                     <th className="text-left py-3 px-4 font-medium text-slate-600">Créé le</th>
                                     <th className="text-right py-3 px-4 font-medium text-slate-600">Actions</th>
                                 </tr>
@@ -393,6 +477,7 @@ function UsersTab() {
                                     const isModerator = currentUserRole === "MODERATOR";
                                     const canEdit = !isModerator || !isTargetAdmin;
                                     const canDelete = !isSelf && (!isModerator || !isTargetAdmin);
+                                    const isMicrosoft = user.authProvider === "MICROSOFT";
                                     return (
                                         <tr key={user.id} className="hover:bg-slate-50">
                                             <td className="py-3 px-4 font-medium">{getDisplayName(user)}</td>
@@ -409,6 +494,24 @@ function UsersTab() {
                                                 >
                                                     {user.role === "ADMIN" ? "Administrateur" : user.role === "SUPERUSER" ? "Manager" : user.role === "MODERATOR" ? "Modérateur" : "Utilisateur"}
                                                 </Badge>
+                                            </td>
+                                            <td className="py-3 px-4">
+                                                {isMicrosoft ? (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <svg className="h-4 w-4" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+                                                            <path d="M0 0h10v10H0z" fill="#f25022" />
+                                                            <path d="M11 0h10v10h-10z" fill="#7fba00" />
+                                                            <path d="M0 11h10v10H0z" fill="#00a4ef" />
+                                                            <path d="M11 11h10v10h-10z" fill="#ffb900" />
+                                                        </svg>
+                                                        <span className="text-xs text-slate-500">Microsoft</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Lock className="h-4 w-4 text-slate-400" />
+                                                        <span className="text-xs text-slate-500">Mot de passe</span>
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="py-3 px-4 text-slate-500">{new Date(user.createdAt).toLocaleDateString("fr-FR")}</td>
                                             <td className="py-3 px-4">

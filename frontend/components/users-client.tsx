@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Role } from "@prisma/client";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Lock } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -139,6 +139,7 @@ export function UsersClient({ users, currentUserId }: UsersClientProps) {
                             <TableHead>Nom</TableHead>
                             <TableHead>Email</TableHead>
                             <TableHead>Rôle</TableHead>
+                            <TableHead>Connexion</TableHead>
                             <TableHead>Créé le</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
@@ -146,6 +147,7 @@ export function UsersClient({ users, currentUserId }: UsersClientProps) {
                     <TableBody>
                         {users.map((user) => {
                             const isSelf = user.id === currentUserId;
+                            const isMicrosoft = user.authProvider === "MICROSOFT";
                             return (
                                 <TableRow key={user.id}>
                                     <TableCell className="font-medium">
@@ -164,6 +166,24 @@ export function UsersClient({ users, currentUserId }: UsersClientProps) {
                                         >
                                             {roleLabels[user.role]}
                                         </Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                        {isMicrosoft ? (
+                                            <div className="flex items-center gap-1.5">
+                                                <svg className="h-4 w-4" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+                                                    <path d="M0 0h10v10H0z" fill="#f25022" />
+                                                    <path d="M11 0h10v10h-10z" fill="#7fba00" />
+                                                    <path d="M0 11h10v10H0z" fill="#00a4ef" />
+                                                    <path d="M11 11h10v10h-10z" fill="#ffb900" />
+                                                </svg>
+                                                <span className="text-xs text-muted-foreground">Microsoft</span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-1.5">
+                                                <Lock className="h-4 w-4 text-muted-foreground" />
+                                                <span className="text-xs text-muted-foreground">Mot de passe</span>
+                                            </div>
+                                        )}
                                     </TableCell>
                                     <TableCell className="text-muted-foreground">
                                         {format(new Date(user.createdAt), "d MMM yyyy", {
@@ -202,7 +222,7 @@ export function UsersClient({ users, currentUserId }: UsersClientProps) {
                         {users.length === 0 && (
                             <TableRow>
                                 <TableCell
-                                    colSpan={5}
+                                    colSpan={6}
                                     className="text-center text-muted-foreground py-8"
                                 >
                                     Aucun utilisateur

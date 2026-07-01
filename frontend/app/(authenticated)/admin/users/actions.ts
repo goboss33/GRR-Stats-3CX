@@ -15,6 +15,7 @@ export type UserRow = {
     firstName: string | null;
     lastName: string | null;
     role: Role;
+    authProvider: string;
     createdAt: Date;
 };
 
@@ -29,7 +30,15 @@ async function requireAdmin() {
 export async function getUsers(): Promise<UserRow[]> {
     await requireAdmin();
     return prismaAuth.user.findMany({
-        select: { id: true, email: true, firstName: true, lastName: true, role: true, createdAt: true },
+        select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            authProvider: true,
+            createdAt: true,
+        },
         orderBy: { createdAt: "desc" },
     });
 }

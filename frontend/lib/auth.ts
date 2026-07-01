@@ -68,6 +68,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 url: `https://login.microsoftonline.com/${process.env.AUTH_MICROSOFT_ENTRA_ID_TENANT_ID}/oauth2/v2.0/authorize`,
                 params: {
                     scope: "openid profile email User.Read",
+                    prompt: "login",
                 },
             },
             token: {
@@ -88,6 +89,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     return "/login?error=AccessDenied";
                 }
                 
+                const microsoftProfile = profile as {
+                    givenName?: string;
+                    surname?: string;
+                    jobTitle?: string;
+                    department?: string;
+                    mobilePhone?: string;
+                    officeLocation?: string;
+                };
+                
                 const existingUser = await prismaAuth.user.findUnique({
                     where: { email: user.email! },
                 });
@@ -95,17 +105,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 if (existingUser) {
                     await prismaAuth.user.update({
                         where: { email: user.email! },
-                        data: { role: role as "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER" },
+                        data: {
+                            role: role as "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER",
+                            authProvider: "MICROSOFT",
+                            firstName: microsoftProfile.givenName || existingUser.firstName,
+                            lastName: microsoftProfile.surname || existingUser.lastName,
+                            jobTitle: microsoftProfile.jobTitle || null,
+                            department: microsoftProfile.department || null,
+                            mobilePhone: microsoftProfile.mobilePhone || null,
+                            officeLocation: microsoftProfile.officeLocation || null,
+                        },
                     });
                 } else {
-                    const nameParts = (profile?.name || "").split(" ");
                     await prismaAuth.user.create({
                         data: {
                             email: user.email!,
-                            firstName: nameParts[0] || null,
-                            lastName: nameParts.slice(1).join(" ") || null,
+                            firstName: microsoftProfile.givenName || null,
+                            lastName: microsoftProfile.surname || null,
                             role: role as "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER",
+                            authProvider: "MICROSOFT",
                             password: "",
+                            jobTitle: microsoftProfile.jobTitle || null,
+                            department: microsoftProfile.department || null,
+                            mobilePhone: microsoftProfile.mobilePhone || null,
+                            officeLocation: microsoftProfile.officeLocation || null,
                         },
                     });
                 }
@@ -118,6 +141,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 token.role = user.role;
                 token.firstName = user.firstName;
                 token.lastName = user.lastName;
+                token.authProvider = user.authProvider;
             }
             
             if (account?.provider === "microsoft-entra-id") {
@@ -134,6 +158,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     token.id = dbUser.id;
                     token.firstName = dbUser.firstName;
                     token.lastName = dbUser.lastName;
+                    token.authProvider = dbUser.authProvider;
                 }
             }
             
@@ -145,6 +170,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 session.user.role = token.role as string;
                 session.user.firstName = token.firstName as string | null;
                 session.user.lastName = token.lastName as string | null;
+                session.user.authProvider = token.authProvider as string;
             }
             return session;
         },

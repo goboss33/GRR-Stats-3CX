@@ -11,7 +11,19 @@ export async function GET() {
 
     const user = await prismaAuth.user.findUnique({
         where: { id: session.user.id },
-        select: { id: true, email: true, firstName: true, lastName: true, role: true, createdAt: true },
+        select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            authProvider: true,
+            jobTitle: true,
+            department: true,
+            mobilePhone: true,
+            officeLocation: true,
+            createdAt: true,
+        },
     });
 
     if (!user) {
@@ -25,6 +37,18 @@ export async function PUT(request: Request) {
     const session = await auth();
     if (!session?.user) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const currentUser = await prismaAuth.user.findUnique({
+        where: { id: session.user.id },
+        select: { authProvider: true },
+    });
+
+    if (currentUser?.authProvider === "MICROSOFT") {
+        return NextResponse.json(
+            { error: "Les utilisateurs connectés via Microsoft ne peuvent pas modifier leur profil" },
+            { status: 403 }
+        );
     }
 
     const body = await request.json();
@@ -52,7 +76,19 @@ export async function PUT(request: Request) {
     const updated = await prismaAuth.user.update({
         where: { id: session.user.id },
         data: updateData,
-        select: { id: true, email: true, firstName: true, lastName: true, role: true, createdAt: true },
+        select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            authProvider: true,
+            jobTitle: true,
+            department: true,
+            mobilePhone: true,
+            officeLocation: true,
+            createdAt: true,
+        },
     });
 
     return NextResponse.json({ user: updated });
