@@ -80,7 +80,7 @@ const navItems: NavItem[] = [
     },
 ];
 
-export function Sidebar({ userRole, user, signOutAction }: SidebarProps) {
+export function Sidebar({ userRole, user, authProvider, signOutAction }: SidebarProps) {
     const pathname = usePathname();
     const [collapsed, setCollapsed] = useState(false);
     const [expandedMenus, setExpandedMenus] = useState<string[]>(() => {
