@@ -83,61 +83,98 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     callbacks: {
         async signIn({ user, account, profile }) {
             if (account?.provider === "microsoft-entra-id") {
-                const groups = (profile as Record<string, unknown>)?.groups as string[] || [];
-                const role = getRoleFromGroups(groups);
-                
-                if (!role) {
-                    return "/login?error=AccessDenied";
-                }
-                
-                const microsoftProfile = profile as {
-                    givenName?: string;
-                    surname?: string;
-                    jobTitle?: string;
-                    department?: string;
-                    mobilePhone?: string;
-                    officeLocation?: string;
-                };
-                
-                const existingUser = await prismaAuth.user.findUnique({
-                    where: { email: user.email! },
-                });
-                
-                if (existingUser) {
-                    await prismaAuth.user.update({
+                try {
+                    console.log("[OAuth] === Sign In Callback ===");
+                    console.log("[OAuth] User email:", user.email);
+                    console.log("[OAuth] User name:", user.name);
+                    
+                    const groups = (profile as Record<string, unknown>)?.groups as string[] || [];
+                    console.log("[OAuth] Groups from token:", groups);
+                    
+                    const role = getRoleFromGroups(groups);
+                    console.log("[OAuth] Mapped role:", role);
+                    
+                    if (!role) {
+                        console.warn("[OAuth] No matching group found, access denied");
+                        return "/login?error=AccessDenied";
+                    }
+                    
+                    const microsoftProfile = profile as {
+                        givenName?: string;
+                        surname?: string;
+                        displayName?: string;
+                        jobTitle?: string;
+                        department?: string;
+                        mobilePhone?: string;
+                        officeLocation?: string;
+                    };
+                    
+                    console.log("[OAuth] Microsoft profile:", {
+                        givenName: microsoftProfile.givenName,
+                        surname: microsoftProfile.surname,
+                        displayName: microsoftProfile.displayName,
+                        jobTitle: microsoftProfile.jobTitle,
+                        department: microsoftProfile.department,
+                    });
+                    
+                    // Fallback logic for incomplete profiles
+                    const firstName = microsoftProfile.givenName || 
+                                      microsoftProfile.displayName?.split(" ")[0] || 
+                                      user.email!.split("@")[0];
+                    const lastName = microsoftProfile.surname || 
+                                     microsoftProfile.displayName?.split(" ").slice(1).join(" ") || 
+                                     "";
+                    
+                    console.log("[OAuth] Resolved name:", { firstName, lastName });
+                    
+                    const existingUser = await prismaAuth.user.findUnique({
                         where: { email: user.email! },
-                        data: {
-                            role: role as "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER",
-                            authProvider: "MICROSOFT",
-                            firstName: microsoftProfile.givenName || existingUser.firstName,
-                            lastName: microsoftProfile.surname || existingUser.lastName,
-                            jobTitle: microsoftProfile.jobTitle || null,
-                            department: microsoftProfile.department || null,
-                            mobilePhone: microsoftProfile.mobilePhone || null,
-                            officeLocation: microsoftProfile.officeLocation || null,
-                        },
                     });
-                } else {
-                    await prismaAuth.user.create({
-                        data: {
-                            email: user.email!,
-                            firstName: microsoftProfile.givenName || null,
-                            lastName: microsoftProfile.surname || null,
-                            role: role as "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER",
-                            authProvider: "MICROSOFT",
-                            password: "",
-                            jobTitle: microsoftProfile.jobTitle || null,
-                            department: microsoftProfile.department || null,
-                            mobilePhone: microsoftProfile.mobilePhone || null,
-                            officeLocation: microsoftProfile.officeLocation || null,
-                        },
-                    });
+                    
+                    if (existingUser) {
+                        console.log("[OAuth] Updating existing user:", existingUser.id);
+                        await prismaAuth.user.update({
+                            where: { email: user.email! },
+                            data: {
+                                role: role as "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER",
+                                authProvider: "MICROSOFT",
+                                firstName: firstName || existingUser.firstName,
+                                lastName: lastName || existingUser.lastName,
+                                jobTitle: microsoftProfile.jobTitle || null,
+                                department: microsoftProfile.department || null,
+                                mobilePhone: microsoftProfile.mobilePhone || null,
+                                officeLocation: microsoftProfile.officeLocation || null,
+                            },
+                        });
+                    } else {
+                        console.log("[OAuth] Creating new user");
+                        await prismaAuth.user.create({
+                            data: {
+                                email: user.email!,
+                                firstName: firstName,
+                                lastName: lastName,
+                                role: role as "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER",
+                                authProvider: "MICROSOFT",
+                                password: "",
+                                jobTitle: microsoftProfile.jobTitle || null,
+                                department: microsoftProfile.department || null,
+                                mobilePhone: microsoftProfile.mobilePhone || null,
+                                officeLocation: microsoftProfile.officeLocation || null,
+                            },
+                        });
+                    }
+                    
+                    console.log("[OAuth] Sign in successful");
+                } catch (error) {
+                    console.error("[OAuth] Sign in error:", error);
+                    return "/login?error=OAuthSignInFailed";
                 }
             }
             return true;
         },
         async jwt({ token, user, account, profile }) {
             if (user) {
+                console.log("[OAuth JWT] Setting token from user:", { id: user.id, email: token.email });
                 token.id = user.id;
                 token.role = user.role;
                 token.firstName = user.firstName;
@@ -146,6 +183,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             }
             
             if (account?.provider === "microsoft-entra-id") {
+                console.log("[OAuth JWT] Microsoft provider detected, fetching user from DB");
                 const groups = (profile as Record<string, unknown>)?.groups as string[] || [];
                 const role = getRoleFromGroups(groups);
                 if (role) {
@@ -156,10 +194,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     where: { email: token.email as string },
                 });
                 if (dbUser) {
+                    console.log("[OAuth JWT] User found in DB:", { id: dbUser.id, role: dbUser.role });
                     token.id = dbUser.id;
                     token.firstName = dbUser.firstName;
                     token.lastName = dbUser.lastName;
                     token.authProvider = dbUser.authProvider;
+                } else {
+                    console.warn("[OAuth JWT] User not found in DB for email:", token.email);
                 }
             }
             
