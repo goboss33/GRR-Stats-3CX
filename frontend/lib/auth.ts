@@ -57,6 +57,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     firstName: user.firstName,
                     lastName: user.lastName,
                     role: user.role,
+                    authProvider: user.authProvider,
                 };
             },
         }),
@@ -141,7 +142,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 token.role = user.role;
                 token.firstName = user.firstName;
                 token.lastName = user.lastName;
-                token.authProvider = user.authProvider;
+                token.authProvider = user.authProvider || "CREDENTIALS";
             }
             
             if (account?.provider === "microsoft-entra-id") {
