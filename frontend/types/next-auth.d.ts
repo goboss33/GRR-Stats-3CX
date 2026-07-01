@@ -8,6 +8,7 @@ declare module "next-auth" {
             firstName: string | null;
             lastName: string | null;
             authProvider: string;
+            azureAdId?: string | null;
         } & DefaultSession["user"];
     }
 
@@ -16,6 +17,7 @@ declare module "next-auth" {
         firstName: string | null;
         lastName: string | null;
         authProvider: string;
+        azureAdId?: string | null;
     }
 }
 
@@ -26,5 +28,6 @@ declare module "next-auth/jwt" {
         firstName: string | null;
         lastName: string | null;
         authProvider: string;
+        azureAdId?: string | null;
     }
 }

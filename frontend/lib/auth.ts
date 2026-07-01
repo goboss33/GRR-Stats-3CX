@@ -87,9 +87,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     console.log("[OAuth] === Sign In Callback ===");
                     console.log("[OAuth] User email:", user.email);
                     console.log("[OAuth] User name:", user.name);
+                    console.log("[OAuth] Azure AD Object ID:", user.id);
                     
                     const groups = (profile as Record<string, unknown>)?.groups as string[] || [];
-                    console.log("[OAuth] Groups from token:", groups);
+                    console.log("[OAuth] Groups from token:", groups.length, "groups");
                     
                     const role = getRoleFromGroups(groups);
                     console.log("[OAuth] Mapped role:", role);
@@ -127,17 +128,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     
                     console.log("[OAuth] Resolved name:", { firstName, lastName });
                     
-                    const existingUser = await prismaAuth.user.findUnique({
-                        where: { email: user.email! },
+                    // Try to find user by Azure AD ID first, then by email
+                    let existingUser = await prismaAuth.user.findUnique({
+                        where: { azureAdId: user.id },
                     });
+                    
+                    if (!existingUser && user.email) {
+                        existingUser = await prismaAuth.user.findUnique({
+                            where: { email: user.email },
+                        });
+                    }
                     
                     if (existingUser) {
                         console.log("[OAuth] Updating existing user:", existingUser.id);
                         await prismaAuth.user.update({
-                            where: { email: user.email! },
+                            where: { id: existingUser.id },
                             data: {
                                 role: role as "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER",
                                 authProvider: "MICROSOFT",
+                                azureAdId: user.id,
                                 firstName: firstName || existingUser.firstName,
                                 lastName: lastName || existingUser.lastName,
                                 jobTitle: microsoftProfile.jobTitle || null,
@@ -155,6 +164,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                                 lastName: lastName,
                                 role: role as "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER",
                                 authProvider: "MICROSOFT",
+                                azureAdId: user.id,
                                 password: "",
                                 jobTitle: microsoftProfile.jobTitle || null,
                                 department: microsoftProfile.department || null,
@@ -184,6 +194,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             
             if (account?.provider === "microsoft-entra-id") {
                 console.log("[OAuth JWT] Microsoft provider detected, fetching user from DB");
+                
+                // Clean up large fields from token to avoid cookie size issues
+                delete (token as any).groups;
+                delete (token as any).picture;
+                delete (token as any).accessToken;
+                delete (token as any).refreshToken;
+                
                 const groups = (profile as Record<string, unknown>)?.groups as string[] || [];
                 const role = getRoleFromGroups(groups);
                 if (role) {

@@ -17,6 +17,7 @@ model User {
   lastName       String?
   role           Role     @default(USER)
   authProvider   String   @default("CREDENTIALS")
+  azureAdId      String?  @unique
   jobTitle       String?
   department     String?
   mobilePhone    String?
