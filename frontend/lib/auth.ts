@@ -203,6 +203,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     }
                     
                     console.log("[OAuth] Sign in successful");
+                    
+                    // Clean up user object to avoid large JWT
+                    delete (user as any).profilePicture;
+                    delete (user as any).azureAdId;
+                    delete (user as any).jobTitle;
+                    delete (user as any).department;
+                    delete (user as any).mobilePhone;
+                    delete (user as any).officeLocation;
+                    
+                    console.log("[OAuth] User object cleaned, returning true");
                 } catch (error) {
                     console.error("[OAuth] Sign in error:", error);
                     return "/login?error=OAuthSignInFailed";
@@ -218,17 +228,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 token.firstName = user.firstName;
                 token.lastName = user.lastName;
                 token.authProvider = user.authProvider || "CREDENTIALS";
-                token.profilePicture = user.profilePicture;
             }
             
             if (account?.provider === "microsoft-entra-id") {
                 console.log("[OAuth JWT] Microsoft provider detected, fetching user from DB");
-                
-                // Clean up large fields from token to avoid cookie size issues
-                delete (token as any).groups;
-                delete (token as any).picture;
-                delete (token as any).accessToken;
-                delete (token as any).refreshToken;
                 
                 const groups = (profile as Record<string, unknown>)?.groups as string[] || [];
                 const role = getRoleFromGroups(groups);
@@ -245,11 +248,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     token.firstName = dbUser.firstName;
                     token.lastName = dbUser.lastName;
                     token.authProvider = dbUser.authProvider;
-                    token.profilePicture = dbUser.profilePicture;
                 } else {
                     console.warn("[OAuth JWT] User not found in DB for email:", token.email);
                 }
             }
+            
+            console.log("[OAuth JWT] Final token keys:", Object.keys(token));
+            console.log("[OAuth JWT] Token size estimate:", JSON.stringify(token).length, "bytes");
             
             return token;
         },
@@ -260,7 +265,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 session.user.firstName = token.firstName as string | null;
                 session.user.lastName = token.lastName as string | null;
                 session.user.authProvider = token.authProvider as string;
-                session.user.profilePicture = token.profilePicture as string | null;
             }
             return session;
         },
