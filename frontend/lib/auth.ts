@@ -119,12 +119,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                         department: microsoftProfile.department,
                     });
                     
-                    // Use givenName/surname from Microsoft profile
+                    // Use givenName/surname from Microsoft profile, fallback to user.name
+                    const userNameParts = user.name?.split(" ") || [];
                     const firstName = microsoftProfile.givenName || 
                                       microsoftProfile.displayName?.split(" ")[0] || 
+                                      userNameParts[0] || 
                                       "";
                     const lastName = microsoftProfile.surname || 
                                      microsoftProfile.displayName?.split(" ").slice(1).join(" ") || 
+                                     userNameParts.slice(1).join(" ") || 
                                      "";
                     
                     console.log("[OAuth] Resolved name:", { firstName, lastName });
