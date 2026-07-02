@@ -85,19 +85,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         async signIn({ user, account, profile }) {
             if (account?.provider === "microsoft-entra-id") {
                 try {
-                    console.log("[OAuth] === Sign In Callback ===");
-                    console.log("[OAuth] User email:", user.email);
-                    console.log("[OAuth] User name:", user.name);
-                    console.log("[OAuth] Azure AD Object ID:", user.id);
-                    
                     const groups = (profile as Record<string, unknown>)?.groups as string[] || [];
-                    console.log("[OAuth] Groups from token:", groups.length, "groups");
-                    
                     const role = getRoleFromGroups(groups);
-                    console.log("[OAuth] Mapped role:", role);
                     
                     if (!role) {
-                        console.warn("[OAuth] No matching group found, access denied");
                         return "/login?error=AccessDenied";
                     }
                     
@@ -111,14 +102,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                         officeLocation?: string;
                     };
                     
-                    console.log("[OAuth] Microsoft profile:", {
-                        givenName: microsoftProfile.givenName,
-                        surname: microsoftProfile.surname,
-                        displayName: microsoftProfile.displayName,
-                        jobTitle: microsoftProfile.jobTitle,
-                        department: microsoftProfile.department,
-                    });
-                    
                     // Use givenName/surname from Microsoft profile, fallback to user.name
                     const userNameParts = user.name?.split(" ") || [];
                     const firstName = microsoftProfile.givenName || 
@@ -130,13 +113,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                                      userNameParts.slice(1).join(" ") || 
                                      "";
                     
-                    console.log("[OAuth] Resolved name:", { firstName, lastName });
-                    
                     // Fetch profile picture from Microsoft Graph API
                     let profilePicture: string | null = null;
                     if (account.access_token) {
                         try {
-                            console.log("[OAuth] Fetching profile picture...");
                             const photoResponse = await fetch("https://graph.microsoft.com/v1.0/me/photo/$value", {
                                 headers: {
                                     Authorization: `Bearer ${account.access_token}`,
@@ -148,9 +128,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                                 const base64Photo = Buffer.from(photoBuffer).toString("base64");
                                 const contentType = photoResponse.headers.get("content-type") || "image/jpeg";
                                 profilePicture = `data:${contentType};base64,${base64Photo}`;
-                                console.log("[OAuth] Profile picture fetched successfully");
-                            } else {
-                                console.log("[OAuth] No profile picture available (status:", photoResponse.status, ")");
                             }
                         } catch (error) {
                             console.warn("[OAuth] Failed to fetch profile picture:", error);
@@ -169,7 +146,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     }
                     
                     if (existingUser) {
-                        console.log("[OAuth] Updating existing user:", existingUser.id);
                         await prismaAuth.user.update({
                             where: { id: existingUser.id },
                             data: {
@@ -186,7 +162,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                             },
                         });
                     } else {
-                        console.log("[OAuth] Creating new user");
                         await prismaAuth.user.create({
                             data: {
                                 email: user.email!,
@@ -205,8 +180,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                         });
                     }
                     
-                    console.log("[OAuth] Sign in successful");
-                    
                     // Clean up user object to avoid large JWT
                     delete (user as any).profilePicture;
                     delete (user as any).azureAdId;
@@ -214,8 +187,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     delete (user as any).department;
                     delete (user as any).mobilePhone;
                     delete (user as any).officeLocation;
-                    
-                    console.log("[OAuth] User object cleaned, returning true");
                 } catch (error) {
                     console.error("[OAuth] Sign in error:", error);
                     return "/login?error=OAuthSignInFailed";
@@ -225,7 +196,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         },
         async jwt({ token, user, account, profile }) {
             if (user) {
-                console.log("[OAuth JWT] Setting token from user:", { id: user.id, email: token.email });
                 token.id = user.id;
                 token.role = user.role;
                 token.firstName = user.firstName;
@@ -234,8 +204,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             }
             
             if (account?.provider === "microsoft-entra-id") {
-                console.log("[OAuth JWT] Microsoft provider detected, fetching user from DB");
-                
                 const groups = (profile as Record<string, unknown>)?.groups as string[] || [];
                 const role = getRoleFromGroups(groups);
                 if (role) {
@@ -246,13 +214,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     where: { email: token.email as string },
                 });
                 if (dbUser) {
-                    console.log("[OAuth JWT] User found in DB:", { id: dbUser.id, role: dbUser.role });
                     token.id = dbUser.id;
                     token.firstName = dbUser.firstName;
                     token.lastName = dbUser.lastName;
                     token.authProvider = dbUser.authProvider;
-                } else {
-                    console.warn("[OAuth JWT] User not found in DB for email:", token.email);
                 }
             }
             
@@ -260,9 +225,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             delete token.picture;  // On récupère la photo depuis la DB
             delete token.name;     // On a déjà firstName/lastName
             delete token.sub;      // On a déjà id
-            
-            console.log("[OAuth JWT] Final token keys:", Object.keys(token));
-            console.log("[OAuth JWT] Token size estimate:", JSON.stringify(token).length, "bytes");
             
             return token;
         },
