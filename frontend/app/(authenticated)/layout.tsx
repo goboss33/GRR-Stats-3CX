@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
 import { Suspense } from "react";
 import Loading from "./loading";
+import { prismaAuth } from "@/lib/prisma-auth";
 
 export default async function AuthenticatedLayout({
     children,
@@ -25,8 +26,13 @@ export default async function AuthenticatedLayout({
     const userFirstName = (session.user as any)?.firstName;
     const userLastName = (session.user as any)?.lastName;
     const authProvider = (session.user as any)?.authProvider || "CREDENTIALS";
-    const profilePicture = (session.user as any)?.profilePicture;
     const userName = [userFirstName, userLastName].filter(Boolean).join(" ") || "Utilisateur";
+
+    const dbUser = await prismaAuth.user.findUnique({
+        where: { id: session.user.id },
+        select: { profilePicture: true }
+    });
+    const profilePicture = dbUser?.profilePicture || null;
 
     return (
         <div className="flex h-screen bg-slate-50">
