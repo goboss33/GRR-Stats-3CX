@@ -253,6 +253,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 }
             }
             
+            // Nettoyer les champs inutiles pour réduire la taille du token
+            delete token.picture;  // On récupère la photo depuis la DB
+            delete token.name;     // On a déjà firstName/lastName
+            delete token.sub;      // On a déjà id
+            
             console.log("[OAuth JWT] Final token keys:", Object.keys(token));
             console.log("[OAuth JWT] Token size estimate:", JSON.stringify(token).length, "bytes");
             
