@@ -58,6 +58,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     lastName: user.lastName,
                     role: user.role,
                     authProvider: user.authProvider,
+                    profilePicture: user.profilePicture,
                 };
             },
         }),
@@ -118,15 +119,40 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                         department: microsoftProfile.department,
                     });
                     
-                    // Fallback logic for incomplete profiles
+                    // Use givenName/surname from Microsoft profile
                     const firstName = microsoftProfile.givenName || 
                                       microsoftProfile.displayName?.split(" ")[0] || 
-                                      user.email!.split("@")[0];
+                                      "";
                     const lastName = microsoftProfile.surname || 
                                      microsoftProfile.displayName?.split(" ").slice(1).join(" ") || 
                                      "";
                     
                     console.log("[OAuth] Resolved name:", { firstName, lastName });
+                    
+                    // Fetch profile picture from Microsoft Graph API
+                    let profilePicture: string | null = null;
+                    if (account.access_token) {
+                        try {
+                            console.log("[OAuth] Fetching profile picture...");
+                            const photoResponse = await fetch("https://graph.microsoft.com/v1.0/me/photo/$value", {
+                                headers: {
+                                    Authorization: `Bearer ${account.access_token}`,
+                                },
+                            });
+                            
+                            if (photoResponse.ok) {
+                                const photoBuffer = await photoResponse.arrayBuffer();
+                                const base64Photo = Buffer.from(photoBuffer).toString("base64");
+                                const contentType = photoResponse.headers.get("content-type") || "image/jpeg";
+                                profilePicture = `data:${contentType};base64,${base64Photo}`;
+                                console.log("[OAuth] Profile picture fetched successfully");
+                            } else {
+                                console.log("[OAuth] No profile picture available (status:", photoResponse.status, ")");
+                            }
+                        } catch (error) {
+                            console.warn("[OAuth] Failed to fetch profile picture:", error);
+                        }
+                    }
                     
                     // Try to find user by Azure AD ID first, then by email
                     let existingUser = await prismaAuth.user.findUnique({
@@ -149,6 +175,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                                 azureAdId: user.id,
                                 firstName: firstName || existingUser.firstName,
                                 lastName: lastName || existingUser.lastName,
+                                profilePicture: profilePicture || existingUser.profilePicture,
                                 jobTitle: microsoftProfile.jobTitle || null,
                                 department: microsoftProfile.department || null,
                                 mobilePhone: microsoftProfile.mobilePhone || null,
@@ -165,6 +192,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                                 role: role as "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER",
                                 authProvider: "MICROSOFT",
                                 azureAdId: user.id,
+                                profilePicture: profilePicture,
                                 password: "",
                                 jobTitle: microsoftProfile.jobTitle || null,
                                 department: microsoftProfile.department || null,
@@ -190,6 +218,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 token.firstName = user.firstName;
                 token.lastName = user.lastName;
                 token.authProvider = user.authProvider || "CREDENTIALS";
+                token.profilePicture = user.profilePicture;
             }
             
             if (account?.provider === "microsoft-entra-id") {
@@ -216,6 +245,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     token.firstName = dbUser.firstName;
                     token.lastName = dbUser.lastName;
                     token.authProvider = dbUser.authProvider;
+                    token.profilePicture = dbUser.profilePicture;
                 } else {
                     console.warn("[OAuth JWT] User not found in DB for email:", token.email);
                 }
@@ -230,6 +260,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 session.user.firstName = token.firstName as string | null;
                 session.user.lastName = token.lastName as string | null;
                 session.user.authProvider = token.authProvider as string;
+                session.user.profilePicture = token.profilePicture as string | null;
             }
             return session;
         },

@@ -25,6 +25,7 @@ export default async function AuthenticatedLayout({
     const userFirstName = (session.user as any)?.firstName;
     const userLastName = (session.user as any)?.lastName;
     const authProvider = (session.user as any)?.authProvider || "CREDENTIALS";
+    const profilePicture = (session.user as any)?.profilePicture;
     const userName = [userFirstName, userLastName].filter(Boolean).join(" ") || "Utilisateur";
 
     return (
@@ -36,6 +37,7 @@ export default async function AuthenticatedLayout({
                     lastName: userLastName,
                 }}
                 authProvider={authProvider}
+                profilePicture={profilePicture}
                 signOutAction={handleSignOut}
             />
             <div className="flex-1 flex flex-col overflow-hidden">

@@ -93,6 +93,7 @@ interface UserProfile {
     lastName: string | null;
     role: string;
     authProvider: string;
+    profilePicture: string | null;
     jobTitle: string | null;
     department: string | null;
     mobilePhone: string | null;
@@ -206,6 +207,19 @@ function PersonalInfoTab() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                    {profile?.profilePicture && (
+                        <div className="flex items-center gap-4">
+                            <img
+                                src={profile.profilePicture}
+                                alt="Photo de profil"
+                                className="h-16 w-16 rounded-full object-cover"
+                            />
+                            <div>
+                                <p className="text-sm font-medium text-slate-900">{firstName} {lastName}</p>
+                                <p className="text-xs text-slate-500">{email}</p>
+                            </div>
+                        </div>
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label htmlFor="firstName">Prénom</Label>

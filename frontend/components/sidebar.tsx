@@ -31,6 +31,7 @@ interface SidebarProps {
         lastName: string | null | undefined;
     };
     authProvider: string;
+    profilePicture?: string | null;
     signOutAction: () => Promise<void>;
 }
 
@@ -80,7 +81,7 @@ const navItems: NavItem[] = [
     },
 ];
 
-export function Sidebar({ userRole, user, authProvider, signOutAction }: SidebarProps) {
+export function Sidebar({ userRole, user, authProvider, profilePicture, signOutAction }: SidebarProps) {
     const pathname = usePathname();
     const [collapsed, setCollapsed] = useState(false);
     const [expandedMenus, setExpandedMenus] = useState<string[]>(() => {
@@ -280,6 +281,7 @@ export function Sidebar({ userRole, user, authProvider, signOutAction }: Sidebar
                         user={user}
                         userRole={userRole}
                         authProvider={authProvider}
+                        profilePicture={profilePicture}
                         collapsed={collapsed}
                         signOutAction={signOutAction}
                     />

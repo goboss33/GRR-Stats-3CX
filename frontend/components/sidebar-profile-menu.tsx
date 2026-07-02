@@ -19,6 +19,7 @@ interface SidebarProfileMenuProps {
     };
     userRole: string;
     authProvider: string;
+    profilePicture?: string | null;
     collapsed: boolean;
     signOutAction: () => Promise<void>;
 }
@@ -37,7 +38,7 @@ function getFullName(firstName: string | null | undefined, lastName: string | nu
     return parts.length > 0 ? parts.join(" ") : "Utilisateur";
 }
 
-export function SidebarProfileMenu({ user, userRole, authProvider, collapsed, signOutAction }: SidebarProfileMenuProps) {
+export function SidebarProfileMenu({ user, userRole, authProvider, profilePicture, collapsed, signOutAction }: SidebarProfileMenuProps) {
     const [open, setOpen] = useState(false);
     const [signingOut, setSigningOut] = useState(false);
 
@@ -63,7 +64,13 @@ export function SidebarProfileMenu({ user, userRole, authProvider, collapsed, si
                     collapsed && "justify-center px-2"
                 )}
             >
-                {isMicrosoft ? (
+                {profilePicture ? (
+                    <img
+                        src={profilePicture}
+                        alt="Profile"
+                        className="h-8 w-8 rounded-full object-cover flex-shrink-0"
+                    />
+                ) : isMicrosoft ? (
                     <div className="h-8 w-8 flex-shrink-0 flex items-center justify-center bg-[#0078d4] rounded-full">
                         <svg className="h-5 w-5 text-white" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
                             <path d="M0 0h10v10H0z" fill="#f25022" />
