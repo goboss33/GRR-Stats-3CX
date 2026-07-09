@@ -59,21 +59,32 @@ export async function GET(request: NextRequest) {
             queue_passages_outcomes AS (
                 SELECT
                     p.originating_cdr_id,
+                    p.call_history_id,
                     p.destination_dn_number as agent_ext,
                     CASE WHEN p.cdr_answered_at IS NOT NULL THEN 1 ELSE 0 END as was_answered,
-                    EXTRACT(EPOCH FROM (p.cdr_ended_at - p.cdr_answered_at)) as talk_seconds
+                    EXTRACT(EPOCH FROM (p.cdr_ended_at - p.cdr_answered_at)) as talk_seconds,
+                    p.cdr_answered_at
                 FROM cdroutput p
-                WHERE p.call_history_id IN (SELECT call_history_id FROM all_queue_passages)
-                  AND p.creation_forward_reason = 'polling'
+                JOIN all_queue_passages aqp ON aqp.cdr_id = p.originating_cdr_id
+                WHERE p.creation_forward_reason = 'polling'
                   AND p.destination_dn_type = 'extension'
+            ),
+            last_answered_agent AS (
+                SELECT DISTINCT ON (call_history_id)
+                    call_history_id,
+                    agent_ext as last_agent
+                FROM queue_passages_outcomes
+                WHERE was_answered = 1
+                ORDER BY call_history_id, cdr_answered_at DESC
             ),
             agent_queue_stats AS (
                 SELECT
                     qpo.agent_ext as extension,
                     COUNT(DISTINCT qpo.originating_cdr_id) as calls_received,
-                    SUM(qpo.was_answered) as resolved,
+                    COUNT(DISTINCT CASE WHEN la.last_agent = qpo.agent_ext THEN qpo.call_history_id END) as resolved,
                     SUM(CASE WHEN qpo.was_answered = 1 THEN qpo.talk_seconds ELSE 0 END) as queue_talk_time
                 FROM queue_passages_outcomes qpo
+                LEFT JOIN last_answered_agent la ON qpo.call_history_id = la.call_history_id
                 WHERE qpo.agent_ext IN (SELECT extension FROM queue_agents)
                 GROUP BY qpo.agent_ext
             ),

@@ -508,7 +508,7 @@ export function buildDirectSegmentWhereClause(
     ];
 
     if (excludeQueueOriginated) {
-        conditions.push(`NOT EXISTS (SELECT 1 FROM ${queuePassagesCTEName} aqp WHERE aqp.cdr_id = ${p}originating_cdr_id)`);
+        conditions.push(`NOT EXISTS (SELECT 1 FROM ${queuePassagesCTEName} aqp WHERE aqp.call_history_id = ${p}call_history_id)`);
     }
 
     return conditions.join(' AND ');

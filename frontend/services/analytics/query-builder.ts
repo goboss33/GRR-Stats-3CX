@@ -282,7 +282,7 @@ export function buildAnalyticsCTEs(
             GROUP BY j.call_history_id
         ),
         all_queue_passages_for_journey AS (
-            SELECT DISTINCT c.cdr_id
+            SELECT DISTINCT c.call_history_id, c.cdr_id
             FROM cdroutput c
             WHERE ${dateOnlyWhereClause}
               AND c.destination_dn_type = 'queue'

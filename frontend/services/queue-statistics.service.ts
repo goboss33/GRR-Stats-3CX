@@ -108,24 +108,16 @@ async function computeQueueKPIs(
     startDate: Date,
     endDate: Date
 ): Promise<QueueKPIs> {
-    const [apiData, agentsData] = await Promise.all([
-        fetchApi<ApiQueueResponse>("/api/analytics/queue", {
-            server: serverId,
-            queueNumber,
-            start: startDate.toISOString(),
-            end: endDate.toISOString(),
-        }),
-        fetchApi<ApiAgentResponse>("/api/analytics/agents", {
-            server: serverId,
-            queueNumber,
-            start: startDate.toISOString(),
-            end: endDate.toISOString(),
-        }),
-    ]);
+    const apiData = await fetchApi<ApiQueueResponse>("/api/analytics/queue", {
+        server: serverId,
+        queueNumber,
+        start: startDate.toISOString(),
+        end: endDate.toISOString(),
+    });
 
     const teamDirectReceived = apiData.directReceived;
     const teamDirectAnswered = apiData.directAnswered;
-    const teamQueueAnswered = agentsData.agents.reduce((sum, a) => sum + a.answered, 0);
+    const teamQueueAnswered = apiData.callsAnswered;
     const totalAnswered = teamQueueAnswered + teamDirectAnswered;
 
     const overflowDestinations: OverflowDestination[] = apiData.overflowDestinations.map((d) => ({

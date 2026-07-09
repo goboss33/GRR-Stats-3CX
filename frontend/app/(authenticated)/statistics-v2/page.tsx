@@ -186,6 +186,7 @@ export default function StatisticsV2Page() {
                         queueNumber={statistics.queueNumber}
                         startDate={format(dateRange.startDate, "yyyy-MM-dd")}
                         endDate={format(dateRange.endDate, "yyyy-MM-dd")}
+                        agentExtensions={statistics.agents.map(a => a.extension)}
                     />
 
                     {/* Agent Performance Table V2 - Avec Total + Score + % */}

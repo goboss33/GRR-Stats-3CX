@@ -24,7 +24,7 @@ type SortDirection = "asc" | "desc";
 
 const columnTooltips: Record<string, string> = {
     name: "Nom de l'agent, extension, et jauge de charge visuelle (vert = file, bleu = directs)",
-    queueAnswered: "Appels résolus via la file d'attente (résolveur final = dernier à décrocher)",
+    queueAnswered: "Appels résolus via la file d'attente (résolveur final = dernier à décrocher) / appels où l'agent a été sollicité",
     directAnswered: "Appels directs répondus / appels directs reçus",
     totalAnswered: "Total appels répondus (file + directs) / total reçus",
     totalHandlingTimeSeconds: "Durée totale cumulée en conversation (file + directs)",
@@ -242,7 +242,7 @@ export function AgentPerformanceTableV2({
                                         </td>
                                         <td className="px-3 py-3">
                                             <span className="font-semibold text-violet-700">{agent.answered}</span>
-                                            <span className="text-slate-400 text-sm">/{totalQueueCallsReceived}</span>
+                                            <span className="text-slate-400 text-sm">/{agent.callsReceived}</span>
                                         </td>
                                         <td className="px-3 py-3">
                                             <span className="font-semibold text-blue-700">{agent.directAnswered}</span>

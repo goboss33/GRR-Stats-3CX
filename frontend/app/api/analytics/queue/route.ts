@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
                   AND c.cdr_started_at >= '${start.toISOString()}'
                   AND c.cdr_started_at <= '${end.toISOString()}'
                   AND NOT EXISTS (
-                      SELECT 1 FROM all_queue_passages aqp WHERE aqp.cdr_id = c.originating_cdr_id
+                      SELECT 1 FROM all_queue_passages aqp WHERE aqp.call_history_id = c.call_history_id
                   )
             )
             SELECT

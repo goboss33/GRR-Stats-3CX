@@ -12,6 +12,7 @@ interface TeamOverviewProps {
     queueNumber: string;
     startDate: string;
     endDate: string;
+    agentExtensions: string[];
 }
 
 const COLORS = {
@@ -24,7 +25,7 @@ const COLORS = {
     overflow: "#f59e0b",
 };
 
-export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate }: TeamOverviewProps) {
+export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate, agentExtensions }: TeamOverviewProps) {
     const totalReceived = kpis.callsReceived + kpis.teamDirectReceived;
     const totalAnswered = kpis.callsAnswered + kpis.teamDirectAnswered;
     const totalLost = kpis.callsAbandoned + kpis.directLost;
@@ -50,25 +51,54 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate 
         return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
     };
 
-    const buildJourneyFilter = (conditions: Array<{ type: string; queueNumber: string; result?: string; negate?: boolean }>) => {
+    const buildTeamFilter = (queueCondition: { type: string; queueNumber: string; result?: string }, agentConditions: Array<{ type: string; agentNumber: string; result?: string }>) => {
+        const conditions = [
+            {
+                condition: {
+                    type: queueCondition.type as "queue" | "direct" | "voicemail",
+                    queueNumber: queueCondition.queueNumber,
+                    result: queueCondition.result as "answered" | "not_answered" | "busy" | "voicemail" | "abandoned" | "overflow" | undefined,
+                    negate: false,
+                    firstSegment: false,
+                    lastSegment: false,
+                },
+                operator: "OR" as const,
+            },
+            ...agentConditions.map(c => ({
+                condition: {
+                    type: c.type as "queue" | "direct" | "voicemail",
+                    agentNumber: c.agentNumber,
+                    result: c.result as "answered" | "not_answered" | "busy" | "voicemail" | "abandoned" | "overflow" | undefined,
+                    negate: false,
+                    firstSegment: false,
+                    lastSegment: false,
+                },
+                operator: "OR" as const,
+            })),
+        ];
+
         const filter = {
             groups: [{
-                group: {
-                    conditions: conditions.map((c, i) => ({
-                        condition: {
-                            type: c.type as "queue" | "direct" | "voicemail",
-                            queueNumber: c.queueNumber,
-                            result: c.result as "answered" | "not_answered" | "busy" | "voicemail" | "abandoned" | "overflow" | undefined,
-                            negate: c.negate || false,
-                        },
-                        operator: i === 0 ? "AND" : "AND",
-                    })),
-                },
+                group: { conditions },
                 operator: "AND",
             }],
         };
         return encodeURIComponent(JSON.stringify(filter));
     };
+
+    const queueCondition = { type: "queue", queueNumber };
+    const agentConditions = agentExtensions.map(ext => ({ type: "direct", agentNumber: ext }));
+    const totalFilter = buildTeamFilter(queueCondition, agentConditions);
+
+    const queueAnsweredCondition = { type: "queue", queueNumber, result: "answered" };
+    const agentAnsweredConditions = agentExtensions.map(ext => ({ type: "direct", agentNumber: ext, result: "answered" }));
+    const answeredFilter = buildTeamFilter(queueAnsweredCondition, agentAnsweredConditions);
+
+    const queueLostCondition = { type: "queue", queueNumber, result: "abandoned" };
+    const agentLostConditions = agentExtensions.map(ext => ({ type: "direct", agentNumber: ext, result: "not_answered" }));
+    const lostFilter = buildTeamFilter(queueLostCondition, agentLostConditions);
+
+    const overflowFilter = buildTeamFilter({ type: "queue", queueNumber, result: "overflow" }, []);
 
     // Anneau externe : KPIs (Répondus, Perdus, Redirigés)
     const outcomeData = [
@@ -183,7 +213,9 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate 
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             {/* Total Reçus */}
                             <Link
-                                href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${buildJourneyFilter([{ type: "queue", queueNumber }])}`}
+                                href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${totalFilter}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer"
                             >
                                 <div className="flex items-center justify-between mb-1">
@@ -201,7 +233,9 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate 
 
                             {/* Répondus */}
                             <Link
-                                href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${buildJourneyFilter([{ type: "queue", queueNumber, result: "answered" }])}`}
+                                href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${answeredFilter}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer"
                             >
                                 <div className="flex items-center justify-between mb-1">
@@ -219,11 +253,9 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate 
 
                             {/* Perdus */}
                             <Link
-                                href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${buildJourneyFilter([
-                                    { type: "queue", queueNumber, result: "abandoned" },
-                                    { type: "queue", queueNumber, result: "answered", negate: true },
-                                    { type: "queue", queueNumber, result: "overflow", negate: true }
-                                ])}`}
+                                href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${lostFilter}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-red-300 hover:shadow-md transition-all cursor-pointer"
                             >
                                 <div className="flex items-center justify-between mb-1">
@@ -241,7 +273,9 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate 
 
                             {/* Redirigés */}
                             <Link
-                                href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${buildJourneyFilter([{ type: "queue", queueNumber, result: "overflow" }])}`}
+                                href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${overflowFilter}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-amber-300 hover:shadow-md transition-all cursor-pointer"
                             >
                                 <div className="flex items-center justify-between mb-1">
