@@ -2,7 +2,7 @@
 
 import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import { getGlobalMetrics } from "@/services/dashboard.service";
-import { determineCallStatus, SQL_SYSTEM_DEST_TYPES, SQL_SYSTEM_ENTITY_TYPES } from "@/services/domain/call-aggregation";
+import { determineCallStatus } from "@/services/domain/call-aggregation";
 
 export interface DiagnosticResult {
     period: { start: string; end: string };
@@ -37,6 +37,9 @@ export interface DivergenceDetail {
     lastDurationSeconds: number;
     lastDurationSecondsSql: number;
     humanAnsweredAt: string | null;
+    lastHumanAnsweredAt: string | null;
+    lastHumanStartedAt: string | null;
+    lastHumanEndedAt: string | null;
     terminationReasonDetails: string | null;
     allSegments: SegmentSummary[];
 }
@@ -117,7 +120,35 @@ export async function runDiagnostic(
         ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
     `;
 
-    // Step 4: Get answered_segments
+    // Step 4: Get last_human_segments (last extension segment, not voicemail)
+    const lastHumanSegments = await prisma.$queryRaw<
+        Array<{
+            call_history_id: string;
+            cdr_answered_at: Date | null;
+            cdr_started_at: Date | null;
+            cdr_ended_at: Date | null;
+        }>
+    >`
+        SELECT DISTINCT ON (call_history_id)
+            call_history_id,
+            cdr_answered_at,
+            cdr_started_at,
+            cdr_ended_at
+        FROM cdroutput
+        WHERE call_history_id = ANY(${callIds}::uuid[])
+          AND destination_dn_type = 'extension'
+          AND COALESCE(destination_entity_type, '') != 'voicemail'
+        ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+    `;
+
+    const lastHumanMap = new Map<string, { answeredAt: Date | null; startedAt: Date | null; endedAt: Date | null }>();
+    lastHumanSegments.forEach(s => lastHumanMap.set(s.call_history_id, {
+        answeredAt: s.cdr_answered_at,
+        startedAt: s.cdr_started_at,
+        endedAt: s.cdr_ended_at,
+    }));
+
+    // Step 5: Get answered_segments (first extension that answered)
     const answeredSegments = await prisma.$queryRaw<
         Array<{ call_history_id: string; cdr_answered_at: Date }>
     >`
@@ -134,7 +165,7 @@ export async function runDiagnostic(
     const answeredMap = new Map<string, Date>();
     answeredSegments.forEach(s => answeredMap.set(s.call_history_id, s.cdr_answered_at));
 
-    // Step 5: Compute Dashboard outcomes via SQL (same CASE as repository)
+    // Step 6: Compute Dashboard outcomes via SQL (using last_human_segments logic)
     const sqlOutcomes = await prisma.$queryRaw<
         Array<{ call_history_id: string; outcome: string }>
     >`
@@ -143,23 +174,22 @@ export async function runDiagnostic(
                 call_history_id,
                 destination_dn_type AS last_dest_type,
                 destination_entity_type AS last_dest_entity_type,
-                cdr_answered_at AS last_answered_at,
-                cdr_started_at AS last_started_at,
-                cdr_ended_at AS last_ended_at,
                 termination_reason_details
             FROM cdroutput
             WHERE call_history_id = ANY(${callIds}::uuid[])
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
         ),
-        answered_segments AS (
+        last_human_segments AS (
             SELECT DISTINCT ON (call_history_id)
                 call_history_id,
-                cdr_answered_at AS answered_at
+                cdr_answered_at AS last_human_answered_at,
+                cdr_started_at AS last_human_started_at,
+                cdr_ended_at AS last_human_ended_at
             FROM cdroutput
             WHERE call_history_id = ANY(${callIds}::uuid[])
-              AND cdr_answered_at IS NOT NULL
               AND destination_dn_type = 'extension'
-            ORDER BY call_history_id, cdr_answered_at ASC, cdr_id ASC
+              AND COALESCE(destination_entity_type, '') != 'voicemail'
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
         )
         SELECT
             ls.call_history_id,
@@ -168,38 +198,32 @@ export async function runDiagnostic(
                     THEN 'voicemail'
                 WHEN LOWER(COALESCE(ls.termination_reason_details, '')) LIKE '%busy%'
                     THEN 'busy'
-                WHEN ls.last_answered_at IS NOT NULL
-                     AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
-                    THEN CASE
-                        WHEN ls.last_dest_type IN (${SQL_SYSTEM_DEST_TYPES})
-                             OR ls.last_dest_entity_type IN (${SQL_SYSTEM_ENTITY_TYPES})
-                            THEN CASE WHEN ans.answered_at IS NOT NULL THEN 'answered' ELSE 'abandoned' END
-                        ELSE 'answered'
-                        END
+                WHEN lhs.last_human_answered_at IS NOT NULL
+                     AND EXTRACT(EPOCH FROM (lhs.last_human_ended_at - lhs.last_human_started_at)) > 1
+                    THEN 'answered'
                 ELSE 'abandoned'
             END AS outcome
         FROM last_segments ls
-        LEFT JOIN answered_segments ans ON ans.call_history_id = ls.call_history_id
+        LEFT JOIN last_human_segments lhs ON ls.call_history_id = lhs.call_history_id
     `;
 
     const sqlOutcomeMap = new Map<string, string>();
     sqlOutcomes.forEach(r => sqlOutcomeMap.set(r.call_history_id, r.outcome));
 
-    // Step 6: Compute TypeScript outcomes (Logs logic) using the SAME domain function
+    // Step 7: Compute TypeScript outcomes (Logs logic) using the SAME domain function
     const tsOutcomeMap = new Map<string, string>();
     const lastSegMap = new Map<string, typeof lastSegments[0]>();
     lastSegments.forEach(s => lastSegMap.set(s.call_history_id, s));
 
     for (const seg of lastSegments) {
-        const humanAnsweredAt = answeredMap.get(seg.call_history_id) || null;
+        const lastHuman = lastHumanMap.get(seg.call_history_id) || null;
         const outcome = determineCallStatus({
             lastDestType: seg.destination_dn_type,
             lastDestEntityType: seg.destination_entity_type,
-            lastAnsweredAt: seg.cdr_answered_at,
-            lastStartedAt: seg.cdr_started_at,
-            lastEndedAt: seg.cdr_ended_at,
             terminationReasonDetails: seg.termination_reason_details,
-            humanAnsweredAt,
+            lastHumanAnsweredAt: lastHuman?.answeredAt || null,
+            lastHumanStartedAt: lastHuman?.startedAt || null,
+            lastHumanEndedAt: lastHuman?.endedAt || null,
         });
         tsOutcomeMap.set(seg.call_history_id, outcome);
     }
@@ -255,6 +279,7 @@ export async function runDiagnostic(
                 ? Number(seg.cdr_ended_at) - Number(seg.cdr_started_at)
                 : 0;
 
+            const lastHuman = lastHumanMap.get(seg.call_history_id) || null;
             const humanAnsweredAt = answeredMap.get(seg.call_history_id) || null;
 
             divergences.push({
@@ -272,6 +297,9 @@ export async function runDiagnostic(
                 lastDurationSeconds: Math.round(lastDurationSecondsTs * 10) / 10,
                 lastDurationSecondsSql: Math.round(lastDurationSecondsSql * 1000) / 1000,
                 humanAnsweredAt: humanAnsweredAt?.toISOString() || null,
+                lastHumanAnsweredAt: lastHuman?.answeredAt?.toISOString() || null,
+                lastHumanStartedAt: lastHuman?.startedAt?.toISOString() || null,
+                lastHumanEndedAt: lastHuman?.endedAt?.toISOString() || null,
                 terminationReasonDetails: seg.termination_reason_details,
                 allSegments: segmentSummaries,
             });

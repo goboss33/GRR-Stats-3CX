@@ -72,48 +72,47 @@ export const INTERNAL_SYSTEM_DEST_TYPES = [
  * Determines the final status of an aggregated call based on its segments.
  * This is the ONLY function that should be used to determine call status across the app.
  * 
- * Priority: voicemail > busy > answered > missed
+ * Status is based on the LAST HUMAN SEGMENT (extension, not voicemail), not the last segment overall.
+ * This ensures that a call where the reception answered but the final transfer failed
+ * is correctly marked as "missed".
+ * 
+ * Priority: voicemail > busy > answered (last human segment) > missed
  */
 export function determineCallStatus(params: {
     lastDestType: string | null;
     lastDestEntityType: string | null;
-    lastAnsweredAt: Date | null;
-    lastStartedAt: Date | null;
-    lastEndedAt: Date | null;
     terminationReasonDetails: string | null;
-    humanAnsweredAt: Date | null; // From answered_segments CTE (extension that answered)
+    lastHumanAnsweredAt: Date | null;
+    lastHumanStartedAt: Date | null;
+    lastHumanEndedAt: Date | null;
 }): CallStatus {
-    const { lastDestType, lastDestEntityType, lastAnsweredAt, lastStartedAt, lastEndedAt, terminationReasonDetails, humanAnsweredAt } = params;
+    const { lastDestType, lastDestEntityType, terminationReasonDetails, lastHumanAnsweredAt, lastHumanStartedAt, lastHumanEndedAt } = params;
 
     const lastDestTypeLower = lastDestType?.toLowerCase() || '';
     const lastDestEntityTypeLower = lastDestEntityType?.toLowerCase() || '';
     const termDetails = terminationReasonDetails?.toLowerCase() || '';
 
-    // 1. Voicemail check
+    // 1. Voicemail check (on last segment overall)
     if (lastDestTypeLower === 'vmail_console' || lastDestTypeLower === 'voicemail' || lastDestEntityTypeLower === 'voicemail') {
         return 'voicemail';
     }
 
-    // 2. Busy check
+    // 2. Busy check (on last segment overall)
     if (termDetails.includes('busy')) {
         return 'busy';
     }
 
-    // 3. Answered check
-    const lastSegmentAnswered = lastAnsweredAt !== null;
-    const lastStarted = lastStartedAt ? new Date(lastStartedAt) : null;
-    const lastEnded = lastEndedAt ? new Date(lastEndedAt) : null;
-    const lastDurationSeconds = lastStarted && lastEnded
-        ? (lastEnded.getTime() - lastStarted.getTime()) / 1000
-        : 0;
+    // 3. Answered check (on last human segment — extension, not voicemail)
+    if (lastHumanAnsweredAt !== null) {
+        const lastHumanStarted = lastHumanStartedAt ? new Date(lastHumanStartedAt) : null;
+        const lastHumanEnded = lastHumanEndedAt ? new Date(lastHumanEndedAt) : null;
+        const lastHumanDurationSeconds = lastHumanStarted && lastHumanEnded
+            ? (lastHumanEnded.getTime() - lastHumanStarted.getTime()) / 1000
+            : 0;
 
-    if (lastSegmentAnswered && lastDurationSeconds > 1) {
-        // System types: only consider answered if a human (extension) answered
-        if (isSystemType(lastDestType, lastDestEntityType)) {
-            return humanAnsweredAt ? 'answered' : 'missed';
+        if (lastHumanDurationSeconds > 1) {
+            return 'answered';
         }
-        // Non-system types: standard answered logic
-        return 'answered';
     }
 
     // 4. Not answered = missed

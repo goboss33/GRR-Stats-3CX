@@ -15,8 +15,6 @@ import type {
     JourneyGroupCondition,
 } from "@/services/domain/call.types";
 import {
-    SQL_SYSTEM_DEST_TYPES,
-    SQL_SYSTEM_ENTITY_TYPES,
     determineCallDirection,
     determineCallStatus,
     determineSegmentStatus,
@@ -88,8 +86,6 @@ function buildSqlDirectionFilter(directions: CallDirection[] | undefined): strin
 function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
     if (!statuses || statuses.length === 0 || statuses.length === 5) return '';
     const conditions: string[] = [];
-    const systemTypes = SQL_SYSTEM_DEST_TYPES;
-    const systemEntityTypes = SQL_SYSTEM_ENTITY_TYPES;
 
     if (statuses.includes('voicemail')) {
         conditions.push("(ls.last_dest_type IN ('vmail_console', 'voicemail') OR ls.last_dest_entity_type = 'voicemail')");
@@ -102,19 +98,8 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
             COALESCE(ls.last_dest_entity_type, '') NOT IN ('voicemail') 
             AND COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%'
             AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail')
-            AND (
-                (
-                    (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
-                    AND ans.answered_at IS NOT NULL
-                    AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
-                )
-                OR
-                (
-                    (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
-                    AND ls.cdr_answered_at IS NOT NULL 
-                    AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
-                )
-            )
+            AND lhs.last_human_answered_at IS NOT NULL
+            AND EXTRACT(EPOCH FROM (lhs.last_human_ended_at - lhs.last_human_started_at)) > 1
         )`);
     }
     if (statuses.includes('missed')) {
@@ -123,23 +108,8 @@ function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
             AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail') 
             AND COALESCE(ls.last_dest_entity_type, '') != 'voicemail'
             AND (
-                (
-                    (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
-                    AND (
-                        ans.answered_at IS NULL
-                        OR EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) <= 1
-                    )
-                )
-                OR
-                (
-                    (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
-                    AND ls.cdr_answered_at IS NULL
-                )
-                OR
-                (
-                    (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
-                    AND (ls.cdr_answered_at IS NULL OR EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) <= 1)
-                )
+                lhs.last_human_answered_at IS NULL
+                OR EXTRACT(EPOCH FROM (lhs.last_human_ended_at - lhs.last_human_started_at)) <= 1
             )
         )`);
     }
@@ -445,6 +415,21 @@ function buildAggregateCTEs(
             WHERE ${whereClause}
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
         ),
+        last_human_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                destination_dn_type as last_human_dest_type,
+                destination_entity_type as last_human_dest_entity_type,
+                cdr_answered_at as last_human_answered_at,
+                cdr_started_at as last_human_started_at,
+                cdr_ended_at as last_human_ended_at,
+                termination_reason_details as last_human_termination_reason_details
+            FROM cdroutput
+            WHERE ${whereClause}
+              AND destination_dn_type = 'extension'
+              AND COALESCE(destination_entity_type, '') != 'voicemail'
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        ),
         answered_segments AS (
             SELECT DISTINCT ON (c.call_history_id)
                 c.call_history_id,
@@ -639,6 +624,9 @@ const DATA_SELECT = `
             ls.last_ended_at,
             ls.termination_reason,
             ls.termination_reason_details,
+            lhs.last_human_answered_at,
+            lhs.last_human_started_at,
+            lhs.last_human_ended_at,
             ans.answered_dest_number,
             ans.answered_dest_name,
             ans.answered_dn_name,
@@ -659,6 +647,7 @@ function buildDataJoins(calleeFilterJoin: string, aggregatedWhereConditions: str
         FROM call_aggregates ca
         JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
         JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+        LEFT JOIN last_human_segments lhs ON ca.call_history_id = lhs.call_history_id
         LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
         LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id
         LEFT JOIN call_queues cq ON ca.call_history_id = cq.call_history_id
@@ -875,6 +864,18 @@ function buildCountQuery(
             WHERE ${whereClause}
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
         ),
+        last_human_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                cdr_answered_at as last_human_answered_at,
+                cdr_started_at as last_human_started_at,
+                cdr_ended_at as last_human_ended_at
+            FROM cdroutput
+            WHERE ${whereClause}
+              AND destination_dn_type = 'extension'
+              AND COALESCE(destination_entity_type, '') != 'voicemail'
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        ),
         answered_segments AS (
             SELECT DISTINCT ON (c.call_history_id)
                 c.call_history_id,
@@ -890,6 +891,7 @@ function buildCountQuery(
         FROM call_aggregates ca
         JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
         JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+        LEFT JOIN last_human_segments lhs ON ca.call_history_id = lhs.call_history_id
         LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
         ${handledByJoin}
         ${callQueuesJoin}
@@ -932,11 +934,10 @@ function transformRow(row: any): AggregatedCallLog {
     const finalStatus = determineCallStatus({
         lastDestType: row.last_dest_type,
         lastDestEntityType: row.last_dest_entity_type,
-        lastAnsweredAt: row.last_answered_at ? new Date(row.last_answered_at) : null,
-        lastStartedAt: row.last_started_at ? new Date(row.last_started_at) : null,
-        lastEndedAt: lastEnded,
         terminationReasonDetails: row.termination_reason_details,
-        humanAnsweredAt: answeredByHuman,
+        lastHumanAnsweredAt: row.last_human_answered_at ? new Date(row.last_human_answered_at) : null,
+        lastHumanStartedAt: row.last_human_started_at ? new Date(row.last_human_started_at) : null,
+        lastHumanEndedAt: row.last_human_ended_at ? new Date(row.last_human_ended_at) : null,
     });
     const direction = determineCallDirection({
         sourceType: row.source_dn_type,
@@ -1244,9 +1245,6 @@ export async function getExtensionAggregatedStats(
 
     const ctes = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE);
 
-    const systemTypes = SQL_SYSTEM_DEST_TYPES;
-    const systemEntityTypes = SQL_SYSTEM_ENTITY_TYPES;
-
     const statsQuery = `${ctes}
         SELECT
             COUNT(*) as total_count,
@@ -1256,42 +1254,16 @@ export async function getExtensionAggregatedStats(
                 COALESCE(ls.last_dest_entity_type, '') NOT IN ('voicemail')
                 AND COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%'
                 AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail')
-                AND (
-                    (
-                        (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
-                        AND ans.answered_at IS NOT NULL
-                        AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
-                    )
-                    OR
-                    (
-                        (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
-                        AND ls.cdr_answered_at IS NOT NULL
-                        AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
-                    )
-                )
+                AND lhs.last_human_answered_at IS NOT NULL
+                AND EXTRACT(EPOCH FROM (lhs.last_human_ended_at - lhs.last_human_started_at)) > 1
             ) as answered_count,
             COUNT(*) FILTER (WHERE
                 COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%'
                 AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail')
                 AND COALESCE(ls.last_dest_entity_type, '') != 'voicemail'
                 AND (
-                    (
-                        (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
-                        AND (
-                            ans.answered_at IS NULL
-                            OR EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) <= 1
-                        )
-                    )
-                    OR
-                    (
-                        (COALESCE(ls.last_dest_type, '') IN (${systemTypes}) OR COALESCE(ls.last_dest_entity_type, '') IN (${systemEntityTypes}))
-                        AND ls.cdr_answered_at IS NULL
-                    )
-                    OR
-                    (
-                        (COALESCE(ls.last_dest_type, '') NOT IN (${systemTypes}) AND COALESCE(ls.last_dest_entity_type, '') NOT IN (${systemEntityTypes}))
-                        AND ls.cdr_answered_at IS NULL
-                    )
+                    lhs.last_human_answered_at IS NULL
+                    OR EXTRACT(EPOCH FROM (lhs.last_human_ended_at - lhs.last_human_started_at)) <= 1
                 )
             ) as missed_count,
             COUNT(*) FILTER (WHERE
@@ -1305,6 +1277,7 @@ export async function getExtensionAggregatedStats(
         FROM call_aggregates ca
         JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
         JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+        LEFT JOIN last_human_segments lhs ON ca.call_history_id = lhs.call_history_id
         LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
         ${calleeFilterJoin}
         ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}

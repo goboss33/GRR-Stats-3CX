@@ -99,11 +99,10 @@ export async function GET(request: NextRequest) {
             const finalStatus = determineCallStatus({
                 lastDestType: row.last_dest_type,
                 lastDestEntityType: row.last_dest_entity_type,
-                lastAnsweredAt: row.last_answered_at ? new Date(row.last_answered_at) : null,
-                lastStartedAt: row.last_started_at ? new Date(row.last_started_at) : null,
-                lastEndedAt: lastEnded,
                 terminationReasonDetails: row.termination_reason_details,
-                humanAnsweredAt: answeredByHuman,
+                lastHumanAnsweredAt: row.last_human_answered_at ? new Date(row.last_human_answered_at) : null,
+                lastHumanStartedAt: row.last_human_started_at ? new Date(row.last_human_started_at) : null,
+                lastHumanEndedAt: row.last_human_ended_at ? new Date(row.last_human_ended_at) : null,
             });
 
             const direction = determineCallDirection({

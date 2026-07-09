@@ -119,6 +119,21 @@ export function buildAnalyticsCTEs(
             WHERE ${whereClause}
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
         ),
+        last_human_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                destination_dn_type as last_human_dest_type,
+                destination_entity_type as last_human_dest_entity_type,
+                cdr_answered_at as last_human_answered_at,
+                cdr_started_at as last_human_started_at,
+                cdr_ended_at as last_human_ended_at,
+                termination_reason_details as last_human_termination_reason_details
+            FROM cdroutput
+            WHERE ${whereClause}
+              AND destination_dn_type = 'extension'
+              AND COALESCE(destination_entity_type, '') != 'voicemail'
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        ),
         answered_segments AS (
             SELECT DISTINCT ON (c.call_history_id)
                 c.call_history_id,
@@ -319,6 +334,9 @@ export const ANALYTICS_DATA_SELECT = `
             ls.last_ended_at,
             ls.termination_reason,
             ls.termination_reason_details,
+            lhs.last_human_answered_at,
+            lhs.last_human_started_at,
+            lhs.last_human_ended_at,
             ans.answered_dest_number,
             ans.answered_dest_name,
             ans.answered_dn_name,
@@ -343,6 +361,7 @@ export function buildAnalyticsDataJoins(
         FROM call_aggregates ca
         JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
         JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+        LEFT JOIN last_human_segments lhs ON ca.call_history_id = lhs.call_history_id
         LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
         LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id
         LEFT JOIN call_queues cq ON ca.call_history_id = cq.call_history_id
