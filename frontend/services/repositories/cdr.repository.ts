@@ -149,7 +149,7 @@ export async function getQueueTimelineDataRaw(
 
     return prisma.$queryRaw<TimelineRow[]>`
         WITH queue_calls AS (
-            SELECT DISTINCT ON (call_history_id)
+            SELECT
                 call_history_id,
                 MIN(cdr_started_at) AS first_started_at
             FROM cdroutput
@@ -158,7 +158,6 @@ export async function getQueueTimelineDataRaw(
               AND cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
             GROUP BY call_history_id
-            ORDER BY call_history_id, cdr_started_at ASC
         ),
         last_segments AS (
             SELECT DISTINCT ON (call_history_id)
@@ -223,7 +222,7 @@ export async function getQueueHeatmapDataRaw(
     const prisma = getPrismaCdr(serverId);
     return prisma.$queryRaw<HeatmapRow[]>`
         WITH unique_queue_calls AS (
-            SELECT DISTINCT ON (call_history_id)
+            SELECT
                 call_history_id,
                 MIN(cdr_started_at) AS first_started_at
             FROM cdroutput
@@ -232,7 +231,6 @@ export async function getQueueHeatmapDataRaw(
               AND cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
             GROUP BY call_history_id
-            ORDER BY call_history_id, cdr_started_at ASC
         )
         SELECT
             EXTRACT(ISODOW FROM first_started_at AT TIME ZONE ${timezone})::int AS day_of_week,
