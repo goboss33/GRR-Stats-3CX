@@ -135,6 +135,114 @@ export async function getTimelineDataRaw(
     `;
 }
 
+export async function getQueueTimelineDataRaw(
+    serverId: ServerId,
+    queueNumber: string,
+    startDate: Date,
+    endDate: Date,
+    timezone: string = "Europe/Zurich"
+): Promise<TimelineRow[]> {
+    const prisma = getPrismaCdr(serverId);
+    const diffMs = endDate.getTime() - startDate.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    const interval = diffDays <= 2 ? "hour" : "day";
+
+    return prisma.$queryRaw<TimelineRow[]>`
+        WITH queue_calls AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                MIN(cdr_started_at) AS first_started_at
+            FROM cdroutput
+            WHERE destination_dn_number = ${queueNumber}
+              AND destination_dn_type = 'queue'
+              AND cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            GROUP BY call_history_id
+            ORDER BY call_history_id, cdr_started_at ASC
+        ),
+        last_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                destination_dn_type AS last_dest_type,
+                destination_entity_type AS last_dest_entity_type,
+                cdr_answered_at AS last_answered_at,
+                cdr_started_at AS last_started_at,
+                cdr_ended_at AS last_ended_at,
+                termination_reason_details
+            FROM cdroutput
+            WHERE call_history_id IN (SELECT call_history_id FROM queue_calls)
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        ),
+        last_human_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                cdr_answered_at AS last_human_answered_at,
+                cdr_started_at AS last_human_started_at,
+                cdr_ended_at AS last_human_ended_at
+            FROM cdroutput
+            WHERE call_history_id IN (SELECT call_history_id FROM queue_calls)
+              AND destination_dn_type = 'extension'
+              AND COALESCE(destination_entity_type, '') != 'voicemail'
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        ),
+        call_outcomes AS (
+            SELECT
+                qc.call_history_id,
+                qc.first_started_at,
+                CASE
+                    WHEN ls.last_dest_type IN ('vmail_console', 'voicemail') OR ls.last_dest_entity_type = 'voicemail'
+                        THEN 'voicemail'
+                    WHEN LOWER(COALESCE(ls.termination_reason_details, '')) LIKE '%busy%'
+                        THEN 'busy'
+                    WHEN lhs.last_human_answered_at IS NOT NULL
+                         AND EXTRACT(EPOCH FROM (lhs.last_human_ended_at - lhs.last_human_started_at)) > 1
+                        THEN 'answered'
+                    ELSE 'abandoned'
+                END AS outcome
+            FROM queue_calls qc
+            JOIN last_segments ls ON ls.call_history_id = qc.call_history_id
+            LEFT JOIN last_human_segments lhs ON lhs.call_history_id = qc.call_history_id
+        )
+        SELECT
+            date_trunc(${interval}, first_started_at AT TIME ZONE ${timezone}) AS date_group,
+            COUNT(*) FILTER (WHERE outcome = 'answered') AS answered,
+            COUNT(*) FILTER (WHERE outcome IN ('abandoned', 'busy', 'voicemail')) AS missed
+        FROM call_outcomes
+        GROUP BY date_group
+        ORDER BY date_group ASC
+    `;
+}
+
+export async function getQueueHeatmapDataRaw(
+    serverId: ServerId,
+    queueNumber: string,
+    startDate: Date,
+    endDate: Date,
+    timezone: string = "Europe/Zurich"
+): Promise<HeatmapRow[]> {
+    const prisma = getPrismaCdr(serverId);
+    return prisma.$queryRaw<HeatmapRow[]>`
+        WITH unique_queue_calls AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                MIN(cdr_started_at) AS first_started_at
+            FROM cdroutput
+            WHERE destination_dn_number = ${queueNumber}
+              AND destination_dn_type = 'queue'
+              AND cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            GROUP BY call_history_id
+            ORDER BY call_history_id, cdr_started_at ASC
+        )
+        SELECT
+            EXTRACT(ISODOW FROM first_started_at AT TIME ZONE ${timezone})::int AS day_of_week,
+            EXTRACT(HOUR FROM first_started_at AT TIME ZONE ${timezone})::int AS hour_of_day,
+            COUNT(*) AS volume
+        FROM unique_queue_calls
+        GROUP BY day_of_week, hour_of_day
+    `;
+}
+
 export async function getHeatmapDataRaw(
     serverId: ServerId,
     startDate: Date,

@@ -7,6 +7,10 @@ import {
     getDailyTrendRaw,
     getHourlyTrendRaw,
 } from "@/services/repositories/cdr.repository";
+import {
+    getQueueTimelineData,
+    getQueueHeatmapData,
+} from "@/services/dashboard.service";
 import type {
     QueueStatistics,
     QueueKPIs,
@@ -80,12 +84,14 @@ export async function getQueueStatistics(
     startDate: Date,
     endDate: Date
 ): Promise<QueueStatistics> {
-    const [queueName, kpis, agents, dailyTrend, hourlyTrend] = await Promise.all([
+    const [queueName, kpis, agents, dailyTrend, hourlyTrend, timelineData, heatmapData] = await Promise.all([
         getQueueName(serverId, queueNumber),
         computeQueueKPIs(serverId, queueNumber, startDate, endDate),
         computeAgentStats(serverId, queueNumber, startDate, endDate),
         computeDailyTrend(serverId, queueNumber, startDate, endDate),
         computeHourlyTrend(serverId, queueNumber, startDate, endDate),
+        getQueueTimelineData(serverId, queueNumber, startDate, endDate),
+        getQueueHeatmapData(serverId, queueNumber, startDate, endDate),
     ]);
 
     return {
@@ -99,6 +105,8 @@ export async function getQueueStatistics(
         agents,
         dailyTrend,
         hourlyTrend,
+        timelineData,
+        heatmapData,
     };
 }
 

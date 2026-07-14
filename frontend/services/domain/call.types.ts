@@ -312,6 +312,8 @@ export interface QueueStatistics {
     agents: AgentStats[];
     dailyTrend: DailyTrend[];
     hourlyTrend: HourlyTrend[];
+    timelineData: TimelineDataPoint[];
+    heatmapData: HeatmapDataPoint[];
 }
 
 // ============================================

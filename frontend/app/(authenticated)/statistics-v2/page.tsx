@@ -9,7 +9,8 @@ import { getQueueStatistics } from "@/services/queue-statistics.service";
 import { getQueueMembers } from "@/services/queues.service";
 import { TeamOverview } from "@/components/stats-v2/team-overview";
 import { AgentPerformanceTableV2 } from "@/components/stats-v2/agent-performance-table-v2";
-import { OverflowIndicator } from "@/components/stats-v2/overflow-indicator";
+import { CallsChart } from "@/components/calls-chart";
+import { HeatmapChart } from "@/components/heatmap-chart";
 import { QueueSelector } from "@/components/stats/queue-selector";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { ServerId } from "@/lib/prisma-cdr";
@@ -198,12 +199,21 @@ export default function StatisticsV2Page() {
                         totalDirectCallsReceived={statistics.kpis.teamDirectReceived}
                     />
 
-                    {/* Overflow Indicator - Indicateur de débordement */}
-                    <OverflowIndicator
-                        overflowDestinations={statistics.kpis.overflowDestinations}
-                        callsOverflow={statistics.kpis.callsOverflow}
-                        callsReceived={statistics.kpis.callsReceived}
-                    />
+                    {/* Évolution du Volume + Carte des Affluences */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2">
+                            <div className="bg-white rounded-xl border border-slate-200 p-6">
+                                <h3 className="text-lg font-semibold text-slate-900 mb-4">Évolution du Volume</h3>
+                                <CallsChart data={statistics.timelineData} />
+                            </div>
+                        </div>
+                        <div className="lg:col-span-1">
+                            <div className="bg-white rounded-xl border border-slate-200 p-6">
+                                <h3 className="text-lg font-semibold text-slate-900 mb-4">Carte des Affluences</h3>
+                                <HeatmapChart data={statistics.heatmapData} />
+                            </div>
+                        </div>
+                    </div>
                 </>
             )}
         </div>

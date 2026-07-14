@@ -5,6 +5,8 @@ import {
     getTimelineDataRaw,
     getHeatmapDataRaw,
     getConcurrentCallsData,
+    getQueueTimelineDataRaw,
+    getQueueHeatmapDataRaw,
 } from "@/services/repositories/cdr.repository";
 import type {
     GlobalMetrics,
@@ -141,6 +143,51 @@ export async function getHeatmapData(
 ): Promise<HeatmapDataPoint[]> {
     const timezone = await getServerTimezone(serverId);
     const rawData = await getHeatmapDataRaw(serverId, startDate, endDate, timezone);
+    return rawData.map((row) => ({
+        dayOfWeek: row.day_of_week,
+        hourOfDay: row.hour_of_day,
+        value: Number(row.volume),
+    }));
+}
+
+export async function getQueueTimelineData(
+    serverId: ServerId,
+    queueNumber: string,
+    startDate: Date,
+    endDate: Date
+): Promise<TimelineDataPoint[]> {
+    const diffMs = endDate.getTime() - startDate.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    const interval = diffDays <= 2 ? "hour" : "day";
+    const timezone = await getServerTimezone(serverId);
+
+    const rawData = await getQueueTimelineDataRaw(serverId, queueNumber, startDate, endDate, timezone);
+
+    return rawData.map((row) => {
+        const date = new Date(row.date_group);
+        let label = "";
+        if (interval === "hour") {
+            label = `${String(date.getUTCHours()).padStart(2, "0")}:00`;
+        } else {
+            label = `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+        }
+        return {
+            date: date.toISOString(),
+            label,
+            answered: Number(row.answered),
+            missed: Number(row.missed),
+        };
+    });
+}
+
+export async function getQueueHeatmapData(
+    serverId: ServerId,
+    queueNumber: string,
+    startDate: Date,
+    endDate: Date
+): Promise<HeatmapDataPoint[]> {
+    const timezone = await getServerTimezone(serverId);
+    const rawData = await getQueueHeatmapDataRaw(serverId, queueNumber, startDate, endDate, timezone);
     return rawData.map((row) => ({
         dayOfWeek: row.day_of_week,
         hourOfDay: row.hour_of_day,
