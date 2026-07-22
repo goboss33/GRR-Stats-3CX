@@ -66,3 +66,14 @@ model ApiKey {
   @@index([isActive])
   @@index([createdBy])
 }
+
+model SearchPreset {
+  id        String   @id @default(cuid())
+  userId    String
+  page      String   @default("statistics-extension")
+  name      String
+  entries   Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, page])
+}

@@ -165,7 +165,8 @@ function buildAggregatedQueryParts(
             ${buildSqlSearchCondition('source_dn_number', pattern)} OR
             ${buildSqlSearchCondition('source_participant_phone_number', pattern)} OR
             ${buildSqlSearchCondition('source_participant_name', pattern)} OR
-            ${buildSqlSearchCondition('source_dn_name', pattern)}
+            ${buildSqlSearchCondition('source_dn_name', pattern)} OR
+            ${buildSqlSearchCondition('source_participant_trunk_did', pattern)}
         )`);
     }
 
@@ -199,6 +200,13 @@ function buildAggregatedQueryParts(
                      AND source_participant_name LIKE '%:%'
                      AND ${buildSqlSearchCondition('source_participant_name', pattern)})
                 )
+                UNION
+                -- DDI search: the called DID lives in source_participant_trunk_did (any segment)
+                SELECT call_history_id
+                FROM cdroutput
+                WHERE cdr_started_at >= '${startDate.toISOString()}'
+                  AND cdr_started_at <= '${endDate.toISOString()}'
+                  AND ${buildSqlSearchCondition('source_participant_trunk_did', pattern)}
             )`;
         calleeFilterJoin = 'JOIN callee_filter cf ON ca.call_history_id = cf.call_history_id';
     }

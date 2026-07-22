@@ -59,6 +59,7 @@ model cdroutput {
   @@index([cdr_started_at, destination_dn_number])
   @@index([cdr_started_at, destination_dn_type])
   @@index([call_history_id, cdr_started_at])
+  @@index([source_participant_trunk_did])
 }
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.

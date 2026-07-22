@@ -6,23 +6,23 @@ import type { ExtensionStatisticsResponse } from "@/types/extension-stats.types"
 import { formatDuration } from "@/services/domain/call-aggregation";
 
 /**
- * Generates a professional PDF report for extension statistics.
+ * Generates a professional PDF report for extension / DDI statistics.
  *
- * Layout:
+ * Layout (landscape):
  * - Header with title and period
  * - Summary KPI cards
- * - Detailed table with all extensions
+ * - Detailed table (type, number, name, associated extension, metrics)
  * - Footer with page numbers
  */
 export function generateExtensionStatsPDF(data: ExtensionStatisticsResponse): void {
-    const doc = new jsPDF();
+    const doc = new jsPDF({ orientation: "landscape" });
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 14;
     let y = margin;
 
     doc.setFontSize(18);
     doc.setFont("helvetica", "bold");
-    doc.text("Statistiques par Extension", margin, y);
+    doc.text("Statistiques par Extension / DDI", margin, y);
     y += 8;
 
     doc.setFontSize(10);
@@ -31,7 +31,7 @@ export function generateExtensionStatsPDF(data: ExtensionStatisticsResponse): vo
     const endLabel = format(new Date(data.period.end), "dd MMMM yyyy", { locale: fr });
     doc.text("Periode : " + startLabel + " - " + endLabel, margin, y);
     y += 5;
-    doc.text("Nombre d'extensions : " + data.extensions.length, margin, y);
+    doc.text("Nombre de numeros : " + data.extensions.length, margin, y);
     y += 5;
     doc.text("Genere le : " + format(new Date(), "dd MMMM yyyy a HH:mm", { locale: fr }), margin, y);
     y += 10;
@@ -81,52 +81,57 @@ export function generateExtensionStatsPDF(data: ExtensionStatisticsResponse): vo
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(15, 23, 42);
-    doc.text("Details par extension", margin, y);
+    doc.text("Details par numero", margin, y);
     y += 4;
+
+    const kindLabel = (kind: string) =>
+        kind === "ddi" ? "DDI" : kind === "pattern" ? "Modele" : "Ext.";
 
     autoTable(doc, {
         startY: y,
         head: [[
-            "Extension",
+            "Type",
+            "Numero",
+            "Nom",
+            "Ext. associee",
             "Total",
             "Entrants",
             "Sortants",
             "Repondus",
             "Manques",
-            "Voicemail",
-            "Occupe",
             "Taux rep.",
             "Duree totale",
             "Duree moy.",
-            "Duree max",
         ]],
         body: data.extensions.map((ext) => [
+            kindLabel(ext.kind),
             ext.extension,
+            ext.displayName || "-",
+            ext.associatedExtension
+                ? ext.associatedExtension + (ext.associatedName ? " (" + ext.associatedName + ")" : "")
+                : "-",
             ext.totalCalls.toString(),
             ext.inbound.total.toString(),
             ext.outbound.total.toString(),
             ext.inbound.answered.toString(),
             ext.inbound.missed.toString(),
-            ext.inbound.voicemail.toString(),
-            ext.inbound.busy.toString(),
             ext.inbound.answerRate + "%",
             ext.duration.totalFormatted,
             ext.duration.averageFormatted,
-            ext.duration.maxFormatted,
         ]),
         foot: [[
+            "",
             "TOTAL",
+            "",
+            "",
             data.totals.totalCalls.toString(),
             data.totals.totalInbound.toString(),
             data.totals.totalOutbound.toString(),
             data.totals.totalAnswered.toString(),
             data.totals.totalMissed.toString(),
-            "",
-            "",
             data.totals.overallAnswerRate + "%",
             formatDuration(data.totals.totalDurationSeconds),
             formatDuration(data.totals.averageDurationSeconds),
-            "",
         ]],
         margin: { left: margin, right: margin },
         styles: {
@@ -151,16 +156,16 @@ export function generateExtensionStatsPDF(data: ExtensionStatisticsResponse): vo
             fillColor: [248, 250, 252],
         },
         columnStyles: {
-            0: { fontStyle: "bold", cellWidth: 22 },
-            1: { halign: "center" },
-            2: { halign: "center" },
-            3: { halign: "center" },
-            4: { halign: "center", textColor: [5, 150, 105] },
-            5: { halign: "center", textColor: [220, 38, 38] },
+            0: { halign: "center", cellWidth: 14 },
+            1: { fontStyle: "bold", cellWidth: 34 },
+            2: { cellWidth: 48 },
+            3: { cellWidth: 44 },
+            4: { halign: "center", fontStyle: "bold" },
+            5: { halign: "center" },
             6: { halign: "center" },
-            7: { halign: "center" },
-            8: { halign: "center", fontStyle: "bold" },
-            9: { halign: "right" },
+            7: { halign: "center", textColor: [5, 150, 105] },
+            8: { halign: "center", textColor: [220, 38, 38] },
+            9: { halign: "center", fontStyle: "bold" },
             10: { halign: "right" },
             11: { halign: "right" },
         },
@@ -182,4 +187,63 @@ export function generateExtensionStatsPDF(data: ExtensionStatisticsResponse): vo
 
     const fileName = "stats-extensions_" + format(new Date(), "yyyy-MM-dd") + ".pdf";
     doc.save(fileName);
+}
+
+/**
+ * Generates a CSV export (semicolon-separated, Excel-friendly) of the results.
+ */
+export function generateExtensionStatsCSV(data: ExtensionStatisticsResponse): void {
+    const kindLabel = (kind: string) =>
+        kind === "ddi" ? "DDI" : kind === "pattern" ? "Modèle" : "Extension";
+
+    const headers = [
+        "Type",
+        "Numéro",
+        "Nom",
+        "Extension associée",
+        "Total appels",
+        "Entrants",
+        "Sortants",
+        "Répondus",
+        "Manqués",
+        "Messagerie",
+        "Occupé",
+        "Taux de réponse (%)",
+        "Durée totale",
+        "Durée moyenne",
+        "Durée max",
+        "Appels période précédente",
+    ];
+
+    const rows = data.extensions.map((ext) => [
+        kindLabel(ext.kind),
+        ext.extension,
+        ext.displayName || "",
+        ext.associatedExtension || "",
+        ext.totalCalls,
+        ext.inbound.total,
+        ext.outbound.total,
+        ext.inbound.answered,
+        ext.inbound.missed,
+        ext.inbound.voicemail,
+        ext.inbound.busy,
+        ext.inbound.answerRate,
+        ext.duration.totalFormatted,
+        ext.duration.averageFormatted,
+        ext.duration.maxFormatted,
+        ext.previousPeriod ? ext.previousPeriod.totalCalls : "",
+    ]);
+
+    const csv = [
+        headers.join(";"),
+        ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(";")),
+    ].join("\n");
+
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "stats-extensions_" + format(new Date(), "yyyy-MM-dd") + ".csv";
+    link.click();
+    URL.revokeObjectURL(url);
 }

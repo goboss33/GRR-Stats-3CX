@@ -73,7 +73,7 @@ const navItems: NavItem[] = [
                 icon: Users,
             },
             {
-                label: "Extension",
+                label: "Extension / DDI",
                 href: "/statistics-extension",
                 icon: Hash,
             },
