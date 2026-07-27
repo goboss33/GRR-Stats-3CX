@@ -3,6 +3,7 @@ import { validateApiKey } from "../auth";
 import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
 import { parseDateParam } from "@/lib/date-params";
+import { logger } from "@/lib/logger";
 import {
     SQL_SYSTEM_DEST_TYPES,
     SQL_SYSTEM_ENTITY_TYPES,
@@ -126,16 +127,16 @@ export async function GET(request: NextRequest) {
             LEFT JOIN answered_calls_data acd ON ca.call_history_id = acd.call_history_id
         `;
 
-        console.log("[global/route] Executing current period query:", { start, end });
+        logger.debug("[global/route] Executing current period query:", { start, end });
         const currentResult = await prisma.$queryRawUnsafe(buildMetricsQuery(start, end));
-        console.log("[global/route] Current period query completed");
+        logger.debug("[global/route] Current period query completed");
         const current = (currentResult as any[])[0];
 
         let previous = null;
         if (includePrevious) {
-            console.log("[global/route] Executing previous period query:", { prevStart, prevEnd });
+            logger.debug("[global/route] Executing previous period query:", { prevStart, prevEnd });
             const prevResult = await prisma.$queryRawUnsafe(buildMetricsQuery(prevStart, prevEnd));
-            console.log("[global/route] Previous period query completed");
+            logger.debug("[global/route] Previous period query completed");
             const prevRow = (prevResult as any[])[0];
             previous = {
                 totalCalls: Number(prevRow.total_calls),
@@ -154,7 +155,7 @@ export async function GET(request: NextRequest) {
             };
         }
 
-        console.log("[global/route] Returning global stats:", {
+        logger.debug("[global/route] Returning global stats:", {
             totalCalls: Number(current.total_calls),
             answeredCalls: Number(current.answered_calls),
             missedCalls: Number(current.missed_calls),
@@ -176,7 +177,7 @@ export async function GET(request: NextRequest) {
             previousPeriod: previous,
         });
     } catch (error) {
-        console.error("[global/route] Error:", error);
+        logger.error("[global/route] Error:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }
 }

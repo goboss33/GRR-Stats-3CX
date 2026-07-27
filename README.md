@@ -1,37 +1,82 @@
 # Call Center Analytics
 
-Application web moderne pour l'analyse des statistiques d'un centre d'appels 3CX.
+Application web moderne pour l'analyse des statistiques d'un centre d'appels 3CX (multi-tenant).
 
-## 📋 Stack Technique
+## 📋 Stack technique
 
-- **Frontend** : Next.js 15 (App Router), TypeScript, Tailwind CSS, Shadcn/ui, Lucide React
-- **Base de données** : PostgreSQL avec Prisma ORM
-- **Authentification** : NextAuth.js v5 (Auth.js)
+- **Frontend** : Next.js 15 (App Router), React 19, TypeScript (strict), Tailwind CSS, Shadcn/ui, Lucide React, Recharts
+- **Base de données** : PostgreSQL (une base d'authentification + une base CDR par client) via Prisma ORM
+- **Authentification** : NextAuth.js v5 (Auth.js) — identifiants + Microsoft Entra ID
+- **Tests** : Vitest (logique métier du domaine)
 - **Infrastructure** : Docker & Docker Compose
 
-> **Note** : Les données CDR sont reçues en temps réel depuis le serveur 3CX.
+> **Note** : les données CDR sont reçues en temps réel depuis le serveur 3CX.
 
 ## 🚀 Démarrage rapide
+
+### Prérequis
+
+- Node.js 20+
+- Docker & Docker Compose (pour PostgreSQL)
 
 ### Installation
 
 1. **Cloner le projet**
+
    ```bash
    git clone <repository-url>
    cd GRR-Stats-3CX
    ```
 
-2. **Lancer l'environnement de développement**
+2. **Configurer l'environnement**
 
-
-3. **Initialiser la base de données** (première fois uniquement)
-   
-   Dans un nouveau terminal :
    ```bash
-   docker exec -it callcenter-frontend-dev npx prisma db push
-   docker exec -it callcenter-frontend-dev npm run db:seed
+   cp frontend/.env.example frontend/.env
+   # puis renseigner les variables (bases de données, NEXTAUTH_SECRET,
+   # Microsoft Entra ID, SEED_ADMIN_PASSWORD, ...)
    ```
+
+3. **Installer les dépendances**
+
+   ```bash
+   cd frontend
+   npm install
+   ```
+
+4. **Lancer la base de données**
+
+   ```bash
+   # depuis la racine du projet
+   docker compose up -d postgres
+   ```
+
+5. **Initialiser la base** (première fois uniquement)
+
+   ```bash
+   cd frontend
+   npm run db:push
+   SEED_ADMIN_PASSWORD="<mot-de-passe-fort>" npm run db:seed
+   ```
+
+6. **Démarrer le serveur de développement**
+
+   ```bash
+   npm run dev
+   ```
+
+   L'application est disponible sur http://localhost:3000.
+
+## 🧰 Scripts utiles (dans `frontend/`)
+
+| Script | Description |
+|---|---|
+| `npm run dev` | Serveur de développement (Turbopack) |
+| `npm run build` | Build de production (vérifie types + lint) |
+| `npm run typecheck` | Vérification TypeScript seule |
+| `npm run lint` | ESLint |
+| `npm run test` | Tests unitaires (Vitest) |
+| `npm run format` | Formatage Prettier |
 
 ## 📄 Licence
 
-Projet propriétaire - Tous droits réservés.
+Projet propriétaire — Tous droits réservés.

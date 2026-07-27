@@ -3,6 +3,7 @@ import { validateApiKey } from "../auth";
 import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
 import { parseDateParam } from "@/lib/date-params";
+import { logger } from "@/lib/logger";
 
 export async function GET(request: NextRequest) {
     const authResult = await validateApiKey(request);
@@ -18,14 +19,14 @@ export async function GET(request: NextRequest) {
         const prisma = getPrismaCdr(serverId);
         
         const queueNumber = url.searchParams.get("queueNumber");
-        console.log("[queue/route] Received queueNumber:", queueNumber);
+        logger.debug("[queue/route] Received queueNumber:", queueNumber);
         if (!queueNumber) {
             return NextResponse.json({ error: "queueNumber parameter is required" }, { status: 400 });
         }
 
         const start = parseDateParam(url.searchParams.get("start"), new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
         const end = parseDateParam(url.searchParams.get("end"), new Date());
-        console.log("[queue/route] Date range:", { start, end });
+        logger.debug("[queue/route] Date range:", { start, end });
         const qn = queueNumber.replace(/'/g, "''");
 
         const query = `
@@ -176,9 +177,9 @@ export async function GET(request: NextRequest) {
             CROSS JOIN direct_calls_stats dcs
         `;
 
-        console.log("[queue/route] Executing query with queueNumber:", qn);
+        logger.debug("[queue/route] Executing query with queueNumber:", qn);
         const rawResults = await prisma.$queryRawUnsafe(query);
-        console.log("[queue/route] Query returned results");
+        logger.debug("[queue/route] Query returned results");
         const row = (rawResults as any[])[0];
 
         if (!row) {
@@ -190,7 +191,7 @@ export async function GET(request: NextRequest) {
         const pingPongCount = totalPassages - uniqueCalls;
         const pingPongPercentage = totalPassages > 0 ? (pingPongCount / totalPassages) * 100 : 0;
 
-        console.log("[queue/route] Returning queue stats:", {
+        logger.debug("[queue/route] Returning queue stats:", {
             queueNumber,
             queueName: row.queue_name,
             callsReceived: uniqueCalls,
@@ -218,7 +219,7 @@ export async function GET(request: NextRequest) {
                 : row.overflow_destinations,
         });
     } catch (error) {
-        console.error("[queue/route] Error:", error);
+        logger.error("[queue/route] Error:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }
 }
