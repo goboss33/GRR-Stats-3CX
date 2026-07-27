@@ -1,27 +1,16 @@
-import { auth } from "@/lib/auth";
 import { prismaAuth } from "@/lib/prisma-auth";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-
-async function requireAdmin() {
-    const session = await auth();
-    if (!session?.user || (session.user.role !== "ADMIN" && session.user.role !== "MODERATOR")) {
-        throw new Error("Non autorisé");
-    }
-    return session.user;
-}
+import { requireApiRole } from "@/lib/auth-guard";
 
 function generateApiKey(): string {
     return `sk_live_${crypto.randomBytes(32).toString("hex")}`;
 }
 
 export async function GET() {
-    try {
-        await requireAdmin();
-    } catch {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
+    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    if (!guard.ok) return guard.response;
 
     const keys = await prismaAuth.apiKey.findMany({
         orderBy: { createdAt: "desc" },
@@ -45,11 +34,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-    try {
-        await requireAdmin();
-    } catch {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
+    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    if (!guard.ok) return guard.response;
 
     const body = await request.json();
     const { name, description, quotaPerMinute } = body;
@@ -59,7 +45,6 @@ export async function POST(request: NextRequest) {
     }
 
     const quota = typeof quotaPerMinute === "number" && quotaPerMinute > 0 ? quotaPerMinute : 100;
-    const session = await auth();
     const plainKey = generateApiKey();
     const keyHash = await bcrypt.hash(plainKey, 10);
 
@@ -69,7 +54,7 @@ export async function POST(request: NextRequest) {
             name: name.trim(),
             description: description?.trim() || null,
             quotaPerMinute: quota,
-            createdBy: session?.user?.id || null,
+            createdBy: guard.user.id || null,
         },
     });
 
@@ -87,11 +72,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-    try {
-        await requireAdmin();
-    } catch {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
+    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    if (!guard.ok) return guard.response;
 
     const body = await request.json();
     const { id, name, description, quotaPerMinute, isActive } = body;
@@ -111,11 +93,8 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-    try {
-        await requireAdmin();
-    } catch {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
+    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    if (!guard.ok) return guard.response;
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -124,13 +103,12 @@ export async function DELETE(request: NextRequest) {
         return NextResponse.json({ error: "ID de clé requis" }, { status: 400 });
     }
 
-    const session = await auth();
     await prismaAuth.apiKey.update({
         where: { id },
         data: {
             isActive: false,
             revokedAt: new Date(),
-            revokedBy: session?.user?.id || null,
+            revokedBy: guard.user.id || null,
         },
     });
 

@@ -6,7 +6,15 @@ const prisma = new PrismaClient();
 async function main() {
     console.log("🌱 Seeding database...");
 
-    const hashedPassword = await bcrypt.hash("1234", 10);
+    // Le mot de passe de seed est fourni via l'environnement (jamais en dur).
+    const seedPassword = process.env.SEED_ADMIN_PASSWORD;
+    if (!seedPassword || seedPassword.length < 8) {
+        throw new Error(
+            "SEED_ADMIN_PASSWORD manquant ou trop court (min. 8 caractères). " +
+            "Définissez cette variable d'environnement avant de lancer le seed."
+        );
+    }
+    const hashedPassword = await bcrypt.hash(seedPassword, 10);
 
     const admin = await prisma.user.upsert({
         where: { email: "admin@demo.com" },

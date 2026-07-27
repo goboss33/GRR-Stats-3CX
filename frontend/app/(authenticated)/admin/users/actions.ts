@@ -1,9 +1,12 @@
 "use server";
 
-import { auth } from "@/lib/auth";
 import { prismaAuth } from "@/lib/prisma-auth";
 import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
+import { requireActionRole } from "@/lib/auth-guard";
+
+/** Longueur minimale imposée pour tout nouveau mot de passe. */
+const MIN_PASSWORD_LENGTH = 8;
 
 type ActionResult<T = void> =
     | { success: true; data: T }
@@ -19,16 +22,8 @@ export type UserRow = {
     createdAt: Date;
 };
 
-async function requireAdmin() {
-    const session = await auth();
-    if (!session?.user || session.user.role !== "ADMIN") {
-        throw new Error("Non autorisé");
-    }
-    return session.user;
-}
-
 export async function getUsers(): Promise<UserRow[]> {
-    await requireAdmin();
+    await requireActionRole(["ADMIN"]);
     return prismaAuth.user.findMany({
         select: {
             id: true,
@@ -50,13 +45,13 @@ export async function createUser(data: {
     lastName: string;
     role: Role;
 }): Promise<ActionResult<UserRow>> {
-    await requireAdmin();
+    await requireActionRole(["ADMIN"]);
 
     if (!data.email || !data.email.includes("@")) {
         return { success: false, error: "Email invalide" };
     }
-    if (!data.password || data.password.length < 4) {
-        return { success: false, error: "Le mot de passe doit contenir au moins 4 caractères" };
+    if (!data.password || data.password.length < MIN_PASSWORD_LENGTH) {
+        return { success: false, error: `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères` };
     }
 
     const existing = await prismaAuth.user.findUnique({ where: { email: data.email } });
@@ -83,7 +78,7 @@ export async function updateUser(
     id: string,
     data: { email: string; firstName: string; lastName: string; role: Role; password?: string }
 ): Promise<ActionResult> {
-    const currentUser = await requireAdmin();
+    const currentUser = await requireActionRole(["ADMIN"]);
 
     if (currentUser.id === id && data.role !== "ADMIN") {
         return { success: false, error: "Vous ne pouvez pas modifier votre propre rôle" };
@@ -98,8 +93,8 @@ export async function updateUser(
         return { success: false, error: "Un utilisateur avec cet email existe déjà" };
     }
 
-    if (data.password && data.password.length < 4) {
-        return { success: false, error: "Le mot de passe doit contenir au moins 4 caractères" };
+    if (data.password && data.password.length < MIN_PASSWORD_LENGTH) {
+        return { success: false, error: `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères` };
     }
 
     const updateData: { email: string; firstName: string | null; lastName: string | null; role: Role; password?: string } = {
@@ -118,7 +113,7 @@ export async function updateUser(
 }
 
 export async function deleteUser(id: string): Promise<ActionResult> {
-    const currentUser = await requireAdmin();
+    const currentUser = await requireActionRole(["ADMIN"]);
 
     if (currentUser.id === id) {
         return { success: false, error: "Vous ne pouvez pas supprimer votre propre compte" };

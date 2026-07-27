@@ -1,15 +1,13 @@
-import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { requirePageRole } from "@/lib/auth-guard";
 import { getUsers } from "./actions";
 import { UsersClient } from "@/components/users-client";
 
 export default async function UsersPage() {
-    const session = await auth();
-    if (!session?.user) {
-        redirect("/login");
-    }
+    // Gestion des utilisateurs réservée aux administrateurs (cohérent avec les
+    // Server Actions ADMIN-only de ./actions).
+    const user = await requirePageRole(["ADMIN"]);
 
     const users = await getUsers();
 
-    return <UsersClient users={users} currentUserId={session.user.id} />;
+    return <UsersClient users={users} currentUserId={user.id} />;
 }

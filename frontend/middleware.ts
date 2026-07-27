@@ -17,7 +17,8 @@ export function middleware(request: NextRequest) {
         pathname.startsWith("/admin") ||
         pathname.startsWith("/queues") ||
         pathname.startsWith("/statistics") ||
-        pathname.startsWith("/documentation");
+        pathname.startsWith("/documentation") ||
+        pathname.startsWith("/diagnostic");
 
     const isAuthRoute = pathname.startsWith("/login");
 

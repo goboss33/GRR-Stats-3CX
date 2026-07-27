@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { runDiagnostic } from "@/services/diagnostic.service";
 import { ServerId } from "@/lib/prisma-cdr";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
+import { requireApiRole } from "@/lib/auth-guard";
 
 export async function POST(request: NextRequest) {
+    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    if (!guard.ok) return guard.response;
+
     try {
         const body = await request.json();
         const { startDate, endDate, server } = body;
@@ -24,11 +28,10 @@ export async function POST(request: NextRequest) {
         console.log("[DIAGNOSTIC] Success:", result.summary.totalCalls, "calls,", result.summary.divergences, "divergences");
         return NextResponse.json(result);
     } catch (error) {
+        // Détail loggé côté serveur uniquement — jamais renvoyé au client.
         console.error("[DIAGNOSTIC] API error:", error);
-        const message = error instanceof Error ? error.message : String(error);
-        const stack = error instanceof Error ? error.stack : "";
         return NextResponse.json(
-            { error: message, stack },
+            { error: "Erreur interne du serveur" },
             { status: 500 }
         );
     }

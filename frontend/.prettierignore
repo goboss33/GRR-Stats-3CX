@@ -1,0 +1,12 @@
+# Dépendances et artefacts de build
+node_modules
+.next
+out
+build
+*.tsbuildinfo
+
+# Prisma (clients générés)
+prisma/**/generated
+
+# Verrous et divers
+package-lock.json

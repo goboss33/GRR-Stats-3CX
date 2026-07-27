@@ -1,23 +1,15 @@
-import { auth } from "@/lib/auth";
 import { prismaAuth } from "@/lib/prisma-auth";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
+import { requireApiRole } from "@/lib/auth-guard";
 
-async function requireAdmin() {
-    const session = await auth();
-    if (!session?.user || (session.user.role !== "ADMIN" && session.user.role !== "MODERATOR")) {
-        throw new Error("Non autorisé");
-    }
-    return session.user;
-}
+/** Longueur minimale imposée pour tout nouveau mot de passe. */
+const MIN_PASSWORD_LENGTH = 8;
 
 export async function GET() {
-    try {
-        await requireAdmin();
-    } catch {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
+    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    if (!guard.ok) return guard.response;
 
     const users = await prismaAuth.user.findMany({
         select: {
@@ -36,10 +28,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-    const session = await auth();
-    if (!session?.user || (session.user.role !== "ADMIN" && session.user.role !== "MODERATOR")) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
+    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    if (!guard.ok) return guard.response;
 
     const body = await request.json();
     const { email, firstName, lastName, role, password } = body;
@@ -48,11 +38,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Email invalide" }, { status: 400 });
     }
 
-    if (!password || password.length < 4) {
-        return NextResponse.json({ error: "Le mot de passe doit contenir au moins 4 caractères" }, { status: 400 });
+    if (!password || password.length < MIN_PASSWORD_LENGTH) {
+        return NextResponse.json({ error: `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères` }, { status: 400 });
     }
 
-    if (session.user.role === "MODERATOR" && role === "ADMIN") {
+    if (guard.user.role === "MODERATOR" && role === "ADMIN") {
         return NextResponse.json({ error: "Un modérateur ne peut pas créer un administrateur" }, { status: 403 });
     }
 
@@ -77,10 +67,8 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
-    const session = await auth();
-    if (!session?.user || (session.user.role !== "ADMIN" && session.user.role !== "MODERATOR")) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
+    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    if (!guard.ok) return guard.response;
 
     const body = await request.json();
     const { id, email, firstName, lastName, role, password } = body;
@@ -94,7 +82,7 @@ export async function PUT(request: Request) {
         return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
     }
 
-    if (session.user.role === "MODERATOR" && targetUser.role === "ADMIN") {
+    if (guard.user.role === "MODERATOR" && targetUser.role === "ADMIN") {
         return NextResponse.json({ error: "Un modérateur ne peut pas modifier un administrateur" }, { status: 403 });
     }
 
@@ -114,7 +102,10 @@ export async function PUT(request: Request) {
         role: role as Role,
     };
 
-    if (password && password.length >= 4) {
+    if (password) {
+        if (password.length < MIN_PASSWORD_LENGTH) {
+            return NextResponse.json({ error: `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères` }, { status: 400 });
+        }
         updateData.password = await bcrypt.hash(password, 10);
     }
 
@@ -123,10 +114,8 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-    const session = await auth();
-    if (!session?.user || (session.user.role !== "ADMIN" && session.user.role !== "MODERATOR")) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
+    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    if (!guard.ok) return guard.response;
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -135,7 +124,7 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: "ID utilisateur requis" }, { status: 400 });
     }
 
-    if (session?.user?.id === id) {
+    if (guard.user.id === id) {
         return NextResponse.json({ error: "Vous ne pouvez pas supprimer votre propre compte" }, { status: 400 });
     }
 
@@ -144,7 +133,7 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
     }
 
-    if (session.user.role === "MODERATOR" && targetUser.role === "ADMIN") {
+    if (guard.user.role === "MODERATOR" && targetUser.role === "ADMIN") {
         return NextResponse.json({ error: "Un modérateur ne peut pas supprimer un administrateur" }, { status: 403 });
     }
 

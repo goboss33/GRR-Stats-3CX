@@ -3,8 +3,12 @@ import { cookies } from "next/headers";
 import { getServers } from "@/lib/prisma-cdr";
 import { getAvailableServers } from "@/lib/servers";
 import { prismaAuth } from "@/lib/prisma-auth";
+import { requireApiRole } from "@/lib/auth-guard";
 
 export async function GET() {
+    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    if (!guard.ok) return guard.response;
+
     try {
         const cookieStore = await cookies();
         const currentServer = cookieStore.get("selectedServer")?.value || "gerofinance";
@@ -37,6 +41,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    if (!guard.ok) return guard.response;
+
     try {
         const { serverId, timezone, licenceThreshold, trunkThreshold } = await request.json();
         
