@@ -1,4 +1,4 @@
-import { prisma } from "../lib/prisma";
+import { prismaAuth as prisma } from "../lib/prisma-auth";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 

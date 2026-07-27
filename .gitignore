@@ -36,6 +36,9 @@ data/*.csv
 *.csv
 !example.csv
 
+# Fichiers d'analyse CDR locaux (dumps, ne pas versionner)
+cdr*.txt
+
 # IDE
 .vscode/
 .idea/

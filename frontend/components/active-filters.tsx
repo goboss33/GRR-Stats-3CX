@@ -54,9 +54,6 @@ function formatConditionLabel(
     if (condition.queueNumber) parts.push(`Q${condition.queueNumber}`);
     if (condition.agentNumber) parts.push(`Agent ${condition.agentNumber}`);
     if (condition.result) parts.push(resultLabels[condition.result] || condition.result);
-    if (condition.passageMode === 'multi') parts.push("(ping-pong)");
-    if (condition.passageMode === 'first') parts.push("(1er passage)");
-    if (condition.hasOverflow) parts.push("(redirigé)");
     return parts.length > 0 ? parts.join(" ") : "Tous";
 }
 

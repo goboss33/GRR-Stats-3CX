@@ -73,7 +73,7 @@ export async function createUser(data: {
             lastName: data.lastName || null,
             role: data.role,
         },
-        select: { id: true, email: true, firstName: true, lastName: true, role: true, createdAt: true },
+        select: { id: true, email: true, firstName: true, lastName: true, role: true, authProvider: true, createdAt: true },
     });
 
     return { success: true, data: user };

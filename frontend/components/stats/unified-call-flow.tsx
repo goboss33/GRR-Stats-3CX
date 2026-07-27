@@ -112,7 +112,7 @@ export function UnifiedCallFlow({ kpis, queueName, queueNumber, startDate, endDa
                                             ))}
                                         </Pie>
                                         <RechartsTooltip
-                                            formatter={(value: number) => [`${value} appels`, '']}
+                                            formatter={(value) => [`${value} appels`, '']}
                                             contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                         />
                                     </PieChart>

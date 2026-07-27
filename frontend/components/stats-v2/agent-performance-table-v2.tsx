@@ -58,6 +58,9 @@ export function AgentPerformanceTableV2({
             participationRate: totalTeamAnswered > 0
                 ? Math.round(((agent.answered + agent.directAnswered) / totalTeamAnswered) * 100)
                 : 0,
+            // Champs dérivés servant uniquement de clés de tri (cf. type SortField)
+            queueAnswered: agent.answered,
+            totalAnswered: agent.answered + agent.directAnswered,
         }));
     }, [agents, totalTeamAnswered]);
 
