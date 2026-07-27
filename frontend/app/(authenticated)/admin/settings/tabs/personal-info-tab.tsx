@@ -225,7 +225,7 @@ export function PersonalInfoTab() {
                     <CardContent className="space-y-4">
                         <div className="space-y-2">
                             <Label htmlFor="new-password">Nouveau mot de passe</Label>
-                            <Input id="new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimum 4 caractères" />
+                            <Input id="new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimum 8 caractères" />
                         </div>
                     </CardContent>
                 </Card>

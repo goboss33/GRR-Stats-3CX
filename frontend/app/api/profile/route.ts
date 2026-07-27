@@ -3,6 +3,9 @@ import { prismaAuth } from "@/lib/prisma-auth";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
+/** Longueur minimale imposée pour tout nouveau mot de passe. */
+const MIN_PASSWORD_LENGTH = 8;
+
 export async function GET() {
     const session = await auth();
     if (!session?.user) {
@@ -70,7 +73,10 @@ export async function PUT(request: Request) {
         email,
     };
 
-    if (password && password.length >= 4) {
+    if (password) {
+        if (password.length < MIN_PASSWORD_LENGTH) {
+            return NextResponse.json({ error: `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères` }, { status: 400 });
+        }
         updateData.password = await bcrypt.hash(password, 10);
     }
 

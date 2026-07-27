@@ -326,7 +326,7 @@ export function UsersTab() {
                         </div>
                         <div className="space-y-2">
                             <Label>Mot de passe</Label>
-                            <Input type="password" value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} placeholder="Minimum 4 caractères" />
+                            <Input type="password" value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} placeholder="Minimum 8 caractères" />
                         </div>
                         <div className="space-y-2">
                             <Label>Rôle</Label>
