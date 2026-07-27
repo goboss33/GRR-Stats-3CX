@@ -11,6 +11,7 @@
 
 "use server";
 
+import { Prisma } from "@prisma/cdr-client";
 import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import {
     SQL_SYSTEM_DEST_TYPES,
@@ -212,42 +213,22 @@ export async function getQueueTimelineDataRaw(
     `;
 }
 
-export async function getQueueHeatmapDataRaw(
-    serverId: ServerId,
-    queueNumber: string,
-    startDate: Date,
-    endDate: Date,
-    timezone: string = "Europe/Zurich"
-): Promise<HeatmapRow[]> {
-    const prisma = getPrismaCdr(serverId);
-    return prisma.$queryRaw<HeatmapRow[]>`
-        WITH unique_queue_calls AS (
-            SELECT
-                call_history_id,
-                MIN(cdr_started_at) AS first_started_at
-            FROM cdroutput
-            WHERE destination_dn_number = ${queueNumber}
-              AND destination_dn_type = 'queue'
-              AND cdr_started_at >= ${startDate}
-              AND cdr_started_at <= ${endDate}
-            GROUP BY call_history_id
-        )
-        SELECT
-            EXTRACT(ISODOW FROM first_started_at AT TIME ZONE ${timezone})::int AS day_of_week,
-            EXTRACT(HOUR FROM first_started_at AT TIME ZONE ${timezone})::int AS hour_of_day,
-            COUNT(*) AS volume
-        FROM unique_queue_calls
-        GROUP BY day_of_week, hour_of_day
-    `;
-}
-
+/**
+ * Heatmap volume (jour x heure) — globale ou filtrée par file d'attente.
+ * Les deux variantes ne diffèrent que par le filtre file, injecté ici de façon
+ * paramétrée (aucune interpolation de chaîne).
+ */
 export async function getHeatmapDataRaw(
     serverId: ServerId,
     startDate: Date,
     endDate: Date,
-    timezone: string = "Europe/Zurich"
+    timezone: string = "Europe/Zurich",
+    queueNumber?: string
 ): Promise<HeatmapRow[]> {
     const prisma = getPrismaCdr(serverId);
+    const queueFilter = queueNumber
+        ? Prisma.sql`AND destination_dn_number = ${queueNumber} AND destination_dn_type = 'queue'`
+        : Prisma.empty;
     return prisma.$queryRaw<HeatmapRow[]>`
         WITH unique_calls AS (
             SELECT
@@ -256,6 +237,7 @@ export async function getHeatmapDataRaw(
             FROM cdroutput
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
+              ${queueFilter}
             GROUP BY call_history_id
         )
         SELECT
@@ -265,6 +247,17 @@ export async function getHeatmapDataRaw(
         FROM unique_calls
         GROUP BY day_of_week, hour_of_day
     `;
+}
+
+/** Heatmap d'une file d'attente. Délègue à getHeatmapDataRaw avec le filtre file. */
+export async function getQueueHeatmapDataRaw(
+    serverId: ServerId,
+    queueNumber: string,
+    startDate: Date,
+    endDate: Date,
+    timezone: string = "Europe/Zurich"
+): Promise<HeatmapRow[]> {
+    return getHeatmapDataRaw(serverId, startDate, endDate, timezone, queueNumber);
 }
 
 // ============================================
