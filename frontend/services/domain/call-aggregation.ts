@@ -339,6 +339,28 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
+ * Variante « humaine » avec espace : "45s", "5m 3s", "5m".
+ */
+export function formatDurationHuman(seconds: number): string {
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+}
+
+/**
+ * Variante compacte sans espace : "45s", "5m3s", "5m".
+ */
+export function formatDurationCompact(seconds: number): string {
+    if (seconds >= 60) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return secs > 0 ? `${mins}m${secs}s` : `${mins}m`;
+    }
+    return `${seconds}s`;
+}
+
+/**
  * Gets the display number for a participant.
  */
 export function getDisplayNumber(

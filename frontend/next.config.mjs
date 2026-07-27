@@ -18,6 +18,18 @@ const nextConfig = {
     ];
   },
 
+  // La page statistiques V1 a été retirée au profit de /statistics-v2.
+  // Redirection temporaire (307) pour préserver les favoris existants.
+  async redirects() {
+    return [
+      {
+        source: '/statistics',
+        destination: '/statistics-v2',
+        permanent: false,
+      },
+    ];
+  },
+
   // Proxy API requests to FastAPI backend
   async rewrites() {
     return [

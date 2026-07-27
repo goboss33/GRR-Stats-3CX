@@ -1,5 +1,7 @@
 "use client";
 
+import { getSelectedServer } from "@/lib/selected-server";
+
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { startOfMonth, endOfMonth, startOfDay, endOfDay, format, parseISO } from "date-fns";
@@ -40,11 +42,6 @@ import type {
 
 const CHUNK_SIZE = 8;
 
-function getSelectedServer(): ServerId {
-    if (typeof document === "undefined") return "gerofinance";
-    const match = document.cookie.match(/selectedServer=([^;]+)/);
-    return (match?.[1] as ServerId) || "gerofinance";
-}
 
 // --------------------------------------------
 // URL (de)serialization — entries survive a refresh and are shareable

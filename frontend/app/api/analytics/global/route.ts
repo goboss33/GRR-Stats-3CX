@@ -2,16 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateApiKey } from "../auth";
 import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
+import { parseDateParam } from "@/lib/date-params";
 import {
     SQL_SYSTEM_DEST_TYPES,
     SQL_SYSTEM_ENTITY_TYPES,
 } from "@/services/domain/call-aggregation";
-
-function parseDateParam(param: string | null, defaultDate: Date): Date {
-    if (!param) return defaultDate;
-    const parsed = new Date(param);
-    return isNaN(parsed.getTime()) ? defaultDate : parsed;
-}
 
 function computePreviousPeriod(startDate: Date, endDate: Date): { prevStart: Date; prevEnd: Date } {
     const durationMs = endDate.getTime() - startDate.getTime();

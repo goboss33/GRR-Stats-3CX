@@ -1,5 +1,7 @@
 "use client";
 
+import { getSelectedServer } from "@/lib/selected-server";
+
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Users2, Hourglass, Voicemail, PhoneCall, Download } from "lucide-react";
 import { subDays, startOfDay, endOfDay, format } from "date-fns";
@@ -29,11 +31,6 @@ import type {
     ConcurrentCallsSummary,
 } from "@/types/stats.types";
 
-function getSelectedServer(): ServerId {
-    if (typeof document === "undefined") return "gerofinance";
-    const match = document.cookie.match(/selectedServer=([^;]+)/);
-    return (match?.[1] as ServerId) || "gerofinance";
-}
 
 // Helper to format duration seconds to human readable
 function formatDuration(seconds: number): string {

@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDurationCompact as formatDuration } from "@/services/domain/call-aggregation";
+
 import * as React from "react";
 import { Bell, X } from "lucide-react";
 
@@ -28,14 +30,6 @@ const RING_PRESETS = [
     { label: "> 30s", min: 30, max: undefined },
 ];
 
-function formatDuration(seconds: number): string {
-    if (seconds >= 60) {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return secs > 0 ? `${mins}m${secs}s` : `${mins}m`;
-    }
-    return `${seconds}s`;
-}
 
 export function ColumnFilterRingDuration({
     min,

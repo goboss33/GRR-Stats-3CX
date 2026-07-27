@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDurationCompact as formatDuration } from "@/services/domain/call-aggregation";
+
 import * as React from "react";
 import { Hourglass, X } from "lucide-react";
 
@@ -27,14 +29,6 @@ const WAIT_PRESETS = [
     { label: "> 1m", min: 60, max: undefined },
 ];
 
-function formatDuration(seconds: number): string {
-    if (seconds >= 60) {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return secs > 0 ? `${mins}m${secs}s` : `${mins}m`;
-    }
-    return `${seconds}s`;
-}
 
 export function ColumnFilterWaitTime({
     min,

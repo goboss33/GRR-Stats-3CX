@@ -2,13 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateApiKey } from "../auth";
 import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
+import { parseDateParam } from "@/lib/date-params";
 import { buildDirectSegmentWhereClause } from "@/services/domain/call-aggregation";
-
-function parseDateParam(param: string | null, defaultDate: Date): Date {
-    if (!param) return defaultDate;
-    const parsed = new Date(param);
-    return isNaN(parsed.getTime()) ? defaultDate : parsed;
-}
 
 export async function GET(request: NextRequest) {
     const authResult = await validateApiKey(request);

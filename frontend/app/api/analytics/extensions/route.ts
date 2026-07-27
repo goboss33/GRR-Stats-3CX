@@ -2,15 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateApiKey } from "../auth";
 import { ServerId } from "@/lib/prisma-cdr";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
+import { parseDateParam } from "@/lib/date-params";
 import { getExtensionAggregatedStats } from "@/services/logs.service";
 import { formatDuration } from "@/services/domain/call-aggregation";
 import type { LogsFilters } from "@/services/domain/call.types";
-
-function parseDateParam(param: string | null, defaultDate: Date): Date {
-    if (!param) return defaultDate;
-    const parsed = new Date(param);
-    return isNaN(parsed.getTime()) ? defaultDate : parsed;
-}
 
 /**
  * GET /api/analytics/extensions

@@ -1,5 +1,7 @@
 "use client";
 
+import { getSelectedServer } from "@/lib/selected-server";
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Users, Phone, AlertCircle, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight, UserX, Save, KeyRound, Pencil, Trash2, Settings, Copy, UserPlus, Building2, Lock } from "lucide-react";
@@ -18,11 +20,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ServerId } from "@/lib/prisma-cdr";
 
-function getSelectedServer(): ServerId {
-    if (typeof document === "undefined") return "gerofinance";
-    const match = document.cookie.match(/selectedServer=([^;]+)/);
-    return (match?.[1] as ServerId) || "gerofinance";
-}
 
 type TabId = "personal" | "users" | "queues" | "business-rules" | "api-keys" | "tenant" | "diagnostic";
 

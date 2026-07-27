@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
+
 import { AgentStats } from "@/types/statistics.types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, ArrowUpDown, Info } from "lucide-react";
@@ -88,12 +90,6 @@ export function AgentPerformanceTableV2({
             : (bVal as number) - (aVal as number);
     });
 
-    const formatDuration = (seconds: number): string => {
-        if (seconds < 60) return `${seconds}s`;
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
-    };
 
     const formatDurationHMS = (seconds: number): string => {
         if (seconds < 60) return `${seconds}s`;

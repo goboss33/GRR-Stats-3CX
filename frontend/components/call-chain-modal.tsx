@@ -1,5 +1,7 @@
 "use client";
 
+import { getSelectedServer } from "@/lib/selected-server";
+
 import { useState, useEffect, useMemo } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -34,11 +36,6 @@ import { getCallChain } from "@/services/logs.service";
 import { ServerId } from "@/lib/prisma-cdr";
 import type { CallChainSegment, SegmentCategory } from "@/types/logs.types";
 
-function getSelectedServer(): ServerId {
-    if (typeof document === "undefined") return "gerofinance";
-    const match = document.cookie.match(/selectedServer=([^;]+)/);
-    return (match?.[1] as ServerId) || "gerofinance";
-}
 
 interface CallChainModalProps {
     callHistoryId: string | null;

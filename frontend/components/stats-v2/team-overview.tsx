@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
+
 import { QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, ExternalLink, TrendingUp } from "lucide-react";
@@ -44,12 +46,6 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
     const directUnanswered = kpis.teamDirectReceived - kpis.teamDirectAnswered;
     const queueUnanswered = kpis.callsReceived - kpis.callsAnswered;
 
-    const formatDuration = (seconds: number): string => {
-        if (seconds < 60) return `${seconds}s`;
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
-    };
 
     const buildTeamFilter = (queueCondition: { type: string; queueNumber: string; result?: string }, agentConditions: Array<{ type: string; agentNumber: string; result?: string }>) => {
         const conditions = [

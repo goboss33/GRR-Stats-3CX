@@ -1,5 +1,7 @@
 "use client";
 
+import { getSelectedServer } from "@/lib/selected-server";
+
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,11 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import { AlertCircle, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 import { ServerId } from "@/lib/prisma-cdr";
 
-function getSelectedServer(): ServerId {
-    if (typeof document === "undefined") return "gerofinance";
-    const match = document.cookie.match(/selectedServer=([^;]+)/);
-    return (match?.[1] as ServerId) || "gerofinance";
-}
 
 interface SegmentSummary {
     cdrId: string;

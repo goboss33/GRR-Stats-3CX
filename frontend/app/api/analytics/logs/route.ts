@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateApiKey } from "../auth";
 import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
 import { getDefaultServer, isValidServer, getServerTimezone } from "@/lib/servers";
+import { parseDateParam } from "@/lib/date-params";
 import {
     buildAnalyticsCTEs,
     ANALYTICS_DATA_SELECT,
@@ -17,12 +18,6 @@ import {
     getDisplayName,
 } from "@/services/domain/call-aggregation";
 import type { CallDirection, CallStatus, LogsSort } from "@/services/domain/call.types";
-
-function parseDateParam(param: string | null, defaultDate: Date): Date {
-    if (!param) return defaultDate;
-    const parsed = new Date(param);
-    return isNaN(parsed.getTime()) ? defaultDate : parsed;
-}
 
 function parseSortParam(sortField?: string, sortDir?: string): LogsSort | undefined {
     if (!sortField) return undefined;

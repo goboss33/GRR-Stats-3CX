@@ -1,5 +1,7 @@
 "use client";
 
+import { getSelectedServer } from "@/lib/selected-server";
+
 import { useEffect, useState } from "react";
 import { startOfMonth, endOfMonth, startOfDay, endOfDay, format } from "date-fns";
 import { BarChart3, RefreshCw, Users } from "lucide-react";
@@ -16,11 +18,6 @@ import { DateRangePicker } from "@/components/date-range-picker";
 import { ServerId } from "@/lib/prisma-cdr";
 import type { QueueStatistics } from "@/types/statistics.types";
 
-function getSelectedServer(): ServerId {
-    if (typeof document === "undefined") return "gerofinance";
-    const match = document.cookie.match(/selectedServer=([^;]+)/);
-    return (match?.[1] as ServerId) || "gerofinance";
-}
 
 export default function StatisticsV2Page() {
     const [queues, setQueues] = useState<QueueInfo[]>([]);
