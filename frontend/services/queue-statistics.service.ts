@@ -2,6 +2,7 @@
 
 import { ServerId } from "@/lib/prisma-cdr";
 import { getServerTimezone } from "@/lib/servers";
+import { logger } from "@/lib/logger";
 import {
     getQueueName,
     getDailyTrendRaw,
@@ -27,7 +28,7 @@ async function fetchApi<T>(endpoint: string, params: Record<string, string>): Pr
     const url = new URL(`${INTERNAL_API_URL}${endpoint}`);
     Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
 
-    console.log("[fetchApi] Calling:", url.toString());
+    logger.debug("[fetchApi] Calling:", url.toString());
 
     const res = await fetch(url.toString(), {
         headers: { "X-API-Key": INTERNAL_API_KEY },
@@ -35,12 +36,12 @@ async function fetchApi<T>(endpoint: string, params: Record<string, string>): Pr
 
     if (!res.ok) {
         const errorText = await res.text().catch(() => "Unknown error");
-        console.error("[fetchApi] Error:", { status: res.status, error: errorText, url: url.toString() });
+        logger.error("[fetchApi] Error:", { status: res.status, error: errorText, url: url.toString() });
         throw new Error(`API ${endpoint} returned ${res.status}: ${errorText}`);
     }
 
     const data = await res.json() as T;
-    console.log("[fetchApi] Success:", { endpoint, data });
+    logger.debug("[fetchApi] Success:", { endpoint, data });
     return data;
 }
 

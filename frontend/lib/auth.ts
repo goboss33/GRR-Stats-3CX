@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import bcrypt from "bcryptjs";
 import { prismaAuth } from "@/lib/prisma-auth";
+import { logger } from "@/lib/logger";
 
 function getRoleFromGroups(groups: string[]): string | null {
     const groupMappings = [
@@ -130,7 +131,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                                 profilePicture = `data:${contentType};base64,${base64Photo}`;
                             }
                         } catch (error) {
-                            console.warn("[OAuth] Failed to fetch profile picture:", error);
+                            logger.warn("[OAuth] Failed to fetch profile picture:", error);
                         }
                     }
                     
@@ -180,15 +181,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                         });
                     }
                     
-                    // Clean up user object to avoid large JWT
-                    delete (user as any).profilePicture;
-                    delete (user as any).azureAdId;
-                    delete (user as any).jobTitle;
-                    delete (user as any).department;
-                    delete (user as any).mobilePhone;
-                    delete (user as any).officeLocation;
+                    // Clean up user object to avoid large JWT.
+                    // Vue à propriétés optionnelles pour autoriser `delete` sans `any`.
+                    const mutableUser = user as unknown as {
+                        profilePicture?: unknown;
+                        azureAdId?: unknown;
+                        jobTitle?: unknown;
+                        department?: unknown;
+                        mobilePhone?: unknown;
+                        officeLocation?: unknown;
+                    };
+                    delete mutableUser.profilePicture;
+                    delete mutableUser.azureAdId;
+                    delete mutableUser.jobTitle;
+                    delete mutableUser.department;
+                    delete mutableUser.mobilePhone;
+                    delete mutableUser.officeLocation;
                 } catch (error) {
-                    console.error("[OAuth] Sign in error:", error);
+                    logger.error("[OAuth] Sign in error:", error);
                     return "/login?error=OAuthSignInFailed";
                 }
             }

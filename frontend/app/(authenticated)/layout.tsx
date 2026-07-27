@@ -23,9 +23,9 @@ export default async function AuthenticatedLayout({
     };
 
     const userRole = session.user?.role || "USER";
-    const userFirstName = (session.user as any)?.firstName;
-    const userLastName = (session.user as any)?.lastName;
-    const authProvider = (session.user as any)?.authProvider || "CREDENTIALS";
+    const userFirstName = session.user?.firstName;
+    const userLastName = session.user?.lastName;
+    const authProvider = session.user?.authProvider || "CREDENTIALS";
     const userName = [userFirstName, userLastName].filter(Boolean).join(" ") || "Utilisateur";
 
     const dbUser = await prismaAuth.user.findUnique({

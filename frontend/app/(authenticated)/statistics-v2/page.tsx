@@ -1,6 +1,7 @@
 "use client";
 
 import { getSelectedServer } from "@/lib/selected-server";
+import { logger } from "@/lib/logger";
 
 import { useEffect, useState } from "react";
 import { startOfMonth, endOfMonth, startOfDay, endOfDay, format } from "date-fns";
@@ -46,19 +47,19 @@ export default function StatisticsV2Page() {
 
     // Load statistics when queue or date changes
     useEffect(() => {
-        console.log("[StatisticsV2] useEffect triggered:", { selectedQueueNumber, startDate: dateRange.startDate, endDate: dateRange.endDate });
+        logger.debug("[StatisticsV2] useEffect triggered:", { selectedQueueNumber, startDate: dateRange.startDate, endDate: dateRange.endDate });
         if (!selectedQueueNumber) return;
 
         setIsLoading(true);
         const serverId = getSelectedServer();
-        console.log("[StatisticsV2] Calling getQueueStatistics with:", { serverId, queueNumber: selectedQueueNumber, startDate: dateRange.startDate, endDate: dateRange.endDate });
+        logger.debug("[StatisticsV2] Calling getQueueStatistics with:", { serverId, queueNumber: selectedQueueNumber, startDate: dateRange.startDate, endDate: dateRange.endDate });
         getQueueStatistics(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate)
             .then((data) => {
-                console.log("[StatisticsV2] getQueueStatistics success:", data);
+                logger.debug("[StatisticsV2] getQueueStatistics success:", data);
                 setStatistics(data);
             })
             .catch((error) => {
-                console.error("[StatisticsV2] getQueueStatistics error:", error);
+                logger.error("[StatisticsV2] getQueueStatistics error:", error);
             })
             .finally(() => setIsLoading(false));
     }, [selectedQueueNumber, dateRange]);
@@ -73,7 +74,7 @@ export default function StatisticsV2Page() {
     };
 
     const handleQueueSelect = (queueNumber: string, queueName: string) => {
-        console.log("[QueueSelector] handleQueueSelect called:", { queueNumber, queueName });
+        logger.debug("[QueueSelector] handleQueueSelect called:", { queueNumber, queueName });
         setSelectedQueueNumber(queueNumber);
         setSelectedQueueName(queueName);
     };

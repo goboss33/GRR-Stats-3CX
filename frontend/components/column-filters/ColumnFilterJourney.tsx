@@ -76,7 +76,7 @@ function getPickerDisplayValue(
     }
     if (condition.agentNumber) {
         for (const q of queues) {
-            const member = q.members?.find((m: any) => m.agentExtension === condition.agentNumber);
+            const member = q.members?.find((m: QueueMember) => m.agentExtension === condition.agentNumber);
             if (member) return `${member.agentExtension} - ${member.agentName}`;
         }
         return condition.agentNumber;
@@ -90,7 +90,7 @@ function getQueueAgentDisplayValue(
 ): string {
     if (!agentNumber) return "";
     for (const q of queues) {
-        const member = q.members?.find((m: any) => m.agentExtension === agentNumber);
+        const member = q.members?.find((m: QueueMember) => m.agentExtension === agentNumber);
         if (member) return `${member.agentExtension} - ${member.agentName}`;
     }
     return agentNumber;

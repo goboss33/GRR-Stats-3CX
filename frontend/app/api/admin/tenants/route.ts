@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getServers } from "@/lib/prisma-cdr";
+import { getServers, ServerId } from "@/lib/prisma-cdr";
 import { getAvailableServers } from "@/lib/servers";
 import { prismaAuth } from "@/lib/prisma-auth";
 import { requireApiRole } from "@/lib/auth-guard";
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
         }
 
         const availableServerIds = getAvailableServers();
-        if (!availableServerIds.includes(serverId as any)) {
+        if (!availableServerIds.includes(serverId as ServerId)) {
             return NextResponse.json(
                 { error: "Server not available" },
                 { status: 400 }
