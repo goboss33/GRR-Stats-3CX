@@ -5,6 +5,7 @@ import {
     DEFAULT_BUSINESS_RULES,
 } from "@/services/domain/call-aggregation";
 import type { LogsFilters, LogsSort } from "@/services/domain/call.types";
+import { parseSearchPattern } from "@/services/domain/extension-search";
 
 export interface AnalyticsQueryParams {
     startDate: Date;
@@ -17,18 +18,6 @@ export interface AnalyticsQueryParams {
     pageSize?: number;
 }
 
-function parseSearchPattern(input: string): { mode: 'exact' | 'startsWith' | 'endsWith' | 'contains'; value: string } {
-    const trimmed = input.trim();
-    const startsWithWildcard = trimmed.startsWith('*');
-    const endsWithWildcard = trimmed.endsWith('*');
-    let value = trimmed;
-    if (startsWithWildcard) value = value.slice(1);
-    if (endsWithWildcard) value = value.slice(0, -1);
-    if (startsWithWildcard && endsWithWildcard) return { mode: 'contains', value };
-    if (startsWithWildcard) return { mode: 'endsWith', value };
-    if (endsWithWildcard) return { mode: 'startsWith', value };
-    return { mode: 'exact', value };
-}
 
 function buildSqlSearchCondition(field: string, pattern: ReturnType<typeof parseSearchPattern>): string {
     const escapedValue = pattern.value.replace(/'/g, "''");

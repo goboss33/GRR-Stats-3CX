@@ -2,6 +2,7 @@
 
 import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import { getServerTimezone } from "@/lib/servers";
+import { parseSearchPattern } from "@/services/domain/extension-search";
 import type {
     AggregatedCallLog,
     CallDirection,
@@ -30,24 +31,6 @@ import {
 // SEARCH PATTERN PARSER
 // ============================================
 
-function parseSearchPattern(input: string): { mode: 'exact' | 'startsWith' | 'endsWith' | 'contains'; value: string } {
-    const trimmed = input.trim();
-    const startsWithWildcard = trimmed.startsWith('*');
-    const endsWithWildcard = trimmed.endsWith('*');
-    let value = trimmed;
-    if (startsWithWildcard) value = value.slice(1);
-    if (endsWithWildcard) value = value.slice(0, -1);
-
-    if (startsWithWildcard && endsWithWildcard) {
-        return { mode: 'contains', value };
-    } else if (startsWithWildcard) {
-        return { mode: 'endsWith', value };
-    } else if (endsWithWildcard) {
-        return { mode: 'startsWith', value };
-    } else {
-        return { mode: 'exact', value };
-    }
-}
 
 function buildSqlSearchCondition(field: string, pattern: ReturnType<typeof parseSearchPattern>): string {
     const escapedValue = pattern.value.replace(/'/g, "''");
