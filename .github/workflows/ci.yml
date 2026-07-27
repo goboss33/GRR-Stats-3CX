@@ -34,6 +34,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Tests unitaires
+        run: npm test
+
       # Le build ne se connecte à aucune base (toutes les pages sont dynamiques) ;
       # des valeurs d'environnement factices suffisent à le faire passer.
       - name: Build
