@@ -27,8 +27,8 @@ export async function GET(request: NextRequest) {
         const start = parseDateParam(url.searchParams.get("start"), new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
         const end = parseDateParam(url.searchParams.get("end"), new Date());
         logger.debug("[queue/route] Date range:", { start, end });
-        const qn = queueNumber.replace(/'/g, "''");
 
+        // Requête paramétrée : $1 = queueNumber (texte), $2 = start, $3 = end (Date).
         const query = `
             WITH all_queue_passages AS (
                 SELECT
@@ -37,10 +37,10 @@ export async function GET(request: NextRequest) {
                     c.originating_cdr_id,
                     c.cdr_started_at
                 FROM cdroutput c
-                WHERE c.destination_dn_number = '${qn}'
+                WHERE c.destination_dn_number = $1
                   AND c.destination_dn_type = 'queue'
-                  AND c.cdr_started_at >= '${start.toISOString()}'
-                  AND c.cdr_started_at <= '${end.toISOString()}'
+                  AND c.cdr_started_at >= $2
+                  AND c.cdr_started_at <= $3
             ),
             unique_calls AS (
                 SELECT DISTINCT ON (call_history_id)
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
                     aqp.cdr_started_at,
                     bool_or(p.cdr_answered_at IS NOT NULL AND p.destination_dn_type = 'extension') as was_answered,
                     bool_or(other_q.destination_dn_type = 'queue'
-                            AND other_q.destination_dn_number != '${qn}'
+                            AND other_q.destination_dn_number != $1
                             AND other_q.cdr_started_at > aqp.cdr_started_at) as overflowed,
                     MAX(CASE WHEN p.cdr_answered_at IS NOT NULL AND p.destination_dn_type = 'extension'
                         THEN EXTRACT(EPOCH FROM (p.cdr_ended_at - p.cdr_answered_at)) ELSE NULL END) as talk_time,
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
                     AND p.creation_forward_reason = 'polling'
                 LEFT JOIN cdroutput other_q ON other_q.call_history_id = aqp.call_history_id
                     AND other_q.destination_dn_type = 'queue'
-                    AND other_q.destination_dn_number != '${qn}'
+                    AND other_q.destination_dn_number != $1
                     AND other_q.cdr_started_at > aqp.cdr_started_at
                 GROUP BY aqp.call_history_id, aqp.cdr_id, aqp.cdr_started_at
             ),
@@ -115,7 +115,7 @@ export async function GET(request: NextRequest) {
                 FROM call_outcomes co
                 JOIN cdroutput other_q ON other_q.call_history_id = co.call_history_id
                     AND other_q.destination_dn_type = 'queue'
-                    AND other_q.destination_dn_number != '${qn}'
+                    AND other_q.destination_dn_number != $1
                 WHERE co.outcome = 'overflow'
                 GROUP BY other_q.destination_dn_number, other_q.destination_dn_name
                 ORDER BY count DESC
@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
             queue_name AS (
                 SELECT COALESCE(destination_dn_name, destination_dn_number) as name
                 FROM cdroutput
-                WHERE destination_dn_number = '${qn}' AND destination_dn_type = 'queue'
+                WHERE destination_dn_number = $1 AND destination_dn_type = 'queue'
                 LIMIT 1
             ),
             queue_agents AS (
@@ -134,9 +134,9 @@ export async function GET(request: NextRequest) {
                 WHERE child.creation_method = 'route_to'
                   AND child.creation_forward_reason = 'polling'
                   AND parent.destination_dn_type = 'queue'
-                  AND parent.destination_dn_number = '${qn}'
-                  AND child.cdr_started_at >= '${start.toISOString()}'
-                  AND child.cdr_started_at <= '${end.toISOString()}'
+                  AND parent.destination_dn_number = $1
+                  AND child.cdr_started_at >= $2
+                  AND child.cdr_started_at <= $3
             ),
             direct_calls_stats AS (
                 SELECT
@@ -148,8 +148,8 @@ export async function GET(request: NextRequest) {
                   AND c.creation_forward_reason IS DISTINCT FROM 'polling'
                   AND (c.creation_forward_reason = 'by_did' OR NOT (c.cdr_answered_at IS NULL AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < 1))
                   AND c.destination_dn_number IN (SELECT extension FROM queue_agents)
-                  AND c.cdr_started_at >= '${start.toISOString()}'
-                  AND c.cdr_started_at <= '${end.toISOString()}'
+                  AND c.cdr_started_at >= $2
+                  AND c.cdr_started_at <= $3
                   AND NOT EXISTS (
                       SELECT 1 FROM all_queue_passages aqp WHERE aqp.call_history_id = c.call_history_id
                   )
@@ -177,8 +177,8 @@ export async function GET(request: NextRequest) {
             CROSS JOIN direct_calls_stats dcs
         `;
 
-        logger.debug("[queue/route] Executing query with queueNumber:", qn);
-        const rawResults = await prisma.$queryRawUnsafe(query);
+        logger.debug("[queue/route] Executing query with queueNumber:", queueNumber);
+        const rawResults = await prisma.$queryRawUnsafe(query, queueNumber, start, end);
         logger.debug("[queue/route] Query returned results");
         const row = (rawResults as any[])[0];
 

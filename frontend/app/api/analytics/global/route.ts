@@ -35,7 +35,9 @@ export async function GET(request: NextRequest) {
 
         const { prevStart, prevEnd } = computePreviousPeriod(start, end);
 
-        const buildMetricsQuery = (startDate: Date, endDate: Date) => `
+        // Requête paramétrée : $1 = début, $2 = fin (Date). Réutilisée pour la
+        // période courante et la période N-1.
+        const metricsQuery = `
             WITH call_aggregates AS (
                 SELECT
                     call_history_id,
@@ -44,8 +46,8 @@ export async function GET(request: NextRequest) {
                     MAX(cdr_ended_at) as last_ended_at,
                     MIN(cdr_answered_at) as first_answered_at
                 FROM cdroutput
-                WHERE cdr_started_at >= '${startDate.toISOString()}'
-                  AND cdr_started_at <= '${endDate.toISOString()}'
+                WHERE cdr_started_at >= $1
+                  AND cdr_started_at <= $2
                 GROUP BY call_history_id
             ),
             last_segments AS (
@@ -58,8 +60,8 @@ export async function GET(request: NextRequest) {
                     cdr_ended_at as last_ended_at,
                     termination_reason_details
                 FROM cdroutput
-                WHERE cdr_started_at >= '${startDate.toISOString()}'
-                  AND cdr_started_at <= '${endDate.toISOString()}'
+                WHERE cdr_started_at >= $1
+                  AND cdr_started_at <= $2
                 ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
             ),
             answered_segments AS (
@@ -69,8 +71,8 @@ export async function GET(request: NextRequest) {
                 FROM cdroutput c
                 WHERE c.cdr_answered_at IS NOT NULL
                   AND c.destination_dn_type = 'extension'
-                  AND c.cdr_started_at >= '${startDate.toISOString()}'
-                  AND c.cdr_started_at <= '${endDate.toISOString()}'
+                  AND c.cdr_started_at >= $1
+                  AND c.cdr_started_at <= $2
                 ORDER BY c.call_history_id, c.cdr_answered_at ASC, c.cdr_id ASC
             ),
             call_outcomes AS (
@@ -128,14 +130,14 @@ export async function GET(request: NextRequest) {
         `;
 
         logger.debug("[global/route] Executing current period query:", { start, end });
-        const currentResult = await prisma.$queryRawUnsafe(buildMetricsQuery(start, end));
+        const currentResult = await prisma.$queryRawUnsafe(metricsQuery, start, end);
         logger.debug("[global/route] Current period query completed");
         const current = (currentResult as any[])[0];
 
         let previous = null;
         if (includePrevious) {
             logger.debug("[global/route] Executing previous period query:", { prevStart, prevEnd });
-            const prevResult = await prisma.$queryRawUnsafe(buildMetricsQuery(prevStart, prevEnd));
+            const prevResult = await prisma.$queryRawUnsafe(metricsQuery, prevStart, prevEnd);
             logger.debug("[global/route] Previous period query completed");
             const prevRow = (prevResult as any[])[0];
             previous = {

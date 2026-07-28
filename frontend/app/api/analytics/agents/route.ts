@@ -28,8 +28,8 @@ export async function GET(request: NextRequest) {
         const start = parseDateParam(url.searchParams.get("start"), new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
         const end = parseDateParam(url.searchParams.get("end"), new Date());
         logger.debug("[agents/route] Date range:", { start, end });
-        const qn = queueNumber.replace(/'/g, "''");
 
+        // Requête paramétrée : $1 = queueNumber (texte), $2 = start, $3 = end (Date).
         const query = `
             WITH queue_agents AS (
                 SELECT DISTINCT
@@ -40,17 +40,17 @@ export async function GET(request: NextRequest) {
                 WHERE child.creation_method = 'route_to'
                   AND child.creation_forward_reason = 'polling'
                   AND parent.destination_dn_type = 'queue'
-                  AND parent.destination_dn_number = '${qn}'
-                  AND child.cdr_started_at >= '${start.toISOString()}'
-                  AND child.cdr_started_at <= '${end.toISOString()}'
+                  AND parent.destination_dn_number = $1
+                  AND child.cdr_started_at >= $2
+                  AND child.cdr_started_at <= $3
             ),
             all_queue_passages AS (
                 SELECT DISTINCT c.cdr_id, c.call_history_id, c.originating_cdr_id
                 FROM cdroutput c
-                WHERE c.destination_dn_number = '${qn}'
+                WHERE c.destination_dn_number = $1
                   AND c.destination_dn_type = 'queue'
-                  AND c.cdr_started_at >= '${start.toISOString()}'
-                  AND c.cdr_started_at <= '${end.toISOString()}'
+                  AND c.cdr_started_at >= $2
+                  AND c.cdr_started_at <= $3
             ),
             queue_passages_outcomes AS (
                 SELECT
@@ -94,8 +94,8 @@ export async function GET(request: NextRequest) {
                 FROM cdroutput c
                 WHERE ${buildDirectSegmentWhereClause('c', { excludeQueueOriginated: true, queuePassagesCTEName: 'all_queue_passages' })}
                   AND c.destination_dn_number IN (SELECT extension FROM queue_agents)
-                  AND c.cdr_started_at >= '${start.toISOString()}'
-                  AND c.cdr_started_at <= '${end.toISOString()}'
+                  AND c.cdr_started_at >= $2
+                  AND c.cdr_started_at <= $3
                 GROUP BY c.destination_dn_number
             ),
             agent_names AS (
@@ -123,8 +123,8 @@ export async function GET(request: NextRequest) {
             ORDER BY qa.extension
         `;
 
-        logger.debug("[agents/route] Executing query with queueNumber:", qn);
-        const rawResults = await prisma.$queryRawUnsafe(query);
+        logger.debug("[agents/route] Executing query with queueNumber:", queueNumber);
+        const rawResults = await prisma.$queryRawUnsafe(query, queueNumber, start, end);
         logger.debug("[agents/route] Query returned", (rawResults as any[]).length, "agents");
 
         const agents = (rawResults as any[]).map((row) => ({
