@@ -12,7 +12,10 @@ export async function GET() {
     const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
     if (!guard.ok) return guard.response;
 
+    // Chaque utilisateur ne voit que ses propres clés ; un ADMIN les voit toutes.
+    const isAdmin = guard.user.role === "ADMIN";
     const keys = await prismaAuth.apiKey.findMany({
+        where: isAdmin ? undefined : { createdBy: guard.user.id },
         orderBy: { createdAt: "desc" },
     });
 
@@ -82,6 +85,14 @@ export async function PUT(request: NextRequest) {
         return NextResponse.json({ error: "ID de clé requis" }, { status: 400 });
     }
 
+    const existing = await prismaAuth.apiKey.findUnique({ where: { id } });
+    if (!existing) {
+        return NextResponse.json({ error: "Clé introuvable" }, { status: 404 });
+    }
+    if (guard.user.role !== "ADMIN" && existing.createdBy !== guard.user.id) {
+        return NextResponse.json({ error: "Vous ne pouvez modifier que vos propres clés" }, { status: 403 });
+    }
+
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name.trim();
     if (description !== undefined) updateData.description = description?.trim() || null;
@@ -101,6 +112,14 @@ export async function DELETE(request: NextRequest) {
 
     if (!id) {
         return NextResponse.json({ error: "ID de clé requis" }, { status: 400 });
+    }
+
+    const existing = await prismaAuth.apiKey.findUnique({ where: { id } });
+    if (!existing) {
+        return NextResponse.json({ error: "Clé introuvable" }, { status: 404 });
+    }
+    if (guard.user.role !== "ADMIN" && existing.createdBy !== guard.user.id) {
+        return NextResponse.json({ error: "Vous ne pouvez révoquer que vos propres clés" }, { status: 403 });
     }
 
     await prismaAuth.apiKey.update({
