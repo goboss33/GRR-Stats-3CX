@@ -229,7 +229,12 @@ export async function getHeatmapDataRaw(
     const queueFilter = queueNumber
         ? Prisma.sql`AND destination_dn_number = ${queueNumber} AND destination_dn_type = 'queue'`
         : Prisma.empty;
-    return prisma.$queryRaw<HeatmapRow[]>`
+
+    // ⚠️ La requête est composée avec Prisma.sql PUIS passée en argument unique à
+    // $queryRaw(). Dans la forme "tagged template" (`$queryRaw`...``), un fragment
+    // imbriqué serait lié comme une VALEUR ($3) au lieu d'être injecté dans le SQL
+    // -> "syntax error at or near $3".
+    const query = Prisma.sql`
         WITH unique_calls AS (
             SELECT
                 call_history_id,
@@ -247,6 +252,8 @@ export async function getHeatmapDataRaw(
         FROM unique_calls
         GROUP BY day_of_week, hour_of_day
     `;
+
+    return prisma.$queryRaw<HeatmapRow[]>(query);
 }
 
 /** Heatmap d'une file d'attente. Délègue à getHeatmapDataRaw avec le filtre file. */
