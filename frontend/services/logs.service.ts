@@ -2,7 +2,7 @@
 
 import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import { getServerTimezone } from "@/lib/servers";
-import { parseSearchPattern } from "@/services/domain/extension-search";
+import { parseSearchPattern, type SearchPattern, type SearchPatternMode } from "@/services/domain/extension-search";
 import type {
     AggregatedCallLog,
     CallDirection,
@@ -32,18 +32,30 @@ import {
 // ============================================
 
 
-function buildSqlSearchCondition(field: string, pattern: ReturnType<typeof parseSearchPattern>): string {
-    const escapedValue = pattern.value.replace(/'/g, "''");
+/**
+ * Échappe une valeur en littéral SQL (`'...'`). Réservé aux rares cas non
+ * paramétrables (fragments jsonb/jsonpath) ; ailleurs on utilise des paramètres liés.
+ * Sûr avec standard_conforming_strings = on (défaut PostgreSQL).
+ */
+function sqlQuote(value: string): string {
+    return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** Valeur à lier pour une recherche ILIKE, jokers intégrés selon le mode. */
+function likeValue(pattern: SearchPattern): string {
     switch (pattern.mode) {
-        case 'exact':
-            return `LOWER(${field}) = LOWER('${escapedValue}')`;
-        case 'startsWith':
-            return `${field} ILIKE '${escapedValue}%'`;
-        case 'endsWith':
-            return `${field} ILIKE '%${escapedValue}'`;
-        case 'contains':
-            return `${field} ILIKE '%${escapedValue}%'`;
+        case "startsWith": return `${pattern.value}%`;
+        case "endsWith": return `%${pattern.value}`;
+        case "contains": return `%${pattern.value}%`;
+        case "exact": return pattern.value;
     }
+}
+
+/** Condition de recherche sur un champ, utilisant un placeholder déjà lié ($N). */
+function searchCondition(field: string, mode: SearchPatternMode, placeholder: string): string {
+    return mode === "exact"
+        ? `LOWER(${field}) = LOWER(${placeholder})`
+        : `${field} ILIKE ${placeholder}`;
 }
 
 function buildSqlDirectionFilter(directions: CallDirection[] | undefined): string {
@@ -132,24 +144,38 @@ function buildAggregatedQueryParts(
     limit: number;
     skip: number;
     sortClause: string;
+    params: unknown[];
 } {
     const pageNumber = Math.max(1, pagination.page);
     const limit = Math.min(100, Math.max(1, pagination.pageSize));
     const skip = (pageNumber - 1) * limit;
 
+    // Collecteur de paramètres liés : bind() auto-numérote les $N (aucune erreur
+    // de numérotation possible). La même valeur (dates, motif de recherche) est
+    // liée une seule fois et son placeholder réutilisé.
+    const params: unknown[] = [];
+    const bind = (value: unknown): string => {
+        params.push(value);
+        return `$${params.length}`;
+    };
+
+    const startP = bind(startDate); // $1
+    const endP = bind(endDate); // $2
+
     const whereConditions: string[] = [
-        `cdr_started_at >= '${startDate.toISOString()}'`,
-        `cdr_started_at <= '${endDate.toISOString()}'`,
+        `cdr_started_at >= ${startP}`,
+        `cdr_started_at <= ${endP}`,
     ];
 
     if (filters.callerSearch?.trim()) {
         const pattern = parseSearchPattern(filters.callerSearch);
+        const ph = bind(likeValue(pattern));
         whereConditions.push(`(
-            ${buildSqlSearchCondition('source_dn_number', pattern)} OR
-            ${buildSqlSearchCondition('source_participant_phone_number', pattern)} OR
-            ${buildSqlSearchCondition('source_participant_name', pattern)} OR
-            ${buildSqlSearchCondition('source_dn_name', pattern)} OR
-            ${buildSqlSearchCondition('source_participant_trunk_did', pattern)}
+            ${searchCondition('source_dn_number', pattern.mode, ph)} OR
+            ${searchCondition('source_participant_phone_number', pattern.mode, ph)} OR
+            ${searchCondition('source_participant_name', pattern.mode, ph)} OR
+            ${searchCondition('source_dn_name', pattern.mode, ph)} OR
+            ${searchCondition('source_participant_trunk_did', pattern.mode, ph)}
         )`);
     }
 
@@ -157,6 +183,7 @@ function buildAggregatedQueryParts(
     let calleeFilterJoin = '';
     if (filters.calleeSearch?.trim()) {
         const pattern = parseSearchPattern(filters.calleeSearch);
+        const ph = bind(likeValue(pattern));
         calleeFilterCTE = `,
             callee_filter AS (
                 SELECT call_history_id
@@ -170,26 +197,26 @@ function buildAggregatedQueryParts(
                         source_participant_name,
                         source_dn_type
                     FROM cdroutput
-                    WHERE cdr_started_at >= '${startDate.toISOString()}'
-                      AND cdr_started_at <= '${endDate.toISOString()}'
+                    WHERE cdr_started_at >= ${startP}
+                      AND cdr_started_at <= ${endP}
                     ORDER BY call_history_id, cdr_started_at ASC
                 ) first_dest
                 WHERE (
-                    ${buildSqlSearchCondition('destination_dn_number', pattern)} OR
-                    ${buildSqlSearchCondition('destination_participant_phone_number', pattern)} OR
-                    ${buildSqlSearchCondition('destination_participant_name', pattern)} OR
-                    ${buildSqlSearchCondition('destination_dn_name', pattern)} OR
+                    ${searchCondition('destination_dn_number', pattern.mode, ph)} OR
+                    ${searchCondition('destination_participant_phone_number', pattern.mode, ph)} OR
+                    ${searchCondition('destination_participant_name', pattern.mode, ph)} OR
+                    ${searchCondition('destination_dn_name', pattern.mode, ph)} OR
                     (source_dn_type = 'provider'
                      AND source_participant_name LIKE '%:%'
-                     AND ${buildSqlSearchCondition('source_participant_name', pattern)})
+                     AND ${searchCondition('source_participant_name', pattern.mode, ph)})
                 )
                 UNION
                 -- DDI search: the called DID lives in source_participant_trunk_did (any segment)
                 SELECT call_history_id
                 FROM cdroutput
-                WHERE cdr_started_at >= '${startDate.toISOString()}'
-                  AND cdr_started_at <= '${endDate.toISOString()}'
-                  AND ${buildSqlSearchCondition('source_participant_trunk_did', pattern)}
+                WHERE cdr_started_at >= ${startP}
+                  AND cdr_started_at <= ${endP}
+                  AND ${searchCondition('source_participant_trunk_did', pattern.mode, ph)}
             )`;
         calleeFilterJoin = 'JOIN callee_filter cf ON ca.call_history_id = cf.call_history_id';
     }
@@ -202,14 +229,12 @@ function buildAggregatedQueryParts(
     }
     if (filters.idSearch?.trim()) {
         const pattern = parseSearchPattern(filters.idSearch);
-        whereConditions.push(buildSqlSearchCondition('call_history_id::text', pattern));
+        const ph = bind(likeValue(pattern));
+        whereConditions.push(searchCondition('call_history_id::text', pattern.mode, ph));
     }
 
     const whereClause = whereConditions.join(" AND ");
-    const dateOnlyWhereClause = [
-        `cdr_started_at >= '${startDate.toISOString()}'`,
-        `cdr_started_at <= '${endDate.toISOString()}'`,
-    ].join(" AND ");
+    const dateOnlyWhereClause = `cdr_started_at >= ${startP} AND cdr_started_at <= ${endP}`;
 
     const aggregatedWhereConditions: string[] = [];
     const directionFilter = buildSqlDirectionFilter(filters.directions);
@@ -219,19 +244,18 @@ function buildAggregatedQueryParts(
 
     if (filters.handledBySearch?.trim()) {
         const pattern = parseSearchPattern(filters.handledBySearch);
-        const searchValue = pattern.value.replace(/'/g, "''");
-        aggregatedWhereConditions.push(`(hb.agents::text ILIKE '%${searchValue}%')`);
+        const ph = bind(`%${pattern.value}%`);
+        aggregatedWhereConditions.push(`(hb.agents::text ILIKE ${ph})`);
     }
     if (filters.handledByMultiSearch && filters.handledByMultiSearch.length > 0) {
-        const agentNumbers = filters.handledByMultiSearch
-            .map(num => `'${num.replace(/'/g, "''")}'`)
-            .join(', ');
+        // jsonpath : non paramétrable proprement, valeurs contraintes (picker) -> sqlQuote.
+        const agentNumbers = filters.handledByMultiSearch.map(sqlQuote).join(", ");
         aggregatedWhereConditions.push(`(hb.agents::jsonb @? '$[*] ? (@.number in (${agentNumbers}))')`);
     }
     if (filters.queueSearch?.trim()) {
         const pattern = parseSearchPattern(filters.queueSearch);
-        const searchValue = pattern.value.replace(/'/g, "''");
-        aggregatedWhereConditions.push(`(cq.queues::text ILIKE '%${searchValue}%')`);
+        const ph = bind(`%${pattern.value}%`);
+        aggregatedWhereConditions.push(`(cq.queues::text ILIKE ${ph})`);
     }
     if (filters.segmentCountMin !== undefined) {
         aggregatedWhereConditions.push(`ca.segment_count >= ${filters.segmentCountMin}`);
@@ -247,10 +271,10 @@ function buildAggregatedQueryParts(
     }
     if (filters.timeSlots && filters.timeSlots.length > 0) {
         const slotConditions = filters.timeSlots.map(slot => {
-            const startTime = slot.start.replace(/'/g, "");
-            const endTime = slot.end.replace(/'/g, "");
-            return `((ca.first_started_at AT TIME ZONE '${timezone}')::time >= '${startTime}'::time
-                AND (ca.first_started_at AT TIME ZONE '${timezone}')::time < '${endTime}'::time)`;
+            const startPh = bind(slot.start);
+            const endPh = bind(slot.end);
+            return `((ca.first_started_at AT TIME ZONE '${timezone}')::time >= ${startPh}::time
+                AND (ca.first_started_at AT TIME ZONE '${timezone}')::time < ${endPh}::time)`;
         });
         aggregatedWhereConditions.push(`(${slotConditions.join(' OR ')})`);
     }
@@ -283,7 +307,7 @@ function buildAggregatedQueryParts(
         }
     }
 
-    return { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause: buildOrderByClause(sort, timezone) };
+    return { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause: buildOrderByClause(sort, timezone), params };
 }
 
 // ============================================
@@ -1016,7 +1040,7 @@ export async function getAggregatedCallLogs(
 ): Promise<AggregatedCallLogsResponse> {
     const prisma = getPrismaCdr(serverId);
     const timezone = await getServerTimezone(serverId);
-    const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } =
+    const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause, params } =
         buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone);
     const pageNumber = Math.max(1, pagination.page);
 
@@ -1032,8 +1056,8 @@ export async function getAggregatedCallLogs(
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const [rawResults, countResult] = await Promise.all([
-            prisma.$queryRawUnsafe<any[]>(dataQuery),
-            prisma.$queryRawUnsafe<{ total: bigint }[]>(countQuery),
+            prisma.$queryRawUnsafe<any[]>(dataQuery, ...params),
+            prisma.$queryRawUnsafe<{ total: bigint }[]>(countQuery, ...params),
         ]);
 
         const totalCount = Number(countResult[0]?.total || 0);
@@ -1239,7 +1263,7 @@ export async function getExtensionAggregatedStats(
 ): Promise<ExtensionAggregatedStats> {
     const prisma = getPrismaCdr(serverId);
 
-    const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin } =
+    const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, params } =
         buildAggregatedQueryParts(startDate, endDate, filters, { page: 1, pageSize: 1 });
 
     const ctes = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE);
@@ -1282,7 +1306,7 @@ export async function getExtensionAggregatedStats(
         ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
     `;
 
-    const result = await prisma.$queryRawUnsafe(statsQuery);
+    const result = await prisma.$queryRawUnsafe(statsQuery, ...params);
     const row = (result as any[])[0];
 
     return {
