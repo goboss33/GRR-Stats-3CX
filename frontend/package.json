@@ -18,7 +18,15 @@
     "prisma:generate": "prisma generate --schema=prisma/auth/schema.prisma && prisma generate --schema=prisma/cdr/schema.prisma",
     "prisma:generate:auth": "prisma generate --schema=prisma/auth/schema.prisma",
     "prisma:generate:cdr": "prisma generate --schema=prisma/cdr/schema.prisma",
-    "postinstall": "npm run prisma:generate"
+    "postinstall": "npm run prisma:generate",
+    "_comment_prepare": "husky || true : le || true est REQUIS pour que npm install n'echoue pas hors depot git (build Docker/CI)",
+    "prepare": "cd .. && husky frontend/.husky || true"
+  },
+  "_comment_lint-staged": "Prettier volontairement ABSENT du hook : 147 fichiers ne sont pas encore formates, l'inclure melangerait du reformatage massif aux vraies modifs. A activer apres un commit dedie 'npm run format' (+ .git-blame-ignore-revs).",
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix"
+    ]
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",
@@ -52,6 +60,7 @@
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
@@ -59,6 +68,8 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^9.17.0",
     "eslint-config-next": "15.0.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.2.0",
     "postcss": "^8.4.49",
     "prettier": "^3.9.6",
     "prisma": "^5.22.0",
