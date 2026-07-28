@@ -672,7 +672,15 @@ export async function getCallLogsSQL(
 
 // ============================================
 // OPTIMIZED COUNT QUERY — conditional CTEs
-// Only includes expensive CTEs when actually filtering on them
+// Only includes expensive CTEs when actually filtering on them.
+//
+// ⚠️ NE PAS "dé-dupliquer" en réutilisant buildAggregateCTEs : la différence est
+// VOLONTAIRE. buildAggregateCTEs construit toujours les CTEs coûteuses (handled_by /
+// call_queues / call_journey) car la requête de données les AFFICHE ; le comptage ne
+// les construit que si un filtre les utilise. Les fusionner reconstruirait le JSON du
+// parcours à chaque comptage = régression de perf sur la page la plus utilisée (Logs).
+// Validé : le comptage tombe exactement sur le nb de lignes de la requête de données
+// (cf. harnais de caractérisation, scripts/characterize-logs.ts).
 // ============================================
 
 function buildCountQuery(
