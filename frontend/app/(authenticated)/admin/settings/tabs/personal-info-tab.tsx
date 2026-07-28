@@ -1,12 +1,13 @@
 "use client";
 
+import { toast } from "sonner";
+
 import { useState, useEffect } from "react";
-import { Loader2, CheckCircle2, XCircle, KeyRound, Save } from "lucide-react";
+import { Loader2, KeyRound, Save } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 
 interface UserProfile {
     id: string;
@@ -31,7 +32,12 @@ export function PersonalInfoTab() {
     const [lastName, setLastName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    // Adaptateur : route les appels setMessage(...) existants vers les toasts.
+    const setMessage = (m: { type: "success" | "error"; text: string } | null) => {
+        if (!m) return;
+        if (m.type === "success") toast.success(m.text);
+        else toast.error(m.text);
+    };
 
     useEffect(() => {
         fetch("/api/profile")
@@ -87,15 +93,6 @@ export function PersonalInfoTab() {
 
     return (
         <div className="space-y-6 max-w-2xl">
-            {message && (
-                <div className={cn(
-                    "p-4 rounded-lg border flex items-center gap-3",
-                    message.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-800"
-                )}>
-                    {message.type === "success" ? <CheckCircle2 className="h-5 w-5 flex-shrink-0" /> : <XCircle className="h-5 w-5 flex-shrink-0" />}
-                    <span className="text-sm font-medium">{message.text}</span>
-                </div>
-            )}
 
             <Card>
                 <CardHeader>

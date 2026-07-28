@@ -1,7 +1,9 @@
 "use client";
 
+import { toast } from "sonner";
+
 import { useState, useEffect } from "react";
-import { Loader2, CheckCircle2, XCircle, KeyRound, Copy, Pencil, UserX } from "lucide-react";
+import { Loader2, CheckCircle2, KeyRound, Copy, Pencil, UserX } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,7 +41,12 @@ export function ApiKeysTab() {
     const [editForm, setEditForm] = useState({ name: "", description: "", quotaPerMinute: 100, isActive: true });
     const [editLoading, setEditLoading] = useState(false);
     const [revokingId, setRevokingId] = useState<string | null>(null);
-    const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    // Adaptateur : route les appels setMessage(...) existants vers les toasts.
+    const setMessage = (m: { type: "success" | "error"; text: string } | null) => {
+        if (!m) return;
+        if (m.type === "success") toast.success(m.text);
+        else toast.error(m.text);
+    };
 
     const loadKeys = () => {
         fetch("/api/admin/api-keys")
@@ -147,16 +154,6 @@ export function ApiKeysTab() {
 
     return (
         <div className="space-y-6">
-            {message && (
-                <div className={cn(
-                    "p-4 rounded-lg border flex items-center gap-3",
-                    message.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-800"
-                )}>
-                    {message.type === "success" ? <CheckCircle2 className="h-5 w-5 flex-shrink-0" /> : <XCircle className="h-5 w-5 flex-shrink-0" />}
-                    <span className="text-sm font-medium">{message.text}</span>
-                    <button onClick={() => setMessage(null)} className="ml-auto text-sm underline">Fermer</button>
-                </div>
-            )}
 
             {/* New key display */}
             {newKey && (
