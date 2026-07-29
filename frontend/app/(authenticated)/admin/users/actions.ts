@@ -2,7 +2,7 @@
 
 import { prismaAuth } from "@/lib/prisma-auth";
 import bcrypt from "bcryptjs";
-import { Role } from "@prisma/client";
+import { Role } from "@prisma/auth-client";
 import { requireActionRole } from "@/lib/auth-guard";
 
 /** Longueur minimale imposée pour tout nouveau mot de passe. */

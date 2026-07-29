@@ -22,7 +22,7 @@ export default async function AuthenticatedLayout({
         await signOut({ redirectTo: "/login" });
     };
 
-    const userRole = session.user?.role || "USER";
+    const userRole = session.user?.role || "AGENT";
     const userFirstName = session.user?.firstName;
     const userLastName = session.user?.lastName;
     const authProvider = session.user?.authProvider || "CREDENTIALS";

@@ -16,7 +16,7 @@ type TabId = "personal" | "users" | "queues" | "business-rules" | "api-keys" | "
 // Rôles autorisés par onglet (cf. PRD droits d'accès §4.1).
 // ⚠️ Ce filtrage est une commodité d'affichage : la sécurité réelle est assurée
 // par les gardes serveur des routes API correspondantes.
-const ALL_ROLES = ["ADMIN", "MODERATOR", "SUPERUSER", "USER"];
+const ALL_ROLES = ["ADMIN", "MODERATOR", "MANAGER", "AGENT"];
 
 const tabs: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }>; roles: string[] }[] = [
     { id: "personal", label: "Informations personnelles", icon: Users, roles: ALL_ROLES },

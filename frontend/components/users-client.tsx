@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Role } from "@prisma/client";
+import { Role } from "@prisma/auth-client";
 import { Plus, Pencil, Trash2, Lock } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -34,16 +34,16 @@ import {
 
 const roleBadgeVariants: Record<Role, string> = {
     ADMIN: "bg-red-100 text-red-700 border-red-200",
-    SUPERUSER: "bg-amber-100 text-amber-700 border-amber-200",
+    MANAGER: "bg-amber-100 text-amber-700 border-amber-200",
     MODERATOR: "bg-blue-100 text-blue-700 border-blue-200",
-    USER: "bg-green-100 text-green-700 border-green-200",
+    AGENT: "bg-green-100 text-green-700 border-green-200",
 };
 
 const roleLabels: Record<Role, string> = {
     ADMIN: "Administrateur",
-    SUPERUSER: "Manager",
+    MANAGER: "Manager",
     MODERATOR: "Modérateur",
-    USER: "Utilisateur",
+    AGENT: "Agent",
 };
 
 interface UsersClientProps {

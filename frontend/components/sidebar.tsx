@@ -54,7 +54,7 @@ const navItems: NavItem[] = [
         label: "Dashboard",
         href: "/dashboard",
         icon: LayoutDashboard,
-        roles: ["ADMIN", "SUPERUSER", "USER", "MODERATOR"],
+        roles: ["ADMIN", "MODERATOR", "MANAGER"],
     },
     {
         label: "Logs d'appels",
@@ -65,7 +65,7 @@ const navItems: NavItem[] = [
     {
         label: "Statistiques",
         icon: BarChart3,
-        roles: ["ADMIN", "SUPERUSER", "USER", "MODERATOR"],
+        roles: ["ADMIN", "MODERATOR", "MANAGER"],
         children: [
             {
                 label: "File d'attente",

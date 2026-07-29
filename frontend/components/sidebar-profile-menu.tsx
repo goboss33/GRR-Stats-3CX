@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const roleLabels: Record<string, string> = {
     ADMIN: "Administrateur",
-    SUPERUSER: "Manager",
+    MANAGER: "Manager",
     USER: "Utilisateur",
 };
 

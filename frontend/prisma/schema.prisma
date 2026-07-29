@@ -15,7 +15,7 @@ model User {
   password  String
   firstName String?
   lastName  String?
-  role      Role     @default(USER)
+  role      Role     @default(AGENT)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -156,9 +156,9 @@ model temptable_pbx_cdroutput {
 
 enum Role {
   ADMIN
-  SUPERUSER
   MODERATOR
-  USER
+  MANAGER
+  AGENT
 }
 
 model AppSettings {

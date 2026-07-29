@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
  * `session.user.role` est typé `string` côté next-auth ; on centralise ici la
  * liste des valeurs valides pour les gardes d'autorisation.
  */
-export type AppRole = "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER";
+export type AppRole = "ADMIN" | "MODERATOR" | "MANAGER" | "AGENT";
 
 type SessionUser = Session["user"];
 

@@ -15,7 +15,7 @@ model User {
   password       String
   firstName      String?
   lastName       String?
-  role           Role     @default(USER)
+  role           Role     @default(AGENT)
   authProvider   String   @default("CREDENTIALS")
   azureAdId      String?  @unique
   profilePicture String?
@@ -27,11 +27,20 @@ model User {
   updatedAt      DateTime @updatedAt
 }
 
+/// Rôles applicatifs (cf. PRD droits d'accès §4).
+/// ADMIN     : l'IT — accès total, gère utilisateurs / tenants / configuration
+/// MODERATOR : prestataire ou analyste externe — consultation globale, aucune administration
+/// MANAGER   : responsable d'agence — consultation limitée à son périmètre
+/// AGENT     : collaborateur — aucun accès pour l'instant
+///
+/// ⚠️ MANAGER et AGENT s'appelaient SUPERUSER et USER. Le renommage en base est
+/// assuré par lib/startup-migrations.ts (ALTER TYPE ... RENAME VALUE, idempotent),
+/// exécuté au démarrage du serveur via instrumentation.ts.
 enum Role {
   ADMIN
-  SUPERUSER
   MODERATOR
-  USER
+  MANAGER
+  AGENT
 }
 
 model AppSettings {

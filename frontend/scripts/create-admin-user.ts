@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+// Client d'authentification (DATABASE_URL_AUTH) — cf. note dans prisma/seed.ts.
+import { PrismaClient } from "@prisma/auth-client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();

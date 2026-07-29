@@ -1,4 +1,7 @@
-import { PrismaClient } from "@prisma/client";
+// ⚠️ Client d'AUTHENTIFICATION (DATABASE_URL_AUTH) : c'est la base que lit
+// l'application. Le client racine "@prisma/client" pointe sur DATABASE_URL et
+// créerait les comptes dans la mauvaise base.
+import { PrismaClient } from "@prisma/auth-client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -37,7 +40,7 @@ async function main() {
             firstName: "Manager",
             lastName: "User",
             password: hashedPassword,
-            role: "SUPERUSER",
+            role: "MANAGER",
         },
     });
     console.log(`✅ Created Superuser: ${manager.email}`);
@@ -50,7 +53,7 @@ async function main() {
             firstName: "Regular",
             lastName: "User",
             password: hashedPassword,
-            role: "USER",
+            role: "AGENT",
         },
     });
     console.log(`✅ Created User: ${user.email}`);

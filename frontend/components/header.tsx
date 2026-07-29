@@ -4,13 +4,13 @@ import { usePathname } from "next/navigation";
 
 const roleBadgeColors: Record<string, string> = {
     ADMIN: "bg-red-500/20 text-red-400 border-red-500/30",
-    SUPERUSER: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    MANAGER: "bg-amber-500/20 text-amber-400 border-amber-500/30",
     USER: "bg-green-500/20 text-green-400 border-green-500/30",
 };
 
 const roleLabels: Record<string, string> = {
     ADMIN: "Administrateur",
-    SUPERUSER: "Manager",
+    MANAGER: "Manager",
     USER: "Utilisateur",
 };
 

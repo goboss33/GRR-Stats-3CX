@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Role } from "@prisma/client";
+import { Role } from "@prisma/auth-client";
 import {
     Dialog,
     DialogContent,
@@ -46,7 +46,7 @@ export function UserFormDialog({
     const [lastName, setLastName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [role, setRole] = useState<Role>("USER");
+    const [role, setRole] = useState<Role>("AGENT");
     const [error, setError] = useState("");
     const [isLoading, setIsLoading] = useState(false);
 
@@ -59,7 +59,7 @@ export function UserFormDialog({
             setLastName(user?.lastName ?? "");
             setEmail(user?.email ?? "");
             setPassword("");
-            setRole(user?.role ?? "USER");
+            setRole(user?.role ?? "AGENT");
             setError("");
         }
     }, [open, user]);
@@ -155,8 +155,8 @@ export function UserFormDialog({
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="ADMIN">Administrateur</SelectItem>
-                                <SelectItem value="SUPERUSER">Manager</SelectItem>
-                                <SelectItem value="USER">Utilisateur</SelectItem>
+                                <SelectItem value="MANAGER">Manager</SelectItem>
+                                <SelectItem value="AGENT">Agent</SelectItem>
                             </SelectContent>
                         </Select>
                         {isSelf && (

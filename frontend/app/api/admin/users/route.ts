@@ -1,7 +1,7 @@
 import { prismaAuth } from "@/lib/prisma-auth";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { Role } from "@prisma/client";
+import { Role } from "@prisma/auth-client";
 import { requireApiRole } from "@/lib/auth-guard";
 
 /** Longueur minimale imposée pour tout nouveau mot de passe. */
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
             email,
             firstName: firstName || null,
             lastName: lastName || null,
-            role: (role || "USER") as Role,
+            role: (role || "AGENT") as Role,
             password: hashedPassword,
         },
     });

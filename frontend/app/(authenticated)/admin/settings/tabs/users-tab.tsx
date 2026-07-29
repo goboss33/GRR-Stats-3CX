@@ -27,7 +27,7 @@ export function UsersTab() {
     const [users, setUsers] = useState<AppUser[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-    const [currentUserRole, setCurrentUserRole] = useState<string>("USER");
+    const [currentUserRole, setCurrentUserRole] = useState<string>("AGENT");
     const [editUser, setEditUser] = useState<AppUser | null>(null);
     const [editForm, setEditForm] = useState({ firstName: "", lastName: "", email: "", role: "" });
     const [editLoading, setEditLoading] = useState(false);
@@ -39,7 +39,7 @@ export function UsersTab() {
         else toast.error(m.text);
     };
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
-    const [createForm, setCreateForm] = useState({ firstName: "", lastName: "", email: "", password: "", role: "USER" });
+    const [createForm, setCreateForm] = useState({ firstName: "", lastName: "", email: "", password: "", role: "AGENT" });
     const [createLoading, setCreateLoading] = useState(false);
 
     const loadUsers = () => {
@@ -59,7 +59,7 @@ export function UsersTab() {
             .then((data) => {
                 if (data.user) {
                     setCurrentUserId(data.user.id);
-                    setCurrentUserRole(data.user.role || "USER");
+                    setCurrentUserRole(data.user.role || "AGENT");
                 }
             });
     }, []);
@@ -126,7 +126,7 @@ export function UsersTab() {
             } else {
                 setMessage({ type: "success", text: "Utilisateur créé avec succès" });
                 setCreateDialogOpen(false);
-                setCreateForm({ firstName: "", lastName: "", email: "", password: "", role: "USER" });
+                setCreateForm({ firstName: "", lastName: "", email: "", password: "", role: "AGENT" });
                 loadUsers();
             }
         } catch {
@@ -195,12 +195,12 @@ export function UsersTab() {
                                                     variant="outline"
                                                     className={cn(
                                                         user.role === "ADMIN" && "bg-red-50 text-red-700 border-red-200",
-                                                        user.role === "SUPERUSER" && "bg-amber-50 text-amber-700 border-amber-200",
+                                                        user.role === "MANAGER" && "bg-amber-50 text-amber-700 border-amber-200",
                                                         user.role === "MODERATOR" && "bg-blue-50 text-blue-700 border-blue-200",
-                                                        user.role === "USER" && "bg-green-50 text-green-700 border-green-200"
+                                                        user.role === "AGENT" && "bg-green-50 text-green-700 border-green-200"
                                                     )}
                                                 >
-                                                    {user.role === "ADMIN" ? "Administrateur" : user.role === "SUPERUSER" ? "Manager" : user.role === "MODERATOR" ? "Modérateur" : "Utilisateur"}
+                                                    {user.role === "ADMIN" ? "Administrateur" : user.role === "MANAGER" ? "Manager" : user.role === "MODERATOR" ? "Modérateur" : "Agent"}
                                                 </Badge>
                                             </td>
                                             <td className="py-3 px-4">
@@ -283,9 +283,9 @@ export function UsersTab() {
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="USER">Utilisateur</SelectItem>
+                                    <SelectItem value="AGENT">Agent</SelectItem>
                                     <SelectItem value="MODERATOR">Modérateur</SelectItem>
-                                    <SelectItem value="SUPERUSER">Manager</SelectItem>
+                                    <SelectItem value="MANAGER">Manager</SelectItem>
                                     {currentUserRole === "ADMIN" && <SelectItem value="ADMIN">Administrateur</SelectItem>}
                                 </SelectContent>
                             </Select>
@@ -332,9 +332,9 @@ export function UsersTab() {
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="USER">Utilisateur</SelectItem>
+                                    <SelectItem value="AGENT">Agent</SelectItem>
                                     <SelectItem value="MODERATOR">Modérateur</SelectItem>
-                                    <SelectItem value="SUPERUSER">Manager</SelectItem>
+                                    <SelectItem value="MANAGER">Manager</SelectItem>
                                     {currentUserRole === "ADMIN" && <SelectItem value="ADMIN">Administrateur</SelectItem>}
                                 </SelectContent>
                             </Select>

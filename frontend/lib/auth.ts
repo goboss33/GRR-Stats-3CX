@@ -8,9 +8,11 @@ import { logger } from "@/lib/logger";
 function getRoleFromGroups(groups: string[]): string | null {
     const groupMappings = [
         { groupId: process.env.AZURE_GROUP_ADMIN_ID, role: "ADMIN" },
-        { groupId: process.env.AZURE_GROUP_SUPERUSER_ID, role: "SUPERUSER" },
         { groupId: process.env.AZURE_GROUP_MODERATOR_ID, role: "MODERATOR" },
-        { groupId: process.env.AZURE_GROUP_USER_ID, role: "USER" },
+        // MANAGER/AGENT remplacent SUPERUSER/USER. Les anciennes variables restent
+        // acceptées : un environnement non mis à jour (Portainer) continue de fonctionner.
+        { groupId: process.env.AZURE_GROUP_MANAGER_ID ?? process.env.AZURE_GROUP_SUPERUSER_ID, role: "MANAGER" },
+        { groupId: process.env.AZURE_GROUP_AGENT_ID ?? process.env.AZURE_GROUP_USER_ID, role: "AGENT" },
     ];
 
     for (const mapping of groupMappings) {
@@ -150,7 +152,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                         await prismaAuth.user.update({
                             where: { id: existingUser.id },
                             data: {
-                                role: role as "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER",
+                                role: role as "ADMIN" | "MODERATOR" | "MANAGER" | "AGENT",
                                 authProvider: "MICROSOFT",
                                 azureAdId: user.id,
                                 firstName: firstName || existingUser.firstName,
@@ -168,7 +170,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                                 email: user.email!,
                                 firstName: firstName,
                                 lastName: lastName,
-                                role: role as "ADMIN" | "SUPERUSER" | "MODERATOR" | "USER",
+                                role: role as "ADMIN" | "MODERATOR" | "MANAGER" | "AGENT",
                                 authProvider: "MICROSOFT",
                                 azureAdId: user.id,
                                 profilePicture: profilePicture,
