@@ -13,6 +13,7 @@
 
 import { Prisma } from "@prisma/cdr-client";
 import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
+import type { AccessScope } from "@/lib/access-scope";
 import {
     SQL_SYSTEM_DEST_TYPES,
     SQL_SYSTEM_ENTITY_TYPES,
@@ -57,6 +58,178 @@ export interface QueueMemberRow {
 }
 
 // ============================================
+// FILTRAGE PAR PÉRIMÈTRE
+// ============================================
+
+/**
+ * Fragment SQL restreignant les appels au périmètre de l'utilisateur.
+ * Un appel est retenu dès qu'AU MOINS UN de ses segments touche une file ou une
+ * extension autorisée (cf. PRD droits d'accès §8.3).
+ *
+ * Renvoie `Prisma.empty` quand il n'y a rien à filtrer, et `AND false` quand la
+ * portée est vide : on préfère ne rien afficher plutôt que tout afficher.
+ *
+ * ⚠️ Le fragment doit être composé avec Prisma.sql PUIS passé en argument unique
+ * à $queryRaw() — dans un tagged template il serait lié comme une valeur.
+ */
+// Non exportée : ce module est "use server", où tout export doit être une
+// fonction asynchrone (un helper synchrone exporté casse la compilation).
+function buildScopeFilter(scope?: AccessScope): Prisma.Sql {
+    if (!scope || scope.unrestricted) return Prisma.empty;
+    if (scope.empty) return Prisma.sql`AND false`;
+
+    const conditions: Prisma.Sql[] = [];
+    if (scope.queueNumbers && scope.queueNumbers.length > 0) {
+        conditions.push(
+            Prisma.sql`(destination_dn_type = 'queue' AND destination_dn_number IN (${Prisma.join(scope.queueNumbers)}))`,
+        );
+    }
+    if (scope.extensionNumbers && scope.extensionNumbers.length > 0) {
+        conditions.push(
+            Prisma.sql`(destination_dn_type = 'extension' AND destination_dn_number IN (${Prisma.join(scope.extensionNumbers)}))`,
+        );
+    }
+    if (conditions.length === 0) return Prisma.sql`AND false`;
+
+    return Prisma.sql`AND call_history_id IN (
+        SELECT call_history_id FROM cdroutput WHERE ${Prisma.join(conditions, " OR ")}
+    )`;
+}
+
+// ============================================
+// MÉTRIQUES GLOBALES (KPIs du dashboard)
+// ============================================
+
+export interface GlobalMetricsRow {
+    total_calls: bigint;
+    answered_calls: bigint;
+    missed_calls: bigint;
+    voicemail_calls: bigint;
+    busy_calls: bigint;
+    avg_human_duration: string | null;
+    avg_wait_time: string | null;
+    avg_agents_per_call: string | null;
+    agents_1: bigint;
+    agents_2: bigint;
+    agents_3_plus: bigint;
+}
+
+/**
+ * KPIs globaux d'une période, filtrés par périmètre.
+ *
+ * Source unique partagée par le dashboard et /api/analytics/global : dupliquer
+ * cette requête ferait diverger les chiffres de l'interface et de l'API.
+ */
+export async function getGlobalMetricsRaw(
+    serverId: ServerId,
+    startDate: Date,
+    endDate: Date,
+    scope?: AccessScope
+): Promise<GlobalMetricsRow> {
+    const prisma = getPrismaCdr(serverId);
+    const scopeFilter = buildScopeFilter(scope);
+    // Listes de types système : du SQL, pas des valeurs (cf. note sur getTimelineDataRaw).
+    const systemDestTypes = Prisma.raw(SQL_SYSTEM_DEST_TYPES);
+    const systemEntityTypes = Prisma.raw(SQL_SYSTEM_ENTITY_TYPES);
+
+    const query = Prisma.sql`
+        WITH call_aggregates AS (
+            SELECT
+                call_history_id,
+                COUNT(*) as segment_count,
+                MIN(cdr_started_at) as first_started_at,
+                MAX(cdr_ended_at) as last_ended_at,
+                MIN(cdr_answered_at) as first_answered_at
+            FROM cdroutput
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+              ${scopeFilter}
+            GROUP BY call_history_id
+        ),
+        last_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                destination_dn_type as last_dest_type,
+                destination_entity_type as last_dest_entity_type,
+                cdr_answered_at,
+                cdr_started_at as last_started_at,
+                cdr_ended_at as last_ended_at,
+                termination_reason_details
+            FROM cdroutput
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        ),
+        answered_segments AS (
+            SELECT DISTINCT ON (c.call_history_id)
+                c.call_history_id,
+                c.cdr_answered_at as answered_at
+            FROM cdroutput c
+            WHERE c.cdr_answered_at IS NOT NULL
+              AND c.destination_dn_type = 'extension'
+              AND c.cdr_started_at >= ${startDate}
+              AND c.cdr_started_at <= ${endDate}
+            ORDER BY c.call_history_id, c.cdr_answered_at ASC, c.cdr_id ASC
+        ),
+        call_outcomes AS (
+            SELECT
+                ca.call_history_id,
+                CASE
+                    WHEN ls.last_dest_type IN ('vmail_console', 'voicemail') OR ls.last_dest_entity_type = 'voicemail' THEN 'voicemail'
+                    WHEN ls.termination_reason_details ILIKE '%busy%' THEN 'busy'
+                    WHEN ls.cdr_answered_at IS NOT NULL
+                         AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
+                         AND (
+                             (ls.last_dest_type IN (${systemDestTypes}) OR ls.last_dest_entity_type IN (${systemEntityTypes}))
+                             AND ans.answered_at IS NOT NULL
+                             OR
+                             (ls.last_dest_type NOT IN (${systemDestTypes}) AND ls.last_dest_entity_type NOT IN (${systemEntityTypes}))
+                         )
+                    THEN 'answered'
+                    ELSE 'missed'
+                END as status
+            FROM call_aggregates ca
+            JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+            LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
+        ),
+        answered_calls_data AS (
+            SELECT
+                ca.call_history_id,
+                EXTRACT(EPOCH FROM (ls.last_ended_at - ls.cdr_answered_at)) as talk_duration,
+                EXTRACT(EPOCH FROM (COALESCE(ans.answered_at, ca.first_answered_at) - ca.first_started_at)) as wait_time,
+                (SELECT COUNT(DISTINCT c2.destination_dn_number)
+                 FROM cdroutput c2
+                 WHERE c2.call_history_id = ca.call_history_id
+                   AND c2.cdr_answered_at IS NOT NULL
+                   AND c2.destination_dn_type = 'extension'
+                ) as agent_count
+            FROM call_aggregates ca
+            JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+            LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
+            WHERE ls.cdr_answered_at IS NOT NULL
+        )
+        SELECT
+            COUNT(*) as total_calls,
+            COUNT(*) FILTER (WHERE co.status = 'answered') as answered_calls,
+            COUNT(*) FILTER (WHERE co.status = 'missed') as missed_calls,
+            COUNT(*) FILTER (WHERE co.status = 'voicemail') as voicemail_calls,
+            COUNT(*) FILTER (WHERE co.status = 'busy') as busy_calls,
+            ROUND(AVG(acd.talk_duration)::numeric, 1) as avg_human_duration,
+            ROUND(AVG(acd.wait_time)::numeric, 1) as avg_wait_time,
+            ROUND(AVG(acd.agent_count)::numeric, 2) as avg_agents_per_call,
+            COUNT(*) FILTER (WHERE acd.agent_count = 1) as agents_1,
+            COUNT(*) FILTER (WHERE acd.agent_count = 2) as agents_2,
+            COUNT(*) FILTER (WHERE acd.agent_count >= 3) as agents_3_plus
+        FROM call_aggregates ca
+        JOIN call_outcomes co ON ca.call_history_id = co.call_history_id
+        LEFT JOIN answered_calls_data acd ON ca.call_history_id = acd.call_history_id
+    `;
+
+    const rows = await prisma.$queryRaw<GlobalMetricsRow[]>(query);
+    return rows[0];
+}
+
+// ============================================
 // TIMELINE & HEATMAP (Dashboard charts)
 // ============================================
 
@@ -64,20 +237,31 @@ export async function getTimelineDataRaw(
     serverId: ServerId,
     startDate: Date,
     endDate: Date,
-    timezone: string = "Europe/Zurich"
+    timezone: string = "Europe/Zurich",
+    scope?: AccessScope
 ): Promise<TimelineRow[]> {
     const prisma = getPrismaCdr(serverId);
     const diffMs = endDate.getTime() - startDate.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
     const interval = diffDays <= 2 ? "hour" : "day";
 
-    return prisma.$queryRaw<TimelineRow[]>`
+    // ⚠️ Les listes de types système sont du SQL, pas des valeurs : elles doivent
+    // être injectées avec Prisma.raw. Interpolées dans un tagged template, elles
+    // seraient liées comme UNE SEULE chaîne et la condition IN serait toujours
+    // fausse — un appel décroché par une file/IVR sans humain aurait alors été
+    // compté comme « répondu » (constaté : 178 appels sur une seule journée).
+    // Ce sont des constantes du code, jamais des entrées utilisateur.
+    const systemDestTypes = Prisma.raw(SQL_SYSTEM_DEST_TYPES);
+    const systemEntityTypes = Prisma.raw(SQL_SYSTEM_ENTITY_TYPES);
+
+    const query = Prisma.sql`
         WITH call_aggregates AS (
             SELECT call_history_id,
                    MIN(cdr_started_at) AS first_started_at
             FROM cdroutput
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
+              ${buildScopeFilter(scope)}
             GROUP BY call_history_id
         ),
         last_segments AS (
@@ -115,8 +299,8 @@ export async function getTimelineDataRaw(
                     WHEN ls.last_answered_at IS NOT NULL
                          AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
                         THEN CASE
-                            WHEN ls.last_dest_type IN (${SQL_SYSTEM_DEST_TYPES})
-                                 OR ls.last_dest_entity_type IN (${SQL_SYSTEM_ENTITY_TYPES})
+                            WHEN ls.last_dest_type IN (${systemDestTypes})
+                                 OR ls.last_dest_entity_type IN (${systemEntityTypes})
                                 THEN CASE WHEN ans.answered_at IS NOT NULL THEN 'answered' ELSE 'abandoned' END
                             ELSE 'answered'
                             END
@@ -134,6 +318,8 @@ export async function getTimelineDataRaw(
         GROUP BY date_group
         ORDER BY date_group ASC
     `;
+
+    return prisma.$queryRaw<TimelineRow[]>(query);
 }
 
 export async function getQueueTimelineDataRaw(
@@ -223,7 +409,8 @@ export async function getHeatmapDataRaw(
     startDate: Date,
     endDate: Date,
     timezone: string = "Europe/Zurich",
-    queueNumber?: string
+    queueNumber?: string,
+    scope?: AccessScope
 ): Promise<HeatmapRow[]> {
     const prisma = getPrismaCdr(serverId);
     const queueFilter = queueNumber
@@ -243,6 +430,7 @@ export async function getHeatmapDataRaw(
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
               ${queueFilter}
+              ${buildScopeFilter(scope)}
             GROUP BY call_history_id
         )
         SELECT
@@ -275,130 +463,61 @@ export async function getConcurrentCallsData(
     serverId: ServerId,
     startDate: Date,
     endDate: Date,
-    timezone: string = "Europe/Zurich"
+    timezone: string = "Europe/Zurich",
+    scope?: AccessScope
 ): Promise<ConcurrentCallsRow[]> {
     const prisma = getPrismaCdr(serverId);
     const diffMs = endDate.getTime() - startDate.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    const scopeFilter = buildScopeFilter(scope);
 
-    if (diffDays <= 1) {
-        return prisma.$queryRaw<ConcurrentCallsRow[]>`
-            WITH call_spans AS (
-                SELECT
-                    call_history_id,
-                    MIN(cdr_started_at) AS call_start,
-                    MAX(cdr_ended_at) AS call_end
-                FROM cdroutput
-                WHERE cdr_started_at >= ${startDate}
-                  AND cdr_started_at <= ${endDate}
-                  AND call_history_id IS NOT NULL
-                GROUP BY call_history_id
-                HAVING MIN(cdr_started_at) IS NOT NULL
-                   AND MAX(cdr_ended_at) IS NOT NULL
-            ),
-            bucketed_events AS (
-                SELECT 
-                    date_trunc('minute', call_start AT TIME ZONE ${timezone}) AS bucket,
-                    1 AS change
-                FROM call_spans
-                UNION ALL
-                SELECT 
-                    date_trunc('minute', call_end AT TIME ZONE ${timezone}) AS bucket,
-                    -1 AS change
-                FROM call_spans
-            ),
-            bucket_changes AS (
-                SELECT 
-                    bucket,
-                    SUM(change) AS net_change
-                FROM bucketed_events
-                GROUP BY bucket
-            )
+    // Granularité du regroupement selon la période analysée.
+    const bucketExpr = (column: string): Prisma.Sql => {
+        const col = Prisma.raw(column);
+        if (diffDays <= 1) {
+            return Prisma.sql`date_trunc('minute', ${col} AT TIME ZONE ${timezone})`;
+        }
+        if (diffDays <= 7) {
+            return Prisma.sql`date_trunc('hour', ${col} AT TIME ZONE ${timezone}) + (EXTRACT(MINUTE FROM ${col})::int / 5) * INTERVAL '5 minutes'`;
+        }
+        return Prisma.sql`date_trunc('hour', ${col} AT TIME ZONE ${timezone})`;
+    };
+
+    // Une seule requête : seule l'expression de regroupement variait entre les
+    // trois anciennes variantes, dupliquées à l'identique par ailleurs.
+    const query = Prisma.sql`
+        WITH call_spans AS (
             SELECT
-                bucket AS timestamp,
-                SUM(net_change) OVER (ORDER BY bucket ASC)::bigint AS concurrent_calls
-            FROM bucket_changes
-            ORDER BY bucket ASC
-        `;
-    } else if (diffDays <= 7) {
-        return prisma.$queryRaw<ConcurrentCallsRow[]>`
-            WITH call_spans AS (
-                SELECT
-                    call_history_id,
-                    MIN(cdr_started_at) AS call_start,
-                    MAX(cdr_ended_at) AS call_end
-                FROM cdroutput
-                WHERE cdr_started_at >= ${startDate}
-                  AND cdr_started_at <= ${endDate}
-                  AND call_history_id IS NOT NULL
-                GROUP BY call_history_id
-                HAVING MIN(cdr_started_at) IS NOT NULL
-                   AND MAX(cdr_ended_at) IS NOT NULL
-            ),
-            bucketed_events AS (
-                SELECT 
-                    date_trunc('hour', call_start AT TIME ZONE ${timezone}) + (EXTRACT(MINUTE FROM call_start)::int / 5) * INTERVAL '5 minutes' AS bucket,
-                    1 AS change
-                FROM call_spans
-                UNION ALL
-                SELECT 
-                    date_trunc('hour', call_end AT TIME ZONE ${timezone}) + (EXTRACT(MINUTE FROM call_end)::int / 5) * INTERVAL '5 minutes' AS bucket,
-                    -1 AS change
-                FROM call_spans
-            ),
-            bucket_changes AS (
-                SELECT 
-                    bucket,
-                    SUM(change) AS net_change
-                FROM bucketed_events
-                GROUP BY bucket
-            )
-            SELECT
-                bucket AS timestamp,
-                SUM(net_change) OVER (ORDER BY bucket ASC)::bigint AS concurrent_calls
-            FROM bucket_changes
-            ORDER BY bucket ASC
-        `;
-    } else {
-        return prisma.$queryRaw<ConcurrentCallsRow[]>`
-            WITH call_spans AS (
-                SELECT
-                    call_history_id,
-                    MIN(cdr_started_at) AS call_start,
-                    MAX(cdr_ended_at) AS call_end
-                FROM cdroutput
-                WHERE cdr_started_at >= ${startDate}
-                  AND cdr_started_at <= ${endDate}
-                  AND call_history_id IS NOT NULL
-                GROUP BY call_history_id
-                HAVING MIN(cdr_started_at) IS NOT NULL
-                   AND MAX(cdr_ended_at) IS NOT NULL
-            ),
-            bucketed_events AS (
-                SELECT 
-                    date_trunc('hour', call_start AT TIME ZONE ${timezone}) AS bucket,
-                    1 AS change
-                FROM call_spans
-                UNION ALL
-                SELECT 
-                    date_trunc('hour', call_end AT TIME ZONE ${timezone}) AS bucket,
-                    -1 AS change
-                FROM call_spans
-            ),
-            bucket_changes AS (
-                SELECT 
-                    bucket,
-                    SUM(change) AS net_change
-                FROM bucketed_events
-                GROUP BY bucket
-            )
-            SELECT
-                bucket AS timestamp,
-                SUM(net_change) OVER (ORDER BY bucket ASC)::bigint AS concurrent_calls
-            FROM bucket_changes
-            ORDER BY bucket ASC
-        `;
-    }
+                call_history_id,
+                MIN(cdr_started_at) AS call_start,
+                MAX(cdr_ended_at) AS call_end
+            FROM cdroutput
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+              AND call_history_id IS NOT NULL
+              ${scopeFilter}
+            GROUP BY call_history_id
+            HAVING MIN(cdr_started_at) IS NOT NULL
+               AND MAX(cdr_ended_at) IS NOT NULL
+        ),
+        bucketed_events AS (
+            SELECT ${bucketExpr("call_start")} AS bucket, 1 AS change FROM call_spans
+            UNION ALL
+            SELECT ${bucketExpr("call_end")} AS bucket, -1 AS change FROM call_spans
+        ),
+        bucket_changes AS (
+            SELECT bucket, SUM(change) AS net_change
+            FROM bucketed_events
+            GROUP BY bucket
+        )
+        SELECT
+            bucket AS timestamp,
+            SUM(net_change) OVER (ORDER BY bucket ASC)::bigint AS concurrent_calls
+        FROM bucket_changes
+        ORDER BY bucket ASC
+    `;
+
+    return prisma.$queryRaw<ConcurrentCallsRow[]>(query);
 }
 
 // ============================================

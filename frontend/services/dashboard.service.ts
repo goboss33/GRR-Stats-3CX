@@ -7,7 +7,9 @@ import {
     getConcurrentCallsData,
     getQueueTimelineDataRaw,
     getQueueHeatmapDataRaw,
+    getGlobalMetricsRaw,
 } from "@/services/repositories/cdr.repository";
+import { resolveAccessScope, unrestrictedScope, type AccessScope } from "@/lib/access-scope";
 import type {
     GlobalMetrics,
     TimelineDataPoint,
@@ -59,17 +61,64 @@ interface ApiGlobalResponse {
     } | null;
 }
 
+/**
+ * Portée applicable au dashboard : filtrée par périmètre, sauf pour les
+ * utilisateurs autorisés à voir les chiffres de l'entreprise (option C du PRD).
+ */
+async function resolveDashboardScope(serverId: ServerId): Promise<AccessScope> {
+    const scope = await resolveAccessScope(serverId);
+    return scope.canViewCompanyWide ? unrestrictedScope() : scope;
+}
+
 export async function getGlobalMetrics(
     serverId: ServerId,
     startDate: Date,
     endDate: Date
 ): Promise<GlobalMetrics> {
-    const apiData = await fetchApi<ApiGlobalResponse>("/api/analytics/global", {
-        server: serverId,
-        start: startDate.toISOString(),
-        end: endDate.toISOString(),
-        includePrevious: "true",
-    });
+    const scope = await resolveDashboardScope(serverId);
+
+    // Période N-1 de même durée, se terminant juste avant le début de la période.
+    const durationMs = endDate.getTime() - startDate.getTime();
+    const prevEnd = new Date(startDate.getTime() - 1);
+    const prevStart = new Date(prevEnd.getTime() - durationMs);
+
+    // Requête locale filtrée (l'API interne, elle, n'est pas consciente du périmètre).
+    // Exécution SÉQUENTIELLE, comme le faisait la route : cette requête est lourde
+    // (sous-requête corrélée par appel) et la paralléliser aggrave la contention.
+    const current = await getGlobalMetricsRaw(serverId, startDate, endDate, scope);
+    const previous = await getGlobalMetricsRaw(serverId, prevStart, prevEnd, scope);
+
+    const num = (v: string | null) => Number(v) || 0;
+    const apiData: ApiGlobalResponse = {
+        totalCalls: Number(current.total_calls),
+        answeredCalls: Number(current.answered_calls),
+        missedCalls: Number(current.missed_calls),
+        voicemailCalls: Number(current.voicemail_calls),
+        busyCalls: Number(current.busy_calls),
+        avgDurationSeconds: num(current.avg_human_duration),
+        avgWaitTimeSeconds: num(current.avg_wait_time),
+        avgAgentsPerCall: num(current.avg_agents_per_call),
+        agentsDistribution: {
+            agents1: Number(current.agents_1),
+            agents2: Number(current.agents_2),
+            agents3Plus: Number(current.agents_3_plus),
+        },
+        previousPeriod: {
+            totalCalls: Number(previous.total_calls),
+            answeredCalls: Number(previous.answered_calls),
+            missedCalls: Number(previous.missed_calls),
+            voicemailCalls: Number(previous.voicemail_calls),
+            busyCalls: Number(previous.busy_calls),
+            avgDurationSeconds: num(previous.avg_human_duration),
+            avgWaitTimeSeconds: num(previous.avg_wait_time),
+            avgAgentsPerCall: num(previous.avg_agents_per_call),
+            agentsDistribution: {
+                agents1: Number(previous.agents_1),
+                agents2: Number(previous.agents_2),
+                agents3Plus: Number(previous.agents_3_plus),
+            },
+        },
+    };
 
     const totalCalls = apiData.totalCalls;
     const answeredCalls = apiData.answeredCalls;
@@ -116,8 +165,9 @@ export async function getTimelineData(
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
     const interval = diffDays <= 2 ? "hour" : "day";
     const timezone = await getServerTimezone(serverId);
+    const scope = await resolveDashboardScope(serverId);
 
-    const rawData = await getTimelineDataRaw(serverId, startDate, endDate, timezone);
+    const rawData = await getTimelineDataRaw(serverId, startDate, endDate, timezone, scope);
 
     return rawData.map((row) => {
         const date = new Date(row.date_group);
@@ -142,7 +192,8 @@ export async function getHeatmapData(
     endDate: Date
 ): Promise<HeatmapDataPoint[]> {
     const timezone = await getServerTimezone(serverId);
-    const rawData = await getHeatmapDataRaw(serverId, startDate, endDate, timezone);
+    const scope = await resolveDashboardScope(serverId);
+    const rawData = await getHeatmapDataRaw(serverId, startDate, endDate, timezone, undefined, scope);
     return rawData.map((row) => ({
         dayOfWeek: row.day_of_week,
         hourOfDay: row.hour_of_day,
@@ -201,7 +252,8 @@ export async function getConcurrentCallsChartData(
     endDate: Date
 ): Promise<{ data: ConcurrentCallsDataPoint[]; summary: ConcurrentCallsSummary }> {
     const timezone = await getServerTimezone(serverId);
-    const rawData = await getConcurrentCallsData(serverId, startDate, endDate, timezone);
+    const scope = await resolveDashboardScope(serverId);
+    const rawData = await getConcurrentCallsData(serverId, startDate, endDate, timezone, scope);
     const threshold = await getServerLicenceThreshold(serverId);
     const trunkThreshold = await getServerTrunkThreshold(serverId);
 
