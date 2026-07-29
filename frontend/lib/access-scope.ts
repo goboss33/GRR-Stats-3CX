@@ -71,8 +71,13 @@ export async function resolveAccessScope(tenantId: ServerId): Promise<AccessScop
     const session = await auth();
     if (!session?.user) return emptyScope();
 
+    return resolveScopeForUser(session.user.id, tenantId);
+}
+
+/** Portée d'un utilisateur donné (partagée par la session et les clés API). */
+async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<AccessScope> {
     const user = await prismaAuth.user.findUnique({
-        where: { id: session.user.id },
+        where: { id: userId },
         select: {
             role: true,
             canViewCompanyWide: true,
@@ -107,14 +112,14 @@ export async function resolveAccessScope(tenantId: ServerId): Promise<AccessScop
 
     // MANAGER : périmètre explicite de files + extensions qui en découlent.
     const perimeter = await prismaAuth.userQueuePerimeter.findMany({
-        where: { userId: session.user.id, queue: { tenantId } },
+        where: { userId, queue: { tenantId } },
         select: { queue: { select: { queueNumber: true } } },
     });
     const queueNumbers = perimeter.map((p) => p.queue.queueNumber);
 
     if (queueNumbers.length === 0) {
         // Un manager sans périmètre peut tout de même avoir des surcharges.
-        const onlyOverrides = await resolveExtensions(session.user.id, tenantId, []);
+        const onlyOverrides = await resolveExtensions(userId, tenantId, []);
         if (onlyOverrides.length === 0) return emptyScope(maskPhoneNumbers);
         return {
             unrestricted: false,
@@ -126,7 +131,7 @@ export async function resolveAccessScope(tenantId: ServerId): Promise<AccessScop
         };
     }
 
-    const extensionNumbers = await resolveExtensions(session.user.id, tenantId, queueNumbers);
+    const extensionNumbers = await resolveExtensions(userId, tenantId, queueNumbers);
 
     return {
         unrestricted: false,
@@ -136,6 +141,35 @@ export async function resolveAccessScope(tenantId: ServerId): Promise<AccessScop
         canViewCompanyWide: user.canViewCompanyWide,
         empty: false,
     };
+}
+
+/**
+ * Portée d'une CLÉ API : celle de son propriétaire, résolue à chaque requête.
+ *
+ * Résolution dynamique et non figée à la création (cf. PRD droits d'accès D11) :
+ * si le périmètre du propriétaire est réduit, ses clés le sont aussitôt ; si son
+ * compte disparaît, ses clés cessent de fonctionner.
+ *
+ * Sans cela, un manager créerait une clé et lirait l'intégralité des données via
+ * l'API — le filtrage de l'interface ne servirait plus à rien.
+ */
+export async function resolveApiKeyScope(apiKeyId: string, tenantId: ServerId): Promise<AccessScope> {
+    const settings = await prismaAuth.appSettings.findUnique({
+        where: { id: "global" },
+        select: { perimeterEnforcementEnabled: true },
+    });
+    if (!settings?.perimeterEnforcementEnabled) return unrestrictedScope();
+
+    const key = await prismaAuth.apiKey.findUnique({
+        where: { id: apiKeyId },
+        select: { createdBy: true },
+    });
+
+    // Clé interne (créée par le système, sans propriétaire) : portée complète.
+    // Elle n'est utilisée que par les appels serveur-à-serveur de l'application.
+    if (!key?.createdBy || key.createdBy === "system") return unrestrictedScope();
+
+    return resolveScopeForUser(key.createdBy, tenantId);
 }
 
 /** Extensions déduites des files du périmètre, surcharges appliquées. */

@@ -4,6 +4,7 @@ import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
 import { parseDateParam } from "@/lib/date-params";
 import { logger } from "@/lib/logger";
+import { resolveApiKeyScope } from "@/lib/access-scope";
 
 export async function GET(request: NextRequest) {
     const authResult = await validateApiKey(request);
@@ -18,10 +19,17 @@ export async function GET(request: NextRequest) {
         
         const prisma = getPrismaCdr(serverId);
         
+        // La clé API hérite du périmètre de son propriétaire : sans cela, un
+        // manager créerait une clé et lirait toutes les files via l'API.
+        const scope = await resolveApiKeyScope(authResult.apiKeyId, serverId);
+
         const queueNumber = url.searchParams.get("queueNumber");
         logger.debug("[queue/route] Received queueNumber:", queueNumber);
         if (!queueNumber) {
             return NextResponse.json({ error: "queueNumber parameter is required" }, { status: 400 });
+        }
+        if (!scope.unrestricted && (scope.empty || !scope.queueNumbers?.includes(queueNumber))) {
+            return NextResponse.json({ error: "Cette file d'attente n'est pas dans votre périmètre" }, { status: 403 });
         }
 
         const start = parseDateParam(url.searchParams.get("start"), new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));

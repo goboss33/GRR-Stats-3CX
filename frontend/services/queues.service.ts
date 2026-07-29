@@ -3,6 +3,7 @@
 import { ServerId } from "@/lib/prisma-cdr";
 import { getQueueMembersRaw } from "@/services/repositories/cdr.repository";
 import type { QueueInfo, QueueMember } from "@/services/domain/call.types";
+import { resolveAccessScope } from "@/lib/access-scope";
 
 /**
  * Queues Service — Queue Members
@@ -11,6 +12,8 @@ import type { QueueInfo, QueueMember } from "@/services/domain/call.types";
  */
 
 export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> {
+    // Portée résolue ici (module "use server" : un paramètre serait forgeable).
+    const scope = await resolveAccessScope(serverId);
     const result = await getQueueMembersRaw(serverId);
 
     const queuesMap = new Map<string, QueueInfo>();
@@ -57,5 +60,11 @@ export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> 
         queue.memberCount = uniqueMembers.length;
     });
 
-    return Array.from(queuesMap.values());
+    const queues = Array.from(queuesMap.values());
+
+    // Le sélecteur de files ne doit proposer que le périmètre de l'utilisateur.
+    if (scope.unrestricted) return queues;
+    if (scope.empty || !scope.queueNumbers) return [];
+    const allowed = new Set(scope.queueNumbers);
+    return queues.filter((q) => allowed.has(q.queueNumber));
 }

@@ -4,6 +4,7 @@ import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
 import { parseDateParam } from "@/lib/date-params";
 import { logger } from "@/lib/logger";
+import { resolveApiKeyScope } from "@/lib/access-scope";
 import { buildDirectSegmentWhereClause } from "@/services/domain/call-aggregation";
 
 export async function GET(request: NextRequest) {
@@ -23,6 +24,13 @@ export async function GET(request: NextRequest) {
         logger.debug("[agents/route] Received queueNumber:", queueNumber);
         if (!queueNumber) {
             return NextResponse.json({ error: "queueNumber parameter is required" }, { status: 400 });
+        }
+
+        // Même règle que pour les files : la clé n'ouvre que le périmètre de son
+        // propriétaire.
+        const scope = await resolveApiKeyScope(authResult.apiKeyId, serverId);
+        if (!scope.unrestricted && (scope.empty || !scope.queueNumbers?.includes(queueNumber))) {
+            return NextResponse.json({ error: "Cette file d'attente n'est pas dans votre périmètre" }, { status: 403 });
         }
 
         const start = parseDateParam(url.searchParams.get("start"), new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));

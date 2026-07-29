@@ -3,6 +3,7 @@
 import { ServerId } from "@/lib/prisma-cdr";
 import { getServerTimezone } from "@/lib/servers";
 import { logger } from "@/lib/logger";
+import { resolveAccessScope } from "@/lib/access-scope";
 import {
     getQueueName,
     getDailyTrendRaw,
@@ -85,6 +86,13 @@ export async function getQueueStatistics(
     startDate: Date,
     endDate: Date
 ): Promise<QueueStatistics> {
+    // Une file hors périmètre doit être refusée même si son numéro est deviné :
+    // masquer l'entrée du sélecteur ne suffit pas.
+    const scope = await resolveAccessScope(serverId);
+    if (!scope.unrestricted && (scope.empty || !scope.queueNumbers?.includes(queueNumber))) {
+        throw new Error("Cette file d'attente n'est pas dans votre périmètre");
+    }
+
     const [queueName, kpis, agents, dailyTrend, hourlyTrend, timelineData, heatmapData] = await Promise.all([
         getQueueName(serverId, queueNumber),
         computeQueueKPIs(serverId, queueNumber, startDate, endDate),

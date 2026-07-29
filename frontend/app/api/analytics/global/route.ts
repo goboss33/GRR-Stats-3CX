@@ -4,6 +4,8 @@ import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
 import { parseDateParam } from "@/lib/date-params";
 import { logger } from "@/lib/logger";
+import { resolveApiKeyScope } from "@/lib/access-scope";
+import { getGlobalMetricsRaw } from "@/services/repositories/cdr.repository";
 import {
     SQL_SYSTEM_DEST_TYPES,
     SQL_SYSTEM_ENTITY_TYPES,
@@ -129,17 +131,18 @@ export async function GET(request: NextRequest) {
             LEFT JOIN answered_calls_data acd ON ca.call_history_id = acd.call_history_id
         `;
 
+        // Portée héritée du propriétaire de la clé.
+        const scope = await resolveApiKeyScope(authResult.apiKeyId, serverId);
+
         logger.debug("[global/route] Executing current period query:", { start, end });
-        const currentResult = await prisma.$queryRawUnsafe(metricsQuery, start, end);
+        const current = await getGlobalMetricsRaw(serverId, start, end, scope);
         logger.debug("[global/route] Current period query completed");
-        const current = (currentResult as any[])[0];
 
         let previous = null;
         if (includePrevious) {
             logger.debug("[global/route] Executing previous period query:", { prevStart, prevEnd });
-            const prevResult = await prisma.$queryRawUnsafe(metricsQuery, prevStart, prevEnd);
+            const prevRow = await getGlobalMetricsRaw(serverId, prevStart, prevEnd, scope);
             logger.debug("[global/route] Previous period query completed");
-            const prevRow = (prevResult as any[])[0];
             previous = {
                 totalCalls: Number(prevRow.total_calls),
                 answeredCalls: Number(prevRow.answered_calls),

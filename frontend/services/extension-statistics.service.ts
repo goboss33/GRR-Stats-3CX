@@ -2,6 +2,8 @@
 
 import { ServerId } from "@/lib/prisma-cdr";
 import { getServerTimezone } from "@/lib/servers";
+import { resolveAccessScope } from "@/lib/access-scope";
+import { logger } from "@/lib/logger";
 import {
     getInboundDayStats,
     getOutboundDayStats,
@@ -46,9 +48,21 @@ import type {
 
 export async function getExtensionDirectory(serverId: ServerId): Promise<ExtensionDirectory> {
     try {
-        return await getDirectory(serverId);
+        const directory = await getDirectory(serverId);
+        const scope = await resolveAccessScope(serverId);
+        if (scope.unrestricted) return directory;
+        if (scope.empty || !scope.extensionNumbers) return { extensions: [], ddis: [] };
+
+        // L'annuaire ne propose que les extensions du périmètre. Les DDI sont
+        // conservés : ils ne désignent pas un agent mais une ligne d'entrée, et
+        // les statistiques associées restent filtrées en aval.
+        const allowed = new Set(scope.extensionNumbers);
+        return {
+            ...directory,
+            extensions: directory.extensions.filter((e) => allowed.has(e.number)),
+        };
     } catch (error) {
-        console.error("❌ Error loading extension directory:", error);
+        logger.error("Error loading extension directory:", error);
         return { extensions: [], ddis: [] };
     }
 }
@@ -175,6 +189,16 @@ export async function getExtensionStatisticsChunk(
     endISO: string,
     options?: ExtensionStatsOptions
 ): Promise<ExtensionStats[]> {
+    // Filtrage en amont : une extension hors périmètre ne doit produire aucune
+    // statistique, même si son numéro est saisi directement.
+    const scope = await resolveAccessScope(serverId);
+    if (!scope.unrestricted) {
+        if (scope.empty || !scope.extensionNumbers) return [];
+        const allowed = new Set(scope.extensionNumbers);
+        entries = entries.filter((e) => e.kind !== "extension" || allowed.has(normalizeDigits(e.input)));
+        if (entries.length === 0) return [];
+    }
+
     if (!entries || entries.length === 0) return [];
 
     const startDate = new Date(startISO);
