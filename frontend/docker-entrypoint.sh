@@ -41,7 +41,16 @@ echo "→ [2/3] Synchronisation du schéma (prisma db push)…"
 # Bloquant volontairement : sans les tables attendues, l'application serait dans
 # un état indéfini. Pas de --accept-data-loss : toute opération destructive doit
 # être décidée explicitement par un humain.
-run_prisma db push --schema="$AUTH_SCHEMA" --skip-generate
+if ! run_prisma db push --schema="$AUTH_SCHEMA" --skip-generate; then
+    echo ""
+    echo "✖ Synchronisation du schéma impossible — le serveur ne démarrera pas."
+    echo "  Si le message ci-dessus évoque une « data loss » sur une contrainte ou"
+    echo "  un index, la base a dérivé du schéma : ajouter un script idempotent"
+    echo "  dans prisma/sql/ pour rattraper l'écart (voir 002_apikey_keyhash_unique.sql),"
+    echo "  plutôt que d'activer --accept-data-loss qui autoriserait aussi de"
+    echo "  vraies suppressions de données."
+    exit 1
+fi
 
 echo "→ [3/3] Démarrage du serveur"
 exec node server.js
