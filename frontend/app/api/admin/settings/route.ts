@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prismaAuth } from "@/lib/prisma-auth";
+import { requireApiRole } from "@/lib/auth-guard";
+import { logger } from "@/lib/logger";
+
+// Règles métier = configuration applicative -> réservé à l'ADMIN (cf. PRD droits d'accès §4).
 
 export async function GET() {
-    try {
-        const session = await auth();
-        if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MODERATOR")) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-        }
+    const guard = await requireApiRole(["ADMIN"]);
+    if (!guard.ok) return guard.response;
 
+    try {
         let settings = await prismaAuth.appSettings.findUnique({
             where: { id: "global" },
         });
@@ -23,18 +24,16 @@ export async function GET() {
             minSignificantDurationSec: settings.minSignificantDurationSec,
         });
     } catch (error) {
-        console.error("Error fetching app settings:", error);
+        logger.error("Error fetching app settings:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }
 }
 
 export async function PUT(request: NextRequest) {
-    try {
-        const session = await auth();
-        if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MODERATOR")) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-        }
+    const guard = await requireApiRole(["ADMIN"]);
+    if (!guard.ok) return guard.response;
 
+    try {
         const body = await request.json();
         const { minSignificantDurationSec } = body;
 
@@ -52,7 +51,7 @@ export async function PUT(request: NextRequest) {
             minSignificantDurationSec: settings.minSignificantDurationSec,
         });
     } catch (error) {
-        console.error("Error updating app settings:", error);
+        logger.error("Error updating app settings:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }
 }

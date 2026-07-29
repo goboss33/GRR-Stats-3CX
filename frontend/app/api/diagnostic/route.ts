@@ -6,7 +6,7 @@ import { requireApiRole } from "@/lib/auth-guard";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
-    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    const guard = await requireApiRole(["ADMIN"]);
     if (!guard.ok) return guard.response;
 
     try {

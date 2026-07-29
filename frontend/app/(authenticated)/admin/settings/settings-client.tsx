@@ -13,20 +13,29 @@ import { ApiKeysTab } from "./tabs/api-keys-tab";
 
 type TabId = "personal" | "users" | "queues" | "business-rules" | "api-keys" | "tenant" | "diagnostic";
 
-const tabs: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { id: "personal", label: "Informations personnelles", icon: Users },
-    { id: "users", label: "Utilisateurs", icon: Users },
-    { id: "queues", label: "Files d'attente", icon: Phone },
-    { id: "business-rules", label: "Règles métier", icon: Settings },
-    { id: "api-keys", label: "Clés API", icon: KeyRound },
-    { id: "tenant", label: "Tenant", icon: Building2 },
-    { id: "diagnostic", label: "Diagnostic", icon: AlertCircle },
+// Rôles autorisés par onglet (cf. PRD droits d'accès §4.1).
+// ⚠️ Ce filtrage est une commodité d'affichage : la sécurité réelle est assurée
+// par les gardes serveur des routes API correspondantes.
+const ALL_ROLES = ["ADMIN", "MODERATOR", "SUPERUSER", "USER"];
+
+const tabs: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }>; roles: string[] }[] = [
+    { id: "personal", label: "Informations personnelles", icon: Users, roles: ALL_ROLES },
+    { id: "users", label: "Utilisateurs", icon: Users, roles: ["ADMIN"] },
+    { id: "queues", label: "Files d'attente", icon: Phone, roles: ["ADMIN"] },
+    { id: "business-rules", label: "Règles métier", icon: Settings, roles: ["ADMIN"] },
+    { id: "api-keys", label: "Clés API", icon: KeyRound, roles: ["ADMIN", "MODERATOR"] },
+    { id: "tenant", label: "Tenant", icon: Building2, roles: ["ADMIN"] },
+    { id: "diagnostic", label: "Diagnostic", icon: AlertCircle, roles: ["ADMIN"] },
 ];
 
-export default function SettingsPage() {
+export default function SettingsPage({ userRole }: { userRole: string }) {
+    const visibleTabs = tabs.filter((tab) => tab.roles.includes(userRole));
     const [activeTab, setActiveTab] = useState<TabId>("personal");
 
     const renderTabContent = () => {
+        // Ceinture et bretelles : un onglet non autorisé n'affiche rien.
+        if (!visibleTabs.some((tab) => tab.id === activeTab)) return null;
+
         switch (activeTab) {
             case "personal": return <PersonalInfoTab />;
             case "users": return <UsersTab />;
@@ -48,7 +57,7 @@ export default function SettingsPage() {
             {/* Tabs */}
             <div className="border-b border-slate-200">
                 <nav className="flex gap-1 -mb-px overflow-x-auto">
-                    {tabs.map((tab) => {
+                    {visibleTabs.map((tab) => {
                         const Icon = tab.icon;
                         return (
                             <button

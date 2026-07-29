@@ -6,7 +6,7 @@ import { prismaAuth } from "@/lib/prisma-auth";
 import { requireApiRole } from "@/lib/auth-guard";
 
 export async function GET() {
-    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    const guard = await requireApiRole(["ADMIN"]);
     if (!guard.ok) return guard.response;
 
     try {
@@ -41,7 +41,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    const guard = await requireApiRole(["ADMIN"]);
     if (!guard.ok) return guard.response;
 
     try {

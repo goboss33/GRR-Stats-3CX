@@ -8,7 +8,7 @@ import { requireApiRole } from "@/lib/auth-guard";
 const MIN_PASSWORD_LENGTH = 8;
 
 export async function GET() {
-    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    const guard = await requireApiRole(["ADMIN"]);
     if (!guard.ok) return guard.response;
 
     const users = await prismaAuth.user.findMany({
@@ -28,7 +28,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    const guard = await requireApiRole(["ADMIN"]);
     if (!guard.ok) return guard.response;
 
     const body = await request.json();
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
-    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    const guard = await requireApiRole(["ADMIN"]);
     if (!guard.ok) return guard.response;
 
     const body = await request.json();
@@ -114,7 +114,7 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-    const guard = await requireApiRole(["ADMIN", "MODERATOR"]);
+    const guard = await requireApiRole(["ADMIN"]);
     if (!guard.ok) return guard.response;
 
     const { searchParams } = new URL(request.url);
