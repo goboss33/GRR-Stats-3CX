@@ -9,11 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 
 export function BusinessRulesTab() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [minSignificantDurationSec, setMinSignificantDurationSec] = useState(1);
+    const [perimeterEnforcementEnabled, setPerimeterEnforcementEnabled] = useState(false);
+    const [togglingPerimeter, setTogglingPerimeter] = useState(false);
     // Adaptateur : route les appels setMessage(...) existants vers les toasts.
     const setMessage = (m: { type: "success" | "error"; text: string } | null) => {
         if (!m) return;
@@ -27,6 +30,9 @@ export function BusinessRulesTab() {
             .then((data) => {
                 if (data.minSignificantDurationSec !== undefined) {
                     setMinSignificantDurationSec(data.minSignificantDurationSec);
+                }
+                if (data.perimeterEnforcementEnabled !== undefined) {
+                    setPerimeterEnforcementEnabled(data.perimeterEnforcementEnabled);
                 }
                 setLoading(false);
             })
@@ -64,8 +70,73 @@ export function BusinessRulesTab() {
         );
     }
 
+    const togglePerimeter = async (enabled: boolean) => {
+        setTogglingPerimeter(true);
+        const previous = perimeterEnforcementEnabled;
+        setPerimeterEnforcementEnabled(enabled);
+        try {
+            const res = await fetch("/api/admin/settings", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ perimeterEnforcementEnabled: enabled }),
+            });
+            if (!res.ok) throw new Error((await res.json()).error || "Erreur lors de la sauvegarde");
+            setMessage({
+                type: "success",
+                text: enabled ? "Filtrage par périmètre activé" : "Filtrage par périmètre désactivé",
+            });
+        } catch (e) {
+            setPerimeterEnforcementEnabled(previous);
+            setMessage({ type: "error", text: e instanceof Error ? e.message : "Erreur lors de la sauvegarde" });
+        } finally {
+            setTogglingPerimeter(false);
+        }
+    };
+
     return (
         <div className="space-y-6 max-w-2xl">
+            <Card className={perimeterEnforcementEnabled ? "border-emerald-200" : "border-amber-200"}>
+                <CardHeader>
+                    <CardTitle>Filtrage par périmètre</CardTitle>
+                    <CardDescription>
+                        Interrupteur global : lorsqu&apos;il est actif, chaque utilisateur ne voit que les données de son
+                        périmètre. Les ADMIN et MODERATOR conservent un accès global.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                        <div>
+                            <p className="text-sm font-medium">
+                                {perimeterEnforcementEnabled ? "Filtrage actif" : "Filtrage inactif (mode observation)"}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                                {perimeterEnforcementEnabled
+                                    ? "Les managers ne voient que leurs files et leurs agents."
+                                    : "Tout le monde voit l'ensemble des données, comme avant."}
+                            </p>
+                        </div>
+                        <Switch
+                            checked={perimeterEnforcementEnabled}
+                            onCheckedChange={togglePerimeter}
+                            disabled={togglingPerimeter}
+                        />
+                    </div>
+                    {!perimeterEnforcementEnabled && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                            <p className="font-medium">Avant d&apos;activer :</p>
+                            <ol className="mt-1 list-inside list-decimal space-y-1 text-xs">
+                                <li>Classer les files dans « Files d&apos;attente » (les files « à classer » restent invisibles).</li>
+                                <li>Attribuer à chaque manager ses tenants et son périmètre depuis « Utilisateurs ».</li>
+                                <li>Vérifier l&apos;aperçu « Ce que voit cet utilisateur » dans chaque fiche.</li>
+                            </ol>
+                            <p className="mt-2 text-xs">
+                                Activer sans avoir fait cela rendrait les écrans vides pour les managers.
+                            </p>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
 
             <Card>
                 <CardHeader>

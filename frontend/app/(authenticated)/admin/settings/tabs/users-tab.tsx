@@ -3,7 +3,8 @@
 import { toast } from "sonner";
 
 import { useState, useEffect } from "react";
-import { Loader2, UserPlus, Pencil, Trash2, Lock } from "lucide-react";
+import { Loader2, UserPlus, Pencil, Trash2, Lock, ShieldCheck } from "lucide-react";
+import { UserAccessDialog } from "@/components/user-access-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +64,8 @@ export function UsersTab() {
                 }
             });
     }, []);
+
+    const [accessUser, setAccessUser] = useState<AppUser | null>(null);
 
     const openEdit = (user: AppUser) => {
         setEditUser(user);
@@ -227,6 +230,15 @@ export function UsersTab() {
                                                     {isSelf && (
                                                         <span className="text-xs text-slate-400 italic">Vous</span>
                                                     )}
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8"
+                                                        title="Gérer les accès (tenants, périmètre, permissions)"
+                                                        onClick={() => setAccessUser(user)}
+                                                    >
+                                                        <ShieldCheck className="h-4 w-4" />
+                                                    </Button>
                                                     {!isSelf && canEdit && (
                                                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(user)}>
                                                             <Pencil className="h-4 w-4" />
@@ -254,6 +266,12 @@ export function UsersTab() {
                     </div>
                 </CardContent>
             </Card>
+
+            <UserAccessDialog
+                user={accessUser}
+                open={!!accessUser}
+                onOpenChange={(open) => !open && setAccessUser(null)}
+            />
 
             {/* Edit Dialog */}
             <Dialog open={!!editUser} onOpenChange={(open) => !open && setEditUser(null)}>

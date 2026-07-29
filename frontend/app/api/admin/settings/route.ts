@@ -22,6 +22,7 @@ export async function GET() {
 
         return NextResponse.json({
             minSignificantDurationSec: settings.minSignificantDurationSec,
+            perimeterEnforcementEnabled: settings.perimeterEnforcementEnabled,
         });
     } catch (error) {
         logger.error("Error fetching app settings:", error);
@@ -35,20 +36,29 @@ export async function PUT(request: NextRequest) {
 
     try {
         const body = await request.json();
-        const { minSignificantDurationSec } = body;
+        const { minSignificantDurationSec, perimeterEnforcementEnabled } = body;
 
-        if (typeof minSignificantDurationSec !== "number" || minSignificantDurationSec < 0 || minSignificantDurationSec > 60) {
+        if (minSignificantDurationSec !== undefined &&
+            (typeof minSignificantDurationSec !== "number" || minSignificantDurationSec < 0 || minSignificantDurationSec > 60)) {
             return NextResponse.json({ error: "Invalid minSignificantDurationSec. Must be between 0 and 60." }, { status: 400 });
         }
 
+        const data = {
+            ...(minSignificantDurationSec !== undefined ? { minSignificantDurationSec } : {}),
+            ...(perimeterEnforcementEnabled !== undefined
+                ? { perimeterEnforcementEnabled: Boolean(perimeterEnforcementEnabled) }
+                : {}),
+        };
+
         const settings = await prismaAuth.appSettings.upsert({
             where: { id: "global" },
-            update: { minSignificantDurationSec },
-            create: { id: "global", minSignificantDurationSec },
+            update: data,
+            create: { id: "global", ...data },
         });
 
         return NextResponse.json({
             minSignificantDurationSec: settings.minSignificantDurationSec,
+            perimeterEnforcementEnabled: settings.perimeterEnforcementEnabled,
         });
     } catch (error) {
         logger.error("Error updating app settings:", error);
