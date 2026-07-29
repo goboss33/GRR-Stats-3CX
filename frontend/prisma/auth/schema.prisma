@@ -25,6 +25,16 @@ model User {
   officeLocation String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  /// Permissions individuelles (cf. PRD droits d'accès §4.3) — toutes restrictives
+  /// par défaut : on n'accorde que ce qui est explicitement coché par un ADMIN.
+  canViewCompanyWide      Boolean @default(false)
+  canViewFullPhoneNumbers Boolean @default(false)
+  canCreateApiKeys        Boolean @default(false)
+
+  tenantAccess       UserTenantAccess[]
+  queuePerimeter     UserQueuePerimeter[]
+  extensionOverrides UserExtensionOverride[]
 }
 
 /// Rôles applicatifs (cf. PRD droits d'accès §4).
@@ -46,8 +56,122 @@ enum Role {
 model AppSettings {
   id                          String   @id @default("global")
   minSignificantDurationSec   Int      @default(1)
+  /// Interrupteur global du filtrage par périmètre (cf. PRD §12).
+  /// Reste à false le temps de classer les files et d'affecter les périmètres :
+  /// l'activer avant rendrait tous les écrans vides pour les non-ADMIN.
+  perimeterEnforcementEnabled Boolean  @default(false)
+  /// Nombre de jours sans appel avant qu'une file passe en ARCHIVED.
+  queueArchiveAfterDays       Int      @default(90)
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
+}
+
+/// Registre des files d'attente — SOURCE DE VÉRITÉ des droits.
+///
+/// Pourquoi une table plutôt que les noms lus dans les CDR ? Parce que les files
+/// sont renommées dans 3CX (constaté : « RC BULLE Gérance » → « RC FRIBOURG
+/// Gérance »). Déduire les droits du nom ouvrirait/fermerait des accès
+/// silencieusement. Le périmètre s'appuie donc sur le NUMÉRO, jamais sur le nom.
+///
+/// Sans XAPI 3CX, les files sont découvertes via les CDR : une nouvelle file
+/// n'apparaît qu'après son premier appel, et une file supprimée ne disparaît
+/// jamais (d'où le statut ARCHIVED).
+model QueueRegistry {
+  id          String      @id @default(cuid())
+  tenantId    String
+  queueNumber String
+  currentName String
+  /// Étiquettes d'aide à la sélection (pré-remplies, validées par un ADMIN).
+  /// Elles ne définissent JAMAIS les droits à elles seules.
+  entity      String?
+  region      String?
+  service     String?
+  status      QueueStatus @default(UNCLASSIFIED)
+  firstSeenAt DateTime
+  lastSeenAt  DateTime
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  nameHistory QueueNameHistory[]
+  perimeters  UserQueuePerimeter[]
+
+  @@unique([tenantId, queueNumber])
+  @@index([tenantId, status])
+}
+
+enum QueueStatus {
+  /// Classée et exploitable dans les périmètres
+  ACTIVE
+  /// Découverte mais pas encore classée par un ADMIN — invisible des non-ADMIN
+  UNCLASSIFIED
+  /// Sans appel depuis queueArchiveAfterDays — probablement supprimée dans 3CX
+  ARCHIVED
+}
+
+/// Historique des noms d'une file : trace les renommages afin d'alerter l'ADMIN
+/// (« cette file a changé de région, vérifiez les périmètres »).
+model QueueNameHistory {
+  id      String        @id @default(cuid())
+  queueId String
+  queue   QueueRegistry @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  name    String
+  seenAt  DateTime      @default(now())
+
+  @@unique([queueId, name])
+}
+
+/// Tenants auxquels un utilisateur a accès (accordés par un ADMIN, cf. PRD D8).
+model UserTenantAccess {
+  userId   String
+  tenantId String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, tenantId])
+}
+
+/// Périmètre d'un MANAGER : liste EXPLICITE de files.
+/// Aucune règle dynamique — une nouvelle file n'entre jamais seule dans un périmètre.
+model UserQueuePerimeter {
+  userId  String
+  queueId String
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  queue   QueueRegistry @relation(fields: [queueId], references: [id], onDelete: Cascade)
+
+  @@id([userId, queueId])
+}
+
+/// Surcharge manuelle du rattachement d'une extension à un utilisateur.
+/// Nécessaire car 42 % des extensions ne servent aucune file (direction,
+/// back-office…) et ne peuvent donc pas être rattachées automatiquement.
+model UserExtensionOverride {
+  id              String       @id @default(cuid())
+  userId          String
+  tenantId        String
+  extensionNumber String
+  mode            OverrideMode
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId, extensionNumber])
+}
+
+enum OverrideMode {
+  INCLUDE
+  EXCLUDE
+}
+
+/// Rattachement matérialisé extension → file, reconstruit par la découverte.
+/// Matérialisé car le calcul (jointure sur les segments de sollicitation) est
+/// trop coûteux pour être refait à chaque requête.
+model QueueAgentLink {
+  id              String   @id @default(cuid())
+  tenantId        String
+  queueNumber     String
+  extensionNumber String
+  lastSeenAt      DateTime
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, queueNumber, extensionNumber])
+  @@index([tenantId, extensionNumber])
 }
 
 model TenantSettings {
