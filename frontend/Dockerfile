@@ -61,11 +61,12 @@ RUN chown nextjs:nodejs .next
 
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
-# Copy Prisma CLI for migrations (needed by migration service)
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
+# Prisma : moteurs + CLI (migrations au démarrage, cf. docker-entrypoint.sh)
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-# Le binaire ci-dessus n'est qu'un lien vers ce paquet : sans lui, le CLI est
-# inutilisable (et donc les migrations au démarrage).
+# Paquet complet du CLI : il doit conserver sa structure de dossier, car il charge
+# des ressources voisines (prisma_schema_build_bg.wasm).
+# ⚠️ Ne PAS copier node_modules/.bin/prisma : c'est un lien symbolique que Docker
+# déréférence, ce qui isole le script de ses ressources -> ENOENT au démarrage.
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 
 # Copy Prisma query engines for multi-schema clients (auth + cdr)
