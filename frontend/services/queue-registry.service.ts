@@ -191,11 +191,22 @@ export async function discoverQueues(serverId: ServerId): Promise<DiscoveryResul
 
 /** Files du registre d'un tenant (pour l'écran d'administration). */
 export async function listRegistryQueues(serverId: ServerId) {
-    return prismaAuth.queueRegistry.findMany({
-        where: { tenantId: serverId },
-        orderBy: [{ status: "asc" }, { queueNumber: "asc" }],
-        include: { nameHistory: { orderBy: { seenAt: "desc" } } },
-    });
+    const [queues, agentCounts] = await Promise.all([
+        prismaAuth.queueRegistry.findMany({
+            where: { tenantId: serverId },
+            orderBy: [{ status: "asc" }, { queueNumber: "asc" }],
+            include: { nameHistory: { orderBy: { seenAt: "desc" } } },
+        }),
+        // Nombre d'agents rattachés, par file.
+        prismaAuth.queueAgentLink.groupBy({
+            by: ["queueNumber"],
+            where: { tenantId: serverId },
+            _count: { extensionNumber: true },
+        }),
+    ]);
+
+    const countByQueue = new Map(agentCounts.map((c) => [c.queueNumber, c._count.extensionNumber]));
+    return queues.map((q) => ({ ...q, agentCount: countByQueue.get(q.queueNumber) ?? 0 }));
 }
 
 /** Met à jour les étiquettes et le statut d'une file (action ADMIN). */

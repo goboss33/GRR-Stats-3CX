@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
                 region: q.region,
                 service: q.service,
                 status: q.status,
+                agentCount: q.agentCount,
                 firstSeenAt: q.firstSeenAt.toISOString(),
                 lastSeenAt: q.lastSeenAt.toISOString(),
                 previousNames: q.nameHistory.map((h) => h.name).filter((n) => n !== q.currentName),
