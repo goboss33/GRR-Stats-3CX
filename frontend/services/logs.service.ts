@@ -3,6 +3,8 @@
 import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import { getServerTimezone } from "@/lib/servers";
 import { parseSearchPattern, type SearchPattern, type SearchPatternMode } from "@/services/domain/extension-search";
+import { resolveAccessScope, type AccessScope } from "@/lib/access-scope";
+import { maskPhoneNumber } from "@/services/domain/call-aggregation";
 import type {
     AggregatedCallLog,
     CallDirection,
@@ -134,7 +136,8 @@ function buildAggregatedQueryParts(
     filters: LogsFilters,
     pagination: { page: number; pageSize: number },
     sort?: LogsSort,
-    timezone: string = "Europe/Zurich"
+    timezone: string = "Europe/Zurich",
+    scope?: AccessScope
 ): {
     whereClause: string;
     dateOnlyWhereClause: string;
@@ -166,6 +169,35 @@ function buildAggregatedQueryParts(
         `cdr_started_at >= ${startP}`,
         `cdr_started_at <= ${endP}`,
     ];
+
+    // ── Filtrage par périmètre (cf. PRD droits d'accès §8.3) ──────────────────
+    // Un appel est visible dès qu'AU MOINS UN de ses segments touche une file ou
+    // une extension du périmètre (option A du PRD) : c'est cohérent avec les KPIs,
+    // notamment les débordements, où l'appel quitte le périmètre en cours de route.
+    if (scope && !scope.unrestricted) {
+        if (scope.empty) {
+            whereConditions.push("false"); // aucun périmètre : aucune donnée
+        } else {
+            const parts: string[] = [];
+            if (scope.queueNumbers && scope.queueNumbers.length > 0) {
+                const ph = scope.queueNumbers.map((q) => bind(q));
+                parts.push(`(destination_dn_type = 'queue' AND destination_dn_number IN (${ph.join(", ")}))`);
+            }
+            if (scope.extensionNumbers && scope.extensionNumbers.length > 0) {
+                const ph = scope.extensionNumbers.map((e) => bind(e));
+                parts.push(`(destination_dn_type = 'extension' AND destination_dn_number IN (${ph.join(", ")}))`);
+            }
+            whereConditions.push(
+                parts.length > 0
+                    ? `call_history_id IN (
+                           SELECT call_history_id FROM cdroutput
+                           WHERE cdr_started_at >= ${startP} AND cdr_started_at <= ${endP}
+                             AND (${parts.join(" OR ")})
+                       )`
+                    : "false",
+            );
+        }
+    }
 
     if (filters.callerSearch?.trim()) {
         const pattern = parseSearchPattern(filters.callerSearch);
@@ -349,7 +381,7 @@ function buildSingleConditionSQL(condition: JourneyConditionNode): string | null
     const existsOp = condition.negate ? 'NOT EXISTS' : 'EXISTS';
     const queueNum = condition.queueNumber ? condition.queueNumber.replace(/'/g, "''") : null;
 
-    let baseWhereClause = clauses.length > 0 ? clauses.join(' AND ') : 'true';
+    const baseWhereClause = clauses.length > 0 ? clauses.join(' AND ') : 'true';
 
     if (condition.firstSegment) {
         return `${existsOp} (SELECT 1 FROM jsonb_array_elements(cj.journey::jsonb) WITH ORDINALITY AS t(elem, idx) WHERE (${baseWhereClause}) AND idx = 1)`;
@@ -928,8 +960,13 @@ function buildCountQuery(
 // TRANSFORM raw SQL row → AggregatedCallLog
 // ============================================
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function transformRow(row: any): AggregatedCallLog {
+ 
+/** Applique le masquage seulement quand la portée l'exige. */
+function maybeMask(value: string, mask: boolean): string {
+    return mask ? maskPhoneNumber(value) : value;
+}
+
+function transformRow(row: any, maskNumbers = false): AggregatedCallLog {
     const firstStarted = row.first_started_at ? new Date(row.first_started_at) : null;
     const lastEnded = row.last_ended_at ? new Date(row.last_ended_at) : null;
     const firstAnswered = row.first_answered_at ? new Date(row.first_answered_at) : null;
@@ -1000,13 +1037,18 @@ function transformRow(row: any): AggregatedCallLog {
         totalDurationFormatted: formatDuration(lastSegmentAnswered ? totalTalkSeconds : totalDurationSeconds),
         waitTimeSeconds,
         waitTimeFormatted: formatDuration(waitTimeSeconds),
-        callerNumber: getDisplayNumber(row.source_dn_number, row.source_participant_phone_number, row.source_presentation),
+        // Masquage appliqué côté serveur : le numéro complet ne quitte jamais le
+        // serveur pour un utilisateur sans la permission correspondante.
+        callerNumber: maybeMask(
+            getDisplayNumber(row.source_dn_number, row.source_participant_phone_number, row.source_presentation),
+            maskNumbers,
+        ),
         callerName: row.source_dn_type?.toLowerCase() === 'provider'
             ? (row.source_participant_name && !row.source_participant_name.trim().endsWith(':')
                 ? getDisplayName(row.source_participant_name, null)
                 : null)
             : (getDisplayName(row.source_participant_name, row.source_dn_name) || null),
-        calleeNumber: getDisplayNumber(row.first_dest_number, row.first_dest_participant_phone),
+        calleeNumber: maybeMask(getDisplayNumber(row.first_dest_number, row.first_dest_participant_phone), maskNumbers),
         calleeName: row.source_dn_type?.toLowerCase() === 'provider'
             ? (getDisplayName(row.first_dest_participant_name, row.first_dest_dn_name)
                 || (row.source_participant_name?.trim().endsWith(':') ? getDisplayName(row.source_participant_name, null) : null))
@@ -1040,8 +1082,11 @@ export async function getAggregatedCallLogs(
 ): Promise<AggregatedCallLogsResponse> {
     const prisma = getPrismaCdr(serverId);
     const timezone = await getServerTimezone(serverId);
+    // ⚠️ La portée est résolue ICI, jamais reçue en paramètre : ce module est
+    // "use server", donc ses arguments sont contrôlables par le client.
+    const scope = await resolveAccessScope(serverId);
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause, params } =
-        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone);
+        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, scope);
     const pageNumber = Math.max(1, pagination.page);
 
     try {
@@ -1054,7 +1099,7 @@ export async function getAggregatedCallLogs(
             aggregatedWhereConditions, filters
         );
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const [rawResults, countResult] = await Promise.all([
             prisma.$queryRawUnsafe<any[]>(dataQuery, ...params),
             prisma.$queryRawUnsafe<{ total: bigint }[]>(countQuery, ...params),
@@ -1062,7 +1107,7 @@ export async function getAggregatedCallLogs(
 
         const totalCount = Number(countResult[0]?.total || 0);
         const totalPages = Math.ceil(totalCount / limit);
-        const logs = rawResults.map(transformRow);
+        const logs = rawResults.map((row) => transformRow(row, scope.maskPhoneNumbers));
 
         return { logs, totalCount, totalPages, currentPage: pageNumber };
     } catch (error) {
@@ -1263,8 +1308,9 @@ export async function getExtensionAggregatedStats(
 ): Promise<ExtensionAggregatedStats> {
     const prisma = getPrismaCdr(serverId);
 
+    const scope = await resolveAccessScope(serverId);
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, params } =
-        buildAggregatedQueryParts(startDate, endDate, filters, { page: 1, pageSize: 1 });
+        buildAggregatedQueryParts(startDate, endDate, filters, { page: 1, pageSize: 1 }, undefined, undefined, scope);
 
     const ctes = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE);
 

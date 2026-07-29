@@ -378,6 +378,28 @@ export function getDisplayNumber(
 }
 
 /**
+ * Masque un numéro d'appelant en ne conservant que les 2 derniers chiffres :
+ * "0791234567" -> "07• ••• ••67".
+ *
+ * Appliqué CÔTÉ SERVEUR pour les utilisateurs sans la permission
+ * « voir les numéros complets » (cf. PRD droits d'accès D9, nLPD/RGPD).
+ * Les numéros courts (extensions internes) ne sont pas masqués : ils
+ * n'identifient pas une personne extérieure et sont nécessaires à l'exploitation.
+ */
+export function maskPhoneNumber(value: string | null | undefined): string {
+    const raw = (value ?? "").trim();
+    if (!raw) return raw;
+
+    const digits = raw.replace(/\D/g, "");
+    // Extensions internes (≤ 5 chiffres) : pas de masquage.
+    if (digits.length <= 5) return raw;
+
+    const prefix = raw.slice(0, 2);
+    const suffix = raw.slice(-2);
+    return `${prefix}• ••• ••${suffix}`;
+}
+
+/**
  * Gets the display name for a participant.
  */
 export function getDisplayName(

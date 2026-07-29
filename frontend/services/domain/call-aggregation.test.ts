@@ -9,6 +9,7 @@ import {
     formatDurationCompact,
     getDisplayNumber,
     getDisplayName,
+    maskPhoneNumber,
     determineQueueOutcome,
     buildDirectSegmentWhereClause,
 } from "./call-aggregation";
@@ -166,6 +167,21 @@ describe("getDisplayNumber", () => {
     it("retombe sur le dnNumber puis sur '-'", () => {
         expect(getDisplayNumber("100", "", "")).toBe("100");
         expect(getDisplayNumber(null, "", "")).toBe("-");
+    });
+});
+
+describe("maskPhoneNumber", () => {
+    it("masque un numéro externe en gardant début et fin", () => {
+        expect(maskPhoneNumber("0791234567")).toBe("07• ••• ••67");
+        expect(maskPhoneNumber("+41791234567")).toBe("+4• ••• ••67");
+    });
+    it("ne masque pas les extensions internes (<= 5 chiffres)", () => {
+        expect(maskPhoneNumber("164")).toBe("164");
+        expect(maskPhoneNumber("10003")).toBe("10003");
+    });
+    it("gère les valeurs vides", () => {
+        expect(maskPhoneNumber(null)).toBe("");
+        expect(maskPhoneNumber("")).toBe("");
     });
 });
 

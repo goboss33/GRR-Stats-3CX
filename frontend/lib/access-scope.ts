@@ -1,0 +1,162 @@
+import { auth } from "@/lib/auth";
+import { prismaAuth } from "@/lib/prisma-auth";
+import { ServerId } from "@/lib/prisma-cdr";
+
+// ============================================
+// PORTÉE D'ACCÈS — ce qu'un utilisateur a le droit de voir
+//
+// Résolue côté serveur puis passée en PARAMÈTRE OBLIGATOIRE aux services de
+// données : un oubli devient une erreur de compilation, pas une fuite silencieuse.
+//
+// Masquer des éléments d'interface ne constitue pas un contrôle d'accès : seul ce
+// filtrage, applique dans la couche données, fait autorité.
+// ============================================
+
+export interface AccessScope {
+    /** true = aucune restriction de files (ADMIN/MODERATOR, ou filtrage désactivé) */
+    unrestricted: boolean;
+    /** Files autorisées. `null` = toutes. */
+    queueNumbers: string[] | null;
+    /** Extensions autorisées. `null` = toutes. */
+    extensionNumbers: string[] | null;
+    /** Masquer les numéros des appelants (nLPD/RGPD) */
+    maskPhoneNumbers: boolean;
+    /** Autorisé à voir les chiffres de l'entreprise au-delà de son périmètre */
+    canViewCompanyWide: boolean;
+    /** true quand l'utilisateur n'a aucun périmètre : il ne doit rien voir. */
+    empty: boolean;
+}
+
+/** Portée sans restriction — utilisée quand le filtrage global est désactivé. */
+export function unrestrictedScope(): AccessScope {
+    return {
+        unrestricted: true,
+        queueNumbers: null,
+        extensionNumbers: null,
+        maskPhoneNumbers: false,
+        canViewCompanyWide: true,
+        empty: false,
+    };
+}
+
+/** Portée vide — l'utilisateur ne voit rien (aucun périmètre attribué). */
+export function emptyScope(maskPhoneNumbers = true): AccessScope {
+    return {
+        unrestricted: false,
+        queueNumbers: [],
+        extensionNumbers: [],
+        maskPhoneNumbers,
+        canViewCompanyWide: false,
+        empty: true,
+    };
+}
+
+/**
+ * Résout la portée de l'utilisateur courant pour un tenant donné.
+ *
+ * Tant que `perimeterEnforcementEnabled` est faux (mode observation), tout le
+ * monde conserve l'accès complet : cela permet de classer les files et d'attribuer
+ * les périmètres sans couper l'accès à qui que ce soit.
+ */
+export async function resolveAccessScope(tenantId: ServerId): Promise<AccessScope> {
+    // L'interrupteur est évalué EN PREMIER : tant que le filtrage est désactivé,
+    // le comportement reste strictement celui d'avant (mode observation).
+    const settings = await prismaAuth.appSettings.findUnique({
+        where: { id: "global" },
+        select: { perimeterEnforcementEnabled: true },
+    });
+    if (!settings?.perimeterEnforcementEnabled) return unrestrictedScope();
+
+    // Filtrage actif : sans session, aucune donnée.
+    const session = await auth();
+    if (!session?.user) return emptyScope();
+
+    const user = await prismaAuth.user.findUnique({
+        where: { id: session.user.id },
+        select: {
+            role: true,
+            canViewCompanyWide: true,
+            canViewFullPhoneNumbers: true,
+            tenantAccess: { select: { tenantId: true } },
+        },
+    });
+    if (!user) return emptyScope();
+
+    const maskPhoneNumbers = !user.canViewFullPhoneNumbers;
+    const allowedTenants = user.tenantAccess.map((t) => t.tenantId);
+
+    // L'ADMIN n'est pas limité par tenant ; les autres doivent y être autorisés.
+    if (user.role !== "ADMIN" && !allowedTenants.includes(tenantId)) {
+        return emptyScope(maskPhoneNumbers);
+    }
+
+    // ADMIN / MODERATOR : accès global aux données du tenant.
+    if (user.role === "ADMIN" || user.role === "MODERATOR") {
+        return {
+            unrestricted: true,
+            queueNumbers: null,
+            extensionNumbers: null,
+            maskPhoneNumbers,
+            canViewCompanyWide: true,
+            empty: false,
+        };
+    }
+
+    // AGENT : aucun accès pour l'instant.
+    if (user.role === "AGENT") return emptyScope(maskPhoneNumbers);
+
+    // MANAGER : périmètre explicite de files + extensions qui en découlent.
+    const perimeter = await prismaAuth.userQueuePerimeter.findMany({
+        where: { userId: session.user.id, queue: { tenantId } },
+        select: { queue: { select: { queueNumber: true } } },
+    });
+    const queueNumbers = perimeter.map((p) => p.queue.queueNumber);
+
+    if (queueNumbers.length === 0) {
+        // Un manager sans périmètre peut tout de même avoir des surcharges.
+        const onlyOverrides = await resolveExtensions(session.user.id, tenantId, []);
+        if (onlyOverrides.length === 0) return emptyScope(maskPhoneNumbers);
+        return {
+            unrestricted: false,
+            queueNumbers: [],
+            extensionNumbers: onlyOverrides,
+            maskPhoneNumbers,
+            canViewCompanyWide: user.canViewCompanyWide,
+            empty: false,
+        };
+    }
+
+    const extensionNumbers = await resolveExtensions(session.user.id, tenantId, queueNumbers);
+
+    return {
+        unrestricted: false,
+        queueNumbers,
+        extensionNumbers,
+        maskPhoneNumbers,
+        canViewCompanyWide: user.canViewCompanyWide,
+        empty: false,
+    };
+}
+
+/** Extensions déduites des files du périmètre, surcharges appliquées. */
+async function resolveExtensions(userId: string, tenantId: string, queueNumbers: string[]): Promise<string[]> {
+    const links = queueNumbers.length
+        ? await prismaAuth.queueAgentLink.findMany({
+              where: { tenantId, queueNumber: { in: queueNumbers } },
+              select: { extensionNumber: true },
+          })
+        : [];
+
+    const extensions = new Set(links.map((l) => l.extensionNumber));
+
+    const overrides = await prismaAuth.userExtensionOverride.findMany({
+        where: { userId, tenantId },
+        select: { extensionNumber: true, mode: true },
+    });
+    for (const o of overrides) {
+        if (o.mode === "INCLUDE") extensions.add(o.extensionNumber);
+        else extensions.delete(o.extensionNumber);
+    }
+
+    return [...extensions];
+}
