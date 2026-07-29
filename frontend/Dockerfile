@@ -64,6 +64,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 # Copy Prisma CLI for migrations (needed by migration service)
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+# Le binaire ci-dessus n'est qu'un lien vers ce paquet : sans lui, le CLI est
+# inutilisable (et donc les migrations au démarrage).
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 
 # Copy Prisma query engines for multi-schema clients (auth + cdr)
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma/auth-client ./node_modules/.prisma/auth-client
@@ -73,6 +76,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma/cdr-client .
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Point d'entrée : migrations puis démarrage (cf. docker-entrypoint.sh)
+COPY --from=builder --chown=nextjs:nodejs /app/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
+
 USER nextjs
 
 EXPOSE 3000
@@ -80,4 +87,4 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["node", "server.js"]
+CMD ["./docker-entrypoint.sh"]

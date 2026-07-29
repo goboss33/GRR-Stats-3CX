@@ -66,6 +66,21 @@ Application web moderne pour l'analyse des statistiques d'un centre d'appels 3CX
 
    L'application est disponible sur http://localhost:3000.
 
+## 🚢 Déploiement & migrations
+
+En conteneur, les migrations sont **automatiques** : `docker-entrypoint.sh` s'exécute
+avant le serveur et applique, dans cet ordre :
+
+1. les **migrations de données** (`frontend/prisma/sql/*.sql`) — idempotentes, non bloquantes ;
+2. la **synchronisation du schéma** (`prisma db push`) — bloquante : sans les tables
+   attendues, l'application serait dans un état indéfini ;
+3. le démarrage du serveur.
+
+> L'ordre importe : un renommage de valeur d'enum doit être appliqué **avant** `db push`,
+> sinon `db push` détruirait le type au lieu de le renommer.
+
+Un `pull & redeploy` suffit donc — aucune commande manuelle à lancer.
+
 ## 🧰 Scripts utiles (dans `frontend/`)
 
 | Script | Description |

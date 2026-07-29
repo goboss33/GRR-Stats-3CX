@@ -1,0 +1,7 @@
+# Les scripts shell doivent conserver des fins de ligne LF, sinon ils sont
+# illisibles dans un conteneur Linux ("bad interpreter") lorsqu'ils sont commités
+# depuis Windows.
+*.sh text eol=lf
+
+# Idem pour les fichiers exécutés par PostgreSQL / Prisma au démarrage.
+*.sql text eol=lf
