@@ -107,6 +107,12 @@ export interface LogsFilters {
      * exactement le chiffre affiché sur la carte.
      */
     queueOutcomeFilter?: { queueNumber: string; outcomes: PassageOutcome[]; includeTeamDirect?: boolean };
+    /**
+     * Numéro de file consultée en « vue file ». N'agit pas comme un filtre : il
+     * ajoute au tableau le statut de chaque appel DANS cette file, à côté de son
+     * statut final. Déduit du filtre KPI quand on arrive par une vignette.
+     */
+    queueView?: string;
     timeSlots?: TimeSlot[];
 }
 
@@ -163,6 +169,10 @@ export interface AggregatedCallLog {
     queues: Array<{ number: string; name: string }>;
     queuesDisplay: string;
     journey: JourneyStep[];
+    /** Statut de l'appel dans la file consultée (vue file uniquement). */
+    queueViewStatus?: PassageOutcome | null;
+    /** File ayant finalement répondu, si ce n'est pas celle consultée. */
+    answeringQueue?: { number: string; name: string; inScope: boolean } | null;
 }
 
 export interface AggregatedCallLogsResponse {

@@ -41,6 +41,8 @@ import { LogsTableSkeleton } from "@/components/logs-table-skeleton";
 
 interface LogsTableProps {
     logs: AggregatedCallLog[];
+    /** Vue file active : ajoute une colonne « Statut dans la file ». */
+    queueView?: { number: string; name: string } | null;
     isLoading?: boolean;
     columnVisibility: ColumnVisibility;
     sort?: LogsSort;
@@ -90,6 +92,7 @@ interface LogsTableProps {
 
 export function LogsTable({
     logs,
+    queueView,
     isLoading,
     columnVisibility,
     sort,
@@ -184,8 +187,13 @@ export function LogsTable({
                             {columnVisibility.direction && (
                                 <TableHead className="w-24 text-center">Direction</TableHead>
                             )}
+                            {queueView && (
+                                <TableHead className="w-28 text-center">
+                                    Statut file {queueView.number}
+                                </TableHead>
+                            )}
                             {columnVisibility.status && (
-                                <TableHead className="w-24 text-center">Statut</TableHead>
+                                <TableHead className="w-24 text-center">Statut final</TableHead>
                             )}
                             {columnVisibility.duration && (
                                 <TableHead className="w-20 text-right">
@@ -286,6 +294,7 @@ export function LogsTable({
                                     />
                                 </TableHead>
                             )}
+                            {queueView && <TableHead className="py-2" />}
                             {columnVisibility.status && (
                                 <TableHead className="py-2">
                                     <ColumnFilterStatus

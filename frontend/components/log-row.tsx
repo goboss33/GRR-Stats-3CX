@@ -12,6 +12,7 @@ import {
     getSegmentBadgeColor,
     getWaitTimeColor,
     getJourneyStepStyle,
+    queueOutcomeConfig,
     formatDateTime,
     formatTime,
 } from "@/components/logs-table-helpers";
@@ -206,12 +207,31 @@ export function LogRow({ log, columnVisibility, onRowClick }: LogRowProps) {
             )}
 
             {/* Status */}
+            {/* Vue file : statut de l'appel DANS la file consultée. */}
+            {log.queueViewStatus && (
+                <TableCell className="text-center">
+                    <Badge variant="secondary" className={queueOutcomeConfig[log.queueViewStatus].className}>
+                        {queueOutcomeConfig[log.queueViewStatus].label}
+                    </Badge>
+                </TableCell>
+            )}
+
             {columnVisibility.status && (
                 <TableCell className="text-center">
                     <Badge variant="secondary" className={`gap-1 ${statConfig.className}`}>
                         <StatIcon className="h-3 w-3" />
                         {statConfig.label}
                     </Badge>
+                    {/* Ce que la file consultée n'a pas traité a pu l'être
+                        ailleurs : le dire évite de laisser croire à une perte
+                        sèche. */}
+                    {log.answeringQueue && (
+                        <div className="mt-0.5 text-[10px] text-slate-500 truncate">
+                            → {log.answeringQueue.number
+                                ? `${log.answeringQueue.number} – ${log.answeringQueue.name}`
+                                : log.answeringQueue.name}
+                        </div>
+                    )}
                 </TableCell>
             )}
 

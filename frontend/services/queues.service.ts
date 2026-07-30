@@ -68,3 +68,21 @@ export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> 
     const allowed = new Set(scope.queueNumbers);
     return queues.filter((q) => allowed.has(q.queueNumber));
 }
+
+/**
+ * Options de la « vue file » des logs, pour l'utilisateur courant.
+ *
+ * La liste des files est déjà bornée à son périmètre par `getQueueMembers`.
+ * `canViewCompanyWide` décide si la vue entreprise lui est proposée : sans ce
+ * droit, la vue file devient obligatoire et il ne voit jamais l'ensemble des
+ * appels. La décision est prise ICI, côté serveur — le client ne fait
+ * qu'afficher ce qu'on lui autorise.
+ */
+export async function getLogsViewOptions(serverId: ServerId): Promise<{
+    queues: QueueInfo[];
+    canViewCompanyWide: boolean;
+}> {
+    const scope = await resolveAccessScope(serverId);
+    const queues = await getQueueMembers(serverId);
+    return { queues, canViewCompanyWide: scope.unrestricted || scope.canViewCompanyWide };
+}

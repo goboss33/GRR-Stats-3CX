@@ -14,6 +14,7 @@ import { Pagination } from "@/components/pagination";
 import { CallChainModal } from "@/components/call-chain-modal";
 import { SqlQueryModal } from "@/components/sql-query-modal";
 import { ActiveFilters } from "@/components/active-filters";
+import { queueOutcomeConfig } from "@/components/logs-table-helpers";
 import {
     Popover,
     PopoverContent,
@@ -29,7 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { getAggregatedCallLogs, exportCallLogsCSV, getCallLogsSQL } from "@/services/logs.service";
-import { getQueueMembers } from "@/services/queues.service";
+import { getLogsViewOptions } from "@/services/queues.service";
 import { useDebounce } from "@/lib/use-debounce";
 import { ServerId } from "@/lib/prisma-cdr";
 import type { QueueInfo } from "@/types/queues.types";
@@ -159,6 +160,14 @@ export default function AdminLogsPage() {
         return parsed.length > 0 ? { queueNumber, outcomes: parsed, includeTeamDirect: team === "team" } : null;
     });
 
+    // Vue file : soit posee par un lien de KPI, soit choisie ici. Elle n'agit
+    // pas comme un filtre — elle ajoute au tableau le statut de chaque appel
+    // dans la file consultee, a cote de son statut final.
+    const [queueView, setQueueView] = useState<string | null>(
+        () => searchParams.get("queueView") || searchParams.get("queueOutcome")?.split(":")[0] || null,
+    );
+    const [canViewCompanyWide, setCanViewCompanyWide] = useState(true);
+
     // Data state
     const [data, setData] = useState<AggregatedCallLogsResponse | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -173,6 +182,15 @@ export default function AdminLogsPage() {
 
     // Queues state for filter
     const [queues, setQueues] = useState<QueueInfo[]>([]);
+
+    // File consultée, résolue avec son libellé pour l'affichage.
+    const selectedQueueView = queueView
+        ? {
+            number: queueView,
+            name: queues.find((q) => q.queueNumber === queueView)?.queueName || queueView,
+        }
+        : null;
+
 
     // Debounce search inputs (1000ms)
     const debouncedCallerSearch = useDebounce(callerSearch, 1000);
@@ -202,6 +220,7 @@ export default function AdminLogsPage() {
         // Journey filter (groups with AND/OR)
         journeyFilter: journeyFilter || undefined,
         queueOutcomeFilter: queueOutcomeFilter || undefined,
+        queueView: queueView || undefined,
     };
 
     // Update URL when filters change - uses DEBOUNCED values for text search
@@ -254,6 +273,10 @@ export default function AdminLogsPage() {
 
         // Conservé tel quel : ce filtre vient d'un KPI et n'est pas modifiable
         // depuis l'écran, mais il doit survivre aux changements de page.
+        if (queueView) {
+            params.set("queueView", queueView);
+        }
+
         if (queueOutcomeFilter) {
             params.set(
                 "queueOutcome",
@@ -283,6 +306,7 @@ export default function AdminLogsPage() {
         timeSlots,
         journeyFilter,
         queueOutcomeFilter,
+        queueView,
     ]);
 
     // Fetch data
@@ -340,8 +364,13 @@ export default function AdminLogsPage() {
         const loadQueues = async () => {
             try {
                 const serverId = getSelectedServer();
-                const queueList = await getQueueMembers(serverId);
-                setQueues(queueList);
+                const options = await getLogsViewOptions(serverId);
+                setQueues(options.queues);
+                setCanViewCompanyWide(options.canViewCompanyWide);
+                // Sans droit sur la vue entreprise, la vue file est obligatoire.
+                if (!options.canViewCompanyWide && options.queues.length > 0) {
+                    setQueueView((current) => current ?? options.queues[0].queueNumber);
+                }
             } catch (error) {
                 console.error("Error loading queues:", error);
             }
@@ -678,10 +707,62 @@ export default function AdminLogsPage() {
                 </div>
             )}
 
+            {/* Sélecteur de vue. La vue file ne filtre pas : elle ajoute au
+                tableau le statut de chaque appel dans la file consultée, à côté
+                de son statut final. Un manager voit ainsi que ses « perdus »
+                ont pu être récupérés ailleurs. */}
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5">
+                <span className="text-sm font-medium text-slate-600">Vue</span>
+
+                <div className="flex items-center gap-1.5">
+                    <Button
+                        variant={queueView ? "outline" : "default"}
+                        size="sm"
+                        disabled={!canViewCompanyWide}
+                        onClick={() => setQueueView(null)}
+                        title={canViewCompanyWide ? undefined : "Votre périmètre ne donne pas accès à la vue entreprise"}
+                    >
+                        Entreprise
+                    </Button>
+
+                    <select
+                        className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                        value={queueView ?? ""}
+                        onChange={(e) => setQueueView(e.target.value || null)}
+                    >
+                        <option value="" disabled={!canViewCompanyWide}>
+                            Choisir une file…
+                        </option>
+                        {queues.map((q) => (
+                            <option key={q.queueNumber} value={q.queueNumber}>
+                                {q.queueNumber} – {q.queueName}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                {selectedQueueView && (
+                    <span className="text-sm text-slate-500">
+                        Statut affiché du point de vue de la file{" "}
+                        <span className="font-medium text-slate-700">
+                            {selectedQueueView.number} – {selectedQueueView.name}
+                        </span>
+                    </span>
+                )}
+
+                {queueOutcomeFilter && (
+                    <span className="ml-auto inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800">
+                        Filtré depuis une statistique :{" "}
+                        {queueOutcomeFilter.outcomes.map((o) => queueOutcomeConfig[o].label).join(", ")}
+                    </span>
+                )}
+            </div>
+
             {/* Table with integrated filters */}
             <Card className="border-slate-200 shadow-sm overflow-hidden">
                 <LogsTable
                     logs={data?.logs || []}
+                    queueView={selectedQueueView}
                     isLoading={isLoading}
                     columnVisibility={columnVisibility}
                     sort={sort}

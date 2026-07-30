@@ -9,6 +9,8 @@ import { maskPhoneNumber } from "@/services/domain/call-aggregation";
 import {
     DEFAULT_CLASSIFICATION_RULES,
     buildQueueOutcomeSubquery,
+    buildQueuePassagesCTE,
+    buildCallQueueOutcomesCTE,
 } from "@/services/domain/call-classification";
 import type {
     AggregatedCallLog,
@@ -146,6 +148,10 @@ function buildAggregatedQueryParts(
 ): {
     whereClause: string;
     dateOnlyWhereClause: string;
+    queueViewCTE?: string;
+    queueViewJoin?: string;
+    queueViewSelect?: string;
+    viewQueue?: string;
     aggregatedWhereConditions: string[];
     calleeFilterCTE: string;
     calleeFilterJoin: string;
@@ -283,6 +289,45 @@ function buildAggregatedQueryParts(
         whereConditions.push(`call_history_id IN ${subquery}`);
     }
 
+    // Vue file : le tableau affiche alors DEUX statuts — celui de l'appel dans
+    // la file consultée, et son sort final. C'est ce qui permet à un manager de
+    // lire « perdu chez moi, mais récupéré ailleurs » sans qu'on ait à choisir
+    // entre les deux points de vue.
+    const viewQueue = filters.queueView ?? filters.queueOutcomeFilter?.queueNumber;
+    let queueViewCTE = "";
+    let queueViewJoin = "";
+    let queueViewSelect = "";
+    if (viewQueue) {
+        const qExpr = bind(viewQueue);
+        queueViewCTE = `,
+        ${buildQueuePassagesCTE(DEFAULT_CLASSIFICATION_RULES, { queueExpr: qExpr, startExpr: startP, endExpr: endP })},
+        ${buildCallQueueOutcomesCTE(DEFAULT_CLASSIFICATION_RULES)},
+        answering_queue AS (
+            SELECT DISTINCT ON (c.call_history_id)
+                c.call_history_id,
+                c.destination_dn_number AS queue_number,
+                COALESCE(c.destination_dn_name, c.destination_dn_number) AS queue_name
+            FROM cdroutput c
+            WHERE c.destination_dn_type = 'queue'
+              AND c.destination_dn_number <> ${qExpr}
+              AND c.cdr_started_at >= ${startP} AND c.cdr_started_at <= ${endP}
+              AND EXISTS (
+                  SELECT 1 FROM cdroutput p
+                  WHERE p.originating_cdr_id = c.cdr_id
+                    AND p.creation_forward_reason = 'polling'
+                    AND p.cdr_answered_at IS NOT NULL
+                    AND p.destination_dn_type = 'extension'
+              )
+            ORDER BY c.call_history_id, c.cdr_started_at DESC
+        )`;
+        queueViewJoin = `LEFT JOIN call_queue_outcomes qv ON qv.call_history_id = ca.call_history_id
+        LEFT JOIN answering_queue aq ON aq.call_history_id = ca.call_history_id`;
+        queueViewSelect = `,
+            qv.outcome as queue_view_status,
+            aq.queue_number as answering_queue_number,
+            aq.queue_name as answering_queue_name`;
+    }
+
     const whereClause = whereConditions.join(" AND ");
     const dateOnlyWhereClause = `cdr_started_at >= ${startP} AND cdr_started_at <= ${endP}`;
 
@@ -357,7 +402,7 @@ function buildAggregatedQueryParts(
         }
     }
 
-    return { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause: buildOrderByClause(sort, timezone), params };
+    return { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause: buildOrderByClause(sort, timezone), params, queueViewCTE, queueViewJoin, queueViewSelect, viewQueue };
 }
 
 // ============================================
@@ -429,7 +474,8 @@ function buildSingleConditionSQL(condition: JourneyConditionNode): string | null
 function buildAggregateCTEs(
     whereClause: string,
     dateOnlyWhereClause: string,
-    calleeFilterCTE: string
+    calleeFilterCTE: string,
+    extraCTE: string = ""
 ): string {
     return `
         WITH call_aggregates AS (
@@ -656,11 +702,11 @@ function buildAggregateCTEs(
                 WHERE all_steps.step_num <= 15
             ) j
             GROUP BY j.call_history_id
-        )${calleeFilterCTE}`;
+        )${calleeFilterCTE}${extraCTE}`;
 }
 
 // Shared SELECT columns for data queries
-const DATA_SELECT = `
+const DATA_SELECT_BASE = `
         SELECT
             ca.call_history_id,
             ca.segment_count,
@@ -706,8 +752,18 @@ const DATA_SELECT = `
             cq.queue_count,
             cj.journey as call_journey`;
 
+/**
+ * Colonnes de la vue file : le statut de l'appel DANS la file consultee, et la
+ * file qui l'a finalement traite le cas echeant. Les deux ensemble permettent
+ * de lire « perdu chez moi, mais recupere ailleurs » sans avoir a choisir entre
+ * la vue file et la vue entreprise.
+ */
+function buildDataSelect(queueViewSelect: string): string {
+    return DATA_SELECT_BASE + queueViewSelect;
+}
+
 // Shared FROM + JOINs for data queries
-function buildDataJoins(calleeFilterJoin: string, aggregatedWhereConditions: string[], sortClause: string, limit: number, skip: number): string {
+function buildDataJoins(calleeFilterJoin: string, aggregatedWhereConditions: string[], sortClause: string, limit: number, skip: number, queueViewJoin: string = ""): string {
     return `
         FROM call_aggregates ca
         JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
@@ -717,6 +773,7 @@ function buildDataJoins(calleeFilterJoin: string, aggregatedWhereConditions: str
         LEFT JOIN handled_by hb ON ca.call_history_id = hb.call_history_id
         LEFT JOIN call_queues cq ON ca.call_history_id = cq.call_history_id
         LEFT JOIN call_journey cj ON ca.call_history_id = cj.call_history_id
+        ${queueViewJoin}
         ${calleeFilterJoin}
         ${aggregatedWhereConditions.length > 0 ? 'WHERE ' + aggregatedWhereConditions.join(' AND ') : ''}
         ORDER BY ${sortClause}
@@ -742,7 +799,7 @@ export async function getCallLogsSQL(
         buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone);
 
     return buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE)
-        + DATA_SELECT
+        + buildDataSelect("")
         + buildDataJoins(calleeFilterJoin, aggregatedWhereConditions, sortClause, limit, skip);
 }
 
@@ -986,7 +1043,41 @@ function maybeMask(value: string, mask: boolean): string {
     return mask ? maskPhoneNumber(value) : value;
 }
 
-function transformRow(row: any, maskNumbers = false): AggregatedCallLog {
+/**
+ * Décrit la file ayant finalement répondu, en respectant la règle 6 du socle
+ * (`outOfScopeFinalStatus`).
+ *
+ * L'intérêt de la double colonne est de montrer au manager que ses « perdus »
+ * ont pu être récupérés — mais « ailleurs » est souvent hors de son périmètre.
+ * Le réglage décide si l'on nomme la file, si l'on reste vague, ou si l'on se
+ * tait. Appliqué CÔTÉ SERVEUR : masquer la colonne au client ne suffirait pas.
+ */
+function buildAnsweringQueue(
+    row: any,
+    scope?: AccessScope,
+): { number: string; name: string; inScope: boolean } | null {
+    const number = row.answering_queue_number;
+    if (!number) return null;
+
+    // Sans ce garde-fou, un appel bien traité par la file consultée puis
+    // transféré afficherait « répondu par 993 », ce qui laisse croire que la
+    // file n'a rien fait. La colonne ne sert que si la file n'a PAS répondu.
+    if (row.queue_view_status === "answered") return null;
+
+    const inScope = !scope || scope.unrestricted || (scope.queueNumbers?.includes(number) ?? false);
+    if (inScope) return { number, name: row.answering_queue_name || number, inScope: true };
+
+    switch (DEFAULT_CLASSIFICATION_RULES.outOfScopeFinalStatus) {
+        case "hide":
+            return null;
+        case "anonymize":
+            return { number: "", name: "hors périmètre", inScope: false };
+        default:
+            return { number, name: row.answering_queue_name || number, inScope: false };
+    }
+}
+
+function transformRow(row: any, maskNumbers = false, scope?: AccessScope): AggregatedCallLog {
     const firstStarted = row.first_started_at ? new Date(row.first_started_at) : null;
     const lastEnded = row.last_ended_at ? new Date(row.last_ended_at) : null;
     const firstAnswered = row.first_answered_at ? new Date(row.first_answered_at) : null;
@@ -1085,6 +1176,8 @@ function transformRow(row: any, maskNumbers = false): AggregatedCallLog {
             ? queues.map((q: { number: string; name: string }) => q.name || q.number).join(", ")
             : "-",
         journey: journey as import("@/services/domain/call.types").JourneyStep[],
+        queueViewStatus: row.queue_view_status ?? null,
+        answeringQueue: buildAnsweringQueue(row, scope),
     };
 }
 
@@ -1105,14 +1198,15 @@ export async function getAggregatedCallLogs(
     // ⚠️ La portée est résolue ICI, jamais reçue en paramètre : ce module est
     // "use server", donc ses arguments sont contrôlables par le client.
     const scope = await resolveAccessScope(serverId);
-    const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause, params } =
+    const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause, params,
+        queueViewCTE, queueViewJoin, queueViewSelect, viewQueue } =
         buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, scope);
     const pageNumber = Math.max(1, pagination.page);
 
     try {
-        const dataQuery = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE)
-            + DATA_SELECT
-            + buildDataJoins(calleeFilterJoin, aggregatedWhereConditions, sortClause, limit, skip);
+        const dataQuery = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, queueViewCTE)
+            + buildDataSelect(queueViewSelect ?? "")
+            + buildDataJoins(calleeFilterJoin, aggregatedWhereConditions, sortClause, limit, skip, queueViewJoin);
 
         const countQuery = buildCountQuery(
             whereClause, dateOnlyWhereClause, calleeFilterCTE, calleeFilterJoin,
@@ -1127,7 +1221,7 @@ export async function getAggregatedCallLogs(
 
         const totalCount = Number(countResult[0]?.total || 0);
         const totalPages = Math.ceil(totalCount / limit);
-        const logs = rawResults.map((row) => transformRow(row, scope.maskPhoneNumbers));
+        const logs = rawResults.map((row) => transformRow(row, scope.maskPhoneNumbers, scope));
 
         return { logs, totalCount, totalPages, currentPage: pageNumber };
     } catch (error) {

@@ -22,6 +22,7 @@ import {
     HelpCircle,
 } from "lucide-react";
 import type { CallDirection, CallStatus, SortField, LogsSort, JourneyStep } from "@/types/logs.types";
+import type { PassageOutcome } from "@/services/domain/call-classification";
 
 export const directionConfig: Record<CallDirection, { icon: typeof ArrowDownLeft; label: string; className: string }> = {
     inbound: { icon: ArrowDownLeft, label: "Entrant", className: "bg-emerald-100 text-emerald-700" },
@@ -35,6 +36,19 @@ export const statusConfig: Record<CallStatus, { icon: typeof Phone; label: strin
     voicemail: { icon: Voicemail, label: "Messagerie", className: "bg-blue-100 text-blue-700" },
     missed: { icon: PhoneOff, label: "Manqué", className: "bg-red-100 text-red-700" },
     busy: { icon: PhoneCall, label: "Occupé", className: "bg-red-100 text-red-700" },
+};
+
+/**
+ * Statuts « dans la file », issus du socle de classement. Distincts du statut
+ * final volontairement : un appel peut être perdu pour une file et répondu par
+ * l'entreprise, et c'est justement ce que la vue file donne à voir.
+ */
+export const queueOutcomeConfig: Record<PassageOutcome, { label: string; className: string }> = {
+    answered: { label: "Répondu", className: "bg-emerald-100 text-emerald-700" },
+    overflow: { label: "Redirigé", className: "bg-amber-100 text-amber-700" },
+    voicemail: { label: "Messagerie", className: "bg-indigo-100 text-indigo-700" },
+    short_abandon: { label: "Abandon court", className: "bg-slate-100 text-slate-600" },
+    abandoned: { label: "Perdu", className: "bg-red-100 text-red-700" },
 };
 
 // Journey step icon & style config — dynamic based on result
