@@ -32,6 +32,9 @@ export async function GET(request: NextRequest) {
                 status: q.status,
                 agentCount: q.agentCount,
                 isNew: q.reviewedAt === null,
+                // Activité réelle (CDR), et non la date figée du registre.
+                lastCallAt: q.lastCallAt,
+                agents: q.agents,
                 firstSeenAt: q.firstSeenAt.toISOString(),
                 lastSeenAt: q.lastSeenAt.toISOString(),
                 previousNames: q.nameHistory.map((h) => h.name).filter((n) => n !== q.currentName),

@@ -208,7 +208,17 @@ export async function listRegistryQueues(serverId: ServerId) {
     ]);
 
     const countByQueue = new Map(agentCounts.map((c) => [c.queueNumber, c._count.extensionNumber]));
-    return queues.map((q) => ({ ...q, agentCount: countByQueue.get(q.queueNumber) ?? 0 }));
+
+    // Activité en direct : permet d'afficher un état de santé fiable et de
+    // rechercher une file par le nom d'un de ses agents.
+    const live = await getQueuesLiveActivity(serverId);
+
+    return queues.map((q) => ({
+        ...q,
+        agentCount: live[q.queueNumber]?.agents.length ?? countByQueue.get(q.queueNumber) ?? 0,
+        lastCallAt: live[q.queueNumber]?.lastCallAt ?? null,
+        agents: live[q.queueNumber]?.agents ?? [],
+    }));
 }
 
 /**
@@ -223,6 +233,73 @@ export async function updateRegistryQueue(
         where: { id },
         data: { ...data, reviewedAt: new Date() },
     });
+}
+
+export interface QueueAgentActivity {
+    extension: string;
+    name: string;
+    attempts: number;
+    lastSeenAt: string;
+}
+
+export interface QueueLiveActivity {
+    lastCallAt: string | null;
+    agents: QueueAgentActivity[];
+}
+
+/**
+ * Activité réelle des files, lue DIRECTEMENT dans les CDR.
+ *
+ * Le registre ne se met à jour qu'à la découverte : ses dates s'y figent. Les
+ * indicateurs affichés à l'écran doivent refléter la réalité du moment, sinon on
+ * mélange deux fraîcheurs (une file « vue il y a 19 h » dont les agents ont été
+ * sollicités il y a 15 min).
+ */
+export async function getQueuesLiveActivity(serverId: ServerId): Promise<Record<string, QueueLiveActivity>> {
+    const prisma = getPrismaCdr(serverId);
+
+    const [lastCalls, agents] = await Promise.all([
+        prisma.$queryRaw<{ queue_number: string; last_call: Date }[]>`
+            SELECT destination_dn_number AS queue_number, MAX(cdr_started_at) AS last_call
+            FROM cdroutput
+            WHERE destination_dn_type = 'queue' AND destination_dn_number IS NOT NULL
+            GROUP BY destination_dn_number
+        `,
+        prisma.$queryRaw<
+            { queue_number: string; extension: string; name: string | null; attempts: bigint; last_seen: Date }[]
+        >`
+            SELECT parent.destination_dn_number AS queue_number,
+                   child.destination_dn_number  AS extension,
+                   MAX(child.destination_dn_name) AS name,
+                   COUNT(*)::bigint             AS attempts,
+                   MAX(child.cdr_started_at)    AS last_seen
+            FROM cdroutput child
+            JOIN cdroutput parent ON child.originating_cdr_id = parent.cdr_id
+            WHERE child.creation_method = 'route_to'
+              AND child.creation_forward_reason = 'polling'
+              AND parent.destination_dn_type = 'queue'
+              AND child.destination_dn_number IS NOT NULL
+            GROUP BY parent.destination_dn_number, child.destination_dn_number
+        `,
+    ]);
+
+    const result: Record<string, QueueLiveActivity> = {};
+    for (const c of lastCalls) {
+        result[c.queue_number] = { lastCallAt: c.last_call.toISOString(), agents: [] };
+    }
+    for (const a of agents) {
+        const entry = (result[a.queue_number] ??= { lastCallAt: null, agents: [] });
+        entry.agents.push({
+            extension: a.extension,
+            name: a.name ?? a.extension,
+            attempts: Number(a.attempts),
+            lastSeenAt: a.last_seen.toISOString(),
+        });
+    }
+    for (const entry of Object.values(result)) {
+        entry.agents.sort((x, y) => y.lastSeenAt.localeCompare(x.lastSeenAt));
+    }
+    return result;
 }
 
 export interface QueueDetail {
@@ -254,23 +331,30 @@ export async function getQueueDetail(serverId: ServerId, id: string): Promise<Qu
     if (!queue || queue.tenantId !== serverId) return null;
 
     const prisma = getPrismaCdr(serverId);
-    const agents = await prisma.$queryRaw<
-        { extension: string; name: string | null; attempts: bigint; last_seen: Date }[]
-    >`
-        SELECT child.destination_dn_number AS extension,
-               MAX(child.destination_dn_name) AS name,
-               COUNT(*)::bigint              AS attempts,
-               MAX(child.cdr_started_at)     AS last_seen
-        FROM cdroutput child
-        JOIN cdroutput parent ON child.originating_cdr_id = parent.cdr_id
-        WHERE child.creation_method = 'route_to'
-          AND child.creation_forward_reason = 'polling'
-          AND parent.destination_dn_type = 'queue'
-          AND parent.destination_dn_number = ${queue.queueNumber}
-          AND child.destination_dn_number IS NOT NULL
-        GROUP BY child.destination_dn_number
-        ORDER BY MAX(child.cdr_started_at) DESC
-    `;
+    const [agents, lastCall] = await Promise.all([
+        prisma.$queryRaw<{ extension: string; name: string | null; attempts: bigint; last_seen: Date }[]>`
+            SELECT child.destination_dn_number AS extension,
+                   MAX(child.destination_dn_name) AS name,
+                   COUNT(*)::bigint              AS attempts,
+                   MAX(child.cdr_started_at)     AS last_seen
+            FROM cdroutput child
+            JOIN cdroutput parent ON child.originating_cdr_id = parent.cdr_id
+            WHERE child.creation_method = 'route_to'
+              AND child.creation_forward_reason = 'polling'
+              AND parent.destination_dn_type = 'queue'
+              AND parent.destination_dn_number = ${queue.queueNumber}
+              AND child.destination_dn_number IS NOT NULL
+            GROUP BY child.destination_dn_number
+            ORDER BY MAX(child.cdr_started_at) DESC
+        `,
+        // Dernier appel lu EN DIRECT : la date du registre est figée à la
+        // dernière découverte et serait incohérente avec l'activité des agents.
+        prisma.$queryRaw<{ last_call: Date | null }[]>`
+            SELECT MAX(cdr_started_at) AS last_call
+            FROM cdroutput
+            WHERE destination_dn_type = 'queue' AND destination_dn_number = ${queue.queueNumber}
+        `,
+    ]);
 
     return {
         id: queue.id,
@@ -283,7 +367,7 @@ export async function getQueueDetail(serverId: ServerId, id: string): Promise<Qu
         status: queue.status,
         isNew: queue.reviewedAt === null,
         firstSeenAt: queue.firstSeenAt.toISOString(),
-        lastSeenAt: queue.lastSeenAt.toISOString(),
+        lastSeenAt: (lastCall[0]?.last_call ?? queue.lastSeenAt).toISOString(),
         previousNames: queue.nameHistory
             .filter((h) => h.name !== queue.currentName)
             .map((h) => ({ name: h.name, seenAt: h.seenAt.toISOString() })),

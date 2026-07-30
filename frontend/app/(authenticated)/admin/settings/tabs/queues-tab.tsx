@@ -13,6 +13,9 @@ import { cn } from "@/lib/utils";
 import { getSelectedServer } from "@/lib/selected-server";
 import { KNOWN_REGIONS } from "@/services/domain/queue-naming";
 import { QueueDetailDialog } from "@/components/queue-detail-dialog";
+import { assessQueueHealth, type HealthLevel } from "@/services/domain/queue-health";
+import { formatDistanceToNow } from "date-fns";
+import { fr } from "date-fns/locale";
 
 type QueueStatus = "ACTIVE" | "ARCHIVED";
 
@@ -26,9 +29,17 @@ interface RegistryQueue {
     status: QueueStatus;
     agentCount: number;
     isNew: boolean;
+    lastCallAt: string | null;
+    agents: { extension: string; name: string; attempts: number; lastSeenAt: string }[];
     lastSeenAt: string;
     previousNames: string[];
 }
+
+const healthStyles: Record<HealthLevel, { dot: string; label: string }> = {
+    ok: { dot: "bg-emerald-500", label: "OK" },
+    warning: { dot: "bg-amber-500", label: "À surveiller" },
+    critical: { dot: "bg-red-500", label: "Problème" },
+};
 
 const statusLabels: Record<QueueStatus, string> = {
     ACTIVE: "Active",
@@ -46,6 +57,7 @@ export function QueuesTab() {
     const [isDiscovering, setIsDiscovering] = useState(false);
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState<QueueStatus | "ALL">("ALL");
+    const [healthFilter, setHealthFilter] = useState<HealthLevel | "ALL">("ALL");
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [detailQueueId, setDetailQueueId] = useState<string | null>(null);
 
@@ -130,19 +142,36 @@ export function QueuesTab() {
     const newQueues = queues.filter((q) => q.isNew).length;
     const renamedQueues = queues.filter((q) => q.previousNames.length > 0);
 
+    // Santé calculée côté client à partir de l'activité réelle des agents.
+    const health = useMemo(() => {
+        const map = new Map<string, ReturnType<typeof assessQueueHealth>>();
+        queues.forEach((q) => map.set(q.id, assessQueueHealth(q)));
+        return map;
+    }, [queues]);
+
     const filtered = useMemo(() => {
         const term = search.trim().toLowerCase();
         return queues.filter((q) => {
             if (statusFilter !== "ALL" && q.status !== statusFilter) return false;
+            if (healthFilter !== "ALL" && health.get(q.id)?.level !== healthFilter) return false;
             if (!term) return true;
             return (
                 q.queueNumber.includes(term) ||
                 q.currentName.toLowerCase().includes(term) ||
                 (q.region ?? "").toLowerCase().includes(term) ||
-                (q.entity ?? "").toLowerCase().includes(term)
+                (q.entity ?? "").toLowerCase().includes(term) ||
+                // Recherche par agent : retrouve les files où il est sollicité.
+                q.agents.some((a) => a.name.toLowerCase().includes(term) || a.extension.includes(term))
             );
         });
-    }, [queues, search, statusFilter]);
+    }, [queues, search, statusFilter, healthFilter, health]);
+
+    /** Agents correspondant à la recherche, pour expliquer pourquoi une file remonte. */
+    const matchedAgents = (q: RegistryQueue) => {
+        const term = search.trim().toLowerCase();
+        if (!term) return [];
+        return q.agents.filter((a) => a.name.toLowerCase().includes(term) || a.extension.includes(term));
+    };
 
     const toggle = (id: string) => {
         setSelected((s) => {
@@ -230,12 +259,23 @@ export function QueuesTab() {
                         <Input
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Rechercher par numéro, nom, région ou entité…"
+                            placeholder="Rechercher par numéro, nom, région, entité ou agent…"
                             className="pl-9"
                         />
                     </div>
+                    <Select value={healthFilter} onValueChange={(v) => setHealthFilter(v as HealthLevel | "ALL")}>
+                        <SelectTrigger className="w-full md:w-44">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="ALL">Tous les états</SelectItem>
+                            <SelectItem value="critical">⚠ Problème</SelectItem>
+                            <SelectItem value="warning">À surveiller</SelectItem>
+                            <SelectItem value="ok">OK</SelectItem>
+                        </SelectContent>
+                    </Select>
                     <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as QueueStatus | "ALL")}>
-                        <SelectTrigger className="w-full md:w-48">
+                        <SelectTrigger className="w-full md:w-40">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -284,31 +324,47 @@ export function QueuesTab() {
                                                 }
                                             />
                                         </th>
+                                        <th className="w-12 px-2 py-3 text-center font-medium text-slate-600" title="État de la file">
+                                            État
+                                        </th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">N°</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Nom actuel</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Entité</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Région</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Service</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Agents</th>
+                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Dernier appel</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Statut</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y">
                                     {filtered.map((q) => (
-                                        <tr key={q.id} className={cn("hover:bg-slate-50", q.status === "ARCHIVED" && "opacity-60")}>
-                                            <td className="px-4 py-2">
+                                        <tr
+                                            key={q.id}
+                                            onClick={() => setDetailQueueId(q.id)}
+                                            className={cn(
+                                                "cursor-pointer hover:bg-slate-50",
+                                                q.status === "ARCHIVED" && "opacity-60",
+                                            )}
+                                            title="Voir le détail (agents, historique)"
+                                        >
+                                            {/* Les cellules interactives stoppent la propagation pour ne pas
+                                                ouvrir la fiche à chaque édition d'étiquette. */}
+                                            <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                                                 <Checkbox checked={selected.has(q.id)} onCheckedChange={() => toggle(q.id)} />
+                                            </td>
+                                            <td className="px-2 py-2 text-center">
+                                                <span
+                                                    className={cn(
+                                                        "inline-block h-2.5 w-2.5 rounded-full",
+                                                        healthStyles[health.get(q.id)?.level ?? "ok"].dot,
+                                                    )}
+                                                    title={`${healthStyles[health.get(q.id)?.level ?? "ok"].label} — ${(health.get(q.id)?.reasons ?? []).join(" · ")}`}
+                                                />
                                             </td>
                                             <td className="px-4 py-2 font-mono text-xs text-slate-600">{q.queueNumber}</td>
                                             <td className="px-4 py-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setDetailQueueId(q.id)}
-                                                    className="text-left font-medium hover:text-blue-700 hover:underline"
-                                                    title="Voir le détail (agents, historique)"
-                                                >
-                                                    {q.currentName}
-                                                </button>
+                                                <span className="font-medium">{q.currentName}</span>
                                                 {q.isNew && (
                                                     <Badge variant="outline" className="ml-2 border-blue-200 bg-blue-50 text-[10px] text-blue-700">
                                                         Nouvelle
@@ -319,8 +375,14 @@ export function QueuesTab() {
                                                         (renommée)
                                                     </span>
                                                 )}
+                                                {/* Explique pourquoi la file remonte lors d'une recherche par agent */}
+                                                {matchedAgents(q).length > 0 && (
+                                                    <p className="mt-0.5 text-xs text-blue-600">
+                                                        ↳ {matchedAgents(q).map((a) => `${a.name} (${a.extension})`).join(", ")}
+                                                    </p>
+                                                )}
                                             </td>
-                                            <td className="px-4 py-2">
+                                            <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                                                 <Input
                                                     defaultValue={q.entity ?? ""}
                                                     onBlur={(e) => {
@@ -331,7 +393,7 @@ export function QueuesTab() {
                                                     placeholder="—"
                                                 />
                                             </td>
-                                            <td className="px-4 py-2">
+                                            <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                                                 <Input
                                                     defaultValue={q.region ?? ""}
                                                     onBlur={(e) => {
@@ -342,7 +404,7 @@ export function QueuesTab() {
                                                     placeholder="—"
                                                 />
                                             </td>
-                                            <td className="px-4 py-2">
+                                            <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                                                 <Input
                                                     defaultValue={q.service ?? ""}
                                                     onBlur={(e) => {
@@ -354,12 +416,23 @@ export function QueuesTab() {
                                                 />
                                             </td>
                                             <td className="px-4 py-2">
-                                                <span className="inline-flex items-center gap-1 text-xs text-slate-600">
+                                                <span
+                                                    className="inline-flex items-center gap-1 text-xs text-slate-600"
+                                                    title={`${health.get(q.id)?.activeAgents ?? 0} actif(s) · ${health.get(q.id)?.staleAgents ?? 0} inactif(s) > 30j`}
+                                                >
                                                     <Users className="h-3 w-3 text-slate-400" />
                                                     {q.agentCount}
+                                                    {(health.get(q.id)?.activeAgents ?? 0) > 0 && (
+                                                        <span className="text-emerald-600">({health.get(q.id)?.activeAgents})</span>
+                                                    )}
                                                 </span>
                                             </td>
-                                            <td className="px-4 py-2">
+                                            <td className="px-4 py-2 text-xs text-slate-500">
+                                                {q.lastCallAt
+                                                    ? formatDistanceToNow(new Date(q.lastCallAt), { addSuffix: true, locale: fr })
+                                                    : "—"}
+                                            </td>
+                                            <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                                                 <Select value={q.status} onValueChange={(v) => patchQueue(q.id, { status: v as QueueStatus })}>
                                                     <SelectTrigger className={cn("h-8 w-32 text-xs", statusStyles[q.status])}>
                                                         <SelectValue />
@@ -375,7 +448,7 @@ export function QueuesTab() {
                                     ))}
                                     {filtered.length === 0 && (
                                         <tr>
-                                            <td colSpan={8} className="py-8 text-center text-slate-500">
+                                            <td colSpan={10} className="py-8 text-center text-slate-500">
                                                 Aucune file ne correspond à ces critères
                                             </td>
                                         </tr>
