@@ -14,13 +14,19 @@ import { Pagination } from "@/components/pagination";
 import { CallChainModal } from "@/components/call-chain-modal";
 import { SqlQueryModal } from "@/components/sql-query-modal";
 import { ActiveFilters } from "@/components/active-filters";
-import { queueOutcomeConfig } from "@/components/logs-table-helpers";
 import {
     Popover,
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import {
     DropdownMenu,
@@ -149,7 +155,7 @@ export default function AdminLogsPage() {
     // `queueOutcome=900:answered` (plusieurs statuts séparés par une virgule).
     // Il s'appuie sur le même socle de classement que les KPIs, ce qui garantit
     // que le nombre de lignes listées est exactement le chiffre affiché.
-    const [queueOutcomeFilter] = useState<{ queueNumber: string; outcomes: PassageOutcome[]; includeTeamDirect?: boolean } | null>(() => {
+    const [queueOutcomeFilter, setQueueOutcomeFilter] = useState<{ queueNumber: string; outcomes: PassageOutcome[]; includeTeamDirect?: boolean } | null>(() => {
         const param = searchParams.get("queueOutcome");
         if (!param) return null;
         const [queueNumber, outcomes, team] = param.split(":");
@@ -182,6 +188,15 @@ export default function AdminLogsPage() {
 
     // Queues state for filter
     const [queues, setQueues] = useState<QueueInfo[]>([]);
+
+    // Changer de file (ou revenir à la vue entreprise) libère le filtre de
+    // statut : il désignait des statuts DANS l'ancienne file et n'aurait plus
+    // de sens ailleurs.
+    const changeQueueView = (next: string | null) => {
+        setQueueView(next);
+        setQueueOutcomeFilter(null);
+        setCurrentPage(1);
+    };
 
     // File consultée, résolue avec son libellé pour l'affichage.
     const selectedQueueView = queueView
@@ -719,26 +734,27 @@ export default function AdminLogsPage() {
                         variant={queueView ? "outline" : "default"}
                         size="sm"
                         disabled={!canViewCompanyWide}
-                        onClick={() => setQueueView(null)}
+                        onClick={() => changeQueueView(null)}
                         title={canViewCompanyWide ? undefined : "Votre périmètre ne donne pas accès à la vue entreprise"}
                     >
                         Entreprise
                     </Button>
 
-                    <select
-                        className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                    <Select
                         value={queueView ?? ""}
-                        onChange={(e) => setQueueView(e.target.value || null)}
+                        onValueChange={(v) => changeQueueView(v || null)}
                     >
-                        <option value="" disabled={!canViewCompanyWide}>
-                            Choisir une file…
-                        </option>
-                        {queues.map((q) => (
-                            <option key={q.queueNumber} value={q.queueNumber}>
-                                {q.queueNumber} – {q.queueName}
-                            </option>
-                        ))}
-                    </select>
+                        <SelectTrigger className="h-8 w-[260px] text-sm">
+                            <SelectValue placeholder="Choisir une file…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {queues.map((q) => (
+                                <SelectItem key={q.queueNumber} value={q.queueNumber} className="text-sm">
+                                    {q.queueNumber} – {q.queueName}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
 
                 {selectedQueueView && (
@@ -749,13 +765,6 @@ export default function AdminLogsPage() {
                         </span>
                     </span>
                 )}
-
-                {queueOutcomeFilter && (
-                    <span className="ml-auto inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800">
-                        Filtré depuis une statistique :{" "}
-                        {queueOutcomeFilter.outcomes.map((o) => queueOutcomeConfig[o].label).join(", ")}
-                    </span>
-                )}
             </div>
 
             {/* Table with integrated filters */}
@@ -763,6 +772,20 @@ export default function AdminLogsPage() {
                 <LogsTable
                     logs={data?.logs || []}
                     queueView={selectedQueueView}
+                    queueOutcomes={queueOutcomeFilter?.outcomes ?? []}
+                    onQueueOutcomesChange={(outcomes) => {
+                        // Le filtre porte toujours sur la file consultée ; le
+                        // vider revient à retirer la restriction, pas la vue.
+                        setCurrentPage(1);
+                        setQueueOutcomeFilter(
+                            outcomes.length > 0 && queueView
+                                // includeTeamDirect vient des liens de KPI, qui
+                                // additionnent file et appels directs. Un filtre
+                                // posé ici porte sur la colonne, donc sur la file.
+                                ? { queueNumber: queueView, outcomes, includeTeamDirect: false }
+                                : null,
+                        );
+                    }}
                     isLoading={isLoading}
                     columnVisibility={columnVisibility}
                     sort={sort}

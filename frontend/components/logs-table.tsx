@@ -15,6 +15,7 @@ import {
     ColumnFilterDateRange,
     ColumnFilterDirection,
     ColumnFilterStatus,
+    ColumnFilterQueueOutcome,
     ColumnFilterDuration,
     ColumnFilterWaitTime,
     ColumnFilterSegmentCount,
@@ -37,6 +38,7 @@ import type {
 
 import { SortableHeader } from "@/components/logs-table-helpers";
 import { LogRow } from "@/components/log-row";
+import type { PassageOutcome } from "@/services/domain/call-classification";
 import { LogsTableSkeleton } from "@/components/logs-table-skeleton";
 
 interface LogsTableProps {
@@ -62,6 +64,9 @@ interface LogsTableProps {
     onDirectionsChange: (directions: CallDirection[]) => void;
     selectedStatuses: CallStatus[];
     onStatusesChange: (statuses: CallStatus[]) => void;
+    /** Statuts « dans la file » retenus ; vide = tous. */
+    queueOutcomes?: PassageOutcome[];
+    onQueueOutcomesChange?: (outcomes: PassageOutcome[]) => void;
     durationMin?: number;
     durationMax?: number;
     onDurationChange: (range: { min?: number; max?: number }) => void;
@@ -111,6 +116,8 @@ export function LogsTable({
     onDirectionsChange,
     selectedStatuses,
     onStatusesChange,
+    queueOutcomes,
+    onQueueOutcomesChange,
     durationMin,
     durationMax,
     onDurationChange,
@@ -294,7 +301,14 @@ export function LogsTable({
                                     />
                                 </TableHead>
                             )}
-                            {queueView && <TableHead className="py-2" />}
+                            {queueView && (
+                                <TableHead className="py-2">
+                                    <ColumnFilterQueueOutcome
+                                        selected={queueOutcomes ?? []}
+                                        onChange={onQueueOutcomesChange ?? (() => {})}
+                                    />
+                                </TableHead>
+                            )}
                             {columnVisibility.status && (
                                 <TableHead className="py-2">
                                     <ColumnFilterStatus
@@ -337,6 +351,7 @@ export function LogsTable({
                             logs.map((log) => (
                                 <LogRow
                                     key={log.callHistoryId}
+                                    queueViewActive={Boolean(queueView)}
                                     log={log}
                                     columnVisibility={columnVisibility}
                                     onRowClick={onRowClick}

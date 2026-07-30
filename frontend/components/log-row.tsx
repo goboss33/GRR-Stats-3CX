@@ -19,11 +19,15 @@ import {
 
 interface LogRowProps {
     log: AggregatedCallLog;
+    /** Vue file active : la cellule de statut file doit alors TOUJOURS être
+     *  émise, y compris pour un appel qui n'est jamais passé par cette file,
+     *  sinon les colonnes se décalent d'un cran sur ces lignes. */
+    queueViewActive?: boolean;
     columnVisibility: ColumnVisibility;
     onRowClick?: (callHistoryId: string) => void;
 }
 
-export function LogRow({ log, columnVisibility, onRowClick }: LogRowProps) {
+export function LogRow({ log, queueViewActive, columnVisibility, onRowClick }: LogRowProps) {
     const dirConfig = directionConfig[log.direction];
     const statConfig = statusConfig[log.finalStatus];
     const DirIcon = dirConfig.icon;
@@ -207,12 +211,18 @@ export function LogRow({ log, columnVisibility, onRowClick }: LogRowProps) {
             )}
 
             {/* Status */}
-            {/* Vue file : statut de l'appel DANS la file consultée. */}
-            {log.queueViewStatus && (
+            {/* Vue file : statut de l'appel DANS la file consultée. Un tiret
+                lorsque l'appel n'y est jamais passé — le cas est fréquent, la
+                liste n'étant pas restreinte à cette file. */}
+            {queueViewActive && (
                 <TableCell className="text-center">
-                    <Badge variant="secondary" className={queueOutcomeConfig[log.queueViewStatus].className}>
-                        {queueOutcomeConfig[log.queueViewStatus].label}
-                    </Badge>
+                    {log.queueViewStatus ? (
+                        <Badge variant="secondary" className={queueOutcomeConfig[log.queueViewStatus].className}>
+                            {queueOutcomeConfig[log.queueViewStatus].label}
+                        </Badge>
+                    ) : (
+                        <span className="text-slate-300">—</span>
+                    )}
                 </TableCell>
             )}
 
