@@ -603,7 +603,11 @@ export function buildQueueOutcomeSubquery(
     rules: ClassificationRules,
     params: PassageCTEParams & { outcomes: PassageOutcome[]; includeTeamDirect?: boolean },
 ): string {
-    const list = params.outcomes.map((o) => `'${o}'`).join(", ");
+    // La liste peut être vide lorsqu'on ne demande que les appels directs de
+    // l'équipe : `IN ()` est invalide en SQL, d'où le `false`.
+    const outcomeCondition = params.outcomes.length > 0
+        ? `outcome IN (${params.outcomes.map((o) => `'${o}'`).join(", ")})`
+        : "false";
 
     // Les cartes du bilan d'équipe additionnent file ET appels directs ; le
     // filtre doit donc couvrir la même union, sans quoi le clic sur « Total
@@ -611,8 +615,14 @@ export function buildQueueOutcomeSubquery(
     // Côté directs, seuls deux sorts existent : répondu, ou perdu.
     const directMapped: string[] = [];
     if (params.includeTeamDirect) {
-        if (params.outcomes.includes("answered")) directMapped.push("answered");
-        if (params.outcomes.includes("abandoned")) directMapped.push("NOT answered");
+        // Un appel direct n'a que deux sorts possibles. Si aucun statut de file
+        // n'est demandé, c'est qu'on veut les directs dans leur ensemble.
+        if (params.outcomes.length === 0) {
+            directMapped.push("TRUE");
+        } else {
+            if (params.outcomes.includes("answered")) directMapped.push("answered");
+            if (params.outcomes.includes("abandoned")) directMapped.push("NOT answered");
+        }
     }
 
     const directUnion = directMapped.length > 0
@@ -625,7 +635,7 @@ export function buildQueueOutcomeSubquery(
     return `(
         WITH ${buildTeamCTEChain(rules, params)}
         SELECT call_history_id FROM queue_calls
-        WHERE outcome IN (${list})${directUnion}
+        WHERE ${outcomeCondition}${directUnion}
     )`;
 }
 

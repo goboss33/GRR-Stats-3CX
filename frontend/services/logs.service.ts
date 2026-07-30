@@ -278,7 +278,8 @@ function buildAggregatedQueryParts(
 
     // Filtre « statut dans une file » : même socle de classement que les KPIs,
     // donc même population. C'est ce qui rend le clic sur un KPI exact.
-    if (filters.queueOutcomeFilter && filters.queueOutcomeFilter.outcomes.length > 0) {
+    if (filters.queueOutcomeFilter
+        && (filters.queueOutcomeFilter.outcomes.length > 0 || filters.queueOutcomeFilter.includeTeamDirect)) {
         const subquery = buildQueueOutcomeSubquery(DEFAULT_CLASSIFICATION_RULES, {
             queueExpr: bind(filters.queueOutcomeFilter.queueNumber),
             startExpr: startP,

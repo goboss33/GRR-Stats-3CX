@@ -66,7 +66,8 @@ interface LogsTableProps {
     onStatusesChange: (statuses: CallStatus[]) => void;
     /** Statuts « dans la file » retenus ; vide = tous. */
     queueOutcomes?: PassageOutcome[];
-    onQueueOutcomesChange?: (outcomes: PassageOutcome[]) => void;
+    queueIncludeTeamDirect?: boolean;
+    onQueueOutcomesChange?: (outcomes: PassageOutcome[], includeTeamDirect: boolean) => void;
     durationMin?: number;
     durationMax?: number;
     onDurationChange: (range: { min?: number; max?: number }) => void;
@@ -117,6 +118,7 @@ export function LogsTable({
     selectedStatuses,
     onStatusesChange,
     queueOutcomes,
+    queueIncludeTeamDirect,
     onQueueOutcomesChange,
     durationMin,
     durationMax,
@@ -305,6 +307,7 @@ export function LogsTable({
                                 <TableHead className="py-2">
                                     <ColumnFilterQueueOutcome
                                         selected={queueOutcomes ?? []}
+                                        includeTeamDirect={queueIncludeTeamDirect ?? false}
                                         onChange={onQueueOutcomesChange ?? (() => {})}
                                     />
                                 </TableHead>

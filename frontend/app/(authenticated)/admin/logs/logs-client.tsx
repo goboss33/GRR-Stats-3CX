@@ -20,13 +20,7 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+import { QueueSelector } from "@/components/stats/queue-selector";
 import { Label } from "@/components/ui/label";
 import {
     DropdownMenu,
@@ -366,6 +360,10 @@ export default function AdminLogsPage() {
         currentPage,
         sort,
         journeyFilter,
+        // Sans ces deux dependances, changer de vue file ou cocher un statut
+        // ne relançait aucune requête : le tableau restait figé.
+        queueOutcomeFilter,
+        queueView,
     ]);
 
     // Fetch on filter/page change and update URL
@@ -740,21 +738,13 @@ export default function AdminLogsPage() {
                         Entreprise
                     </Button>
 
-                    <Select
-                        value={queueView ?? ""}
-                        onValueChange={(v) => changeQueueView(v || null)}
-                    >
-                        <SelectTrigger className="h-8 w-[260px] text-sm">
-                            <SelectValue placeholder="Choisir une file…" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {queues.map((q) => (
-                                <SelectItem key={q.queueNumber} value={q.queueNumber} className="text-sm">
-                                    {q.queueNumber} – {q.queueName}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                    <QueueSelector
+                        queues={queues}
+                        selectedQueueNumber={queueView}
+                        onSelect={(queueNumber) => changeQueueView(queueNumber)}
+                        placeholder="Choisir une file…"
+                        className="w-[320px]"
+                    />
                 </div>
 
                 {selectedQueueView && (
@@ -773,16 +763,14 @@ export default function AdminLogsPage() {
                     logs={data?.logs || []}
                     queueView={selectedQueueView}
                     queueOutcomes={queueOutcomeFilter?.outcomes ?? []}
-                    onQueueOutcomesChange={(outcomes) => {
+                    queueIncludeTeamDirect={queueOutcomeFilter?.includeTeamDirect ?? false}
+                    onQueueOutcomesChange={(outcomes, includeTeamDirect) => {
                         // Le filtre porte toujours sur la file consultée ; le
                         // vider revient à retirer la restriction, pas la vue.
                         setCurrentPage(1);
                         setQueueOutcomeFilter(
-                            outcomes.length > 0 && queueView
-                                // includeTeamDirect vient des liens de KPI, qui
-                                // additionnent file et appels directs. Un filtre
-                                // posé ici porte sur la colonne, donc sur la file.
-                                ? { queueNumber: queueView, outcomes, includeTeamDirect: false }
+                            (outcomes.length > 0 || includeTeamDirect) && queueView
+                                ? { queueNumber: queueView, outcomes, includeTeamDirect }
                                 : null,
                         );
                     }}
