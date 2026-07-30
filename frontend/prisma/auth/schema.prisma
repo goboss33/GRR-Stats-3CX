@@ -81,6 +81,8 @@ model AppSettings {
   ruleVoicemail               String   @default("separate")
   /// Statut final hors périmètre : "name" | "anonymize" | "hide"
   ruleOutOfScopeFinalStatus   String   @default("name")
+  /// Durée minimale d'une conversation pour qu'un décroché compte comme répondu.
+  ruleMinAnswerSec            Int      @default(1)
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 }

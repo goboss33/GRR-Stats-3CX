@@ -22,6 +22,7 @@ const ROW_COMPLETE = {
     ruleDirectAndQueue: "queueWins",
     ruleVoicemail: "answered",
     ruleOutOfScopeFinalStatus: "hide",
+    ruleMinAnswerSec: 3,
 };
 
 beforeEach(() => {
@@ -39,6 +40,7 @@ describe("lecture des réglages", () => {
             directAndQueue: "queueWins",
             voicemail: "answered",
             outOfScopeFinalStatus: "hide",
+            minAnswerSeconds: 3,
         });
     });
 

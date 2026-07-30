@@ -151,6 +151,16 @@ export interface ClassificationRules {
      * - "hide"      : ne pas afficher le statut final
      */
     outOfScopeFinalStatus: "name" | "anonymize" | "hide";
+
+    /**
+     * Durée minimale (secondes) d'une conversation pour qu'un décroché compte
+     * comme une réponse, du point de vue de l'ENTREPRISE (statut final).
+     *
+     * Écarte les décrochés-raccrochés immédiats et les transferts ratés. Cette
+     * règle vivait en dur dans le code : elle décidait du sort de tous les
+     * appels sans que personne ne puisse la constater.
+     */
+    minAnswerSeconds: number;
 }
 
 /**
@@ -167,6 +177,7 @@ export const DEFAULT_CLASSIFICATION_RULES: ClassificationRules = {
     directAndQueue: "firstContact",
     voicemail: "separate",
     outOfScopeFinalStatus: "name",
+    minAnswerSeconds: 1,
 };
 
 // ============================================

@@ -21,11 +21,13 @@ interface ColumnFilterStatusProps {
     className?: string;
 }
 
-const statusOptions: { value: CallStatus; label: string }[] = [
-    { value: "answered", label: "Répondu" },
-    { value: "voicemail", label: "Messagerie" },
-    { value: "missed", label: "Manqué" },
-    { value: "busy", label: "Occupé" },
+/**
+ * Deux choix seulement, pour coller au vocabulaire des statistiques. « Perdu »
+ * recouvre les trois statuts fins : manqué, messagerie et occupé.
+ */
+const statusOptions: { value: CallStatus; label: string; covers: CallStatus[] }[] = [
+    { value: "answered", label: "Répondu", covers: ["answered"] },
+    { value: "missed", label: "Perdu", covers: ["missed", "voicemail", "busy"] },
 ];
 
 export function ColumnFilterStatus({
@@ -63,18 +65,19 @@ export function ColumnFilterStatus({
     };
 
     const handleToggle = (status: CallStatus, checked: boolean) => {
-        if (checked) {
-            setLocalSelected([...localSelected, status]);
-        } else {
-            setLocalSelected(localSelected.filter((s) => s !== status));
-        }
+        const covers = statusOptions.find((o) => o.value === status)?.covers ?? [status];
+        setLocalSelected(
+            checked
+                ? [...new Set([...localSelected, ...covers])]
+                : localSelected.filter((s) => !covers.includes(s)),
+        );
     };
 
     const handleSelectAll = () => {
         if (localSelected.length === statusOptions.length || localSelected.length === 0) {
             setLocalSelected([]);
         } else {
-            setLocalSelected(statusOptions.map((o) => o.value));
+            setLocalSelected(statusOptions.flatMap((o) => o.covers));
         }
     };
 
@@ -82,10 +85,9 @@ export function ColumnFilterStatus({
         if (selected.length === 0) {
             return "Tous";
         }
-        if (selected.length === 1) {
-            return statusOptions.find((o) => o.value === selected[0])?.label;
-        }
-        return `${selected.length} sél.`;
+        const buckets = statusOptions.filter((o) => o.covers.every((c) => selected.includes(c)));
+        if (buckets.length === 1) return buckets[0].label;
+        return `${buckets.length || selected.length} sél.`;
     };
 
     const allSelected = localSelected.length === 0; // Empty = all
@@ -127,7 +129,7 @@ export function ColumnFilterStatus({
                                 <div key={opt.value} className="flex items-center gap-2 px-1 py-1">
                                     <Checkbox
                                         id={`col-status-${opt.value}`}
-                                        checked={localSelected.includes(opt.value)}
+                                        checked={opt.covers.every((c) => localSelected.includes(c))}
                                         onCheckedChange={(checked) => handleToggle(opt.value, checked as boolean)}
                                     />
                                     <Label

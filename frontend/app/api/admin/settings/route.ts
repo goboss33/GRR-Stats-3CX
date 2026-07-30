@@ -26,6 +26,7 @@ function projectSettings(settings: Record<string, unknown>) {
         ruleDirectAndQueue: settings.ruleDirectAndQueue,
         ruleVoicemail: settings.ruleVoicemail,
         ruleOutOfScopeFinalStatus: settings.ruleOutOfScopeFinalStatus,
+        ruleMinAnswerSec: settings.ruleMinAnswerSec,
     };
 }
 
@@ -83,6 +84,15 @@ export async function PUT(request: NextRequest) {
         }
 
         // `null` est légitime : il désactive la règle des abandons courts.
+        const minAnswer = body.ruleMinAnswerSec;
+        if (minAnswer !== undefined
+            && (typeof minAnswer !== "number" || minAnswer < 0 || minAnswer > 60)) {
+            return NextResponse.json(
+                { error: "ruleMinAnswerSec doit être un nombre entre 0 et 60." },
+                { status: 400 },
+            );
+        }
+
         const shortAbandon = body.ruleShortAbandonSec;
         if (shortAbandon !== undefined && shortAbandon !== null
             && (typeof shortAbandon !== "number" || shortAbandon < 0 || shortAbandon > 300)) {
@@ -99,6 +109,7 @@ export async function PUT(request: NextRequest) {
                 : {}),
             ...ruleData,
             ...(shortAbandon !== undefined ? { ruleShortAbandonSec: shortAbandon } : {}),
+            ...(minAnswer !== undefined ? { ruleMinAnswerSec: minAnswer } : {}),
         };
 
         const settings = await prismaAuth.appSettings.upsert({

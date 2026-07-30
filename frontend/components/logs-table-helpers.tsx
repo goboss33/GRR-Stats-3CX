@@ -31,11 +31,14 @@ export const directionConfig: Record<CallDirection, { icon: typeof ArrowDownLeft
     bridge: { icon: Shuffle, label: "Bridge", className: "bg-purple-100 text-purple-700" },
 };
 
+// Un seul vocabulaire dans toute l'application : Répondu / Perdu. Messagerie et
+// Occupé restent distingués par leur icône — l'information n'est pas perdue,
+// elle cesse simplement d'imposer un second vocabulaire au lecteur.
 export const statusConfig: Record<CallStatus, { icon: typeof Phone; label: string; className: string }> = {
     answered: { icon: Phone, label: "Répondu", className: "bg-emerald-100 text-emerald-700" },
-    voicemail: { icon: Voicemail, label: "Messagerie", className: "bg-blue-100 text-blue-700" },
-    missed: { icon: PhoneOff, label: "Manqué", className: "bg-red-100 text-red-700" },
-    busy: { icon: PhoneCall, label: "Occupé", className: "bg-red-100 text-red-700" },
+    voicemail: { icon: Voicemail, label: "Perdu", className: "bg-red-100 text-red-700" },
+    missed: { icon: PhoneOff, label: "Perdu", className: "bg-red-100 text-red-700" },
+    busy: { icon: PhoneCall, label: "Perdu", className: "bg-red-100 text-red-700" },
 };
 
 /**

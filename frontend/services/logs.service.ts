@@ -29,6 +29,7 @@ import type {
 import {
     determineCallDirection,
     determineCallStatus,
+    buildFinalStatusFilterSQL,
     determineSegmentStatus,
     determineSegmentCategory,
     formatDuration,
@@ -89,38 +90,6 @@ function buildSqlDirectionFilter(directions: CallDirection[] | undefined): strin
     return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
 }
 
-function buildSqlStatusFilter(statuses: CallStatus[] | undefined): string {
-    if (!statuses || statuses.length === 0 || statuses.length === 5) return '';
-    const conditions: string[] = [];
-
-    if (statuses.includes('voicemail')) {
-        conditions.push("(ls.last_dest_type IN ('vmail_console', 'voicemail') OR ls.last_dest_entity_type = 'voicemail')");
-    }
-    if (statuses.includes('busy')) {
-        conditions.push("(ls.termination_reason_details ILIKE '%busy%')");
-    }
-    if (statuses.includes('answered')) {
-        conditions.push(`(
-            COALESCE(ls.last_dest_entity_type, '') NOT IN ('voicemail') 
-            AND COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%'
-            AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail')
-            AND lhs.last_human_answered_at IS NOT NULL
-            AND EXTRACT(EPOCH FROM (lhs.last_human_ended_at - lhs.last_human_started_at)) > 1
-        )`);
-    }
-    if (statuses.includes('missed')) {
-        conditions.push(`(
-            COALESCE(ls.termination_reason_details, '') NOT ILIKE '%busy%' 
-            AND COALESCE(ls.last_dest_type, '') NOT IN ('vmail_console', 'voicemail') 
-            AND COALESCE(ls.last_dest_entity_type, '') != 'voicemail'
-            AND (
-                lhs.last_human_answered_at IS NULL
-                OR EXTRACT(EPOCH FROM (lhs.last_human_ended_at - lhs.last_human_started_at)) <= 1
-            )
-        )`);
-    }
-    return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
-}
 
 function buildOrderByClause(sort?: LogsSort, timezone: string = "Europe/Zurich"): string {
     if (!sort) return "ca.first_started_at DESC";
@@ -376,7 +345,7 @@ function buildAggregatedQueryParts(
     const aggregatedWhereConditions: string[] = [];
     const directionFilter = buildSqlDirectionFilter(filters.directions);
     if (directionFilter) aggregatedWhereConditions.push(directionFilter);
-    const statusFilter = buildSqlStatusFilter(filters.statuses);
+    const statusFilter = buildFinalStatusFilterSQL(filters.statuses, rules.minAnswerSeconds);
     if (statusFilter) aggregatedWhereConditions.push(statusFilter);
 
     if (filters.handledBySearch?.trim()) {
@@ -1152,7 +1121,7 @@ function transformRow(row: any, maskNumbers = false, scope?: AccessScope, rules?
         lastHumanAnsweredAt: row.last_human_answered_at ? new Date(row.last_human_answered_at) : null,
         lastHumanStartedAt: row.last_human_started_at ? new Date(row.last_human_started_at) : null,
         lastHumanEndedAt: row.last_human_ended_at ? new Date(row.last_human_ended_at) : null,
-    });
+    }, rules?.minAnswerSeconds);
     const direction = determineCallDirection({
         sourceType: row.source_dn_type,
         firstDestType: row.first_dest_type,

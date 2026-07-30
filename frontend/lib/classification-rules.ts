@@ -44,6 +44,7 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
                 ruleDirectAndQueue: true,
                 ruleVoicemail: true,
                 ruleOutOfScopeFinalStatus: true,
+                ruleMinAnswerSec: true,
             },
         });
 
@@ -56,6 +57,7 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
                 directAndQueue: pick(row.ruleDirectAndQueue, ["firstContact", "queueWins", "both"] as const, "firstContact"),
                 voicemail: pick(row.ruleVoicemail, ["separate", "lost", "answered"] as const, "separate"),
                 outOfScopeFinalStatus: pick(row.ruleOutOfScopeFinalStatus, ["name", "anonymize", "hide"] as const, "name"),
+                minAnswerSeconds: typeof row.ruleMinAnswerSec === "number" ? row.ruleMinAnswerSec : 1,
             };
         }
     } catch {

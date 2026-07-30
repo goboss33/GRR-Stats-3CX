@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
     determineCallStatus,
+    FINAL_STATUS_RULES,
+    buildFinalStatusFilterSQL,
+    DEFAULT_MIN_ANSWER_SECONDS,
     determineCallDirection,
     determineSegmentCategory,
     isSystemType,
@@ -237,5 +240,62 @@ describe("buildDirectSegmentWhereClause", () => {
         const clause = buildDirectSegmentWhereClause("c", { excludeQueueOriginated: true, queuePassagesCTEName: "all_queue_passages" });
         expect(clause).toContain("NOT EXISTS");
         expect(clause).toContain("all_queue_passages");
+    });
+});
+
+describe("statut final — définition unique TypeScript / SQL", () => {
+    // Le statut final existait en deux exemplaires sans lien entre eux, ce qui
+    // est exactement ce qui avait fait diverger les KPIs et les logs. Les deux
+    // dérivent maintenant de FINAL_STATUS_RULES ; ces tests vérifient que la
+    // dérivation reste fidèle, notamment sur la priorité.
+    it("chaque statut de la table est filtrable", () => {
+        for (const rule of FINAL_STATUS_RULES) {
+            const sql = buildFinalStatusFilterSQL([rule.status]);
+            expect(sql, `statut ${rule.status}`).not.toBe("");
+        }
+    });
+
+    it("le SQL d'un statut exclut les statuts prioritaires", () => {
+        // « Répondu » vient après messagerie et occupé : un appel tombé sur la
+        // messagerie ne doit pas ressortir comme répondu.
+        const sql = buildFinalStatusFilterSQL(["answered"]);
+        expect(sql).toContain("NOT");
+        expect(sql).toContain("voicemail");
+        expect(sql).toContain("busy");
+    });
+
+    it("« manqué » n'est que l'absence des autres", () => {
+        // Sa condition propre vaut TRUE : seules les négations le définissent.
+        const sql = buildFinalStatusFilterSQL(["missed"]);
+        expect(sql).not.toContain("TRUE");
+        expect(sql).toContain("NOT");
+    });
+
+    it("tous les statuts demandés : aucun filtre", () => {
+        expect(buildFinalStatusFilterSQL(["answered", "voicemail", "missed", "busy"])).toBe("");
+    });
+
+    it("aucun statut demandé : aucun filtre", () => {
+        expect(buildFinalStatusFilterSQL([])).toBe("");
+        expect(buildFinalStatusFilterSQL(undefined)).toBe("");
+    });
+
+    it("le seuil de réponse est injecté dans le SQL comme dans la fonction", () => {
+        expect(buildFinalStatusFilterSQL(["answered"], 5)).toContain("> 5");
+
+        const conversationDe3s = {
+            lastDestType: "extension",
+            lastDestEntityType: null,
+            terminationReasonDetails: null,
+            lastHumanAnsweredAt: new Date("2026-07-01T10:00:00Z"),
+            lastHumanStartedAt: new Date("2026-07-01T10:00:00Z"),
+            lastHumanEndedAt: new Date("2026-07-01T10:00:03Z"),
+        };
+        expect(determineCallStatus(conversationDe3s, 1)).toBe("answered");
+        expect(determineCallStatus(conversationDe3s, 5)).toBe("missed");
+    });
+
+    it("le seuil par défaut reste celui d'avant la mise en réglage", () => {
+        expect(DEFAULT_MIN_ANSWER_SECONDS).toBe(1);
     });
 });
