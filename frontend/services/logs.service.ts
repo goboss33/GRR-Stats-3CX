@@ -4,6 +4,7 @@ import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import { getServerTimezone } from "@/lib/servers";
 import { parseSearchPattern, type SearchPattern, type SearchPatternMode } from "@/services/domain/extension-search";
 import { resolveAccessScope, type AccessScope } from "@/lib/access-scope";
+import { requireActionRole } from "@/lib/auth-guard";
 import { maskPhoneNumber } from "@/services/domain/call-aggregation";
 import type {
     AggregatedCallLog,
@@ -709,6 +710,7 @@ function buildDataJoins(calleeFilterJoin: string, aggregatedWhereConditions: str
 // GET SQL QUERY STRING (for debugging)
 // ============================================
 
+/** Outil de diagnostic : réservé aux administrateurs. */
 export async function getCallLogsSQL(
     serverId: ServerId,
     startDate: Date,
@@ -717,6 +719,7 @@ export async function getCallLogsSQL(
     pagination: { page: number; pageSize: number },
     sort?: LogsSort
 ): Promise<string> {
+    await requireActionRole(["ADMIN"]);
     const timezone = await getServerTimezone(serverId);
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } =
         buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone);
@@ -1125,6 +1128,24 @@ export async function getCallChain(serverId: ServerId, callHistoryId: string): P
 
     try {
         const prisma = getPrismaCdr(serverId);
+
+        // L'identifiant d'appel arrive du client : sans cette vérification, il
+        // suffirait d'en deviner un pour lire la chaîne complète d'un appel hors
+        // périmètre (numéros compris).
+        const scope = await resolveAccessScope(serverId);
+        if (!scope.unrestricted) {
+            if (scope.empty) return [];
+            const touches = await prisma.cdroutput.count({
+                where: {
+                    call_history_id: callHistoryId,
+                    OR: [
+                        { destination_dn_type: "queue", destination_dn_number: { in: scope.queueNumbers ?? [] } },
+                        { destination_dn_type: "extension", destination_dn_number: { in: scope.extensionNumbers ?? [] } },
+                    ],
+                },
+            });
+            if (touches === 0) return [];
+        }
         const segments = await prisma.cdroutput.findMany({
             where: { call_history_id: callHistoryId },
             orderBy: { cdr_started_at: "asc" },
@@ -1177,14 +1198,20 @@ export async function getCallChain(serverId: ServerId, callHistoryId: string): P
                 id: seg.cdr_id,
                 startedAt: seg.cdr_started_at?.toISOString() || "",
                 answeredAt: answeredAt?.toISOString() || null,
-                sourceNumber: getDisplayNumber(seg.source_dn_number, seg.source_participant_phone_number, seg.source_presentation),
+                sourceNumber: maybeMask(
+                    getDisplayNumber(seg.source_dn_number, seg.source_participant_phone_number, seg.source_presentation),
+                    scope.maskPhoneNumbers,
+                ),
                 sourceName: seg.source_dn_type?.toLowerCase() === 'provider'
                     ? (seg.source_participant_name && !seg.source_participant_name.trim().endsWith(':')
                         ? getDisplayName(seg.source_participant_name, null)
                         : "")
                     : getDisplayName(seg.source_participant_name, seg.source_dn_name),
                 sourceType: seg.source_dn_type || "-",
-                destinationNumber: getDisplayNumber(seg.destination_dn_number, seg.destination_participant_phone_number, null),
+                destinationNumber: maybeMask(
+                    getDisplayNumber(seg.destination_dn_number, seg.destination_participant_phone_number, null),
+                    scope.maskPhoneNumbers,
+                ),
                 destinationName: seg.source_dn_type?.toLowerCase() === 'provider'
                     ? (getDisplayName(seg.destination_participant_name, seg.destination_dn_name)
                         || (seg.source_participant_name?.trim().endsWith(':') ? getDisplayName(seg.source_participant_name, null) : ""))

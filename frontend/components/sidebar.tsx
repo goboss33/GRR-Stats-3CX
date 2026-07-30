@@ -60,7 +60,7 @@ const navItems: NavItem[] = [
         label: "Logs d'appels",
         href: "/admin/logs",
         icon: FileText,
-        roles: ["ADMIN", "MODERATOR"],
+        roles: ["ADMIN", "MODERATOR", "MANAGER"],
     },
     {
         label: "Statistiques",
