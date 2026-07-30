@@ -58,7 +58,10 @@ export async function POST(request: NextRequest) {
         const tenantId = resolveTenant(request);
 
         if (new URL(request.url).searchParams.get("action") === "review") {
-            const count = await markQueuesReviewed(tenantId);
+            // Liste vide ou absente : on marque toutes les files du tenant.
+            const body = await request.json().catch(() => ({}));
+            const ids = Array.isArray(body?.ids) ? body.ids.filter((i: unknown) => typeof i === "string") : [];
+            const count = await markQueuesReviewed(tenantId, ids);
             return NextResponse.json({ reviewed: count });
         }
 

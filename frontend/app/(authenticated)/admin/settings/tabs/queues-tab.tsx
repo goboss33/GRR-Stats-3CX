@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, AlertTriangle, Tag, Search, Users } from "lucide-react";
+import { Loader2, RefreshCw, AlertTriangle, Tag, Search, Users, CheckCircle2, Archive, Eye } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +60,7 @@ export function QueuesTab() {
     const [healthFilter, setHealthFilter] = useState<HealthLevel | "ALL">("ALL");
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [detailQueueId, setDetailQueueId] = useState<string | null>(null);
+    const [bulkBusy, setBulkBusy] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -120,23 +121,40 @@ export function QueuesTab() {
         }
     };
 
-    /** Retire le signalement « nouvelle » sur toutes les files concernées. */
-    const markAllReviewed = async () => {
+    /**
+     * Retire le signalement « nouvelle ».
+     * Sans identifiants, s'applique à toutes les files du tenant.
+     */
+    const markReviewed = async (ids?: string[]) => {
+        setBulkBusy(true);
         try {
-            const res = await fetch(`/api/admin/queues?server=${getSelectedServer()}&action=review`, { method: "POST" });
+            const res = await fetch(`/api/admin/queues?server=${getSelectedServer()}&action=review`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ids: ids ?? [] }),
+            });
             if (!res.ok) throw new Error((await res.json()).error || "Action impossible");
-            setQueues((qs) => qs.map((q) => ({ ...q, isNew: false })));
+            const target = ids ? new Set(ids) : null;
+            setQueues((qs) => qs.map((q) => (!target || target.has(q.id) ? { ...q, isNew: false } : q)));
+            if (ids) setSelected(new Set());
         } catch (e) {
             toast.error(e instanceof Error ? e.message : "Action impossible");
+        } finally {
+            setBulkBusy(false);
         }
     };
 
     /** Applique la même modification à toutes les files sélectionnées. */
     const patchSelection = async (patch: Partial<Pick<RegistryQueue, "region" | "entity" | "status">>) => {
         const ids = [...selected];
-        await Promise.all(ids.map((id) => patchQueue(id, patch)));
-        toast.success(`${ids.length} file(s) mise(s) à jour`);
-        setSelected(new Set());
+        setBulkBusy(true);
+        try {
+            await Promise.all(ids.map((id) => patchQueue(id, patch)));
+            toast.success(`${ids.length} file(s) mise(s) à jour`);
+            setSelected(new Set());
+        } finally {
+            setBulkBusy(false);
+        }
     };
 
     const newQueues = queues.filter((q) => q.isNew).length;
@@ -230,7 +248,7 @@ export function QueuesTab() {
                         <strong>{newQueues} nouvelle(s) file(s) détectée(s).</strong> Vérifiez leurs étiquettes, puis
                         ajoutez-les aux périmètres concernés depuis la fiche des utilisateurs.
                     </p>
-                    <Button size="sm" variant="outline" className="bg-white" onClick={markAllReviewed}>
+                    <Button size="sm" variant="outline" className="bg-white" onClick={() => markReviewed()}>
                         J&apos;ai vu
                     </Button>
                 </div>
@@ -300,10 +318,40 @@ export function QueuesTab() {
                             ))}
                         </SelectContent>
                     </Select>
-                    <Button size="sm" variant="outline" className="bg-white" onClick={() => patchSelection({ status: "ACTIVE" })}>
-                        Marquer comme classées
+                    <div className="h-6 w-px bg-blue-200" />
+
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className="bg-white"
+                        disabled={bulkBusy}
+                        onClick={() => patchSelection({ status: "ACTIVE" })}
+                    >
+                        <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
+                        Activer
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className="bg-white"
+                        disabled={bulkBusy}
+                        onClick={() => patchSelection({ status: "ARCHIVED" })}
+                    >
+                        <Archive className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
+                        Archiver
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className="bg-white"
+                        disabled={bulkBusy}
+                        onClick={() => markReviewed([...selected])}
+                    >
+                        <Eye className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
+                        Marquer comme vues
+                    </Button>
+
+                    <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSelected(new Set())}>
                         Annuler
                     </Button>
                 </div>
