@@ -4,7 +4,7 @@ import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
 import { parseDateParam } from "@/lib/date-params";
 import { logger } from "@/lib/logger";
-import { resolveApiKeyScope } from "@/lib/access-scope";
+import { resolveApiKeyScope, isQueueInScope } from "@/lib/access-scope";
 import {
     DEFAULT_CLASSIFICATION_RULES,
     buildTeamCTEChain,
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
         // Même règle que pour les files : la clé n'ouvre que le périmètre de son
         // propriétaire.
         const scope = await resolveApiKeyScope(authResult.apiKeyId, serverId);
-        if (!scope.unrestricted && (scope.empty || !scope.queueNumbers?.includes(queueNumber))) {
+        if (!isQueueInScope(scope, queueNumber)) {
             return NextResponse.json({ error: "Cette file d'attente n'est pas dans votre périmètre" }, { status: 403 });
         }
 

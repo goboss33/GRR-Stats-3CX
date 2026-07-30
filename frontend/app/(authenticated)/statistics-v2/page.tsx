@@ -9,7 +9,8 @@ import { BarChart3, RefreshCw, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QueueInfo } from "@/types/queues.types";
 import { getQueueStatistics } from "@/services/queue-statistics.service";
-import { getQueueMembers } from "@/services/queues.service";
+import { getScopedQueueOptions } from "@/services/queues.service";
+import { NoPerimeterNotice } from "@/components/no-perimeter-notice";
 import { TeamOverview } from "@/components/stats-v2/team-overview";
 import { AgentPerformanceTableV2 } from "@/components/stats-v2/agent-performance-table-v2";
 import { CallsChart } from "@/components/calls-chart";
@@ -22,6 +23,7 @@ import type { QueueStatistics } from "@/types/statistics.types";
 
 export default function StatisticsV2Page() {
     const [queues, setQueues] = useState<QueueInfo[]>([]);
+    const [noPerimeter, setNoPerimeter] = useState(false);
     const [selectedQueueNumber, setSelectedQueueNumber] = useState<string | null>(null);
     const [selectedQueueName, setSelectedQueueName] = useState<string>("");
     const [statistics, setStatistics] = useState<QueueStatistics | null>(null);
@@ -40,8 +42,11 @@ export default function StatisticsV2Page() {
     // Load queues on mount
     useEffect(() => {
         const serverId = getSelectedServer();
-        getQueueMembers(serverId)
-            .then(setQueues)
+        getScopedQueueOptions(serverId)
+            .then((options) => {
+                setQueues(options.queues);
+                setNoPerimeter(options.noPerimeter);
+            })
             .finally(() => setIsLoadingQueues(false));
     }, []);
 
@@ -111,7 +116,12 @@ export default function StatisticsV2Page() {
                     </p>
                 </div>
 
+                {noPerimeter && (
+                    <NoPerimeterNotice context="Les statistiques d'agence portent sur les files qui vous sont attribuées, et aucune ne l'est pour le moment." />
+                )}
+
                 {/* Filters Row */}
+                {!noPerimeter && (
                 <div className="flex flex-wrap items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
                     {/* Queue selector */}
                     <div className="flex-1 min-w-[300px] max-w-md">
@@ -150,10 +160,11 @@ export default function StatisticsV2Page() {
                         </Button>
                     </div>
                 </div>
+                )}
             </div>
 
             {/* No queue selected */}
-            {!selectedQueueNumber && (
+            {!noPerimeter && !selectedQueueNumber && (
                 <div className="flex flex-col items-center justify-center py-20 text-slate-500">
                     <Users className="h-16 w-16 mb-4 text-slate-300" />
                     <h2 className="text-xl font-semibold text-slate-700">

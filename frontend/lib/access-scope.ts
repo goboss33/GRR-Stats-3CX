@@ -27,6 +27,19 @@ export interface AccessScope {
     empty: boolean;
 }
 
+/**
+ * Une file donnée est-elle accessible avec cette portée ?
+ *
+ * Ce test était recopié à l'identique dans chaque route exposant une file. Une
+ * seule copie oubliée suffit à ouvrir un accès : il n'existe donc plus qu'ici,
+ * et il est couvert par des tests.
+ */
+export function isQueueInScope(scope: AccessScope, queueNumber: string): boolean {
+    if (scope.unrestricted) return true;
+    if (scope.empty) return false;
+    return scope.queueNumbers?.includes(queueNumber) ?? false;
+}
+
 /** Portée sans restriction — utilisée quand le filtrage global est désactivé. */
 export function unrestrictedScope(): AccessScope {
     return {

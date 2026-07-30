@@ -70,7 +70,7 @@ export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> 
 }
 
 /**
- * Options de la « vue file » des logs, pour l'utilisateur courant.
+ * Files accessibles à l'utilisateur courant, et ce qu'il a le droit d'en faire.
  *
  * La liste des files est déjà bornée à son périmètre par `getQueueMembers`.
  * `canViewCompanyWide` décide si la vue entreprise lui est proposée : sans ce
@@ -78,11 +78,18 @@ export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> 
  * appels. La décision est prise ICI, côté serveur — le client ne fait
  * qu'afficher ce qu'on lui autorise.
  */
-export async function getLogsViewOptions(serverId: ServerId): Promise<{
+export async function getScopedQueueOptions(serverId: ServerId): Promise<{
     queues: QueueInfo[];
     canViewCompanyWide: boolean;
+    noPerimeter: boolean;
 }> {
     const scope = await resolveAccessScope(serverId);
     const queues = await getQueueMembers(serverId);
-    return { queues, canViewCompanyWide: scope.unrestricted || scope.canViewCompanyWide };
+    return {
+        queues,
+        canViewCompanyWide: scope.unrestricted || scope.canViewCompanyWide,
+        // Distingue « aucun droit » de « aucune file dans ce tenant » : les deux
+        // donnent une liste vide, mais appellent des messages opposés.
+        noPerimeter: scope.empty,
+    };
 }

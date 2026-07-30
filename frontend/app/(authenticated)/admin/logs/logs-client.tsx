@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { QueueSelector } from "@/components/stats/queue-selector";
+import { NoPerimeterNotice } from "@/components/no-perimeter-notice";
 import { Label } from "@/components/ui/label";
 import {
     DropdownMenu,
@@ -30,7 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { getAggregatedCallLogs, exportCallLogsCSV, getCallLogsSQL } from "@/services/logs.service";
-import { getLogsViewOptions } from "@/services/queues.service";
+import { getScopedQueueOptions } from "@/services/queues.service";
 import { useDebounce } from "@/lib/use-debounce";
 import { ServerId } from "@/lib/prisma-cdr";
 import type { QueueInfo } from "@/types/queues.types";
@@ -170,6 +171,7 @@ export default function AdminLogsPage() {
         () => searchParams.get("queueView") || searchParams.get("queueOutcome")?.split(":")[0] || null,
     );
     const [canViewCompanyWide, setCanViewCompanyWide] = useState(true);
+    const [noPerimeter, setNoPerimeter] = useState(false);
     const [queueOrigin, setQueueOrigin] = useState<QueueOrigin | null>(() => {
         const param = searchParams.get("queueOrigin");
         return param === "queue" || param === "direct" ? param : null;
@@ -406,9 +408,10 @@ export default function AdminLogsPage() {
         const loadQueues = async () => {
             try {
                 const serverId = getSelectedServer();
-                const options = await getLogsViewOptions(serverId);
+                const options = await getScopedQueueOptions(serverId);
                 setQueues(options.queues);
                 setCanViewCompanyWide(options.canViewCompanyWide);
+                setNoPerimeter(options.noPerimeter);
                 // Sans droit sur la vue entreprise, la vue file est obligatoire.
                 if (!options.canViewCompanyWide && options.queues.length > 0) {
                     setQueueView((current) => current ?? options.queues[0].queueNumber);
@@ -747,6 +750,10 @@ export default function AdminLogsPage() {
                         Page {data.currentPage} sur {data.totalPages}
                     </span>
                 </div>
+            )}
+
+            {noPerimeter && (
+                <NoPerimeterNotice context="Les journaux d'appels sont filtrés selon les files qui vous sont attribuées, et aucune ne l'est pour le moment." />
             )}
 
             {/* Sélecteur de vue. La vue file ne filtre pas : elle ajoute au
