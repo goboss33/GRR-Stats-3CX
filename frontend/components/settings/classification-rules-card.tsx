@@ -44,8 +44,8 @@ interface RuleSpec {
 const QUEUE_RULES: RuleSpec[] = [
     {
         key: "multiPassage",
-        title: "Un même appel revient plusieurs fois dans la file",
-        example: "Un client appelle la réception, patiente, raccroche. Il rappelle dix minutes plus tard et un agent décroche.",
+        title: "Un même appel traverse la file plusieurs fois",
+        example: "L'appel entre dans la file, personne ne décroche dans le délai ; il bascule vers une autre file, qui le renvoie. De retour, un agent le prend. Un seul appel, deux passages — le « ping-pong » que mesure déjà l'écran de statistiques.",
         options: [
             { value: "best", label: "Le meilleur résultat l'emporte", effect: "L'appel compte une fois, comme Répondu. La file est jugée sur le service finalement rendu." },
             { value: "last", label: "Le dernier passage fait foi", effect: "L'appel compte une fois, selon le sort de son dernier essai. Un appel répondu puis rappelé et abandonné devient Perdu." },
@@ -101,9 +101,17 @@ const COMPANY_RULES: RuleSpec[] = [
 interface Props {
     rules: ClassificationRules;
     onChange: (rules: ClassificationRules) => void;
+    /** Seuil du bruit de routage — décide de la POPULATION, pas du statut. */
+    minSignificantDurationSec: number;
+    onMinSignificantDurationChange: (value: number) => void;
 }
 
-export function ClassificationRulesCard({ rules, onChange }: Props) {
+export function ClassificationRulesCard({
+    rules,
+    onChange,
+    minSignificantDurationSec,
+    onMinSignificantDurationChange,
+}: Props) {
     const [queues, setQueues] = useState<QueueInfo[]>([]);
     const [simQueue, setSimQueue] = useState<string | null>(null);
     const [simDays, setSimDays] = useState(30);
@@ -180,6 +188,48 @@ export function ClassificationRulesCard({ rules, onChange }: Props) {
 
     return (
         <div className="space-y-6">
+            {/* D'abord quels appels entrent dans les chiffres, ensuite comment on
+                les juge. Sans cette séparation, ce seuil-ci et la « durée minimale
+                d'une conversation » se ressemblaient au point d'être confondus,
+                alors qu'ils décident de choses différentes. */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Quels appels comptent</CardTitle>
+                    <CardDescription>
+                        Avant de juger un appel, l&apos;application décide s&apos;il doit figurer dans
+                        les statistiques. Ce réglage écarte les artefacts de routage, qui ne sont
+                        pas de vraies tentatives d&apos;appel.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                    <Label className="text-sm font-semibold text-slate-900">
+                        Sollicitations directes trop brèves
+                    </Label>
+                    <p className="text-xs italic text-slate-500">
+                        Un appel de 9 millisecondes vers le poste d&apos;un agent qui avait un renvoi
+                        actif : l&apos;appel a filé vers la file sans jamais sonner chez lui.
+                    </p>
+                    <p className="text-xs text-slate-500">
+                        En dessous de cette durée, une sollicitation directe <strong>non répondue</strong>
+                        {" "}est traitée comme du bruit et n&apos;entre pas dans les statistiques. Ce seuil
+                        décide de la présence de l&apos;appel, pas de son statut.
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                        <Input
+                            type="number"
+                            min={0}
+                            max={60}
+                            className="w-32"
+                            value={minSignificantDurationSec}
+                            onChange={(e) => onMinSignificantDurationChange(
+                                Math.max(0, Math.min(60, parseInt(e.target.value) || 0)),
+                            )}
+                        />
+                        <span className="text-sm text-slate-500">seconde(s)</span>
+                    </div>
+                </CardContent>
+            </Card>
+
             <Card>
                 <CardHeader>
                     <CardTitle>Statuts vus depuis une file d&apos;attente</CardTitle>
@@ -307,6 +357,28 @@ export function ClassificationRulesCard({ rules, onChange }: Props) {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                    {/* Ces deux règles sont volontairement figées : leur exposer un
+                        réglage rouvrirait la porte aux vocabulaires multiples que
+                        l'on vient d'unifier. Les énoncer reste nécessaire — sans
+                        cela, « Perdu » est un verdict sans critère visible. */}
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                        <p className="font-medium text-slate-700">Comment le statut final est déterminé</p>
+                        <ol className="mt-1.5 list-inside list-decimal space-y-1">
+                            <li>
+                                <strong>Répondu</strong> — le <strong>dernier</strong> décroché par un
+                                humain a duré plus que la durée minimale ci-dessous. Si la réception
+                                parle au client puis transfère à un collègue absent, l&apos;appel est
+                                donc <strong>Perdu</strong> : on juge l&apos;aboutissement, pas l&apos;effort.
+                            </li>
+                            <li>
+                                <strong>Perdu</strong> — tout le reste : personne n&apos;a décroché, ligne
+                                occupée, ou appel terminé sur la messagerie. Ces trois cas restent
+                                distingués dans le parcours de l&apos;appel et par l&apos;icône du badge,
+                                mais portent le même nom pour ne pas multiplier le vocabulaire.
+                            </li>
+                        </ol>
+                    </div>
+
                     <div className="space-y-1.5">
                         <Label className="text-sm font-semibold text-slate-900">
                             Durée minimale d&apos;une conversation

@@ -166,53 +166,12 @@ export function BusinessRulesTab() {
                 </CardContent>
             </Card>
 
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>Seuils de calcul</CardTitle>
-                    <CardDescription>
-                        Configuration des paramètres utilisés pour déterminer ce qu'est un appel valide dans les statistiques
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                    <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <Label htmlFor="minDuration" className="text-base font-medium">
-                                    Durée minimale d'un appel significatif
-                                </Label>
-                                <p className="text-sm text-slate-500 mt-1">
-                                    Les appels directs non répondus de durée inférieure à ce seuil sont considérés comme du &quot;bruit système&quot; et exclus des statistiques.
-                                </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Input
-                                    id="minDuration"
-                                    type="number"
-                                    min={0}
-                                    max={60}
-                                    value={minSignificantDurationSec}
-                                    onChange={(e) => setMinSignificantDurationSec(Math.max(0, Math.min(60, parseInt(e.target.value) || 0)))}
-                                    className="w-20 text-center"
-                                />
-                                <span className="text-sm text-slate-500">seconde(s)</span>
-                            </div>
-                        </div>
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-600">
-                            <p className="font-medium text-slate-700 mb-1">Exemple concret :</p>
-                            <p>
-                                Un appel de 9ms non répondu vers l'extension 164 (Aude) n'est <strong>pas</strong> compté comme un appel direct reçu, car Aude avait un renvoi d'appel actif. L'appel a été immédiatement redirigé vers la file 993 où Nicole l'a pris.
-                            </p>
-                        </div>
-                    </div>
-
-                    <Button onClick={handleSave} disabled={saving}>
-                        {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sauvegarde...</> : <><Save className="mr-2 h-4 w-4" /> Enregistrer</>}
-                    </Button>
-                </CardContent>
-            </Card>
-
-            <ClassificationRulesCard rules={rules} onChange={setRules} />
+            <ClassificationRulesCard
+                rules={rules}
+                onChange={setRules}
+                minSignificantDurationSec={minSignificantDurationSec}
+                onMinSignificantDurationChange={setMinSignificantDurationSec}
+            />
 
             <Card>
                 <CardHeader>
