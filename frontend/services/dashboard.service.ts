@@ -227,6 +227,7 @@ export async function getQueueTimelineData(
             label,
             answered: Number(row.answered),
             missed: Number(row.missed),
+            overflow: row.overflow === undefined ? undefined : Number(row.overflow),
         };
     });
 }

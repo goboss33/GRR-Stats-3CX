@@ -246,6 +246,12 @@ export interface TimelineDataPoint {
     label: string;
     answered: number;
     missed: number;
+    /**
+     * Redirigés vers une autre file. Présent sur la courbe d'une équipe, où la
+     * somme des trois séries doit égaler « Total reçus ». Absent du tableau de
+     * bord global, qui ne raisonne pas par file.
+     */
+    overflow?: number;
 }
 
 export interface HeatmapDataPoint {

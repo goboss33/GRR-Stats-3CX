@@ -11,6 +11,7 @@ import {
     DEFAULT_CLASSIFICATION_RULES as rules,
     buildTeamCTEChain,
     buildAgentCTEChain,
+    TEAM_CALLS_UNION_SQL,
     buildQueueOutcomeSubquery,
     outcomesForBucket,
     type PassageOutcome,
@@ -131,6 +132,27 @@ async function main() {
         (directsAgents === directsVignette
             ? "   ✓"
             : `   ⚠ ${directsAgents - directsVignette} appel(s) sonnant chez plusieurs agents`),
+    );
+
+    // Troisième invariant : les graphiques temporels doivent porter sur la même
+    // population que les vignettes. Ils comptaient auparavant les appels ayant
+    // touché la file, sans la partition ni les appels directs.
+    const graphRows = await prisma.$queryRawUnsafe<Record<string, bigint>[]>(
+        `WITH ${buildTeamCTEChain(rules, P)},
+         team_calls AS (${TEAM_CALLS_UNION_SQL})
+         SELECT
+             (SELECT COUNT(*) FROM team_calls) AS courbe,
+             (SELECT COUNT(*) FROM queue_calls) + (SELECT COUNT(*) FROM direct_calls) AS vignette`,
+        QUEUE, START, END,
+    );
+    const courbe = Number(graphRows[0].courbe);
+    const vignette = Number(graphRows[0].vignette);
+    if (courbe !== vignette) ko++;
+
+    console.log("\nGraphiques temporels");
+    console.log(
+        `  somme de la courbe : ${courbe}   vignette Total reçus : ${vignette}` +
+        (courbe === vignette ? "   ✓" : `   ✗ écart de ${courbe - vignette}`),
     );
 
     await prisma.$disconnect();

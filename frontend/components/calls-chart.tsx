@@ -29,7 +29,8 @@ const CustomTooltip = ({
     if (active && payload && payload.length) {
         const answered = payload.find((p) => p.dataKey === "answered")?.value || 0;
         const missed = payload.find((p) => p.dataKey === "missed")?.value || 0;
-        const total = answered + missed;
+        const overflow = payload.find((p) => p.dataKey === "overflow")?.value || 0;
+        const total = answered + missed + overflow;
         const rate = total > 0 ? Math.round((answered / total) * 100) : 0;
 
         return (
@@ -43,7 +44,7 @@ const CustomTooltip = ({
                     </div>
                     <div className="flex items-center gap-3">
                         <span className="w-3 h-3 rounded-full bg-rose-500 shadow-sm shadow-rose-200"></span>
-                        <span className="text-slate-600 flex-1">Manqués:</span>
+                        <span className="text-slate-600 flex-1">Perdus:</span>
                         <span className="font-bold text-slate-900">{missed}</span>
                     </div>
                     <div className="border-t border-slate-100 pt-2 mt-2">
@@ -105,7 +106,7 @@ export function CallsChart({ data }: CallsChartProps) {
                         iconType="circle"
                         formatter={(value) => (
                             <span className="text-slate-600 font-medium ml-1">
-                                {value === "answered" ? "Répondus" : "Manqués"}
+                                {value === "answered" ? "Répondus" : value === "overflow" ? "Redirigés" : "Perdus"}
                             </span>
                         )}
                     />
@@ -119,6 +120,19 @@ export function CallsChart({ data }: CallsChartProps) {
                         fill="url(#colorMissed)"
                         activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }}
                         name="missed"
+                    />
+                    {/* Empilée avec les deux autres : la hauteur totale de la
+                        courbe est ainsi « Total reçus ». */}
+                    <Area
+                        type="monotone"
+                        dataKey="overflow"
+                        stackId="1"
+                        stroke="#f59e0b"
+                        strokeWidth={2}
+                        fillOpacity={0.7}
+                        fill="#fde68a"
+                        activeDot={{ r: 5, strokeWidth: 0, fill: '#f59e0b' }}
+                        name="overflow"
                     />
                     <Area
                         type="monotone"

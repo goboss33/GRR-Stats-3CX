@@ -475,6 +475,7 @@ export function buildDirectCallsCTE(
     direct_calls AS (
         SELECT
             d.call_history_id,
+            MIN(d.cdr_started_at) AS started_at,
             bool_or(d.cdr_answered_at IS NOT NULL)
                 OR EXISTS (
                     SELECT 1 FROM ${outcomesCTE} q
@@ -649,6 +650,30 @@ export function buildQueueOutcomeSubquery(
         WHERE ${outcomeCondition}${directUnion}
     )`;
 }
+
+/**
+ * Vue unifiée des appels de l'équipe : passages en file et appels directs,
+ * ramenés à un même triplet (appel, instant, statut).
+ *
+ * C'est ce dont ont besoin les graphiques temporels — courbe de volume et carte
+ * des affluences — pour représenter la MÊME population que les vignettes. Sans
+ * elle, ils comptaient les appels ayant touché la file sans appliquer la
+ * partition, et affichaient donc une troisième population, ni « File » ni
+ * « Total reçus ».
+ *
+ * `UNION ALL` est correct ici : les deux ensembles sont disjoints par
+ * construction, c'est tout l'objet de la règle `directAndQueue`.
+ *
+ * À utiliser après `buildTeamCTEChain`.
+ */
+export const TEAM_CALLS_UNION_SQL = `
+    SELECT call_history_id, cdr_started_at AS started_at, outcome
+    FROM queue_calls
+    UNION ALL
+    SELECT call_history_id, started_at,
+           CASE WHEN answered THEN 'answered' ELSE 'abandoned' END AS outcome
+    FROM direct_calls
+`;
 
 /** Expression SQL de comptage d'un statut donné, pour les KPIs. */
 export function sqlCountOutcome(outcome: PassageOutcome, alias = "cqo"): string {
