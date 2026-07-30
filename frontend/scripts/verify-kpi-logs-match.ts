@@ -95,13 +95,15 @@ async function main() {
     // Second invariant : le tableau par agent doit se refermer sur la vignette.
     // Chaque appel répondu par la file a exactement un agent « résolveur », donc
     // la somme des agents ne peut ni dépasser ni manquer le chiffre de la carte.
-    const agentRows = await prisma.$queryRawUnsafe<{ resolus: bigint; repondus: bigint; agents: bigint }[]>(
+    const agentRows = await prisma.$queryRawUnsafe<Record<string, bigint>[]>(
         `WITH ${buildTeamCTEChain(rules, P)},
          ${buildAgentCTEChain(rules)}
          SELECT
              (SELECT COALESCE(SUM(resolved), 0) FROM agent_queue_stats) AS resolus,
              (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'answered') AS repondus,
-             (SELECT COUNT(*) FROM agent_queue_stats) AS agents`,
+             (SELECT COUNT(*) FROM agent_queue_stats) AS agents,
+             (SELECT COALESCE(SUM(direct_received), 0) FROM agent_direct) AS directs_agents,
+             (SELECT COUNT(*) FROM direct_calls) AS directs_vignette`,
         QUEUE, START, END,
     );
 
@@ -115,6 +117,20 @@ async function main() {
     console.log(
         `  somme des « répondus » agents : ${resolus}   vignette Répondus (part file) : ${repondus}` +
         (agentOk ? "   ✓" : `   ✗ écart de ${resolus - repondus}`),
+    );
+
+    // Signalé sans faire échouer : un appel direct sonnant successivement chez
+    // plusieurs agents produit une ligne par agent, mais reste un seul appel
+    // dans la vignette. En pratique le cas est rare ; tant qu'il ne survient
+    // pas, les deux totaux coïncident. Le jour où cet écart apparaît, il faudra
+    // trancher qui « possède » l'appel (règle à ajouter au socle).
+    const directsAgents = Number(agentRows[0].directs_agents);
+    const directsVignette = Number(agentRows[0].directs_vignette);
+    console.log(
+        `  somme des « directs » agents   : ${directsAgents}   vignette Directs : ${directsVignette}` +
+        (directsAgents === directsVignette
+            ? "   ✓"
+            : `   ⚠ ${directsAgents - directsVignette} appel(s) sonnant chez plusieurs agents`),
     );
 
     await prisma.$disconnect();
