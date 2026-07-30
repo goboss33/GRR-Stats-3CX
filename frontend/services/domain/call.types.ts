@@ -113,6 +113,8 @@ export interface LogsFilters {
      * statut final. Déduit du filtre KPI quand on arrive par une vignette.
      */
     queueView?: string;
+    /** Restreint la vue file aux appels arrivés par la file, ou en direct. */
+    queueOriginFilter?: "queue" | "direct";
     timeSlots?: TimeSlot[];
 }
 

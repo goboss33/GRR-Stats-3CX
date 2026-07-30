@@ -350,6 +350,21 @@ function buildAggregatedQueryParts(
         whereConditions.push(`call_history_id IN ${subquery}`);
     }
 
+    // Origine : file ou direct. Exprimée avec le même constructeur que le
+    // filtre de statut — « tous les statuts sans les directs » d'un côté,
+    // « les directs sans statut de file » de l'autre — et combinée en ET, ce
+    // qui donne bien l'intersection des deux critères.
+    if (viewQueue && filters.queueOriginFilter) {
+        const originSubquery = buildQueueOutcomeSubquery(DEFAULT_CLASSIFICATION_RULES, {
+            queueExpr: bind(viewQueue),
+            startExpr: startP,
+            endExpr: endP,
+            outcomes: filters.queueOriginFilter === "queue" ? ALL_OUTCOMES : [],
+            includeTeamDirect: filters.queueOriginFilter === "direct",
+        });
+        whereConditions.push(`call_history_id IN ${originSubquery}`);
+    }
+
     const whereClause = whereConditions.join(" AND ");
     const dateOnlyWhereClause = `cdr_started_at >= ${startP} AND cdr_started_at <= ${endP}`;
 

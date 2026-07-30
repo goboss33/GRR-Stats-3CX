@@ -3,6 +3,7 @@ export { ColumnFilterDateRange } from "./ColumnFilterDateRange";
 export { ColumnFilterDirection } from "./ColumnFilterDirection";
 export { ColumnFilterStatus } from "./ColumnFilterStatus";
 export { ColumnFilterQueueOutcome } from "./ColumnFilterQueueOutcome";
+export { ColumnFilterQueueOrigin } from "./ColumnFilterQueueOrigin";
 export { ColumnFilterDuration } from "./ColumnFilterDuration";
 export { ColumnFilterWaitTime } from "./ColumnFilterWaitTime";
 export { ColumnFilterSegmentCount } from "./ColumnFilterSegmentCount";

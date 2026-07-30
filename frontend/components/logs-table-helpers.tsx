@@ -46,8 +46,13 @@ export const statusConfig: Record<CallStatus, { icon: typeof Phone; label: strin
 export const queueOutcomeConfig: Record<PassageOutcome, { label: string; className: string }> = {
     answered: { label: "Répondu", className: "bg-emerald-100 text-emerald-700" },
     overflow: { label: "Redirigé", className: "bg-amber-100 text-amber-700" },
-    voicemail: { label: "Messagerie", className: "bg-indigo-100 text-indigo-700" },
-    short_abandon: { label: "Abandon court", className: "bg-slate-100 text-slate-600" },
+    // Messagerie et abandons courts existent dans le socle — ils restent
+    // configurables et pilotent le calcul — mais les vignettes ne les nomment
+    // jamais : elles les rangent dans « Perdus ». Les logs emploient donc le
+    // même vocabulaire, sans quoi un manager verrait des statuts dont aucune
+    // statistique ne parle. Le parcours reste là pour distinguer les cas.
+    voicemail: { label: "Perdu", className: "bg-red-100 text-red-700" },
+    short_abandon: { label: "Perdu", className: "bg-red-100 text-red-700" },
     abandoned: { label: "Perdu", className: "bg-red-100 text-red-700" },
 };
 

@@ -16,6 +16,7 @@ import {
     ColumnFilterDirection,
     ColumnFilterStatus,
     ColumnFilterQueueOutcome,
+    ColumnFilterQueueOrigin,
     ColumnFilterDuration,
     ColumnFilterWaitTime,
     ColumnFilterSegmentCount,
@@ -38,7 +39,10 @@ import type {
 
 import { SortableHeader } from "@/components/logs-table-helpers";
 import { LogRow } from "@/components/log-row";
-import type { PassageOutcome } from "@/services/domain/call-classification";
+import type { KpiBucket } from "@/services/domain/call-classification";
+import type { QueueOrigin } from "@/components/column-filters/ColumnFilterQueueOrigin";
+
+type QueueBucket = Exclude<KpiBucket, "received">;
 import { LogsTableSkeleton } from "@/components/logs-table-skeleton";
 
 interface LogsTableProps {
@@ -65,8 +69,10 @@ interface LogsTableProps {
     selectedStatuses: CallStatus[];
     onStatusesChange: (statuses: CallStatus[]) => void;
     /** Statuts « dans la file » retenus ; vide = tous. */
-    queueOutcomes?: PassageOutcome[];
-    onQueueOutcomesChange?: (outcomes: PassageOutcome[]) => void;
+    queueOutcomes?: QueueBucket[];
+    onQueueOutcomesChange?: (buckets: QueueBucket[]) => void;
+    queueOrigin?: QueueOrigin | null;
+    onQueueOriginChange?: (origin: QueueOrigin | null) => void;
     durationMin?: number;
     durationMax?: number;
     onDurationChange: (range: { min?: number; max?: number }) => void;
@@ -118,6 +124,8 @@ export function LogsTable({
     onStatusesChange,
     queueOutcomes,
     onQueueOutcomesChange,
+    queueOrigin,
+    onQueueOriginChange,
     durationMin,
     durationMax,
     onDurationChange,
@@ -304,7 +312,14 @@ export function LogsTable({
                                     />
                                 </TableHead>
                             )}
-                            {queueView && <TableHead className="py-2" />}
+                            {queueView && (
+                                <TableHead className="py-2">
+                                    <ColumnFilterQueueOrigin
+                                        selected={queueOrigin ?? null}
+                                        onChange={onQueueOriginChange ?? (() => {})}
+                                    />
+                                </TableHead>
+                            )}
                             {queueView && (
                                 <TableHead className="py-2">
                                     <ColumnFilterQueueOutcome

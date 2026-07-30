@@ -46,7 +46,8 @@ import type {
     JourneyFilter,
     TimeSlot,
 } from "@/types/logs.types";
-import type { PassageOutcome } from "@/services/domain/call-classification";
+import { outcomesForBucket, type KpiBucket, type PassageOutcome } from "@/services/domain/call-classification";
+import type { QueueOrigin } from "@/components/column-filters/ColumnFilterQueueOrigin";
 
 const PAGE_SIZE = 50;
 
@@ -61,7 +62,9 @@ const defaultColumnVisibility: ColumnVisibility = {
     handledBy: false,
     queues: false,
     journey: true,
-    direction: true,
+    // Masquée par défaut : peu discriminante à l'usage, et la vue file ajoute
+    // déjà deux colonnes.
+    direction: false,
     status: true,
     duration: false,
     waitTime: false,
@@ -167,6 +170,24 @@ export default function AdminLogsPage() {
         () => searchParams.get("queueView") || searchParams.get("queueOutcome")?.split(":")[0] || null,
     );
     const [canViewCompanyWide, setCanViewCompanyWide] = useState(true);
+    const [queueOrigin, setQueueOrigin] = useState<QueueOrigin | null>(() => {
+        const param = searchParams.get("queueOrigin");
+        return param === "queue" || param === "direct" ? param : null;
+    });
+    // L'écran raisonne en vignettes (Répondu / Perdu / Redirigé) ; le socle, en
+    // statuts fins. DEFAULT_OUTCOME_GROUPING fait le pont, et c'est la même
+    // table que celle utilisée par les statistiques.
+    const [queueBuckets, setQueueBuckets] = useState<Array<Exclude<KpiBucket, "received">>>(() => {
+        // Arrivée depuis une vignette : le filtre est posé par l'URL en statuts
+        // fins. On remonte aux vignettes pour que la colonne montre ce qui est
+        // réellement appliqué, au lieu d'afficher « Tous ».
+        const param = searchParams.get("queueOutcome");
+        if (!param) return [];
+        const outcomes = (param.split(":")[1] ?? "").split(",");
+        return (["answered", "lost", "overflow"] as const).filter((bucket) =>
+            outcomesForBucket(bucket).every((o) => outcomes.includes(o)),
+        );
+    });
 
     // Data state
     const [data, setData] = useState<AggregatedCallLogsResponse | null>(null);
@@ -189,6 +210,8 @@ export default function AdminLogsPage() {
     const changeQueueView = (next: string | null) => {
         setQueueView(next);
         setQueueOutcomeFilter(null);
+        setQueueBuckets([]);
+        setQueueOrigin(null);
         setCurrentPage(1);
     };
 
@@ -230,6 +253,7 @@ export default function AdminLogsPage() {
         journeyFilter: journeyFilter || undefined,
         queueOutcomeFilter: queueOutcomeFilter || undefined,
         queueView: queueView || undefined,
+        queueOriginFilter: queueOrigin ?? undefined,
     };
 
     // Update URL when filters change - uses DEBOUNCED values for text search
@@ -286,6 +310,10 @@ export default function AdminLogsPage() {
             params.set("queueView", queueView);
         }
 
+        if (queueOrigin) {
+            params.set("queueOrigin", queueOrigin);
+        }
+
         if (queueOutcomeFilter) {
             params.set(
                 "queueOutcome",
@@ -316,6 +344,7 @@ export default function AdminLogsPage() {
         journeyFilter,
         queueOutcomeFilter,
         queueView,
+        queueOrigin,
     ]);
 
     // Fetch data
@@ -762,18 +791,23 @@ export default function AdminLogsPage() {
                 <LogsTable
                     logs={data?.logs || []}
                     queueView={selectedQueueView}
-                    queueOutcomes={queueOutcomeFilter?.outcomes ?? []}
-                    onQueueOutcomesChange={(outcomes) => {
-                        // Le filtre porte toujours sur la file consultée ; le
-                        // vider revient à retirer la restriction, pas la vue.
+                    queueOutcomes={queueBuckets}
+                    onQueueOutcomesChange={(buckets) => {
                         setCurrentPage(1);
+                        setQueueBuckets(buckets);
                         // La vue file porte toujours sur la population de
                         // l'équipe ; le filtre ne fait que réduire à l'intérieur.
+                        const outcomes = buckets.flatMap((b) => outcomesForBucket(b));
                         setQueueOutcomeFilter(
                             outcomes.length > 0 && queueView
                                 ? { queueNumber: queueView, outcomes, includeTeamDirect: true }
                                 : null,
                         );
+                    }}
+                    queueOrigin={queueOrigin}
+                    onQueueOriginChange={(origin) => {
+                        setCurrentPage(1);
+                        setQueueOrigin(origin);
                     }}
                     isLoading={isLoading}
                     columnVisibility={columnVisibility}

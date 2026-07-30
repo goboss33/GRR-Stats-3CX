@@ -13,8 +13,7 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover";
 
-import { queueOutcomeConfig } from "@/components/logs-table-helpers";
-import type { PassageOutcome } from "@/services/domain/call-classification";
+import type { KpiBucket } from "@/services/domain/call-classification";
 
 /**
  * Filtre de la colonne « Statut dans la file ».
@@ -25,18 +24,19 @@ import type { PassageOutcome } from "@/services/domain/call-classification";
  * vignettes de statistiques — arriver depuis un KPI revient exactement à
  * cocher une case ici, ce qui rend le filtre lisible et modifiable.
  */
+type Bucket = Exclude<KpiBucket, "received">;
+
 interface ColumnFilterQueueOutcomeProps {
-    selected: PassageOutcome[];
-    onChange: (outcomes: PassageOutcome[]) => void;
+    selected: Bucket[];
+    onChange: (buckets: Bucket[]) => void;
     className?: string;
 }
 
-const OUTCOME_ORDER: PassageOutcome[] = [
-    "answered",
-    "overflow",
-    "voicemail",
-    "short_abandon",
-    "abandoned",
+/** Mêmes trois catégories que les vignettes du bilan d'équipe. */
+const BUCKETS: { value: Bucket; label: string }[] = [
+    { value: "answered", label: "Répondu" },
+    { value: "lost", label: "Perdu" },
+    { value: "overflow", label: "Redirigé" },
 ];
 
 export function ColumnFilterQueueOutcome({
@@ -45,7 +45,7 @@ export function ColumnFilterQueueOutcome({
     className,
 }: ColumnFilterQueueOutcomeProps) {
     const [open, setOpen] = React.useState(false);
-    const [localSelected, setLocalSelected] = React.useState<PassageOutcome[]>(selected);
+    const [localSelected, setLocalSelected] = React.useState<Bucket[]>(selected);
 
     React.useEffect(() => {
         if (!open) setLocalSelected(selected);
@@ -64,7 +64,7 @@ export function ColumnFilterQueueOutcome({
         setOpen(isOpen);
     };
 
-    const handleToggle = (outcome: PassageOutcome, checked: boolean) => {
+    const handleToggle = (outcome: Bucket, checked: boolean) => {
         setLocalSelected(
             checked
                 ? [...localSelected, outcome]
@@ -76,7 +76,7 @@ export function ColumnFilterQueueOutcome({
 
     const getLabel = () => {
         if (selected.length === 0) return "Tous";
-        if (selected.length === 1) return queueOutcomeConfig[selected[0]].label;
+        if (selected.length === 1) return BUCKETS.find((b) => b.value === selected[0])?.label;
         return `${selected.length} sél.`;
     };
 
@@ -115,18 +115,18 @@ export function ColumnFilterQueueOutcome({
                         </div>
 
                         <div className="border-t border-slate-100 pt-1">
-                            {OUTCOME_ORDER.map((outcome) => (
-                                <div key={outcome} className="flex items-center gap-2 px-1 py-1">
+                            {BUCKETS.map((bucket) => (
+                                <div key={bucket.value} className="flex items-center gap-2 px-1 py-1">
                                     <Checkbox
-                                        id={`col-queue-outcome-${outcome}`}
-                                        checked={localSelected.includes(outcome)}
-                                        onCheckedChange={(checked) => handleToggle(outcome, checked as boolean)}
+                                        id={`col-queue-outcome-${bucket.value}`}
+                                        checked={localSelected.includes(bucket.value)}
+                                        onCheckedChange={(checked) => handleToggle(bucket.value, checked as boolean)}
                                     />
                                     <Label
-                                        htmlFor={`col-queue-outcome-${outcome}`}
+                                        htmlFor={`col-queue-outcome-${bucket.value}`}
                                         className="text-sm cursor-pointer flex-1"
                                     >
-                                        {queueOutcomeConfig[outcome].label}
+                                        {bucket.label}
                                     </Label>
                                 </div>
                             ))}
