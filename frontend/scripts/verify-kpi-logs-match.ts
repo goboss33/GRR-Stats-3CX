@@ -11,6 +11,7 @@ import {
     DEFAULT_CLASSIFICATION_RULES as rules,
     buildTeamCTEChain,
     buildQueueOutcomeSubquery,
+    outcomesForBucket,
     type PassageOutcome,
 } from "@/services/domain/call-classification";
 
@@ -20,14 +21,16 @@ const END = new Date(process.argv[4] ?? "2026-07-01T00:00:00.000Z");
 
 const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
 
-/** Les quatre cartes du bilan d'équipe, avec ce que chacune agrège. */
+/**
+ * Les quatre vignettes du bilan d'équipe. Les statuts agrégés viennent de la
+ * même table de regroupement que l'écran : si le regroupement change, ce test
+ * suit automatiquement.
+ */
 const CARTES: Array<{ nom: string; outcomes: PassageOutcome[]; team: boolean }> = [
-    { nom: "Total reçus", outcomes: ["answered", "overflow", "voicemail", "short_abandon", "abandoned"], team: true },
-    { nom: "Répondus", outcomes: ["answered"], team: true },
-    { nom: "Perdus", outcomes: ["abandoned"], team: true },
-    { nom: "Redirigés", outcomes: ["overflow"], team: false },
-    { nom: "Messagerie", outcomes: ["voicemail"], team: false },
-    { nom: "Abandons courts", outcomes: ["short_abandon"], team: false },
+    { nom: "Total reçus", outcomes: outcomesForBucket("received"), team: true },
+    { nom: "Répondus", outcomes: outcomesForBucket("answered"), team: true },
+    { nom: "Perdus", outcomes: outcomesForBucket("lost"), team: true },
+    { nom: "Redirigés", outcomes: outcomesForBucket("overflow"), team: false },
 ];
 
 async function main() {

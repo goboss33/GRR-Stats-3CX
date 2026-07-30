@@ -21,6 +21,7 @@ import type {
     HourlyTrend,
     OverflowDestination,
 } from "@/services/domain/call.types";
+import type { PassageOutcome } from "@/services/domain/call-classification";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:3000";
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
@@ -54,6 +55,7 @@ interface ApiQueueResponse {
     callsAbandoned: number;
     callsShortAbandon: number;
     callsToVoicemail: number;
+    outcomeCounts: Record<PassageOutcome, number>;
     abandonedBefore10s: number;
     abandonedAfter10s: number;
     callsOverflow: number;
@@ -153,6 +155,7 @@ async function computeQueueKPIs(
         abandonedAfter10s: apiData.abandonedAfter10s,
         callsShortAbandon: apiData.callsShortAbandon,
         callsToVoicemail: apiData.callsToVoicemail,
+        outcomeCounts: apiData.outcomeCounts,
         callsOverflow: apiData.callsOverflow,
         totalPassages: apiData.totalPassages,
         pingPongCount: apiData.pingPongCount,

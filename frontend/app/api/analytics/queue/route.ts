@@ -144,6 +144,15 @@ export async function GET(request: NextRequest) {
             callsAbandoned: Number(row.unique_abandoned),
             callsShortAbandon: Number(row.unique_short_abandon),
             callsToVoicemail: Number(row.unique_voicemail),
+            // Compteurs fins : l'ecran les regroupe en quatre vignettes, mais
+            // ils restent disponibles pour le detail et les reglages a venir.
+            outcomeCounts: {
+                answered: Number(row.unique_answered),
+                overflow: Number(row.unique_overflow),
+                voicemail: Number(row.unique_voicemail),
+                short_abandon: Number(row.unique_short_abandon),
+                abandoned: Number(row.unique_abandoned),
+            },
             abandonedBefore10s: Number(row.unique_short_abandon),
             abandonedAfter10s: Number(row.unique_abandoned),
             callsOverflow: Number(row.unique_overflow),

@@ -269,8 +269,10 @@ export interface QueueKPIs {
     callsAnswered: number;
     /** Abandons caractérisés : hors abandons courts et hors messagerie. */
     callsAbandoned: number;
-    /** Raccrochés sous le seuil configuré (défaut 10 s) — sortis des « perdus ». */
+    /** Raccrochés sous le seuil configuré (défaut 10 s). */
     callsShortAbandon: number;
+    /** Compteurs par statut fin ; l'affichage les regroupe en quatre vignettes. */
+    outcomeCounts: Record<PassageOutcome, number>;
     abandonedBefore10s: number;
     abandonedAfter10s: number;
     callsToVoicemail: number;

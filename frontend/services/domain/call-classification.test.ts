@@ -8,6 +8,9 @@ import {
     buildQueueExclusionSQL,
     buildCallQueueOutcomesCTE,
     OUTCOME_RANK,
+    DEFAULT_OUTCOME_GROUPING,
+    outcomesForBucket,
+    sumBucket,
     type ClassificationRules,
     type PassageFacts,
     type PassageOutcome,
@@ -164,6 +167,43 @@ describe("partition direct / file", () => {
     it("hors « firstContact », le bloc file n'exclut rien", () => {
         const r = rules({ directAndQueue: "queueWins" });
         expect(buildQueueExclusionSQL(r, "x.call_history_id", "x.cdr_started_at")).toBe("TRUE");
+    });
+});
+
+describe("regroupement d'affichage", () => {
+    // L'écran reste à quatre vignettes. Ce qui compte ici est que la même table
+    // serve à additionner les compteurs ET à construire le lien du clic : c'est
+    // la seule façon d'être sûr que le chiffre affiché et la liste coïncident.
+    const counts = { answered: 1722, overflow: 31, voicemail: 11, short_abandon: 110, abandoned: 95 };
+
+    it("« Perdus » absorbe messagerie et abandons courts", () => {
+        expect(outcomesForBucket("lost").sort()).toEqual(["abandoned", "short_abandon", "voicemail"]);
+        expect(sumBucket(counts, "lost")).toBe(216);
+    });
+
+    it("« Répondus » et « Redirigés » restent isolés", () => {
+        expect(sumBucket(counts, "answered")).toBe(1722);
+        expect(sumBucket(counts, "overflow")).toBe(31);
+    });
+
+    it("« Total reçus » couvre tous les statuts", () => {
+        expect(outcomesForBucket("received")).toHaveLength(5);
+        expect(sumBucket(counts, "received")).toBe(1969);
+    });
+
+    it("les vignettes forment une partition : leur somme égale le total", () => {
+        const somme = sumBucket(counts, "answered") + sumBucket(counts, "lost") + sumBucket(counts, "overflow");
+        expect(somme).toBe(sumBucket(counts, "received"));
+    });
+
+    it("un regroupement alternatif est suivi sans toucher au reste", () => {
+        const grouping = { ...DEFAULT_OUTCOME_GROUPING, voicemail: "answered" as const };
+        expect(sumBucket(counts, "lost", grouping)).toBe(205);
+        expect(sumBucket(counts, "answered", grouping)).toBe(1733);
+    });
+
+    it("un compteur absent vaut zéro plutôt que NaN", () => {
+        expect(sumBucket({ abandoned: 5 }, "lost")).toBe(5);
     });
 });
 

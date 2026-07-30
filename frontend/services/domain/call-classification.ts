@@ -58,6 +58,50 @@ export const OUTCOME_RANK: Record<PassageOutcome, number> = {
     short_abandon: 5,
 };
 
+/**
+ * Vignette d'affichage du bilan d'équipe.
+ *
+ * L'écran reste volontairement à quatre chiffres : c'est le langage commun des
+ * managers, et multiplier les catégories déplace la complexité du calcul vers
+ * la lecture. Le détail fin ne disparaît pas pour autant — il pilote le filtre
+ * du clic, et se lit donc dans les logs quand un chiffre surprend.
+ */
+export type KpiBucket = "received" | "answered" | "lost" | "overflow";
+
+/**
+ * Quels statuts fins alimentent quelle vignette.
+ *
+ * Une seule table fait foi : elle sert à la fois à additionner les compteurs et
+ * à construire le lien vers les logs. Les deux ne peuvent donc pas diverger,
+ * même si le regroupement change.
+ */
+export const DEFAULT_OUTCOME_GROUPING: Record<PassageOutcome, Exclude<KpiBucket, "received">> = {
+    answered: "answered",
+    overflow: "overflow",
+    voicemail: "lost",
+    short_abandon: "lost",
+    abandoned: "lost",
+};
+
+/** Statuts fins agrégés par une vignette donnée. */
+export function outcomesForBucket(
+    bucket: KpiBucket,
+    grouping: Record<PassageOutcome, Exclude<KpiBucket, "received">> = DEFAULT_OUTCOME_GROUPING,
+): PassageOutcome[] {
+    const all = Object.keys(grouping) as PassageOutcome[];
+    if (bucket === "received") return all;
+    return all.filter((o) => grouping[o] === bucket);
+}
+
+/** Somme des compteurs fins pour une vignette. */
+export function sumBucket(
+    counts: Partial<Record<PassageOutcome, number>>,
+    bucket: KpiBucket,
+    grouping: Record<PassageOutcome, Exclude<KpiBucket, "received">> = DEFAULT_OUTCOME_GROUPING,
+): number {
+    return outcomesForBucket(bucket, grouping).reduce((total, o) => total + (counts[o] ?? 0), 0);
+}
+
 export interface ClassificationRules {
     /**
      * Appel repassant plusieurs fois dans la MÊME file.
