@@ -4,7 +4,7 @@ import { formatDurationHuman as formatDuration } from "@/services/domain/call-ag
 
 import { QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent } from "@/components/ui/card";
-import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, ExternalLink, TrendingUp } from "lucide-react";
+import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, ExternalLink, TrendingUp, Voicemail, Timer } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import Link from "next/link";
 
@@ -14,7 +14,8 @@ interface TeamOverviewProps {
     queueNumber: string;
     startDate: string;
     endDate: string;
-    agentExtensions: string[];
+    /** Conserve pour l'appelant : plus utilise ici depuis le socle de classement. */
+    agentExtensions?: string[];
 }
 
 const COLORS = {
@@ -25,13 +26,19 @@ const COLORS = {
     answered: "#10b981",
     abandoned: "#ef4444",
     overflow: "#f59e0b",
+    voicemail: "#6366f1",
+    shortAbandon: "#94a3b8",
 };
 
-export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate, agentExtensions }: TeamOverviewProps) {
+export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate }: TeamOverviewProps) {
     const totalReceived = kpis.callsReceived + kpis.teamDirectReceived;
     const totalAnswered = kpis.callsAnswered + kpis.teamDirectAnswered;
     const totalLost = kpis.callsAbandoned + kpis.directLost;
     const totalOverflow = kpis.callsOverflow;
+    // Categories rendues autonomes par le socle de classement : elles ne sont
+    // plus noyees dans « Perdus », ce qui rend la somme egale au total recu.
+    const totalVoicemail = kpis.callsToVoicemail;
+    const totalShortAbandon = kpis.callsShortAbandon;
     const performanceRate = totalReceived > 0
         ? Math.round((totalAnswered / totalReceived) * 100)
         : 0;
@@ -47,60 +54,23 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
     const queueUnanswered = kpis.callsReceived - kpis.callsAnswered;
 
 
-    const buildTeamFilter = (queueCondition: { type: string; queueNumber: string; result?: string }, agentConditions: Array<{ type: string; agentNumber: string; result?: string }>) => {
-        const conditions = [
-            {
-                condition: {
-                    type: queueCondition.type as "queue" | "direct" | "voicemail",
-                    queueNumber: queueCondition.queueNumber,
-                    result: queueCondition.result as "answered" | "not_answered" | "busy" | "voicemail" | "abandoned" | "overflow" | undefined,
-                    negate: false,
-                    firstSegment: false,
-                    lastSegment: false,
-                },
-                operator: "OR" as const,
-            },
-            ...agentConditions.map(c => ({
-                condition: {
-                    type: c.type as "queue" | "direct" | "voicemail",
-                    agentNumber: c.agentNumber,
-                    result: c.result as "answered" | "not_answered" | "busy" | "voicemail" | "abandoned" | "overflow" | undefined,
-                    negate: false,
-                    firstSegment: false,
-                    lastSegment: false,
-                },
-                operator: "OR" as const,
-            })),
-        ];
-
-        const filter = {
-            groups: [{
-                group: { conditions },
-                operator: "AND",
-            }],
-        };
-        return encodeURIComponent(JSON.stringify(filter));
-    };
-
-    const queueCondition = { type: "queue", queueNumber };
-    const agentConditions = agentExtensions.map(ext => ({ type: "direct", agentNumber: ext }));
-    const totalFilter = buildTeamFilter(queueCondition, agentConditions);
-
-    const queueAnsweredCondition = { type: "queue", queueNumber, result: "answered" };
-    const agentAnsweredConditions = agentExtensions.map(ext => ({ type: "direct", agentNumber: ext, result: "answered" }));
-    const answeredFilter = buildTeamFilter(queueAnsweredCondition, agentAnsweredConditions);
-
-    const queueLostCondition = { type: "queue", queueNumber, result: "abandoned" };
-    const agentLostConditions = agentExtensions.map(ext => ({ type: "direct", agentNumber: ext, result: "not_answered" }));
-    const lostFilter = buildTeamFilter(queueLostCondition, agentLostConditions);
-
-    const overflowFilter = buildTeamFilter({ type: "queue", queueNumber, result: "overflow" }, []);
+    // Lien vers les logs filtres par le SOCLE de classement : la population
+    // listee est exactement celle agregee par le KPI, donc le nombre de lignes
+    // egale le chiffre affiche. L'ancien `journeyFilter` testait la presence
+    // d'un segment de resultat donne, critere non exclusif : un appel repasse
+    // dans la file pouvait apparaitre a la fois dans « Repondus » et « Perdus ».
+    // `team` demande d'inclure les appels directs de l'equipe, exactement comme
+    // les cartes qui additionnent « File » et « Directs ».
+    const outcomeLink = (outcomes: string[], team = true) =>
+        `/admin/logs?start=${startDate}&end=${endDate}&queueOutcome=${queueNumber}:${outcomes.join(",")}${team ? ":team" : ""}`;
 
     // Anneau externe : KPIs (Répondus, Perdus, Redirigés)
     const outcomeData = [
         { name: "Répondus", value: totalAnswered, color: COLORS.answered },
         { name: "Perdus", value: totalLost, color: COLORS.abandoned },
         { name: "Redirigés", value: totalOverflow, color: COLORS.overflow },
+        { name: "Messagerie", value: totalVoicemail, color: COLORS.voicemail },
+        { name: "Abandons courts", value: totalShortAbandon, color: COLORS.shortAbandon },
     ].filter(d => d.value > 0);
 
     const directTotal = kpis.teamDirectReceived;
@@ -206,10 +176,10 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                     {/* Colonne droite : KPIs + Détails */}
                     <div className="lg:col-span-8 space-y-4">
                         {/* KPI Cards Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                             {/* Total Reçus */}
                             <Link
-                                href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${totalFilter}`}
+                                href={outcomeLink(["answered", "overflow", "voicemail", "short_abandon", "abandoned"])}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer"
@@ -229,7 +199,7 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
 
                             {/* Répondus */}
                             <Link
-                                href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${answeredFilter}`}
+                                href={outcomeLink(["answered"])}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer"
@@ -249,7 +219,7 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
 
                             {/* Perdus */}
                             <Link
-                                href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${lostFilter}`}
+                                href={outcomeLink(["abandoned"])}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-red-300 hover:shadow-md transition-all cursor-pointer"
@@ -269,7 +239,7 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
 
                             {/* Redirigés */}
                             <Link
-                                href={`/admin/logs?start=${startDate}&end=${endDate}&journeyFilter=${overflowFilter}`}
+                                href={outcomeLink(["overflow"], false)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-amber-300 hover:shadow-md transition-all cursor-pointer"
@@ -284,6 +254,46 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                 <div className="text-2xl font-bold text-amber-700">{totalOverflow}</div>
                                 <div className="text-[10px] text-slate-500 mt-0.5">
                                     Vers autres files
+                                </div>
+                            </Link>
+
+                            {/* Messagerie */}
+                            <Link
+                                href={outcomeLink(["voicemail"], false)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer"
+                            >
+                                <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center gap-1.5">
+                                        <Voicemail className="h-4 w-4 text-indigo-600" />
+                                        <span className="text-xs font-medium text-slate-600">Messagerie</span>
+                                    </div>
+                                    <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-indigo-600 transition-colors" />
+                                </div>
+                                <div className="text-2xl font-bold text-indigo-700">{totalVoicemail}</div>
+                                <div className="text-[10px] text-slate-500 mt-0.5">
+                                    Hors heures ou renvoi agent
+                                </div>
+                            </Link>
+
+                            {/* Abandons courts */}
+                            <Link
+                                href={outcomeLink(["short_abandon"], false)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-400 hover:shadow-md transition-all cursor-pointer"
+                            >
+                                <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center gap-1.5">
+                                        <Timer className="h-4 w-4 text-slate-500" />
+                                        <span className="text-xs font-medium text-slate-600">Abandons courts</span>
+                                    </div>
+                                    <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-slate-600 transition-colors" />
+                                </div>
+                                <div className="text-2xl font-bold text-slate-700">{totalShortAbandon}</div>
+                                <div className="text-[10px] text-slate-500 mt-0.5">
+                                    Raccrochés en moins de 10s
                                 </div>
                             </Link>
                         </div>

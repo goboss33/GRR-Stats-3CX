@@ -45,6 +45,7 @@ import type {
     JourneyFilter,
     TimeSlot,
 } from "@/types/logs.types";
+import type { PassageOutcome } from "@/services/domain/call-classification";
 
 const PAGE_SIZE = 50;
 
@@ -143,6 +144,21 @@ export default function AdminLogsPage() {
         }
     });
 
+    // Filtre « statut dans une file », posé par les liens des KPIs sous la forme
+    // `queueOutcome=900:answered` (plusieurs statuts séparés par une virgule).
+    // Il s'appuie sur le même socle de classement que les KPIs, ce qui garantit
+    // que le nombre de lignes listées est exactement le chiffre affiché.
+    const [queueOutcomeFilter] = useState<{ queueNumber: string; outcomes: PassageOutcome[]; includeTeamDirect?: boolean } | null>(() => {
+        const param = searchParams.get("queueOutcome");
+        if (!param) return null;
+        const [queueNumber, outcomes, team] = param.split(":");
+        if (!queueNumber || !outcomes) return null;
+        const parsed = outcomes.split(",").filter((o): o is PassageOutcome =>
+            ["answered", "overflow", "voicemail", "short_abandon", "abandoned"].includes(o),
+        );
+        return parsed.length > 0 ? { queueNumber, outcomes: parsed, includeTeamDirect: team === "team" } : null;
+    });
+
     // Data state
     const [data, setData] = useState<AggregatedCallLogsResponse | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -185,6 +201,7 @@ export default function AdminLogsPage() {
         timeSlots: timeSlots.length > 0 ? timeSlots : undefined,
         // Journey filter (groups with AND/OR)
         journeyFilter: journeyFilter || undefined,
+        queueOutcomeFilter: queueOutcomeFilter || undefined,
     };
 
     // Update URL when filters change - uses DEBOUNCED values for text search
@@ -235,6 +252,15 @@ export default function AdminLogsPage() {
             params.set("journeyFilter", JSON.stringify(journeyFilter));
         }
 
+        // Conservé tel quel : ce filtre vient d'un KPI et n'est pas modifiable
+        // depuis l'écran, mais il doit survivre aux changements de page.
+        if (queueOutcomeFilter) {
+            params.set(
+                "queueOutcome",
+                `${queueOutcomeFilter.queueNumber}:${queueOutcomeFilter.outcomes.join(",")}${queueOutcomeFilter.includeTeamDirect ? ":team" : ""}`,
+            );
+        }
+
         router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
     }, [
         router,
@@ -256,6 +282,7 @@ export default function AdminLogsPage() {
         waitTimeMax,
         timeSlots,
         journeyFilter,
+        queueOutcomeFilter,
     ]);
 
     // Fetch data

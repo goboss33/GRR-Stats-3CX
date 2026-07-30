@@ -52,6 +52,8 @@ interface ApiQueueResponse {
     callsReceived: number;
     callsAnswered: number;
     callsAbandoned: number;
+    callsShortAbandon: number;
+    callsToVoicemail: number;
     abandonedBefore10s: number;
     abandonedAfter10s: number;
     callsOverflow: number;
@@ -149,7 +151,8 @@ async function computeQueueKPIs(
         callsAbandoned: apiData.callsAbandoned,
         abandonedBefore10s: apiData.abandonedBefore10s,
         abandonedAfter10s: apiData.abandonedAfter10s,
-        callsToVoicemail: 0,
+        callsShortAbandon: apiData.callsShortAbandon,
+        callsToVoicemail: apiData.callsToVoicemail,
         callsOverflow: apiData.callsOverflow,
         totalPassages: apiData.totalPassages,
         pingPongCount: apiData.pingPongCount,

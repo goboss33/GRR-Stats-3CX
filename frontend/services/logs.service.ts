@@ -6,6 +6,10 @@ import { parseSearchPattern, type SearchPattern, type SearchPatternMode } from "
 import { resolveAccessScope, type AccessScope } from "@/lib/access-scope";
 import { requireActionRole } from "@/lib/auth-guard";
 import { maskPhoneNumber } from "@/services/domain/call-aggregation";
+import {
+    DEFAULT_CLASSIFICATION_RULES,
+    buildQueueOutcomeSubquery,
+} from "@/services/domain/call-classification";
 import type {
     AggregatedCallLog,
     CallDirection,
@@ -264,6 +268,19 @@ function buildAggregatedQueryParts(
         const pattern = parseSearchPattern(filters.idSearch);
         const ph = bind(likeValue(pattern));
         whereConditions.push(searchCondition('call_history_id::text', pattern.mode, ph));
+    }
+
+    // Filtre « statut dans une file » : même socle de classement que les KPIs,
+    // donc même population. C'est ce qui rend le clic sur un KPI exact.
+    if (filters.queueOutcomeFilter && filters.queueOutcomeFilter.outcomes.length > 0) {
+        const subquery = buildQueueOutcomeSubquery(DEFAULT_CLASSIFICATION_RULES, {
+            queueExpr: bind(filters.queueOutcomeFilter.queueNumber),
+            startExpr: startP,
+            endExpr: endP,
+            outcomes: filters.queueOutcomeFilter.outcomes,
+            includeTeamDirect: filters.queueOutcomeFilter.includeTeamDirect,
+        });
+        whereConditions.push(`call_history_id IN ${subquery}`);
     }
 
     const whereClause = whereConditions.join(" AND ");

@@ -1,3 +1,5 @@
+import type { PassageOutcome } from "./call-classification";
+
 /**
  * Unified Call Domain Types
  * 
@@ -98,6 +100,13 @@ export interface LogsFilters {
     waitTimeMin?: number;
     waitTimeMax?: number;
     journeyFilter?: JourneyFilter;
+    /**
+     * Filtre « statut dans une file », alimenté par le socle de classement
+     * (services/domain/call-classification.ts). C'est celui qu'utilisent les
+     * liens des KPIs : il garantit que le nombre de lignes listées est
+     * exactement le chiffre affiché sur la carte.
+     */
+    queueOutcomeFilter?: { queueNumber: string; outcomes: PassageOutcome[]; includeTeamDirect?: boolean };
     timeSlots?: TimeSlot[];
 }
 
@@ -258,7 +267,10 @@ export interface OverflowDestination {
 export interface QueueKPIs {
     callsReceived: number;
     callsAnswered: number;
+    /** Abandons caractérisés : hors abandons courts et hors messagerie. */
     callsAbandoned: number;
+    /** Raccrochés sous le seuil configuré (défaut 10 s) — sortis des « perdus ». */
+    callsShortAbandon: number;
     abandonedBefore10s: number;
     abandonedAfter10s: number;
     callsToVoicemail: number;
