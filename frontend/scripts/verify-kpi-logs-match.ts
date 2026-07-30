@@ -10,6 +10,7 @@ import { getPrismaCdr } from "@/lib/prisma-cdr";
 import {
     DEFAULT_CLASSIFICATION_RULES as rules,
     buildTeamCTEChain,
+    buildAgentCTEChain,
     buildQueueOutcomeSubquery,
     outcomesForBucket,
     type PassageOutcome,
@@ -87,8 +88,33 @@ async function main() {
 
     console.log(
         ko === 0
-            ? "\n=> Chaque KPI correspond exactement au nombre de lignes listées.\n"
-            : `\n=> ${ko} carte(s) en écart : l'invariant est rompu.\n`,
+            ? "\n=> Chaque KPI correspond exactement au nombre de lignes listées."
+            : `\n=> ${ko} carte(s) en écart : l'invariant est rompu.`,
+    );
+
+    // Second invariant : le tableau par agent doit se refermer sur la vignette.
+    // Chaque appel répondu par la file a exactement un agent « résolveur », donc
+    // la somme des agents ne peut ni dépasser ni manquer le chiffre de la carte.
+    const agentRows = await prisma.$queryRawUnsafe<{ resolus: bigint; repondus: bigint; agents: bigint }[]>(
+        `WITH ${buildTeamCTEChain(rules, P)},
+         ${buildAgentCTEChain(rules)}
+         SELECT
+             (SELECT COALESCE(SUM(resolved), 0) FROM agent_queue_stats) AS resolus,
+             (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'answered') AS repondus,
+             (SELECT COUNT(*) FROM agent_queue_stats) AS agents`,
+        QUEUE, START, END,
+    );
+
+    const resolus = Number(agentRows[0].resolus);
+    const repondus = Number(agentRows[0].repondus);
+    const nbAgents = Number(agentRows[0].agents);
+    const agentOk = resolus === repondus;
+    if (!agentOk) ko++;
+
+    console.log(`\nTableau par agent (${nbAgents} agents)`);
+    console.log(
+        `  somme des « répondus » agents : ${resolus}   vignette Répondus (part file) : ${repondus}` +
+        (agentOk ? "   ✓" : `   ✗ écart de ${resolus - repondus}`),
     );
 
     await prisma.$disconnect();

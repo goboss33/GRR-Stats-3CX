@@ -506,7 +506,14 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
           AND child.cdr_started_at <= ${params.endExpr}
     ),
     team_direct_segments AS (
-        SELECT c.call_history_id, c.cdr_started_at, c.cdr_answered_at
+        SELECT
+            c.call_history_id,
+            c.cdr_started_at,
+            c.cdr_answered_at,
+            c.cdr_ended_at,
+            -- L'extension sert au tableau par agent ; les autres consommateurs
+            -- l'ignorent.
+            c.destination_dn_number AS extension
         FROM cdroutput c
         WHERE ${buildDirectSegmentWhereClause("c")}
           AND c.destination_dn_number IN (SELECT extension FROM queue_agents)
@@ -519,6 +526,65 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
         WHERE ${buildQueueExclusionSQL(rules, "cqo.call_history_id", "cqo.cdr_started_at")}
     ),
     ${buildDirectCallsCTE(rules)}`;
+}
+
+/**
+ * CTE du tableau par agent, à insérer après `buildTeamCTEChain`.
+ *
+ * Le tableau lit la MÊME partition que les vignettes : sans cela, un appel
+ * écarté du bloc « file » par la règle du premier contact resterait compté au
+ * crédit d'un agent, et la somme du tableau dépasserait la vignette.
+ *
+ * Invariant garanti : chaque appel répondu a exactement un agent « résolveur »
+ * (le dernier à avoir décroché), donc la somme de `resolved` sur les agents
+ * égale le nombre d'appels répondus du bloc « file ».
+ */
+export function buildAgentCTEChain(rules: ClassificationRules): string {
+    return `
+    queue_polling AS (
+        SELECT
+            p.originating_cdr_id,
+            p.call_history_id,
+            p.destination_dn_number AS agent_ext,
+            CASE WHEN p.cdr_answered_at IS NOT NULL THEN 1 ELSE 0 END AS was_answered,
+            EXTRACT(EPOCH FROM (p.cdr_ended_at - p.cdr_answered_at)) AS talk_seconds,
+            p.cdr_answered_at
+        FROM cdroutput p
+        JOIN queue_passages qp ON qp.cdr_id = p.originating_cdr_id
+        JOIN queue_calls qc ON qc.call_history_id = p.call_history_id
+        WHERE p.creation_forward_reason = 'polling'
+          AND p.destination_dn_type = 'extension'
+    ),
+    last_answered_agent AS (
+        SELECT DISTINCT ON (call_history_id)
+            call_history_id,
+            agent_ext AS last_agent
+        FROM queue_polling
+        WHERE was_answered = 1
+        ORDER BY call_history_id, cdr_answered_at DESC
+    ),
+    agent_queue_stats AS (
+        SELECT
+            qp.agent_ext AS extension,
+            COUNT(DISTINCT qp.originating_cdr_id) AS calls_received,
+            COUNT(DISTINCT CASE WHEN la.last_agent = qp.agent_ext THEN qp.call_history_id END) AS resolved,
+            SUM(CASE WHEN qp.was_answered = 1 THEN qp.talk_seconds ELSE 0 END) AS queue_talk_time
+        FROM queue_polling qp
+        LEFT JOIN last_answered_agent la ON qp.call_history_id = la.call_history_id
+        WHERE qp.agent_ext IN (SELECT extension FROM queue_agents)
+        GROUP BY qp.agent_ext
+    ),
+    agent_direct AS (
+        SELECT
+            d.extension,
+            COUNT(DISTINCT d.call_history_id) AS direct_received,
+            COUNT(DISTINCT CASE WHEN d.cdr_answered_at IS NOT NULL THEN d.call_history_id END) AS direct_answered,
+            SUM(CASE WHEN d.cdr_answered_at IS NOT NULL
+                THEN EXTRACT(EPOCH FROM (d.cdr_ended_at - d.cdr_answered_at)) ELSE 0 END) AS direct_talk_time
+        FROM team_direct_segments d
+        WHERE ${buildDirectExclusionSQL(rules, "d")}
+        GROUP BY d.extension
+    )`;
 }
 
 /**
