@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiRole } from "@/lib/auth-guard";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
 import { ServerId } from "@/lib/prisma-cdr";
-import { discoverQueues, listRegistryQueues, updateRegistryQueue } from "@/services/queue-registry.service";
+import { discoverQueues, listRegistryQueues, updateRegistryQueue, markQueuesReviewed } from "@/services/queue-registry.service";
 import { logger } from "@/lib/logger";
 
 // Registre des files : administration réservée à l'ADMIN (cf. PRD droits d'accès §4.1).
@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
                 service: q.service,
                 status: q.status,
                 agentCount: q.agentCount,
+                isNew: q.reviewedAt === null,
                 firstSeenAt: q.firstSeenAt.toISOString(),
                 lastSeenAt: q.lastSeenAt.toISOString(),
                 previousNames: q.nameHistory.map((h) => h.name).filter((n) => n !== q.currentName),
@@ -42,13 +43,22 @@ export async function GET(request: NextRequest) {
     }
 }
 
-/** Déclenche la découverte des files depuis les CDR. */
+/**
+ * `?action=review` marque les files comme examinées ; sinon déclenche la
+ * découverte depuis les CDR.
+ */
 export async function POST(request: NextRequest) {
     const guard = await requireApiRole(["ADMIN"]);
     if (!guard.ok) return guard.response;
 
     try {
         const tenantId = resolveTenant(request);
+
+        if (new URL(request.url).searchParams.get("action") === "review") {
+            const count = await markQueuesReviewed(tenantId);
+            return NextResponse.json({ reviewed: count });
+        }
+
         const result = await discoverQueues(tenantId);
         return NextResponse.json(result);
     } catch (error) {
@@ -69,7 +79,7 @@ export async function PUT(request: NextRequest) {
         if (!id || typeof id !== "string") {
             return NextResponse.json({ error: "ID de file requis" }, { status: 400 });
         }
-        if (status !== undefined && !["ACTIVE", "UNCLASSIFIED", "ARCHIVED"].includes(status)) {
+        if (status !== undefined && !["ACTIVE", "ARCHIVED"].includes(status)) {
             return NextResponse.json({ error: "Statut invalide" }, { status: 400 });
         }
 

@@ -86,7 +86,11 @@ model QueueRegistry {
   entity      String?
   region      String?
   service     String?
-  status      QueueStatus @default(UNCLASSIFIED)
+  status      QueueStatus @default(ACTIVE)
+  /// null = jamais examinée par un ADMIN -> signalée comme « nouvelle ».
+  /// Remplace l'ancien statut « à classer », qui empêchait d'utiliser une file
+  /// sans rien protéger : la sécurité vient du périmètre, pas du statut.
+  reviewedAt  DateTime?
   firstSeenAt DateTime
   lastSeenAt  DateTime
   createdAt   DateTime    @default(now())
@@ -100,10 +104,8 @@ model QueueRegistry {
 }
 
 enum QueueStatus {
-  /// Classée et exploitable dans les périmètres
+  /// File exploitable dans les périmètres
   ACTIVE
-  /// Découverte mais pas encore classée par un ADMIN — invisible des non-ADMIN
-  UNCLASSIFIED
   /// Sans appel depuis queueArchiveAfterDays — probablement supprimée dans 3CX
   ARCHIVED
 }

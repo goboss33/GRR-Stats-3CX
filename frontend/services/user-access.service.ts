@@ -141,16 +141,11 @@ export async function describeUserScope(userId: string): Promise<UserScopeDescri
     const unrestricted = user.role === "ADMIN" || user.role === "MODERATOR";
 
     // ADMIN/MODERATOR : portée globale (limitée aux tenants autorisés pour MODERATOR).
-    // L'ADMIN voit aussi les files « à classer » — c'est lui qui les classe ; les
-    // autres rôles ne voient que les files classées (cf. PRD droits d'accès §5.2).
-    const visibleStatuses = user.role === "ADMIN"
-        ? (["ACTIVE", "UNCLASSIFIED"] as const)
-        : (["ACTIVE"] as const);
-
+    // Les files archivées sont exclues : elles n'existent plus dans 3CX.
     const queues = unrestricted
         ? await prismaAuth.queueRegistry.findMany({
               where: {
-                  status: { in: [...visibleStatuses] },
+                  status: "ACTIVE",
                   ...(user.role === "MODERATOR" && access.tenants.length > 0
                       ? { tenantId: { in: access.tenants } }
                       : {}),

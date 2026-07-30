@@ -112,6 +112,8 @@ export async function discoverQueues(serverId: ServerId): Promise<DiscoveryResul
         const current = byNumber.get(q.number);
 
         if (!current) {
+            // Nouvelle file : directement exploitable (reviewedAt null la signale
+            // comme « nouvelle » à l'ADMIN, sans bloquer son utilisation).
             const tags = parseQueueName(q.name);
             await prismaAuth.queueRegistry.create({
                 data: {
@@ -209,10 +211,96 @@ export async function listRegistryQueues(serverId: ServerId) {
     return queues.map((q) => ({ ...q, agentCount: countByQueue.get(q.queueNumber) ?? 0 }));
 }
 
-/** Met à jour les étiquettes et le statut d'une file (action ADMIN). */
+/**
+ * Met à jour les étiquettes et le statut d'une file (action ADMIN).
+ * Toute modification vaut examen : la file cesse d'être signalée « nouvelle ».
+ */
 export async function updateRegistryQueue(
     id: string,
-    data: { entity?: string | null; region?: string | null; service?: string | null; status?: "ACTIVE" | "UNCLASSIFIED" | "ARCHIVED" },
+    data: { entity?: string | null; region?: string | null; service?: string | null; status?: "ACTIVE" | "ARCHIVED" },
 ) {
-    return prismaAuth.queueRegistry.update({ where: { id }, data });
+    return prismaAuth.queueRegistry.update({
+        where: { id },
+        data: { ...data, reviewedAt: new Date() },
+    });
+}
+
+export interface QueueDetail {
+    id: string;
+    tenantId: string;
+    queueNumber: string;
+    currentName: string;
+    entity: string | null;
+    region: string | null;
+    service: string | null;
+    status: string;
+    isNew: boolean;
+    firstSeenAt: string;
+    lastSeenAt: string;
+    previousNames: { name: string; seenAt: string }[];
+    agents: { extension: string; name: string; attempts: number; lastSeenAt: string }[];
+}
+
+/**
+ * Détail d'une file : étiquettes, historique des noms et agents rattachés.
+ * Les agents proviennent des CDR (nom + sollicitations), croisés avec le
+ * rattachement matérialisé du registre.
+ */
+export async function getQueueDetail(serverId: ServerId, id: string): Promise<QueueDetail | null> {
+    const queue = await prismaAuth.queueRegistry.findUnique({
+        where: { id },
+        include: { nameHistory: { orderBy: { seenAt: "desc" } } },
+    });
+    if (!queue || queue.tenantId !== serverId) return null;
+
+    const prisma = getPrismaCdr(serverId);
+    const agents = await prisma.$queryRaw<
+        { extension: string; name: string | null; attempts: bigint; last_seen: Date }[]
+    >`
+        SELECT child.destination_dn_number AS extension,
+               MAX(child.destination_dn_name) AS name,
+               COUNT(*)::bigint              AS attempts,
+               MAX(child.cdr_started_at)     AS last_seen
+        FROM cdroutput child
+        JOIN cdroutput parent ON child.originating_cdr_id = parent.cdr_id
+        WHERE child.creation_method = 'route_to'
+          AND child.creation_forward_reason = 'polling'
+          AND parent.destination_dn_type = 'queue'
+          AND parent.destination_dn_number = ${queue.queueNumber}
+          AND child.destination_dn_number IS NOT NULL
+        GROUP BY child.destination_dn_number
+        ORDER BY MAX(child.cdr_started_at) DESC
+    `;
+
+    return {
+        id: queue.id,
+        tenantId: queue.tenantId,
+        queueNumber: queue.queueNumber,
+        currentName: queue.currentName,
+        entity: queue.entity,
+        region: queue.region,
+        service: queue.service,
+        status: queue.status,
+        isNew: queue.reviewedAt === null,
+        firstSeenAt: queue.firstSeenAt.toISOString(),
+        lastSeenAt: queue.lastSeenAt.toISOString(),
+        previousNames: queue.nameHistory
+            .filter((h) => h.name !== queue.currentName)
+            .map((h) => ({ name: h.name, seenAt: h.seenAt.toISOString() })),
+        agents: agents.map((a) => ({
+            extension: a.extension,
+            name: a.name ?? a.extension,
+            attempts: Number(a.attempts),
+            lastSeenAt: a.last_seen.toISOString(),
+        })),
+    };
+}
+
+/** Marque des files comme examinées (bouton « J'ai vu ces nouvelles files »). */
+export async function markQueuesReviewed(tenantId: ServerId, ids?: string[]) {
+    const { count } = await prismaAuth.queueRegistry.updateMany({
+        where: { tenantId, reviewedAt: null, ...(ids && ids.length > 0 ? { id: { in: ids } } : {}) },
+        data: { reviewedAt: new Date() },
+    });
+    return count;
 }

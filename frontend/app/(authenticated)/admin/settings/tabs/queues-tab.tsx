@@ -12,8 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { getSelectedServer } from "@/lib/selected-server";
 import { KNOWN_REGIONS } from "@/services/domain/queue-naming";
+import { QueueDetailDialog } from "@/components/queue-detail-dialog";
 
-type QueueStatus = "ACTIVE" | "UNCLASSIFIED" | "ARCHIVED";
+type QueueStatus = "ACTIVE" | "ARCHIVED";
 
 interface RegistryQueue {
     id: string;
@@ -24,19 +25,18 @@ interface RegistryQueue {
     service: string | null;
     status: QueueStatus;
     agentCount: number;
+    isNew: boolean;
     lastSeenAt: string;
     previousNames: string[];
 }
 
 const statusLabels: Record<QueueStatus, string> = {
-    ACTIVE: "Classée",
-    UNCLASSIFIED: "À classer",
+    ACTIVE: "Active",
     ARCHIVED: "Archivée",
 };
 
 const statusStyles: Record<QueueStatus, string> = {
     ACTIVE: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    UNCLASSIFIED: "bg-amber-50 text-amber-700 border-amber-200",
     ARCHIVED: "bg-slate-100 text-slate-500 border-slate-200",
 };
 
@@ -47,6 +47,7 @@ export function QueuesTab() {
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState<QueueStatus | "ALL">("ALL");
     const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [detailQueueId, setDetailQueueId] = useState<string | null>(null);
 
     const load = useCallback(async () => {
         try {
@@ -107,6 +108,17 @@ export function QueuesTab() {
         }
     };
 
+    /** Retire le signalement « nouvelle » sur toutes les files concernées. */
+    const markAllReviewed = async () => {
+        try {
+            const res = await fetch(`/api/admin/queues?server=${getSelectedServer()}&action=review`, { method: "POST" });
+            if (!res.ok) throw new Error((await res.json()).error || "Action impossible");
+            setQueues((qs) => qs.map((q) => ({ ...q, isNew: false })));
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Action impossible");
+        }
+    };
+
     /** Applique la même modification à toutes les files sélectionnées. */
     const patchSelection = async (patch: Partial<Pick<RegistryQueue, "region" | "entity" | "status">>) => {
         const ids = [...selected];
@@ -115,7 +127,7 @@ export function QueuesTab() {
         setSelected(new Set());
     };
 
-    const unclassified = queues.filter((q) => q.status === "UNCLASSIFIED").length;
+    const newQueues = queues.filter((q) => q.isNew).length;
     const renamedQueues = queues.filter((q) => q.previousNames.length > 0);
 
     const filtered = useMemo(() => {
@@ -182,13 +194,16 @@ export function QueuesTab() {
                 </Card>
             )}
 
-            {unclassified > 0 && (
-                <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
-                    <AlertTriangle className="h-5 w-5 flex-shrink-0 text-amber-600" />
-                    <p className="text-sm text-amber-800">
-                        <strong>{unclassified} file(s) à classer.</strong> Tant qu&apos;elles ne sont pas classées, elles
-                        restent invisibles des managers.
+            {newQueues > 0 && (
+                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                    <AlertTriangle className="h-5 w-5 flex-shrink-0 text-blue-600" />
+                    <p className="flex-1 text-sm text-blue-800">
+                        <strong>{newQueues} nouvelle(s) file(s) détectée(s).</strong> Vérifiez leurs étiquettes, puis
+                        ajoutez-les aux périmètres concernés depuis la fiche des utilisateurs.
                     </p>
+                    <Button size="sm" variant="outline" className="bg-white" onClick={markAllReviewed}>
+                        J&apos;ai vu
+                    </Button>
                 </div>
             )}
 
@@ -225,8 +240,7 @@ export function QueuesTab() {
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="ALL">Tous les statuts</SelectItem>
-                            <SelectItem value="UNCLASSIFIED">À classer</SelectItem>
-                            <SelectItem value="ACTIVE">Classées</SelectItem>
+                            <SelectItem value="ACTIVE">Actives</SelectItem>
                             <SelectItem value="ARCHIVED">Archivées</SelectItem>
                         </SelectContent>
                     </Select>
@@ -287,7 +301,19 @@ export function QueuesTab() {
                                             </td>
                                             <td className="px-4 py-2 font-mono text-xs text-slate-600">{q.queueNumber}</td>
                                             <td className="px-4 py-2">
-                                                <span className="font-medium">{q.currentName}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDetailQueueId(q.id)}
+                                                    className="text-left font-medium hover:text-blue-700 hover:underline"
+                                                    title="Voir le détail (agents, historique)"
+                                                >
+                                                    {q.currentName}
+                                                </button>
+                                                {q.isNew && (
+                                                    <Badge variant="outline" className="ml-2 border-blue-200 bg-blue-50 text-[10px] text-blue-700">
+                                                        Nouvelle
+                                                    </Badge>
+                                                )}
                                                 {q.previousNames.length > 0 && (
                                                     <span className="ml-2 text-xs text-blue-600" title={`Ancien(s) nom(s) : ${q.previousNames.join(", ")}`}>
                                                         (renommée)
@@ -365,6 +391,7 @@ export function QueuesTab() {
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                     <p className="mb-2 font-medium text-slate-700">À savoir :</p>
                     <ul className="list-inside list-disc space-y-1">
+                        <li>Cliquez sur le nom d&apos;une file pour voir ses agents et l&apos;historique de ses noms.</li>
                         <li>Les files sont découvertes via l&apos;historique des appels : une nouvelle file n&apos;apparaît qu&apos;après son premier appel traité.</li>
                         <li>Une file supprimée dans 3CX ne disparaît pas d&apos;elle-même : elle passe en « Archivée » après 90 jours sans appel.</li>
                         <li>Les étiquettes servent à composer les périmètres ; elles ne donnent aucun droit par elles-mêmes.</li>
@@ -372,6 +399,13 @@ export function QueuesTab() {
                     </ul>
                 </div>
             )}
+
+            <QueueDetailDialog
+                queueId={detailQueueId}
+                serverId={getSelectedServer()}
+                open={!!detailQueueId}
+                onOpenChange={(open) => !open && setDetailQueueId(null)}
+            />
         </div>
     );
 }

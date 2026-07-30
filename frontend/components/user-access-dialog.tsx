@@ -28,6 +28,7 @@ interface RegistryQueue {
     entity: string | null;
     region: string | null;
     status: string;
+    isNew: boolean;
     tenantId?: string;
 }
 
@@ -325,9 +326,9 @@ export function UserAccessDialog({
                                                     {q.region && (
                                                         <Badge variant="outline" className="text-[10px]">{q.region}</Badge>
                                                     )}
-                                                    {q.status === "UNCLASSIFIED" && (
-                                                        <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-700">
-                                                            à classer
+                                                    {q.isNew && (
+                                                        <Badge variant="outline" className="border-blue-200 bg-blue-50 text-[10px] text-blue-700">
+                                                            nouvelle
                                                         </Badge>
                                                     )}
                                                 </label>
