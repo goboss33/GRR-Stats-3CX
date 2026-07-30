@@ -763,14 +763,15 @@ export default function AdminLogsPage() {
                     logs={data?.logs || []}
                     queueView={selectedQueueView}
                     queueOutcomes={queueOutcomeFilter?.outcomes ?? []}
-                    queueIncludeTeamDirect={queueOutcomeFilter?.includeTeamDirect ?? false}
-                    onQueueOutcomesChange={(outcomes, includeTeamDirect) => {
+                    onQueueOutcomesChange={(outcomes) => {
                         // Le filtre porte toujours sur la file consultée ; le
                         // vider revient à retirer la restriction, pas la vue.
                         setCurrentPage(1);
+                        // La vue file porte toujours sur la population de
+                        // l'équipe ; le filtre ne fait que réduire à l'intérieur.
                         setQueueOutcomeFilter(
-                            (outcomes.length > 0 || includeTeamDirect) && queueView
-                                ? { queueNumber: queueView, outcomes, includeTeamDirect }
+                            outcomes.length > 0 && queueView
+                                ? { queueNumber: queueView, outcomes, includeTeamDirect: true }
                                 : null,
                         );
                     }}

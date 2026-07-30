@@ -9,8 +9,8 @@ import { maskPhoneNumber } from "@/services/domain/call-aggregation";
 import {
     DEFAULT_CLASSIFICATION_RULES,
     buildQueueOutcomeSubquery,
-    buildQueuePassagesCTE,
-    buildCallQueueOutcomesCTE,
+    buildTeamCTEChain,
+    type PassageOutcome,
 } from "@/services/domain/call-classification";
 import type {
     AggregatedCallLog,
@@ -278,18 +278,6 @@ function buildAggregatedQueryParts(
 
     // Filtre « statut dans une file » : même socle de classement que les KPIs,
     // donc même population. C'est ce qui rend le clic sur un KPI exact.
-    if (filters.queueOutcomeFilter
-        && (filters.queueOutcomeFilter.outcomes.length > 0 || filters.queueOutcomeFilter.includeTeamDirect)) {
-        const subquery = buildQueueOutcomeSubquery(DEFAULT_CLASSIFICATION_RULES, {
-            queueExpr: bind(filters.queueOutcomeFilter.queueNumber),
-            startExpr: startP,
-            endExpr: endP,
-            outcomes: filters.queueOutcomeFilter.outcomes,
-            includeTeamDirect: filters.queueOutcomeFilter.includeTeamDirect,
-        });
-        whereConditions.push(`call_history_id IN ${subquery}`);
-    }
-
     // Vue file : le tableau affiche alors DEUX statuts — celui de l'appel dans
     // la file consultée, et son sort final. C'est ce qui permet à un manager de
     // lire « perdu chez moi, mais récupéré ailleurs » sans qu'on ait à choisir
@@ -300,9 +288,12 @@ function buildAggregatedQueryParts(
     let queueViewSelect = "";
     if (viewQueue) {
         const qExpr = bind(viewQueue);
+        // La chaîne complète, et non les seuls passages : elle applique la règle
+        // du premier contact, si bien qu'un appel attribué au bloc « directs »
+        // n'affiche plus de statut de file. Elle donne aussi l'appartenance à
+        // l'équipe, qui sert à distinguer « Direct » d'un appel étranger.
         queueViewCTE = `,
-        ${buildQueuePassagesCTE(DEFAULT_CLASSIFICATION_RULES, { queueExpr: qExpr, startExpr: startP, endExpr: endP })},
-        ${buildCallQueueOutcomesCTE(DEFAULT_CLASSIFICATION_RULES)},
+        ${buildTeamCTEChain(DEFAULT_CLASSIFICATION_RULES, { queueExpr: qExpr, startExpr: startP, endExpr: endP })},
         answering_queue AS (
             SELECT DISTINCT ON (c.call_history_id)
                 c.call_history_id,
@@ -321,12 +312,42 @@ function buildAggregatedQueryParts(
               )
             ORDER BY c.call_history_id, c.cdr_started_at DESC
         )`;
-        queueViewJoin = `LEFT JOIN call_queue_outcomes qv ON qv.call_history_id = ca.call_history_id
+        queueViewJoin = `LEFT JOIN queue_calls qv ON qv.call_history_id = ca.call_history_id
+        LEFT JOIN direct_calls dc ON dc.call_history_id = ca.call_history_id
         LEFT JOIN answering_queue aq ON aq.call_history_id = ca.call_history_id`;
+        // Un appel direct de l'équipe a lui aussi un sort, et la vignette le
+        // compte (« Répondus : File 32 · Directs 620 »). Il n'a que deux issues
+        // possibles, faute de passage en file : répondu, ou perdu.
         queueViewSelect = `,
-            qv.outcome as queue_view_status,
+            COALESCE(
+                qv.outcome,
+                CASE WHEN dc.call_history_id IS NOT NULL
+                     THEN CASE WHEN dc.answered THEN 'answered' ELSE 'abandoned' END
+                END
+            ) as queue_view_status,
+            (dc.call_history_id IS NOT NULL) as queue_view_is_direct,
             aq.queue_number as answering_queue_number,
             aq.queue_name as answering_queue_name`;
+    }
+
+    // La vue file RESTREINT la liste à la population de l'équipe : les appels
+    // passés par la file, plus ses appels directs. C'est la même population que
+    // celle agrégée par la vignette « Total reçus », donc le compte affiché en
+    // haut des logs est celui de la statistique. Sans filtre explicite on prend
+    // tout ; le filtre de colonne ne fait ensuite que réduire à l'intérieur.
+    const ALL_OUTCOMES: PassageOutcome[] = ["answered", "overflow", "voicemail", "short_abandon", "abandoned"];
+    const outcomeFilter = filters.queueOutcomeFilter
+        ?? (viewQueue ? { queueNumber: viewQueue, outcomes: ALL_OUTCOMES, includeTeamDirect: true } : null);
+
+    if (outcomeFilter && (outcomeFilter.outcomes.length > 0 || outcomeFilter.includeTeamDirect)) {
+        const subquery = buildQueueOutcomeSubquery(DEFAULT_CLASSIFICATION_RULES, {
+            queueExpr: bind(outcomeFilter.queueNumber),
+            startExpr: startP,
+            endExpr: endP,
+            outcomes: outcomeFilter.outcomes,
+            includeTeamDirect: outcomeFilter.includeTeamDirect,
+        });
+        whereConditions.push(`call_history_id IN ${subquery}`);
     }
 
     const whereClause = whereConditions.join(" AND ");
@@ -1178,6 +1199,7 @@ function transformRow(row: any, maskNumbers = false, scope?: AccessScope): Aggre
             : "-",
         journey: journey as import("@/services/domain/call.types").JourneyStep[],
         queueViewStatus: row.queue_view_status ?? null,
+        queueViewIsDirect: Boolean(row.queue_view_is_direct),
         answeringQueue: buildAnsweringQueue(row, scope),
     };
 }

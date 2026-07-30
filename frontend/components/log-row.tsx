@@ -211,9 +211,18 @@ export function LogRow({ log, queueViewActive, columnVisibility, onRowClick }: L
             )}
 
             {/* Status */}
-            {/* Vue file : statut de l'appel DANS la file consultée. Un tiret
-                lorsque l'appel n'y est jamais passé — le cas est fréquent, la
-                liste n'étant pas restreinte à cette file. */}
+            {/* Vue file : par où l'appel est arrivé dans l'équipe. */}
+            {queueViewActive && (
+                <TableCell className="text-center">
+                    <span className={`text-xs font-medium ${log.queueViewIsDirect ? "text-blue-600" : "text-violet-600"}`}>
+                        {log.queueViewIsDirect ? "Direct" : "File"}
+                    </span>
+                </TableCell>
+            )}
+
+            {/* Statut de l'appel pour l'équipe. Les appels directs en ont un eux
+                aussi — les vignettes les comptent (« Répondus : File 32 ·
+                Directs 620 ») — même s'ils ne passent pas par la file. */}
             {queueViewActive && (
                 <TableCell className="text-center">
                     {log.queueViewStatus ? (

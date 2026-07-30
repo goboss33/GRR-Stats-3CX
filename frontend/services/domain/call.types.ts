@@ -171,6 +171,8 @@ export interface AggregatedCallLog {
     journey: JourneyStep[];
     /** Statut de l'appel dans la file consultée (vue file uniquement). */
     queueViewStatus?: PassageOutcome | null;
+    /** Appel direct de l'équipe : sans statut de file, mais bien à son actif. */
+    queueViewIsDirect?: boolean;
     /** File ayant finalement répondu, si ce n'est pas celle consultée. */
     answeringQueue?: { number: string; name: string; inScope: boolean } | null;
 }
