@@ -31,6 +31,9 @@ const CustomTooltip = ({
         const missed = payload.find((p) => p.dataKey === "missed")?.value || 0;
         const overflow = payload.find((p) => p.dataKey === "overflow")?.value || 0;
         const total = answered + missed + overflow;
+        // La série n'existe que sur le bilan d'équipe ; le tableau de bord
+        // global ne raisonne pas par file.
+        const hasOverflow = payload.some((p) => p.dataKey === "overflow");
         const rate = total > 0 ? Math.round((answered / total) * 100) : 0;
 
         return (
@@ -46,6 +49,17 @@ const CustomTooltip = ({
                         <span className="w-3 h-3 rounded-full bg-rose-500 shadow-sm shadow-rose-200"></span>
                         <span className="text-slate-600 flex-1">Perdus:</span>
                         <span className="font-bold text-slate-900">{missed}</span>
+                    </div>
+                    {hasOverflow && (
+                        <div className="flex items-center gap-3">
+                            <span className="w-3 h-3 rounded-full bg-amber-500 shadow-sm shadow-amber-200"></span>
+                            <span className="text-slate-600 flex-1">Redirigés:</span>
+                            <span className="font-bold text-slate-900">{overflow}</span>
+                        </div>
+                    )}
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-2">
+                        <span className="text-slate-500 text-xs uppercase tracking-wider font-semibold">Total reçus</span>
+                        <span className="font-bold text-slate-900">{total}</span>
                     </div>
                     <div className="border-t border-slate-100 pt-2 mt-2">
                         <div className="flex items-center justify-between">
@@ -122,15 +136,21 @@ export function CallsChart({ data }: CallsChartProps) {
                         name="missed"
                     />
                     {/* Empilée avec les deux autres : la hauteur totale de la
-                        courbe est ainsi « Total reçus ». */}
+                        courbe vaut « Total reçus ».
+
+                        Sans contour, volontairement. Avec un trait, le bord
+                        supérieur de cette bande — qui vaut perdus + redirigés —
+                        se lisait comme une courbe distincte passant AU-DESSUS
+                        des perdus, donnant l'impression qu'il y avait plus de
+                        redirigés que de perdus. La bande seule se lit pour ce
+                        qu'elle est : une épaisseur. */}
                     <Area
                         type="monotone"
                         dataKey="overflow"
                         stackId="1"
-                        stroke="#f59e0b"
-                        strokeWidth={2}
-                        fillOpacity={0.7}
-                        fill="#fde68a"
+                        stroke="none"
+                        fillOpacity={0.9}
+                        fill="#fbbf24"
                         activeDot={{ r: 5, strokeWidth: 0, fill: '#f59e0b' }}
                         name="overflow"
                     />
