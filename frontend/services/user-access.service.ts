@@ -97,6 +97,73 @@ export async function setUserAccess(userId: string, payload: UserAccessPayload):
     ]);
 }
 
+export interface QueueAccessUser {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string;
+    role: string;
+}
+
+/**
+ * Qui accède à cette file, et qui pourrait y être ajouté.
+ *
+ * Seuls les MANAGER apparaissent : ADMIN et MODERATOR ont une portée globale et
+ * ne dépendent d'aucun périmètre de files — les lister ici laisserait croire que
+ * leur accès se gère file par file.
+ */
+export async function listQueueAccess(
+    queueId: string,
+): Promise<{ granted: QueueAccessUser[]; assignable: QueueAccessUser[] }> {
+    const select = { id: true, firstName: true, lastName: true, email: true, role: true };
+
+    const [granted, managers] = await Promise.all([
+        prismaAuth.user.findMany({
+            where: { role: "MANAGER", queuePerimeter: { some: { queueId } } },
+            select,
+            orderBy: [{ lastName: "asc" }, { email: "asc" }],
+        }),
+        prismaAuth.user.findMany({
+            where: { role: "MANAGER", queuePerimeter: { none: { queueId } } },
+            select,
+            orderBy: [{ lastName: "asc" }, { email: "asc" }],
+        }),
+    ]);
+
+    return { granted, assignable: managers };
+}
+
+/**
+ * Ajoute une file au périmètre d'un utilisateur.
+ * L'accès au tenant est accordé au passage : sans lui, la file resterait
+ * invisible et l'ajout n'aurait aucun effet visible — un piège classique.
+ */
+export async function grantQueueAccess(userId: string, queueId: string): Promise<void> {
+    const queue = await prismaAuth.queueRegistry.findUnique({
+        where: { id: queueId },
+        select: { tenantId: true },
+    });
+    if (!queue) throw new Error("File introuvable");
+
+    await prismaAuth.$transaction([
+        prismaAuth.userTenantAccess.upsert({
+            where: { userId_tenantId: { userId, tenantId: queue.tenantId } },
+            update: {},
+            create: { userId, tenantId: queue.tenantId },
+        }),
+        prismaAuth.userQueuePerimeter.upsert({
+            where: { userId_queueId: { userId, queueId } },
+            update: {},
+            create: { userId, queueId },
+        }),
+    ]);
+}
+
+/** Retire une file du périmètre d'un utilisateur. */
+export async function revokeQueueAccess(userId: string, queueId: string): Promise<void> {
+    await prismaAuth.userQueuePerimeter.deleteMany({ where: { userId, queueId } });
+}
+
 export interface ScopeQueue {
     id: string;
     tenantId: string;

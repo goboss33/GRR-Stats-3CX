@@ -5,12 +5,24 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2, Users, History, BarChart3, Search, Phone } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ShieldCheck, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
+
+interface AccessUser {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string;
+    role: string;
+}
+
+const userLabel = (u: AccessUser) => [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
 
 interface QueueDetail {
     id: string;
@@ -49,15 +61,28 @@ export function QueueDetailDialog({
     const [detail, setDetail] = useState<QueueDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
+    const [granted, setGranted] = useState<AccessUser[]>([]);
+    const [assignable, setAssignable] = useState<AccessUser[]>([]);
+    const [userSearch, setUserSearch] = useState("");
+    const [addOpen, setAddOpen] = useState(false);
 
     const load = useCallback(async () => {
         if (!queueId) return;
         setLoading(true);
         try {
-            const res = await fetch(`/api/admin/queues/${queueId}?server=${serverId}`);
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Chargement impossible");
+            const [detailRes, accessRes] = await Promise.all([
+                fetch(`/api/admin/queues/${queueId}?server=${serverId}`),
+                fetch(`/api/admin/queues/${queueId}/access`),
+            ]);
+            const data = await detailRes.json();
+            if (!detailRes.ok) throw new Error(data.error || "Chargement impossible");
             setDetail(data.queue);
+
+            const access = await accessRes.json();
+            if (accessRes.ok) {
+                setGranted(access.granted ?? []);
+                setAssignable(access.assignable ?? []);
+            }
         } catch (e) {
             toast.error(e instanceof Error ? e.message : "Chargement impossible");
         } finally {
@@ -71,6 +96,43 @@ export function QueueDetailDialog({
             load();
         }
     }, [open, load]);
+
+    /** Ajoute ou retire l'accès d'un utilisateur à cette file (mise à jour optimiste). */
+    const changeAccess = async (user: AccessUser, grant: boolean) => {
+        const prevGranted = granted;
+        const prevAssignable = assignable;
+        setGranted(grant ? [...granted, user] : granted.filter((u) => u.id !== user.id));
+        setAssignable(grant ? assignable.filter((u) => u.id !== user.id) : [...assignable, user]);
+
+        try {
+            const res = grant
+                ? await fetch(`/api/admin/queues/${queueId}/access`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ userId: user.id }),
+                  })
+                : await fetch(`/api/admin/queues/${queueId}/access?userId=${user.id}`, { method: "DELETE" });
+
+            if (!res.ok) throw new Error((await res.json()).error || "Action impossible");
+            toast.success(
+                grant
+                    ? `${userLabel(user)} a désormais accès à cette file`
+                    : `Accès retiré à ${userLabel(user)}`,
+            );
+        } catch (e) {
+            setGranted(prevGranted);
+            setAssignable(prevAssignable);
+            toast.error(e instanceof Error ? e.message : "Action impossible");
+        }
+    };
+
+    const assignableFiltered = useMemo(() => {
+        const term = userSearch.trim().toLowerCase();
+        if (!term) return assignable;
+        return assignable.filter(
+            (u) => userLabel(u).toLowerCase().includes(term) || u.email.toLowerCase().includes(term),
+        );
+    }, [assignable, userSearch]);
 
     const agents = useMemo(() => {
         if (!detail) return [];
@@ -196,6 +258,86 @@ export function QueueDetailDialog({
                             <p className="text-xs text-slate-500">
                                 Première activité observée le {format(new Date(detail.firstSeenAt), "dd/MM/yyyy", { locale: fr })}.
                                 Ces agents composent automatiquement le périmètre des managers ayant cette file.
+                            </p>
+                        </div>
+
+                        {/* Accès à cette file */}
+                        <div className="space-y-2 rounded-lg border p-3">
+                            <div className="flex items-center gap-2">
+                                <ShieldCheck className="h-4 w-4 text-slate-500" />
+                                <h3 className="text-sm font-medium text-slate-900">Accès à cette file</h3>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                {granted.map((u) => (
+                                    <Badge
+                                        key={u.id}
+                                        variant="outline"
+                                        className="gap-1 border-slate-200 bg-slate-50 py-1 pl-2 pr-1 font-normal"
+                                    >
+                                        {userLabel(u)}
+                                        <button
+                                            type="button"
+                                            onClick={() => changeAccess(u, false)}
+                                            className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                                            title="Retirer l'accès"
+                                        >
+                                            <X className="h-3 w-3" />
+                                        </button>
+                                    </Badge>
+                                ))}
+
+                                {granted.length === 0 && (
+                                    <span className="text-sm text-slate-500">Aucun manager n&apos;a cette file dans son périmètre</span>
+                                )}
+
+                                <Popover open={addOpen} onOpenChange={setAddOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button variant="outline" size="sm" className="h-7 gap-1 text-xs">
+                                            <Plus className="h-3 w-3" /> Ajouter
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent align="start" className="w-72 p-0">
+                                        <div className="border-b p-2">
+                                            <Input
+                                                value={userSearch}
+                                                onChange={(e) => setUserSearch(e.target.value)}
+                                                placeholder="Rechercher un manager…"
+                                                className="h-8 text-xs"
+                                                autoFocus
+                                            />
+                                        </div>
+                                        <div className="max-h-56 overflow-y-auto p-1">
+                                            {assignableFiltered.map((u) => (
+                                                <button
+                                                    key={u.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        changeAccess(u, true);
+                                                        setUserSearch("");
+                                                        setAddOpen(false);
+                                                    }}
+                                                    className="w-full rounded px-2 py-1.5 text-left hover:bg-slate-100"
+                                                >
+                                                    <p className="text-sm text-slate-900">{userLabel(u)}</p>
+                                                    <p className="text-xs text-slate-500">{u.email}</p>
+                                                </button>
+                                            ))}
+                                            {assignableFiltered.length === 0 && (
+                                                <p className="px-2 py-6 text-center text-xs text-slate-500">
+                                                    {assignable.length === 0
+                                                        ? "Tous les managers ont déjà cette file"
+                                                        : "Aucun manager ne correspond"}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+
+                            <p className="text-xs text-slate-500">
+                                Les administrateurs et modérateurs ne figurent pas ici : leur accès est global et ne
+                                dépend d&apos;aucun périmètre. Ajouter un manager lui accorde aussi le tenant si besoin.
                             </p>
                         </div>
 
