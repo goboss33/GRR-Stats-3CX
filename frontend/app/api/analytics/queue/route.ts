@@ -6,9 +6,9 @@ import { parseDateParam } from "@/lib/date-params";
 import { logger } from "@/lib/logger";
 import { resolveApiKeyScope, isQueueInScope } from "@/lib/access-scope";
 import {
-    DEFAULT_CLASSIFICATION_RULES,
     buildTeamCTEChain,
 } from "@/services/domain/call-classification";
+import { getClassificationRules } from "@/lib/classification-rules";
 
 export async function GET(request: NextRequest) {
     const authResult = await validateApiKey(request);
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
         // socle de classement (services/domain/call-classification.ts). C'est ce
         // qui garantit qu'un clic sur un KPI ramène exactement autant de lignes
         // que le chiffre affiché — auparavant les deux SQL divergeaient.
-        const rules = DEFAULT_CLASSIFICATION_RULES;
+        const rules = await getClassificationRules();
 
         // Requête paramétrée : $1 = queueNumber (texte), $2 = start, $3 = end (Date).
         const query = `

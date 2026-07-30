@@ -10,8 +10,10 @@ import {
     DEFAULT_CLASSIFICATION_RULES,
     buildQueueOutcomeSubquery,
     buildTeamCTEChain,
+    type ClassificationRules,
     type PassageOutcome,
 } from "@/services/domain/call-classification";
+import { getClassificationRules } from "@/lib/classification-rules";
 import type {
     AggregatedCallLog,
     CallDirection,
@@ -144,7 +146,10 @@ function buildAggregatedQueryParts(
     pagination: { page: number; pageSize: number },
     sort?: LogsSort,
     timezone: string = "Europe/Zurich",
-    scope?: AccessScope
+    scope?: AccessScope,
+    // Passées en paramètre plutôt que lues ici : ce constructeur est synchrone,
+    // et le rendre asynchrone pour un réglage contaminerait tous ses appelants.
+    rules: ClassificationRules = DEFAULT_CLASSIFICATION_RULES
 ): {
     whereClause: string;
     dateOnlyWhereClause: string;
@@ -293,7 +298,7 @@ function buildAggregatedQueryParts(
         // n'affiche plus de statut de file. Elle donne aussi l'appartenance à
         // l'équipe, qui sert à distinguer « Direct » d'un appel étranger.
         queueViewCTE = `,
-        ${buildTeamCTEChain(DEFAULT_CLASSIFICATION_RULES, { queueExpr: qExpr, startExpr: startP, endExpr: endP })},
+        ${buildTeamCTEChain(rules, { queueExpr: qExpr, startExpr: startP, endExpr: endP })},
         answering_queue AS (
             SELECT DISTINCT ON (c.call_history_id)
                 c.call_history_id,
@@ -340,7 +345,7 @@ function buildAggregatedQueryParts(
         ?? (viewQueue ? { queueNumber: viewQueue, outcomes: ALL_OUTCOMES, includeTeamDirect: true } : null);
 
     if (outcomeFilter && (outcomeFilter.outcomes.length > 0 || outcomeFilter.includeTeamDirect)) {
-        const subquery = buildQueueOutcomeSubquery(DEFAULT_CLASSIFICATION_RULES, {
+        const subquery = buildQueueOutcomeSubquery(rules, {
             queueExpr: bind(outcomeFilter.queueNumber),
             startExpr: startP,
             endExpr: endP,
@@ -355,7 +360,7 @@ function buildAggregatedQueryParts(
     // « les directs sans statut de file » de l'autre — et combinée en ET, ce
     // qui donne bien l'intersection des deux critères.
     if (viewQueue && filters.queueOriginFilter) {
-        const originSubquery = buildQueueOutcomeSubquery(DEFAULT_CLASSIFICATION_RULES, {
+        const originSubquery = buildQueueOutcomeSubquery(rules, {
             queueExpr: bind(viewQueue),
             startExpr: startP,
             endExpr: endP,
@@ -1092,6 +1097,7 @@ function maybeMask(value: string, mask: boolean): string {
 function buildAnsweringQueue(
     row: any,
     scope?: AccessScope,
+    rules: ClassificationRules = DEFAULT_CLASSIFICATION_RULES,
 ): { number: string; name: string; inScope: boolean } | null {
     const number = row.answering_queue_number;
     if (!number) return null;
@@ -1104,7 +1110,7 @@ function buildAnsweringQueue(
     const inScope = !scope || scope.unrestricted || (scope.queueNumbers?.includes(number) ?? false);
     if (inScope) return { number, name: row.answering_queue_name || number, inScope: true };
 
-    switch (DEFAULT_CLASSIFICATION_RULES.outOfScopeFinalStatus) {
+    switch (rules.outOfScopeFinalStatus) {
         case "hide":
             return null;
         case "anonymize":
@@ -1114,7 +1120,7 @@ function buildAnsweringQueue(
     }
 }
 
-function transformRow(row: any, maskNumbers = false, scope?: AccessScope): AggregatedCallLog {
+function transformRow(row: any, maskNumbers = false, scope?: AccessScope, rules?: ClassificationRules): AggregatedCallLog {
     const firstStarted = row.first_started_at ? new Date(row.first_started_at) : null;
     const lastEnded = row.last_ended_at ? new Date(row.last_ended_at) : null;
     const firstAnswered = row.first_answered_at ? new Date(row.first_answered_at) : null;
@@ -1215,7 +1221,7 @@ function transformRow(row: any, maskNumbers = false, scope?: AccessScope): Aggre
         journey: journey as import("@/services/domain/call.types").JourneyStep[],
         queueViewStatus: row.queue_view_status ?? null,
         queueViewIsDirect: Boolean(row.queue_view_is_direct),
-        answeringQueue: buildAnsweringQueue(row, scope),
+        answeringQueue: buildAnsweringQueue(row, scope, rules),
     };
 }
 
@@ -1236,9 +1242,10 @@ export async function getAggregatedCallLogs(
     // ⚠️ La portée est résolue ICI, jamais reçue en paramètre : ce module est
     // "use server", donc ses arguments sont contrôlables par le client.
     const scope = await resolveAccessScope(serverId);
+    const rules = await getClassificationRules();
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause, params,
         queueViewCTE, queueViewJoin, queueViewSelect, viewQueue } =
-        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, scope);
+        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, scope, rules);
     const pageNumber = Math.max(1, pagination.page);
 
     try {
@@ -1259,7 +1266,7 @@ export async function getAggregatedCallLogs(
 
         const totalCount = Number(countResult[0]?.total || 0);
         const totalPages = Math.ceil(totalCount / limit);
-        const logs = rawResults.map((row) => transformRow(row, scope.maskPhoneNumbers, scope));
+        const logs = rawResults.map((row) => transformRow(row, scope.maskPhoneNumbers, scope, rules));
 
         return { logs, totalCount, totalPages, currentPage: pageNumber };
     } catch (error) {
@@ -1485,8 +1492,9 @@ export async function getExtensionAggregatedStats(
     const prisma = getPrismaCdr(serverId);
 
     const scope = await resolveAccessScope(serverId);
+    const rules = await getClassificationRules();
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, params } =
-        buildAggregatedQueryParts(startDate, endDate, filters, { page: 1, pageSize: 1 }, undefined, undefined, scope);
+        buildAggregatedQueryParts(startDate, endDate, filters, { page: 1, pageSize: 1 }, undefined, undefined, scope, rules);
 
     const ctes = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE);
 

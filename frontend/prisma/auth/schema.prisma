@@ -62,6 +62,25 @@ model AppSettings {
   perimeterEnforcementEnabled Boolean  @default(false)
   /// Nombre de jours sans appel avant qu'une file passe en ARCHIVED.
   queueArchiveAfterDays       Int      @default(90)
+
+  // ---- Règles de classement des appels (cf. services/domain/call-classification.ts)
+  // Les valeurs par défaut reproduisent DEFAULT_CLASSIFICATION_RULES : une base
+  // neuve se comporte donc exactement comme avant l'introduction de ces champs.
+  // ⚠️ Ces règles s'appliquent AU CALCUL : les modifier change rétroactivement
+  // les chiffres des périodes passées.
+
+  /// Appel repassant dans la même file : "best" | "last" | "each"
+  ruleMultiPassage            String   @default("best")
+  /// Débordement vers une autre file : "neutral" | "lost" | "answered"
+  ruleOverflow                String   @default("neutral")
+  /// Seuil des abandons courts, en secondes. `null` désactive la règle.
+  ruleShortAbandonSec         Int?     @default(10)
+  /// Appel direct ET en file : "firstContact" | "queueWins" | "both"
+  ruleDirectAndQueue          String   @default("firstContact")
+  /// Messagerie : "separate" | "lost" | "answered"
+  ruleVoicemail               String   @default("separate")
+  /// Statut final hors périmètre : "name" | "anonymize" | "hide"
+  ruleOutOfScopeFinalStatus   String   @default("name")
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 }

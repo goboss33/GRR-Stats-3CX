@@ -2,6 +2,32 @@ import { NextRequest, NextResponse } from "next/server";
 import { prismaAuth } from "@/lib/prisma-auth";
 import { requireApiRole } from "@/lib/auth-guard";
 import { logger } from "@/lib/logger";
+import { invalidateClassificationRules } from "@/lib/classification-rules";
+
+/** Champs de règles de classement exposés, avec leurs valeurs admises. */
+const RULE_FIELDS = {
+    ruleMultiPassage: ["best", "last", "each"],
+    ruleOverflow: ["neutral", "lost", "answered"],
+    ruleDirectAndQueue: ["firstContact", "queueWins", "both"],
+    ruleVoicemail: ["separate", "lost", "answered"],
+    ruleOutOfScopeFinalStatus: ["name", "anonymize", "hide"],
+} as const;
+
+type RuleField = keyof typeof RULE_FIELDS;
+
+/** Projection commune aux deux verbes, pour qu'ils ne divergent pas. */
+function projectSettings(settings: Record<string, unknown>) {
+    return {
+        minSignificantDurationSec: settings.minSignificantDurationSec,
+        perimeterEnforcementEnabled: settings.perimeterEnforcementEnabled,
+        ruleMultiPassage: settings.ruleMultiPassage,
+        ruleOverflow: settings.ruleOverflow,
+        ruleShortAbandonSec: settings.ruleShortAbandonSec,
+        ruleDirectAndQueue: settings.ruleDirectAndQueue,
+        ruleVoicemail: settings.ruleVoicemail,
+        ruleOutOfScopeFinalStatus: settings.ruleOutOfScopeFinalStatus,
+    };
+}
 
 // Règles métier = configuration applicative -> réservé à l'ADMIN (cf. PRD droits d'accès §4).
 
@@ -20,10 +46,7 @@ export async function GET() {
             });
         }
 
-        return NextResponse.json({
-            minSignificantDurationSec: settings.minSignificantDurationSec,
-            perimeterEnforcementEnabled: settings.perimeterEnforcementEnabled,
-        });
+        return NextResponse.json(projectSettings(settings));
     } catch (error) {
         logger.error("Error fetching app settings:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -43,11 +66,39 @@ export async function PUT(request: NextRequest) {
             return NextResponse.json({ error: "Invalid minSignificantDurationSec. Must be between 0 and 60." }, { status: 400 });
         }
 
+        // Règles de classement : toute valeur hors du domaine est refusée plutôt
+        // que corrigée silencieusement — une règle mal enregistrée fausserait les
+        // chiffres sans que personne ne s'en aperçoive.
+        const ruleData: Record<string, string> = {};
+        for (const [field, allowed] of Object.entries(RULE_FIELDS) as [RuleField, readonly string[]][]) {
+            const value = body[field];
+            if (value === undefined) continue;
+            if (typeof value !== "string" || !allowed.includes(value)) {
+                return NextResponse.json(
+                    { error: `Valeur invalide pour ${field}. Attendu : ${allowed.join(", ")}.` },
+                    { status: 400 },
+                );
+            }
+            ruleData[field] = value;
+        }
+
+        // `null` est légitime : il désactive la règle des abandons courts.
+        const shortAbandon = body.ruleShortAbandonSec;
+        if (shortAbandon !== undefined && shortAbandon !== null
+            && (typeof shortAbandon !== "number" || shortAbandon < 0 || shortAbandon > 300)) {
+            return NextResponse.json(
+                { error: "ruleShortAbandonSec doit être un nombre entre 0 et 300, ou null." },
+                { status: 400 },
+            );
+        }
+
         const data = {
             ...(minSignificantDurationSec !== undefined ? { minSignificantDurationSec } : {}),
             ...(perimeterEnforcementEnabled !== undefined
                 ? { perimeterEnforcementEnabled: Boolean(perimeterEnforcementEnabled) }
                 : {}),
+            ...ruleData,
+            ...(shortAbandon !== undefined ? { ruleShortAbandonSec: shortAbandon } : {}),
         };
 
         const settings = await prismaAuth.appSettings.upsert({
@@ -56,10 +107,11 @@ export async function PUT(request: NextRequest) {
             create: { id: "global", ...data },
         });
 
-        return NextResponse.json({
-            minSignificantDurationSec: settings.minSignificantDurationSec,
-            perimeterEnforcementEnabled: settings.perimeterEnforcementEnabled,
-        });
+        // Sans cela, l'auteur du changement attendrait la fin du cache avant de
+        // voir son effet, et croirait l'enregistrement sans effet.
+        invalidateClassificationRules();
+
+        return NextResponse.json(projectSettings(settings));
     } catch (error) {
         logger.error("Error updating app settings:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -6,10 +6,10 @@ import { parseDateParam } from "@/lib/date-params";
 import { logger } from "@/lib/logger";
 import { resolveApiKeyScope, isQueueInScope } from "@/lib/access-scope";
 import {
-    DEFAULT_CLASSIFICATION_RULES,
     buildTeamCTEChain,
     buildAgentCTEChain,
 } from "@/services/domain/call-classification";
+import { getClassificationRules } from "@/lib/classification-rules";
 
 export async function GET(request: NextRequest) {
     const authResult = await validateApiKey(request);
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
         // Le tableau par agent lit LA MÊME partition que les vignettes du bilan
         // d'équipe (socle de classement) : sans cela, un appel exclu du bloc
         // « file » par la règle du premier contact resterait compté ici.
-        const rules = DEFAULT_CLASSIFICATION_RULES;
+        const rules = await getClassificationRules();
 
         // Requête paramétrée : $1 = queueNumber (texte), $2 = start, $3 = end (Date).
         const query = `
