@@ -10,9 +10,12 @@ function getRoleFromGroups(groups: string[]): string | null {
         { groupId: process.env.AZURE_GROUP_ADMIN_ID, role: "ADMIN" },
         { groupId: process.env.AZURE_GROUP_MODERATOR_ID, role: "MODERATOR" },
         // MANAGER/AGENT remplacent SUPERUSER/USER. Les anciennes variables restent
-        // acceptées : un environnement non mis à jour (Portainer) continue de fonctionner.
-        { groupId: process.env.AZURE_GROUP_MANAGER_ID ?? process.env.AZURE_GROUP_SUPERUSER_ID, role: "MANAGER" },
-        { groupId: process.env.AZURE_GROUP_AGENT_ID ?? process.env.AZURE_GROUP_USER_ID, role: "AGENT" },
+        // acceptées en repli.
+        // ⚠️ `||` et non `??` : docker-compose transmet une variable non définie
+        // comme une CHAÎNE VIDE, que `??` ne considère pas comme absente — le
+        // repli n'aurait alors jamais lieu.
+        { groupId: process.env.AZURE_GROUP_MANAGER_ID || process.env.AZURE_GROUP_SUPERUSER_ID, role: "MANAGER" },
+        { groupId: process.env.AZURE_GROUP_AGENT_ID || process.env.AZURE_GROUP_USER_ID, role: "AGENT" },
     ];
 
     for (const mapping of groupMappings) {
@@ -92,6 +95,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     const role = getRoleFromGroups(groups);
                     
                     if (!role) {
+                        // Sans ce diagnostic, un refus est indiscernable d'un
+                        // problème d'authentification côté Microsoft.
+                        logger.warn("[OAuth] Connexion refusée : aucun groupe de sécurité ne correspond", {
+                            email: user.email,
+                            groupesRecus: groups,
+                            groupesConfigures: {
+                                ADMIN: process.env.AZURE_GROUP_ADMIN_ID || "(non défini)",
+                                MODERATOR: process.env.AZURE_GROUP_MODERATOR_ID || "(non défini)",
+                                MANAGER: process.env.AZURE_GROUP_MANAGER_ID || process.env.AZURE_GROUP_SUPERUSER_ID || "(non défini)",
+                                AGENT: process.env.AZURE_GROUP_AGENT_ID || process.env.AZURE_GROUP_USER_ID || "(non défini)",
+                            },
+                        });
                         return "/login?error=AccessDenied";
                     }
                     
