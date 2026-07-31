@@ -6,6 +6,7 @@ import { TableCell, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import type { AggregatedCallLog, ColumnVisibility } from "@/types/logs.types";
+import { finalStatusLabel } from "@/services/domain/call-aggregation";
 import {
     directionConfig,
     statusConfig,
@@ -30,6 +31,7 @@ interface LogRowProps {
 export function LogRow({ log, queueViewActive, columnVisibility, onRowClick }: LogRowProps) {
     const dirConfig = directionConfig[log.direction];
     const statConfig = statusConfig[log.finalStatus];
+    const statLabel = finalStatusLabel(log.finalStatus, log.direction);
     const DirIcon = dirConfig.icon;
     const StatIcon = statConfig.icon;
 
@@ -239,7 +241,7 @@ export function LogRow({ log, queueViewActive, columnVisibility, onRowClick }: L
                 <TableCell className="text-center">
                     <Badge variant="secondary" className={`gap-1 ${statConfig.className}`}>
                         <StatIcon className="h-3 w-3" />
-                        {statConfig.label}
+                        {statLabel}
                     </Badge>
                     {/* Ce que la file consultée n'a pas traité a pu l'être
                         ailleurs : le dire évite de laisser croire à une perte

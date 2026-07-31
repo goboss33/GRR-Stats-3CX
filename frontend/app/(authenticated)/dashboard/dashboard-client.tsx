@@ -101,10 +101,10 @@ export default function DashboardClient() {
     const [concurrentCallsData, setConcurrentCallsData] = useState<ConcurrentCallsDataPoint[]>([]);
     const [concurrentCallsSummary, setConcurrentCallsSummary] = useState<ConcurrentCallsSummary | null>(null);
 
-    // Manqués, messagerie et occupés forment ensemble « Perdus » : même
-    // regroupement que dans les journaux et les statistiques de groupe.
-    const lostCalls = (metrics?.missedCalls || 0) + (metrics?.voicemailCalls || 0) + (metrics?.busyCalls || 0);
-    const prevLostCalls = (metrics?.prevMissedCalls || 0) + (metrics?.prevVoicemailCalls || 0) + (metrics?.prevBusyCalls || 0);
+    // « Perdus » = manqués et occupés. La messagerie garde sa case : elle
+    // décrit autre chose qu'un abandon, et l'exploitation s'en sert.
+    const lostCalls = (metrics?.missedCalls || 0) + (metrics?.busyCalls || 0);
+    const prevLostCalls = (metrics?.prevMissedCalls || 0) + (metrics?.prevBusyCalls || 0);
 
     const fetchData = useCallback(async () => {
         setIsLoading(true);
@@ -260,7 +260,9 @@ export default function DashboardClient() {
                                 </>
                             )}
                         </div>
-                        <p className="text-xs text-slate-500 mt-1.5 font-medium">Appels non aboutis</p>
+                        <p className="text-xs text-slate-500 mt-1.5 font-medium">
+                            Appels non aboutis · dont {metrics?.voicemailCalls || 0} en messagerie
+                        </p>
                     </CardContent>
                 </Card>
 

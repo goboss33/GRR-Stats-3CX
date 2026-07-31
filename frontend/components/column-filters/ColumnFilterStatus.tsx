@@ -22,12 +22,13 @@ interface ColumnFilterStatusProps {
 }
 
 /**
- * Deux choix seulement, pour coller au vocabulaire des statistiques. « Perdu »
- * recouvre les trois statuts fins : manqué, messagerie et occupé.
+ * Trois choix, comme le tableau. « Perdu » recouvre les manqués et les occupés ;
+ * la messagerie garde sa case, elle ne dit pas la même chose qu'un abandon.
  */
 const statusOptions: { value: CallStatus; label: string; covers: CallStatus[] }[] = [
     { value: "answered", label: "Répondu", covers: ["answered"] },
-    { value: "missed", label: "Perdu", covers: ["missed", "voicemail", "busy"] },
+    { value: "missed", label: "Perdu", covers: ["missed", "busy"] },
+    { value: "voicemail", label: "Messagerie", covers: ["voicemail"] },
 ];
 
 export function ColumnFilterStatus({

@@ -36,11 +36,12 @@ const directionLabels: Record<CallDirection, string> = {
     bridge: "Bridge",
 };
 
-// Même vocabulaire que partout ailleurs : Répondu / Perdu. Messagerie et
-// occupé sont des statuts internes, ils ne remontent plus à l'écran.
+// Même vocabulaire que le tableau : Répondu, Perdu, Messagerie. « Occupé »
+// rejoint « Perdu ». La pastille ne connaît pas le sens de l'appel, elle
+// emploie donc le mot de la vue entrante, qui est le cas courant.
 const statusLabels: Record<CallStatus, string> = {
     answered: "Répondu",
-    voicemail: "Perdu",
+    voicemail: "Messagerie",
     missed: "Perdu",
     busy: "Perdu",
 };

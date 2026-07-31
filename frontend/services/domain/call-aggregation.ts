@@ -150,22 +150,40 @@ export const FINAL_STATUS_RULES: FinalStatusRule[] = [
 ];
 
 /**
- * Regroupement d'affichage des statuts finaux.
+ * Regroupement d'affichage des statuts finaux : Répondu, Perdu, Messagerie.
  *
- * L'application n'emploie qu'un vocabulaire : Répondu / Perdu. Messagerie et
- * Occupé restent des statuts internes — ils décrivent COMMENT l'appel s'est
- * terminé et se lisent dans le parcours — mais un manager n'a pas à jongler
- * entre « Perdu » côté file et « Manqué » côté entreprise pour la même idée.
+ * « Occupé » rejoint « Perdu » — c'est un appel qu'on n'a pas pris. La
+ * messagerie garde sa case, parce qu'elle décrit autre chose qu'un échec.
  */
-export const DEFAULT_FINAL_GROUPING: Record<CallStatus, "answered" | "lost"> = {
+
+/**
+ * Étiquette d'un statut final, selon le SENS de l'appel.
+ *
+ * « Perdu » porte l'idée d'un échec de service : un client qu'on n'a pas su
+ * prendre. Appliqué à un appel SORTANT, le mot est faux — un correspondant
+ * absent n'est pas un client perdu. Le statut sous-jacent est le même dans les
+ * deux cas ; seul le mot s'adapte, pour rester exact.
+ */
+export function finalStatusLabel(status: CallStatus, direction: CallDirection): string {
+    if (status === "answered") return "Répondu";
+    if (status === "voicemail") return "Messagerie";
+    return direction === "outbound" ? "Non répondu" : "Perdu";
+}
+export type FinalBucket = "answered" | "lost" | "voicemail";
+
+export const DEFAULT_FINAL_GROUPING: Record<CallStatus, FinalBucket> = {
     answered: "answered",
-    voicemail: "lost",
+    // La messagerie reste distincte : elle ne dit pas la même chose qu'un
+    // abandon. Hors heures, elle est le fonctionnement normal ; en heures, elle
+    // signale un renvoi par un agent. La fondre dans « Perdu » effacerait une
+    // information que l'exploitation utilise.
+    voicemail: "voicemail",
     busy: "lost",
     missed: "lost",
 };
 
 /** Statuts fins regroupés sous une étiquette d'affichage. */
-export function finalStatusesForBucket(bucket: "answered" | "lost"): CallStatus[] {
+export function finalStatusesForBucket(bucket: FinalBucket): CallStatus[] {
     return (Object.keys(DEFAULT_FINAL_GROUPING) as CallStatus[])
         .filter((s) => DEFAULT_FINAL_GROUPING[s] === bucket);
 }

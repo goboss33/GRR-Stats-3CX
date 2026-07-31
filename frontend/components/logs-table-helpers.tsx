@@ -31,14 +31,14 @@ export const directionConfig: Record<CallDirection, { icon: typeof ArrowDownLeft
     bridge: { icon: Shuffle, label: "Bridge", className: "bg-purple-100 text-purple-700" },
 };
 
-// Un seul vocabulaire dans toute l'application : Répondu / Perdu. Messagerie et
-// Occupé restent distingués par leur icône — l'information n'est pas perdue,
-// elle cesse simplement d'imposer un second vocabulaire au lecteur.
-export const statusConfig: Record<CallStatus, { icon: typeof Phone; label: string; className: string }> = {
-    answered: { icon: Phone, label: "Répondu", className: "bg-emerald-100 text-emerald-700" },
-    voicemail: { icon: Voicemail, label: "Perdu", className: "bg-red-100 text-red-700" },
-    missed: { icon: PhoneOff, label: "Perdu", className: "bg-red-100 text-red-700" },
-    busy: { icon: PhoneCall, label: "Perdu", className: "bg-red-100 text-red-700" },
+// Trois statuts finaux : Répondu, Perdu, Messagerie. « Occupé » rejoint
+// « Perdu » — c'est un appel qu'on n'a pas pris. L'étiquette exacte dépend du
+// sens de l'appel (cf. finalStatusLabel) : « Perdu » n'a de sens qu'en entrant.
+export const statusConfig: Record<CallStatus, { icon: typeof Phone; className: string }> = {
+    answered: { icon: Phone, className: "bg-emerald-100 text-emerald-700" },
+    voicemail: { icon: Voicemail, className: "bg-indigo-100 text-indigo-700" },
+    missed: { icon: PhoneOff, className: "bg-red-100 text-red-700" },
+    busy: { icon: PhoneCall, className: "bg-red-100 text-red-700" },
 };
 
 /**
