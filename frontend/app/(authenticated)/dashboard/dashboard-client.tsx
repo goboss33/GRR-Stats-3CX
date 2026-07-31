@@ -4,6 +4,7 @@ import { getSelectedServer } from "@/lib/selected-server";
 
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Hourglass } from "lucide-react";
+import { finalStatusesForBucket } from "@/services/domain/call-aggregation";
 import { format } from "date-fns";
 import { useUrlPeriod } from "@/lib/url-state";
 
@@ -211,7 +212,7 @@ export default function DashboardClient() {
                             ) : (
                                 <>
                                     <Link
-                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=answered`}
+                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=${finalStatusesForBucket('answered').join(',')}`}
                                         className="hover:underline cursor-pointer"
                                     >
                                         <AnimatedNumber value={metrics?.answeredCalls || 0} />
@@ -250,7 +251,7 @@ export default function DashboardClient() {
                             ) : (
                                 <>
                                     <Link
-                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=missed`}
+                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=${finalStatusesForBucket('lost').join(',')}`}
                                         className="hover:underline cursor-pointer"
                                     >
                                         <AnimatedNumber value={lostCalls} />

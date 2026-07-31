@@ -49,6 +49,7 @@ import type {
     TimeSlot,
 } from "@/types/logs.types";
 import { outcomesForBucket, type KpiBucket, type PassageOutcome } from "@/services/domain/call-classification";
+import { finalStatusesForBucket, DEFAULT_FINAL_GROUPING } from "@/services/domain/call-aggregation";
 import type { QueueOrigin } from "@/components/column-filters/ColumnFilterQueueOrigin";
 
 const PAGE_SIZE = 50;
@@ -91,7 +92,16 @@ export default function AdminLogsPage() {
     const getInitialStatuses = (): CallStatus[] => {
         const param = searchParams.get("statuses");
         if (!param) return [];
-        return param.split(",").filter(s => ["answered", "voicemail", "missed", "busy"].includes(s)) as CallStatus[];
+        const bruts = param.split(",").filter(s => ["answered", "voicemail", "missed", "busy"].includes(s)) as CallStatus[];
+        // L'écran ne connaît que deux statuts, Répondu et Perdu, alors que
+        // « Perdu » en recouvre trois. Une URL ne portant qu'un statut fin est
+        // donc complétée : sans cela le filtre affichait « 1 sél. » sans qu'aucune
+        // case ne soit cochée, et restreignait plus que ce qu'il montrait.
+        const complet = new Set<CallStatus>();
+        for (const statut of bruts) {
+            for (const s of finalStatusesForBucket(DEFAULT_FINAL_GROUPING[statut])) complet.add(s);
+        }
+        return [...complet];
     };
 
     const getInitialNumberParam = (key: string): number | undefined => {

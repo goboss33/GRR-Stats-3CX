@@ -36,11 +36,13 @@ const directionLabels: Record<CallDirection, string> = {
     bridge: "Bridge",
 };
 
+// Même vocabulaire que partout ailleurs : Répondu / Perdu. Messagerie et
+// occupé sont des statuts internes, ils ne remontent plus à l'écran.
 const statusLabels: Record<CallStatus, string> = {
     answered: "Répondu",
-    voicemail: "Messagerie",
-    missed: "Manqué",
-    busy: "Occupé",
+    voicemail: "Perdu",
+    missed: "Perdu",
+    busy: "Perdu",
 };
 
 function formatConditionLabel(
@@ -102,8 +104,11 @@ export function ActiveFilters({
     }
 
     // Status filters
-    if (filters.statuses && filters.statuses.length > 0 && filters.statuses.length < 5) {
-        filters.statuses.forEach((status) => {
+    if (filters.statuses && filters.statuses.length > 0 && filters.statuses.length < 4) {
+        // Dédoublonné par LIBELLÉ : « Perdu » recouvre trois statuts fins, et en
+        // afficher trois pastilles identiques n'apprendrait rien.
+        const vus = new Set<string>();
+        filters.statuses.filter((s) => !vus.has(statusLabels[s]) && vus.add(statusLabels[s])).forEach((status) => {
             const className = status === "answered" ? "bg-emerald-100 text-emerald-700" :
                 status === "voicemail" ? "bg-blue-100 text-blue-700" :
                     status === "missed" ? "bg-red-100 text-red-700" :
