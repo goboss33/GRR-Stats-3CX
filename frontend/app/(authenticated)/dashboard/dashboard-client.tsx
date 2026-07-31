@@ -3,7 +3,8 @@
 import { getSelectedServer } from "@/lib/selected-server";
 
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Hourglass } from "lucide-react";
+import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Hourglass, Voicemail } from "lucide-react";
+import { KpiCard } from "@/components/dashboard/kpi-card";
 import { finalStatusesForBucket } from "@/services/domain/call-aggregation";
 import { format } from "date-fns";
 import { useUrlPeriod } from "@/lib/url-state";
@@ -15,7 +16,6 @@ import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
 import { ConcurrentCallsChart } from "@/components/concurrent-calls-chart";
 
-import Link from "next/link";
 import {
     getGlobalMetrics,
     getTimelineData,
@@ -46,46 +46,10 @@ function formatDuration(seconds: number): string {
 }
 
 // Animation du chiffre progressif (CountUp simple)
-function AnimatedNumber({ value }: { value: number }) {
-    const [display, setDisplay] = useState(0);
-    
-    useEffect(() => {
-        let startTime: number;
-        const duration = 1000; // 1s
-        
-        const animate = (timestamp: number) => {
-            if (!startTime) startTime = timestamp;
-            const progress = Math.min((timestamp - startTime) / duration, 1);
-            const easeProgress = progress * (2 - progress); // easeOutQuad
-            setDisplay(Math.floor(value * easeProgress));
-            
-            if (progress < 1) requestAnimationFrame(animate);
-            else setDisplay(value);
-        };
-        requestAnimationFrame(animate);
-    }, [value]);
-    
-    return <span>{display.toLocaleString()}</span>;
-}
 
 // Helper to download CSV of call IDs for a given status
 
 // Composant pour afficher l'évolution N-1 avec une petite flèche de couleur
-function TrendIndicator({ current, prev, inverseGood = false }: { current: number; prev: number; inverseGood?: boolean }) {
-    if (!prev || prev === 0) return null;
-    const diff = current - prev;
-    if (diff === 0) return <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">=</span>;
-    
-    const isUp = diff > 0;
-    const isGood = inverseGood ? !isUp : isUp;
-    const percent = Math.abs((diff / prev) * 100).toFixed(1);
-    
-    return (
-        <span className={`ml-2 text-xs font-bold px-2 py-0.5 rounded-full ${isGood ? 'bg-emerald-100/80 text-emerald-700' : 'bg-rose-100/80 text-rose-700'}`}>
-            {isUp ? '↑' : '↓'} {percent}%
-        </span>
-    );
-}
 
 export default function DashboardClient() {
     const [isLoading, setIsLoading] = useState(true);
@@ -104,6 +68,20 @@ export default function DashboardClient() {
     // « Perdus » = manqués et occupés. La messagerie garde sa case : elle
     // décrit autre chose qu'un abandon, et l'exploitation s'en sert.
     const lostCalls = (metrics?.missedCalls || 0) + (metrics?.busyCalls || 0);
+    // Chaque vignette de statut ouvre les journaux sur la meme population, avec
+    // la periode courante — la liste des statuts vient de la table de
+    // regroupement, donc elle suivra un changement de vocabulaire.
+    const lienLogs = (statuts?: string[]) => {
+        const p = new URLSearchParams();
+        p.set("start", format(dateRange.startDate, "yyyy-MM-dd"));
+        p.set("end", format(dateRange.endDate, "yyyy-MM-dd"));
+        if (statuts?.length) p.set("statuses", statuts.join(","));
+        return `/admin/logs?${p.toString()}`;
+    };
+
+    const answerRate = metrics?.totalCalls
+        ? Math.round(((metrics.answeredCalls || 0) / metrics.totalCalls) * 1000) / 10
+        : 0;
     const prevLostCalls = (metrics?.prevMissedCalls || 0) + (metrics?.prevBusyCalls || 0);
 
     const fetchData = useCallback(async () => {
@@ -163,160 +141,65 @@ export default function DashboardClient() {
                 </div>
             </div>
 
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4">
-                {/* Total Calls */}
-                <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-slate-50/50">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-semibold text-slate-600">Appels Uniques</CardTitle>
-                        <Phone className="h-5 w-5 text-blue-500 opacity-80" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-3xl font-bold text-slate-900 flex items-center">
-                            {isLoading ? (
-                                <div className="flex items-center gap-2">
-                                    <Skeleton className="h-8 w-16" />
-                                    <Skeleton className="h-5 w-12" />
-                                </div>
-                            ) : (
-                                <>
-                                    <Link
-                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}`}
-                                        className="hover:underline cursor-pointer"
-                                    >
-                                        <AnimatedNumber value={metrics?.totalCalls || 0} />
-                                    </Link>
-                                    <TrendIndicator current={metrics?.totalCalls || 0} prev={metrics?.prevTotalCalls || 0} />
-                                </>
-                            )}
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1.5 font-medium">Volume de la période</p>
-                    </CardContent>
-                </Card>
-
-                {/* Answered */}
-                <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-emerald-50/10">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-semibold text-slate-600">Répondus</CardTitle>
-                        <div className="flex items-center gap-1">
-                            <TrendingUp className="h-5 w-5 text-emerald-500 opacity-80" />
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-3xl font-bold text-emerald-600 flex items-center">
-                            {isLoading ? (
-                                <div className="flex items-center gap-2">
-                                    <Skeleton className="h-8 w-16" />
-                                    <Skeleton className="h-5 w-12" />
-                                </div>
-                            ) : (
-                                <>
-                                    <Link
-                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=${finalStatusesForBucket('answered').join(',')}`}
-                                        className="hover:underline cursor-pointer"
-                                    >
-                                        <AnimatedNumber value={metrics?.answeredCalls || 0} />
-                                    </Link>
-                                    <TrendIndicator current={metrics?.answeredCalls || 0} prev={metrics?.prevAnsweredCalls || 0} />
-                                </>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-1 mt-1.5 text-xs">
-                            {isLoading
-                                ? <Skeleton className="h-4 w-20" />
-                                : <><span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{metrics?.answerRate}%</span><span className="text-slate-500 font-medium">taux global</span></>
-                            }
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Perdus — manqués, messagerie et occupés réunis : un seul
-                    vocabulaire dans toute l'application, comme pour les groupes
-                    et les journaux. Le détail reste lisible dans le parcours
-                    d'un appel. */}
-                <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-rose-50/10">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-semibold text-slate-600">Perdus</CardTitle>
-                        <div className="flex items-center gap-1">
-                            <PhoneOff className="h-5 w-5 text-rose-500 opacity-80" />
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-3xl font-bold text-rose-600 flex items-center">
-                            {isLoading ? (
-                                <div className="flex items-center gap-2">
-                                    <Skeleton className="h-8 w-16" />
-                                    <Skeleton className="h-5 w-12" />
-                                </div>
-                            ) : (
-                                <>
-                                    <Link
-                                        href={`/admin/logs?start=${format(dateRange.startDate, 'yyyy-MM-dd')}&end=${format(dateRange.endDate, 'yyyy-MM-dd')}&statuses=${finalStatusesForBucket('lost').join(',')}`}
-                                        className="hover:underline cursor-pointer"
-                                    >
-                                        <AnimatedNumber value={lostCalls} />
-                                    </Link>
-                                    <TrendIndicator current={lostCalls} prev={prevLostCalls} inverseGood={true} />
-                                </>
-                            )}
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1.5 font-medium">
-                            Appels non aboutis · dont {metrics?.voicemailCalls || 0} en messagerie
-                        </p>
-                    </CardContent>
-                </Card>
-
-                {/* Talk Time */}
-                <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-indigo-50/10">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-semibold text-slate-600">Discussion</CardTitle>
-                        <Clock className="h-5 w-5 text-indigo-500 opacity-80" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl lg:text-3xl font-bold text-slate-900 flex items-center min-w-0">
-                            {isLoading ? (
-                                <div className="flex items-center gap-2">
-                                    <Skeleton className="h-8 w-20" />
-                                    <Skeleton className="h-5 w-12" />
-                                </div>
-                            ) : (
-                                <>
-                                    <span className="truncate">{formatDuration(metrics?.avgDurationSeconds || 0)}</span>
-                                    <TrendIndicator current={metrics?.avgDurationSeconds || 0} prev={metrics?.prevAvgDurationSeconds || 0} />
-                                </>
-                            )}
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1.5 font-medium">Temps humain par appel</p>
-                    </CardContent>
-                </Card>
-
-                {/* Wait Time */}
-                <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-amber-50/10">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-semibold text-slate-600">Attente moy.</CardTitle>
-                        <Hourglass className="h-5 w-5 text-amber-500 opacity-80" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl lg:text-3xl font-bold text-slate-900 flex items-center min-w-0">
-                            {isLoading ? (
-                                <div className="flex items-center gap-2">
-                                    <Skeleton className="h-8 w-20" />
-                                    <Skeleton className="h-5 w-12" />
-                                </div>
-                            ) : (
-                                <>
-                                    <span className="truncate">{formatDuration(metrics?.avgWaitTimeSeconds || 0)}</span>
-                                    <TrendIndicator current={metrics?.avgWaitTimeSeconds || 0} prev={metrics?.prevAvgWaitTimeSeconds || 0} inverseGood={true} />
-                                </>
-                            )}
-                        </div>
-                        <p className="text-[11px] text-slate-500 mt-1.5 font-medium leading-tight">Avant et/ou entre transferts</p>
-                    </CardContent>
-                </Card>
-
-
+            {/* Chiffres-clés. Une seule vignette réutilisée : le balisage n'est
+                plus recopié, donc plus de divergences de mise en forme. */}
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+                <KpiCard
+                    label="Appels uniques"
+                    href={lienLogs()}
+                    value={(metrics?.totalCalls ?? 0).toLocaleString("fr-CH")}
+                    icon={Phone}
+                    subtitle="Volume de la période"
+                    trend={{ current: metrics?.totalCalls ?? 0, previous: metrics?.prevTotalCalls ?? 0 }}
+                    isLoading={isLoading}
+                />
+                <KpiCard
+                    label="Répondus"
+                    href={lienLogs(finalStatusesForBucket('answered'))}
+                    value={(metrics?.answeredCalls ?? 0).toLocaleString("fr-CH")}
+                    icon={TrendingUp}
+                    tone="positive"
+                    subtitle={`${answerRate} % de taux global`}
+                    trend={{ current: metrics?.answeredCalls ?? 0, previous: metrics?.prevAnsweredCalls ?? 0 }}
+                    isLoading={isLoading}
+                />
+                <KpiCard
+                    label="Perdus"
+                    href={lienLogs(finalStatusesForBucket('lost'))}
+                    value={lostCalls.toLocaleString("fr-CH")}
+                    icon={PhoneOff}
+                    tone="negative"
+                    subtitle="Appels non aboutis"
+                    trend={{ current: lostCalls, previous: prevLostCalls, lowerIsBetter: true }}
+                    isLoading={isLoading}
+                />
+                <KpiCard
+                    label="Messagerie"
+                    href={lienLogs(finalStatusesForBucket('voicemail'))}
+                    value={(metrics?.voicemailCalls ?? 0).toLocaleString("fr-CH")}
+                    icon={Voicemail}
+                    tone="info"
+                    subtitle="Hors heures ou renvoi"
+                    trend={{ current: metrics?.voicemailCalls ?? 0, previous: metrics?.prevVoicemailCalls ?? 0, lowerIsBetter: true }}
+                    isLoading={isLoading}
+                />
+                <KpiCard
+                    label="Discussion"
+                    value={formatDuration(metrics?.avgDurationSeconds ?? 0)}
+                    icon={Clock}
+                    subtitle="Temps humain par appel"
+                    trend={{ current: metrics?.avgDurationSeconds ?? 0, previous: metrics?.prevAvgDurationSeconds ?? 0 }}
+                    isLoading={isLoading}
+                />
+                <KpiCard
+                    label="Attente moy."
+                    value={formatDuration(metrics?.avgWaitTimeSeconds ?? 0)}
+                    icon={Hourglass}
+                    subtitle="Avant ou entre transferts"
+                    trend={{ current: metrics?.avgWaitTimeSeconds ?? 0, previous: metrics?.prevAvgWaitTimeSeconds ?? 0, lowerIsBetter: true }}
+                    isLoading={isLoading}
+                />
             </div>
-
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 {/* Chart main */}
                 <Card className="border-none shadow-md xl:col-span-2 bg-gradient-to-b from-white to-slate-50/50">
