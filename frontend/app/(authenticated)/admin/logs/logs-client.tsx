@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RefreshCw, Download, FileText, Columns3, Code } from "lucide-react";
 import { format } from "date-fns";
-import { readInitialPeriod, rememberPeriod } from "@/lib/period-storage";
+import { useUrlPeriod, applyPeriodToParams } from "@/lib/url-state";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -102,13 +102,10 @@ export default function AdminLogsPage() {
     };
 
     // Date range state
-    // Période partagée par sa valeur (cf. lib/period-storage) : l'URL d'un lien
-    // de vignette l'emporte, puis la dernière période consultée.
-    const [dateRange, setDateRangeState] = useState(readInitialPeriod);
-    const setDateRange = (range: { startDate: Date; endDate: Date }) => {
-        setDateRangeState(range);
-        rememberPeriod(range);
-    };
+    // La période vient de l'URL (cf. lib/url-state) : un lien de vignette la
+    // porte donc naturellement, sans mécanisme d'adoption.
+    const { startDate: periodStart, endDate: periodEnd, setPeriod: setDateRange } = useUrlPeriod();
+    const dateRange = { startDate: periodStart, endDate: periodEnd };
     const [currentPage, setCurrentPage] = useState(getInitialPage);
     const [sort, setSort] = useState<LogsSort | undefined>(undefined);
     const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(defaultColumnVisibility);
@@ -260,8 +257,7 @@ export default function AdminLogsPage() {
         const params = new URLSearchParams();
 
         // Date range (always present) - use LOCAL date format, not UTC
-        params.set("start", format(dateRange.startDate, "yyyy-MM-dd"));
-        params.set("end", format(dateRange.endDate, "yyyy-MM-dd"));
+        applyPeriodToParams(params, dateRange);
 
         // Page (only if > 1)
         if (currentPage > 1) {

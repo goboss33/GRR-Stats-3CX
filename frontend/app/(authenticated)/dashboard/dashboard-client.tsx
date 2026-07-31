@@ -5,12 +5,11 @@ import { getSelectedServer } from "@/lib/selected-server";
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Users2, Hourglass, Voicemail, PhoneCall, Download } from "lucide-react";
 import { format } from "date-fns";
-import { readInitialPeriod, rememberPeriod } from "@/lib/period-storage";
+import { useUrlPeriod } from "@/lib/url-state";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DateRangePicker } from "@/components/date-range-picker";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
 import { ConcurrentCallsChart } from "@/components/concurrent-calls-chart";
@@ -97,9 +96,9 @@ export default function DashboardClient() {
     const [isLoading, setIsLoading] = useState(true);
     const [isInitialLoad, setIsInitialLoad] = useState(true);
 
-    // Période partagée entre les écrans par sa seule valeur (cf.
-    // lib/period-storage) : l'état reste local, il n'y a rien à coordonner.
-    const [dateRange, setDateRange] = useState(readInitialPeriod);
+    // La période vient de l'URL (cf. lib/url-state) : une seule source, lue
+    // aussi bien par le serveur que par le client.
+    const dateRange = useUrlPeriod();
 
     const [metrics, setMetrics] = useState<GlobalMetrics | null>(null);
     const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([]);
@@ -130,17 +129,14 @@ export default function DashboardClient() {
         } finally {
             setIsLoading(false);
         }
-    }, [dateRange]);
+    }, [dateRange.startDate, dateRange.endDate]);
 
     useEffect(() => {
         fetchData();
     }, [fetchData]);
 
     const handleRefresh = () => fetchData();
-    const handleDateRangeChange = (range: { startDate: Date; endDate: Date }) => {
-        setDateRange(range);
-        rememberPeriod(range);
-    };
+
 
     return (
         <div className="space-y-6">
@@ -155,10 +151,6 @@ export default function DashboardClient() {
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <DateRangePicker
-                        dateRange={dateRange}
-                        onDateRangeChange={handleDateRangeChange}
-                    />
                     <Button
                         variant="outline"
                         size="icon"

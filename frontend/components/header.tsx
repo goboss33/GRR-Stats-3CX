@@ -1,6 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { DateRangePicker } from "@/components/date-range-picker";
+import { useUrlPeriod } from "@/lib/url-state";
 
 const roleBadgeColors: Record<string, string> = {
     ADMIN: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -32,6 +34,21 @@ function getPageTitle(pathname: string): string {
     return "Tableau de bord";
 }
 
+/**
+ * Sélecteur de période, unique pour toute l'application. Il ne détient rien :
+ * il écrit l'URL, et chaque écran relit.
+ */
+function HeaderPeriodPicker() {
+    const { startDate, endDate, setPeriod } = useUrlPeriod();
+    return (
+        <DateRangePicker
+            dateRange={{ startDate, endDate }}
+            onDateRangeChange={setPeriod}
+            displayFormat="short"
+        />
+    );
+}
+
 export function Header({ userRole, userName }: { userRole: string; userName: string }) {
     const pathname = usePathname();
     const title = getPageTitle(pathname);
@@ -48,6 +65,8 @@ export function Header({ userRole, userName }: { userRole: string; userName: str
             </div>
 
             <div className="flex items-center gap-4">
+                <HeaderPeriodPicker />
+
                 {userRole && (
                     <span
                         className={`px-3 py-1 text-xs font-medium rounded-full border ${roleBadgeColors[userRole] || roleBadgeColors.USER

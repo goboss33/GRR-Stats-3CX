@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { withPeriod } from "@/lib/url-state";
 import {
     LayoutDashboard,
     ChevronLeft,
@@ -83,6 +84,10 @@ const navItems: NavItem[] = [
 
 export function Sidebar({ userRole, user, authProvider, profilePicture, signOutAction }: SidebarProps) {
     const pathname = usePathname();
+    // La période voyage dans l'URL : les liens de navigation la transportent,
+    // sans quoi passer des statistiques aux journaux repartirait sur le mois en
+    // cours — au moment même où l'on veut garder le contexte.
+    const searchParams = useSearchParams();
     const [collapsed, setCollapsed] = useState(false);
     const [expandedMenus, setExpandedMenus] = useState<string[]>(() => {
         const initial: string[] = [];
@@ -191,7 +196,7 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
                                                     return (
                                                         <Link
                                                             key={child.href}
-                                                            href={child.href}
+                                                            href={withPeriod(child.href, searchParams)}
                                                             className={cn(
                                                                 "flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors",
                                                                 childActive
@@ -220,7 +225,7 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
                                                 return (
                                                     <Link
                                                         key={child.href}
-                                                        href={child.href}
+                                                        href={withPeriod(child.href, searchParams)}
                                                         className={cn(
                                                             "flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200",
                                                             childActive
@@ -245,7 +250,7 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
 
                         const linkContent = (
                             <Link
-                                href={item.href!}
+                                href={withPeriod(item.href!, searchParams)}
                                 className={cn(
                                     "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
                                     isActive

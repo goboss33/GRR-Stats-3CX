@@ -5,7 +5,7 @@ import { getSelectedServer } from "@/lib/selected-server";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
-import { readInitialPeriod, rememberPeriod } from "@/lib/period-storage";
+import { useUrlPeriod } from "@/lib/url-state";
 import {
     Hash,
     Search,
@@ -21,7 +21,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DateRangePicker } from "@/components/date-range-picker";
 import { ExtensionSearchTable } from "@/components/stats-extension/extension-search-table";
 import { ExtensionResultsTable } from "@/components/stats-extension/extension-results-table";
 import { ExtensionTrendChart } from "@/components/stats-extension/extension-trend-chart";
@@ -77,12 +76,9 @@ function StatisticsExtensionPageInner() {
     const searchParams = useSearchParams();
 
     const [entries, setEntries] = useState<SearchEntry[]>(() => deserializeEntries(searchParams.get("entries")));
-    // Période partagée par sa valeur (cf. lib/period-storage).
-    const [dateRange, setDateRangeState] = useState(readInitialPeriod);
-    const setDateRange = (range: { startDate: Date; endDate: Date }) => {
-        setDateRangeState(range);
-        rememberPeriod(range);
-    };
+    // La période vient de l'URL (cf. lib/url-state).
+    const { startDate: periodStart, endDate: periodEnd } = useUrlPeriod();
+    const dateRange = { startDate: periodStart, endDate: periodEnd };
 
     const [advancedFilters, setAdvancedFilters] = useState<AdvancedFiltersValue>(DEFAULT_ADVANCED_FILTERS);
 
@@ -234,14 +230,6 @@ function StatisticsExtensionPageInner() {
                     />
 
                     <div className="flex flex-wrap items-end gap-4">
-                        <div className="flex-1 min-w-[300px]">
-                            <label className="text-sm font-medium text-slate-700 mb-2 block">Période</label>
-                            <DateRangePicker
-                                dateRange={dateRange}
-                                onDateRangeChange={setDateRange}
-                            />
-                        </div>
-
                         <Button
                             onClick={handleSearch}
                             disabled={entries.length === 0 || isLoading}

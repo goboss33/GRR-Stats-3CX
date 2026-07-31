@@ -288,13 +288,7 @@ export function DateRangePicker({
                             "mr-2 text-slate-500",
                             size === "compact" ? "h-3 w-3" : "h-4 w-4"
                         )} />
-                        {/* La période provient du navigateur — URL ou dernière
-                            période consultée — que le rendu serveur ne connaît
-                            pas : il produit donc le mois en cours là où le
-                            client affiche la période retenue. L'écart est
-                            légitime et attendu, d'où cette annotation plutôt
-                            qu'un contournement. */}
-                        <span className="truncate" suppressHydrationWarning>{formatDisplay()}</span>
+                        <span className="truncate">{formatDisplay()}</span>
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">

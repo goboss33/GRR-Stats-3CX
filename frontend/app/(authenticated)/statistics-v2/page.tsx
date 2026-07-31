@@ -5,7 +5,7 @@ import { logger } from "@/lib/logger";
 
 import { useEffect, useState } from "react";
 import { startOfDay, endOfDay, format } from "date-fns";
-import { readInitialPeriod, rememberPeriod } from "@/lib/period-storage";
+import { useUrlPeriod } from "@/lib/url-state";
 import { BarChart3, RefreshCw, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QueueInfo } from "@/types/queues.types";
@@ -17,7 +17,6 @@ import { AgentPerformanceTableV2 } from "@/components/stats-v2/agent-performance
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
 import { QueueSelector } from "@/components/stats/queue-selector";
-import { DateRangePicker } from "@/components/date-range-picker";
 import { ServerId } from "@/lib/prisma-cdr";
 import type { QueueStatistics } from "@/types/statistics.types";
 
@@ -32,8 +31,8 @@ export default function StatisticsV2Page() {
     const [isLoadingQueues, setIsLoadingQueues] = useState(true);
 
     // Default to current month
-    // Période partagée par sa valeur (cf. lib/period-storage).
-    const [dateRange, setDateRange] = useState(readInitialPeriod);
+    // La période vient de l'URL (cf. lib/url-state).
+    const dateRange = useUrlPeriod();
 
     // Load queues on mount
     useEffect(() => {
@@ -63,7 +62,7 @@ export default function StatisticsV2Page() {
                 logger.error("[StatisticsV2] getQueueStatistics error:", error);
             })
             .finally(() => setIsLoading(false));
-    }, [selectedQueueNumber, dateRange]);
+    }, [selectedQueueNumber, dateRange.startDate, dateRange.endDate]);
 
     const handleRefresh = () => {
         if (!selectedQueueNumber) return;
@@ -80,11 +79,7 @@ export default function StatisticsV2Page() {
         setSelectedQueueName(queueName);
     };
 
-    const handleDateRangeChange = (range: { startDate: Date; endDate: Date }) => {
-        const next = { startDate: startOfDay(range.startDate), endDate: endOfDay(range.endDate) };
-        setDateRange(next);
-        rememberPeriod(next);
-    };
+
 
     if (isLoadingQueues) {
         return (
@@ -131,16 +126,6 @@ export default function StatisticsV2Page() {
                         />
                     </div>
 
-                    {/* Date range picker */}
-                    <div>
-                        <label className="text-sm font-medium text-slate-600 mb-1.5 block">
-                            Période
-                        </label>
-                        <DateRangePicker
-                            dateRange={dateRange}
-                            onDateRangeChange={handleDateRangeChange}
-                        />
-                    </div>
 
                     {/* Refresh */}
                     <div className="flex items-end">
