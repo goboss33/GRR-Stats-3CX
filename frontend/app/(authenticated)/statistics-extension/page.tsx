@@ -78,7 +78,12 @@ function StatisticsExtensionPageInner() {
     const [entries, setEntries] = useState<SearchEntry[]>(() => deserializeEntries(searchParams.get("entries")));
     // La période vient de l'URL (cf. lib/url-state).
     const { startDate: periodStart, endDate: periodEnd } = useUrlPeriod();
-    const dateRange = { startDate: periodStart, endDate: periodEnd };
+    // Mémoïsé : cet objet est transmis à des composants enfants, et une
+    // identité neuve à chaque rendu les ferait travailler pour rien.
+    const dateRange = useMemo(
+        () => ({ startDate: periodStart, endDate: periodEnd }),
+        [periodStart, periodEnd],
+    );
 
     const [advancedFilters, setAdvancedFilters] = useState<AdvancedFiltersValue>(DEFAULT_ADVANCED_FILTERS);
 
@@ -190,7 +195,7 @@ function StatisticsExtensionPageInner() {
             },
             totals,
         };
-    }, [results, totals, dateRange]);
+    }, [results, totals, dateRange.startDate, dateRange.endDate]);
 
     const logsLinkParams = {
         start: format(dateRange.startDate, "yyyy-MM-dd"),

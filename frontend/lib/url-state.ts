@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useRouter, useSearchParams, usePathname, type ReadonlyURLSearchParams } from "next/navigation";
 import { startOfMonth, endOfMonth, startOfDay, endOfDay, parseISO, format, isValid } from "date-fns";
 
@@ -40,14 +40,16 @@ function defaultPeriod(): Period {
 }
 
 /**
- * Période décrite par des paramètres d'URL.
+ * Période décrite par deux dates ISO.
  *
- * Fonction pure : le serveur et le client en tirent le même résultat, ce qui
- * est exactement la propriété qui manquait auparavant.
+ * Prend des CHAÎNES et non l'objet de paramètres : ce sont des primitives, donc
+ * utilisables telles quelles comme dépendances de `useMemo`. Sans cela, chaque
+ * rendu reconstruirait des `Date` d'identité neuve, les effets qui en dépendent
+ * se redéclencheraient sans fin, et l'écran bouclerait sur ses requêtes.
+ *
+ * Fonction pure : serveur et client en tirent le même résultat.
  */
-export function periodFromParams(params: URLSearchParams | ReadonlyURLSearchParams): Period {
-    const start = params.get("start");
-    const end = params.get("end");
+export function periodFromIso(start: string | null, end: string | null): Period {
     if (!start || !end) return defaultPeriod();
 
     const startDate = startOfDay(parseISO(start));
@@ -76,15 +78,21 @@ export function useUrlPeriod(): Period & { setPeriod: (period: Period) => void }
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
-    const period = periodFromParams(searchParams);
+    // Les deux paramètres sont des chaînes : tant qu'ils ne changent pas, les
+    // `Date` conservent leur identité et les effets qui en dépendent restent au
+    // repos. C'est la propriété essentielle de ce module.
+    const start = searchParams.get("start");
+    const end = searchParams.get("end");
+    const period = useMemo(() => periodFromIso(start, end), [start, end]);
 
+    const query = searchParams.toString();
     const setPeriod = useCallback((next: Period) => {
-        const params = new URLSearchParams(searchParams.toString());
+        const params = new URLSearchParams(query);
         applyPeriodToParams(params, next);
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    }, [router, pathname, searchParams]);
+    }, [router, pathname, query]);
 
-    return { ...period, setPeriod };
+    return useMemo(() => ({ ...period, setPeriod }), [period, setPeriod]);
 }
 
 /**

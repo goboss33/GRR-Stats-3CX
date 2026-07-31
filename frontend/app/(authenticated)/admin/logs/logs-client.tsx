@@ -2,7 +2,7 @@
 
 import { getSelectedServer } from "@/lib/selected-server";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RefreshCw, Download, FileText, Columns3, Code } from "lucide-react";
 import { format } from "date-fns";
@@ -105,7 +105,12 @@ export default function AdminLogsPage() {
     // La période vient de l'URL (cf. lib/url-state) : un lien de vignette la
     // porte donc naturellement, sans mécanisme d'adoption.
     const { startDate: periodStart, endDate: periodEnd, setPeriod: setDateRange } = useUrlPeriod();
-    const dateRange = { startDate: periodStart, endDate: periodEnd };
+    // Mémoïsé : cet objet est transmis à des composants enfants, et une
+    // identité neuve à chaque rendu les ferait travailler pour rien.
+    const dateRange = useMemo(
+        () => ({ startDate: periodStart, endDate: periodEnd }),
+        [periodStart, periodEnd],
+    );
     const [currentPage, setCurrentPage] = useState(getInitialPage);
     const [sort, setSort] = useState<LogsSort | undefined>(undefined);
     const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(defaultColumnVisibility);
@@ -319,8 +324,7 @@ export default function AdminLogsPage() {
         router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
     }, [
         router,
-        dateRange.startDate,
-        dateRange.endDate,
+        dateRange,
         currentPage,
         selectedDirections,
         selectedStatuses,
