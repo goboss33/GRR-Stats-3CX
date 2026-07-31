@@ -548,7 +548,13 @@ function buildAggregateCTEs(
                 termination_reason_details as last_human_termination_reason_details
             FROM cdroutput
             WHERE ${whereClause}
-              AND destination_dn_type = 'extension'
+              -- Un appel SORTANT n'a jamais d'extension en destination : c'est
+              -- la source. Ne retenir que les destinations « extension »
+              -- rendait donc tout appel sortant « non répondu » — 10 488 cas
+              -- sur le seul mois de juillet 2026, tous pourtant décrochés.
+              -- On retient ici le dernier segment où une VRAIE partie a été
+              -- jointe, interne ou externe, quel que soit le sens de l'appel.
+              AND (destination_dn_type = 'extension' OR destination_dn_type IN ('provider', 'external_line'))
               AND COALESCE(destination_entity_type, '') != 'voicemail'
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
         ),
@@ -1015,7 +1021,13 @@ function buildCountQuery(
                 cdr_ended_at as last_human_ended_at
             FROM cdroutput
             WHERE ${whereClause}
-              AND destination_dn_type = 'extension'
+              -- Un appel SORTANT n'a jamais d'extension en destination : c'est
+              -- la source. Ne retenir que les destinations « extension »
+              -- rendait donc tout appel sortant « non répondu » — 10 488 cas
+              -- sur le seul mois de juillet 2026, tous pourtant décrochés.
+              -- On retient ici le dernier segment où une VRAIE partie a été
+              -- jointe, interne ou externe, quel que soit le sens de l'appel.
+              AND (destination_dn_type = 'extension' OR destination_dn_type IN ('provider', 'external_line'))
               AND COALESCE(destination_entity_type, '') != 'voicemail'
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
         ),

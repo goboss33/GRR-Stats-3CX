@@ -26,7 +26,8 @@ const BASE = `
             cdr_answered_at AS ha, cdr_started_at AS hs, cdr_ended_at AS hend
         FROM cdroutput
         WHERE cdr_started_at >= $1 AND cdr_started_at <= $2
-          AND destination_dn_type = 'extension' AND COALESCE(destination_entity_type,'') != 'voicemail'
+          AND (destination_dn_type = 'extension' OR destination_dn_type IN ('provider','external_line'))
+          AND COALESCE(destination_entity_type,'') != 'voicemail'
         ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
     ),
     answered_seg AS (
