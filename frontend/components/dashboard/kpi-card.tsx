@@ -100,7 +100,10 @@ export function KpiCard({
                 {isLoading ? (
                     <Skeleton className="h-9 w-24" />
                 ) : (
-                    <div className={`text-3xl font-bold tabular-nums leading-none ${colors.value}`}>
+                    <div
+                        className={`truncate whitespace-nowrap text-3xl font-bold tabular-nums leading-none ${colors.value}`}
+                        title={value}
+                    >
                         {value}
                     </div>
                 )}

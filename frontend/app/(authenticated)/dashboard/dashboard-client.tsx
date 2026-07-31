@@ -5,6 +5,7 @@ import { getSelectedServer } from "@/lib/selected-server";
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Hourglass, Voicemail } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
+import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
 import { finalStatusesForBucket } from "@/services/domain/call-aggregation";
 import { format } from "date-fns";
 import { useUrlPeriod } from "@/lib/url-state";
@@ -34,16 +35,6 @@ import type {
 
 
 // Helper to format duration seconds to human readable
-function formatDuration(seconds: number): string {
-    if (seconds === 0) return "0s";
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    return `${hours}h ${remainingMinutes}m`;
-}
 
 // Animation du chiffre progressif (CountUp simple)
 

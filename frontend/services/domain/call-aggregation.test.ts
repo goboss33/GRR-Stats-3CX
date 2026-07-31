@@ -299,3 +299,27 @@ describe("statut final — définition unique TypeScript / SQL", () => {
         expect(DEFAULT_MIN_ANSWER_SECONDS).toBe(1);
     });
 });
+
+describe("formatDurationHuman", () => {
+    // Les durées viennent de moyennes SQL, donc décimales : c'est là que se
+    // logeait « 2m 13.90000000000s ».
+    it("arrondit avant de décomposer", () => {
+        expect(formatDurationHuman(133.9)).toBe("2m 14s");
+        expect(formatDurationHuman(18.7)).toBe("19s");
+        expect(formatDurationHuman(59.6)).toBe("1m");
+    });
+
+    it("passe aux heures au-delà de soixante minutes", () => {
+        expect(formatDurationHuman(3600)).toBe("1h");
+        expect(formatDurationHuman(4820.4)).toBe("1h 20m");
+    });
+
+    it("n'affiche pas de reste nul", () => {
+        expect(formatDurationHuman(120)).toBe("2m");
+    });
+
+    it("une durée nulle ou négative reste lisible", () => {
+        expect(formatDurationHuman(0)).toBe("0s");
+        expect(formatDurationHuman(-3)).toBe("0s");
+    });
+});

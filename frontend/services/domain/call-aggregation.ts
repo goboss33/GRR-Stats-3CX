@@ -486,13 +486,26 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
- * Variante « humaine » avec espace : "45s", "5m 3s", "5m".
+ * Variante « humaine » avec espace : "45s", "5m 3s", "1h 20m".
+ *
+ * ⚠️ Arrondit AVANT tout calcul. Les durées viennent de moyennes SQL et sont
+ * donc décimales : un modulo direct produisait « 2m 13.90000000000s » à
+ * l'écran. L'arrondi doit précéder la décomposition, pas la suivre.
  */
 export function formatDurationHuman(seconds: number): string {
-    if (seconds < 60) return `${seconds}s`;
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+    const total = Math.round(seconds);
+    if (total <= 0) return "0s";
+    if (total < 60) return `${total}s`;
+
+    const minutes = Math.floor(total / 60);
+    if (minutes < 60) {
+        const secs = total % 60;
+        return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
 /**
