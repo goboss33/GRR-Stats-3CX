@@ -80,7 +80,9 @@ export function ActiveFilters({
     const dateLabel = `${format(dateRange.startDate, "dd/MM/yy", { locale: fr })} - ${format(dateRange.endDate, "dd/MM/yy", { locale: fr })}`;
     activeFilters.push(
         <Badge key="date" variant="outline" className="bg-slate-100 text-slate-700 gap-1 px-2 py-1">
-            📅 {dateLabel}
+            {/* Même raison que dans le sélecteur de dates : la période vient du
+                navigateur, le rendu serveur ne peut pas la connaître. */}
+            📅 <span suppressHydrationWarning>{dateLabel}</span>
         </Badge>
     );
 
