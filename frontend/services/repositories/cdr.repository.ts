@@ -22,6 +22,8 @@ import {
 import { getClassificationRules } from "@/lib/classification-rules";
 import {
     SQL_SYSTEM_DEST_TYPES,
+    SQL_REAL_PARTY_DEST_TYPES,
+    buildFinalStatusCaseSQL,
     SQL_SYSTEM_ENTITY_TYPES,
 } from "@/services/domain/call-aggregation";
 
@@ -136,8 +138,8 @@ export async function getGlobalMetricsRaw(
     const prisma = getPrismaCdr(serverId);
     const scopeFilter = buildScopeFilter(scope);
     // Listes de types système : du SQL, pas des valeurs (cf. note sur getTimelineDataRaw).
-    const systemDestTypes = Prisma.raw(SQL_SYSTEM_DEST_TYPES);
-    const systemEntityTypes = Prisma.raw(SQL_SYSTEM_ENTITY_TYPES);
+    const realPartyTypes = Prisma.raw(SQL_REAL_PARTY_DEST_TYPES);
+    const statusCase = Prisma.raw(buildFinalStatusCaseSQL());
 
     const query = Prisma.sql`
         -- Les trois CTE de base etaient assemblees TROIS fois — pour les statuts,
@@ -182,6 +184,19 @@ export async function getGlobalMetricsRaw(
               AND c.cdr_started_at <= ${endDate}
             ORDER BY c.call_history_id, c.cdr_answered_at ASC, c.cdr_id ASC
         ),
+        last_real_party AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                cdr_answered_at as lh_answered_at,
+                cdr_started_at as lh_started_at,
+                cdr_ended_at as lh_ended_at
+            FROM cdroutput
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+              AND destination_dn_type IN (${realPartyTypes})
+              AND COALESCE(destination_entity_type, '') != 'voicemail'
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        ),
         agent_counts AS (
             SELECT c2.call_history_id, COUNT(DISTINCT c2.destination_dn_number) as agent_count
             FROM cdroutput c2
@@ -203,29 +218,22 @@ export async function getGlobalMetricsRaw(
                 ls.last_ended_at         as ls_last_ended_at,
                 ls.termination_reason_details as ls_termination_reason_details,
                 ans.answered_at,
+                lrp.lh_answered_at,
+                lrp.lh_started_at,
+                lrp.lh_ended_at,
                 agc.agent_count as raw_agent_count
             FROM call_aggregates ca
             JOIN last_segments ls ON ls.call_history_id = ca.call_history_id
             LEFT JOIN answered_segments ans ON ans.call_history_id = ca.call_history_id
+            LEFT JOIN last_real_party lrp ON lrp.call_history_id = ca.call_history_id
             LEFT JOIN agent_counts agc ON agc.call_history_id = ca.call_history_id
         ),
         enrichi AS (
             SELECT
                 call_history_id,
-                CASE
-                    WHEN ls_last_dest_type IN ('vmail_console', 'voicemail') OR ls_last_dest_entity_type = 'voicemail' THEN 'voicemail'
-                    WHEN ls_termination_reason_details ILIKE '%busy%' THEN 'busy'
-                    WHEN ls_cdr_answered_at IS NOT NULL
-                         AND EXTRACT(EPOCH FROM (ls_last_ended_at - ls_last_started_at)) > 1
-                         AND (
-                             (ls_last_dest_type IN (${systemDestTypes}) OR ls_last_dest_entity_type IN (${systemEntityTypes}))
-                             AND answered_at IS NOT NULL
-                             OR
-                             (ls_last_dest_type NOT IN (${systemDestTypes}) AND ls_last_dest_entity_type NOT IN (${systemEntityTypes}))
-                         )
-                    THEN 'answered'
-                    ELSE 'missed'
-                END as status,
+                -- Statut final produit par la definition partagee : le tableau de
+                -- bord et les journaux ne peuvent plus en avoir deux lectures.
+                ${statusCase} as status,
                 -- Ces trois mesures ne valent que pour un appel dont le dernier
                 -- segment a ete decroche : c'est la condition que portait le
                 -- WHERE de l'ancienne CTE answered_calls_data.

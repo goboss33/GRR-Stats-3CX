@@ -99,6 +99,44 @@ export interface FinalStatusParams {
  */
 export const DEFAULT_MIN_ANSWER_SECONDS = 1;
 
+/**
+ * Types de destination correspondant à une VRAIE partie jointe.
+ *
+ * Liste BLANCHE, et c'est essentiel. Le tableau de bord raisonnait avec une
+ * liste NOIRE — il énumérait les types « système » et considérait tout le reste
+ * comme humain. Résultat : un segment technique `EndCall` de type `unknown`,
+ * portant un horodatage de décroché, passait pour une réponse. 657 appels sur
+ * juillet 2026, dont 500 de ce seul motif.
+ *
+ * Une liste blanche ne peut pas se tromper de ce côté : un type inconnu n'y
+ * figure pas, donc ne compte pas.
+ */
+export const SQL_REAL_PARTY_DEST_TYPES = "'extension', 'provider', 'external_line'";
+
+/**
+ * Expression SQL du statut final — image fidèle de `determineCallStatus`, dans
+ * le même ordre de priorité.
+ *
+ * Attend des colonnes nommées : `ls_last_dest_type`, `ls_last_dest_entity_type`,
+ * `ls_termination_reason_details` pour le dernier segment, et `lh_answered_at`,
+ * `lh_started_at`, `lh_ended_at` pour le dernier segment ayant joint une vraie
+ * partie.
+ *
+ * Sert aux écrans qui AGRÈGENT (tableau de bord) ; ceux qui LISTENT emploient
+ * `determineCallStatus`. Deux usages, une seule définition — c'est le partage
+ * de la règle, pas celui des requêtes : compter et lister restent deux métiers.
+ */
+export function buildFinalStatusCaseSQL(minAnswerSeconds: number = DEFAULT_MIN_ANSWER_SECONDS): string {
+    return `CASE
+        WHEN ls_last_dest_type IN ('vmail_console', 'voicemail') OR ls_last_dest_entity_type = 'voicemail' THEN 'voicemail'
+        WHEN ls_termination_reason_details ILIKE '%busy%' THEN 'busy'
+        WHEN lh_answered_at IS NOT NULL
+             AND EXTRACT(EPOCH FROM (lh_ended_at - lh_started_at)) > ${minAnswerSeconds}
+        THEN 'answered'
+        ELSE 'missed'
+    END`;
+}
+
 interface FinalStatusRule {
     status: CallStatus;
     /** Verdict TypeScript, pour l'affichage. */
