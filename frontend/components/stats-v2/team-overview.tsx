@@ -94,7 +94,7 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate 
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
                         <Users className="h-4 w-4" />
-                        <span>Bilan de l'équipe · {queueName}</span>
+                        <span>Bilan du groupe · {queueName}</span>
                     </div>
                     <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
                         <Clock className="h-4 w-4 text-slate-500" />

@@ -99,7 +99,7 @@ export default function StatisticsV2Page() {
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
                         <BarChart3 className="h-8 w-8 text-blue-600" />
-                        Statistiques d'Agence V2
+                        Statistiques par groupe
                     </h1>
                     <p className="text-slate-500 mt-1">
                         Vue d'ensemble des performances par équipe (file d'attente + appels directs)
@@ -107,7 +107,7 @@ export default function StatisticsV2Page() {
                 </div>
 
                 {noPerimeter && (
-                    <NoPerimeterNotice context="Les statistiques d'agence portent sur les files qui vous sont attribuées, et aucune ne l'est pour le moment." />
+                    <NoPerimeterNotice context="Les statistiques portent sur les groupes qui vous sont attribués, et aucun ne l'est pour le moment." />
                 )}
 
                 {/* Filters Row */}
@@ -116,13 +116,13 @@ export default function StatisticsV2Page() {
                     {/* Queue selector */}
                     <div className="flex-1 min-w-[300px] max-w-md">
                         <label className="text-sm font-medium text-slate-600 mb-1.5 block">
-                            File d'attente
+                            Groupe
                         </label>
                         <QueueSelector
                             queues={queues}
                             selectedQueueNumber={selectedQueueNumber}
                             onSelect={handleQueueSelect}
-                            placeholder="Rechercher une file ou un agent..."
+                            placeholder="Rechercher un groupe ou un agent..."
                         />
                     </div>
 

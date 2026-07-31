@@ -207,7 +207,7 @@ export function LogsTable({
                             )}
                             {queueView && (
                                 <TableHead className="w-28 text-center">
-                                    Statut file {queueView.number}
+                                    Statut groupe {queueView.number}
                                 </TableHead>
                             )}
                             {columnVisibility.status && (

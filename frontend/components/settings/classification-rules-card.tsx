@@ -235,7 +235,7 @@ export function ClassificationRulesCard({
                     <CardTitle>Statuts vus depuis une file d&apos;attente</CardTitle>
                     <CardDescription>
                         Comment une file juge les appels qu&apos;elle reçoit. Ces règles pilotent les
-                        vignettes de l&apos;écran de statistiques et la colonne « Statut file » des
+                        vignettes de l&apos;écran de statistiques et la colonne « Statut groupe » des
                         journaux — les deux restent donc toujours cohérents entre eux.
                     </CardDescription>
                 </CardHeader>
@@ -254,12 +254,12 @@ export function ClassificationRulesCard({
                         </div>
                         <div className="flex flex-wrap items-end gap-3">
                             <div className="min-w-[260px] flex-1">
-                                <Label className="mb-1 block text-xs text-slate-600">File</Label>
+                                <Label className="mb-1 block text-xs text-slate-600">Groupe</Label>
                                 <QueueSelector
                                     queues={queues}
                                     selectedQueueNumber={simQueue}
                                     onSelect={(queueNumber) => setSimQueue(queueNumber)}
-                                    placeholder="Choisir une file…"
+                                    placeholder="Choisir un groupe…"
                                 />
                             </div>
                             <div>

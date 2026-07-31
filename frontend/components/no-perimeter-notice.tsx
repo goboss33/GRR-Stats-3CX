@@ -27,10 +27,10 @@ export function NoPerimeterNotice({
                 </div>
                 <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
                 <p className="max-w-md text-sm text-slate-500">
-                    {context ?? "Vos accès sont limités aux files d'attente qui vous sont attribuées, et aucune ne l'est pour le moment."}
+                    {context ?? "Vos accès sont limités aux groupes qui vous sont attribués, et aucun ne l'est pour le moment."}
                 </p>
                 <p className="max-w-md text-sm text-slate-500">
-                    Demandez à un administrateur de vous attribuer une ou plusieurs files
+                    Demandez à un administrateur de vous attribuer un ou plusieurs groupes
                     depuis <span className="font-medium text-slate-700">Réglages → Utilisateurs</span>.
                 </p>
             </CardContent>

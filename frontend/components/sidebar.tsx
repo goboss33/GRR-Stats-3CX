@@ -69,7 +69,7 @@ const navItems: NavItem[] = [
         roles: ["ADMIN", "MODERATOR", "MANAGER"],
         children: [
             {
-                label: "File d'attente",
+                label: "Groupe",
                 href: "/statistics-v2",
                 icon: Users,
             },

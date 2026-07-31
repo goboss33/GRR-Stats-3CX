@@ -750,7 +750,7 @@ export default function AdminLogsPage() {
             )}
 
             {noPerimeter && (
-                <NoPerimeterNotice context="Les journaux d'appels sont filtrés selon les files qui vous sont attribuées, et aucune ne l'est pour le moment." />
+                <NoPerimeterNotice context="Les journaux d'appels sont filtrés selon les groupes qui vous sont attribués, et aucun ne l'est pour le moment." />
             )}
 
             {/* Sélecteur de vue. La vue file ne filtre pas : elle ajoute au
@@ -775,14 +775,14 @@ export default function AdminLogsPage() {
                         queues={queues}
                         selectedQueueNumber={queueView}
                         onSelect={(queueNumber) => changeQueueView(queueNumber)}
-                        placeholder="Choisir une file…"
+                        placeholder="Choisir un groupe…"
                         className="w-[320px]"
                     />
                 </div>
 
                 {selectedQueueView && (
                     <span className="text-sm text-slate-500">
-                        Statut affiché du point de vue de la file{" "}
+                        Statut affiché du point de vue du groupe{" "}
                         <span className="font-medium text-slate-700">
                             {selectedQueueView.number} – {selectedQueueView.name}
                         </span>
