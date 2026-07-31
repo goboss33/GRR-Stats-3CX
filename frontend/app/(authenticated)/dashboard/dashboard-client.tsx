@@ -4,7 +4,8 @@ import { getSelectedServer } from "@/lib/selected-server";
 
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Users2, Hourglass, Voicemail, PhoneCall, Download } from "lucide-react";
-import { subDays, startOfDay, endOfDay, format } from "date-fns";
+import { format } from "date-fns";
+import { readInitialPeriod, rememberPeriod } from "@/lib/period-storage";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -96,10 +97,9 @@ export default function DashboardClient() {
     const [isLoading, setIsLoading] = useState(true);
     const [isInitialLoad, setIsInitialLoad] = useState(true);
 
-    const [dateRange, setDateRange] = useState({
-        startDate: startOfDay(subDays(new Date(), 7)),
-        endDate: endOfDay(new Date()),
-    });
+    // Période partagée entre les écrans par sa seule valeur (cf.
+    // lib/period-storage) : l'état reste local, il n'y a rien à coordonner.
+    const [dateRange, setDateRange] = useState(readInitialPeriod);
 
     const [metrics, setMetrics] = useState<GlobalMetrics | null>(null);
     const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([]);
@@ -137,7 +137,10 @@ export default function DashboardClient() {
     }, [fetchData]);
 
     const handleRefresh = () => fetchData();
-    const handleDateRangeChange = (range: { startDate: Date; endDate: Date }) => setDateRange(range);
+    const handleDateRangeChange = (range: { startDate: Date; endDate: Date }) => {
+        setDateRange(range);
+        rememberPeriod(range);
+    };
 
     return (
         <div className="space-y-6">

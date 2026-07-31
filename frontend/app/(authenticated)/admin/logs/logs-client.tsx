@@ -5,7 +5,8 @@ import { getSelectedServer } from "@/lib/selected-server";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RefreshCw, Download, FileText, Columns3, Code } from "lucide-react";
-import { subDays, startOfDay, endOfDay, parseISO, format } from "date-fns";
+import { format } from "date-fns";
+import { readInitialPeriod, rememberPeriod } from "@/lib/period-storage";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -76,16 +77,6 @@ export default function AdminLogsPage() {
     const searchParams = useSearchParams();
 
     // Parse URL params for filters
-    const getInitialDateRange = () => {
-        const startParam = searchParams.get("start");
-        const endParam = searchParams.get("end");
-        return {
-            // Use startOfDay/endOfDay to anchor dates in LOCAL timezone
-            startDate: startParam ? startOfDay(parseISO(startParam)) : startOfDay(subDays(new Date(), 7)),
-            endDate: endParam ? endOfDay(parseISO(endParam)) : endOfDay(new Date()),
-        };
-    };
-
     const getInitialPage = () => {
         const pageParam = searchParams.get("page");
         return pageParam ? parseInt(pageParam, 10) : 1;
@@ -111,7 +102,13 @@ export default function AdminLogsPage() {
     };
 
     // Date range state
-    const [dateRange, setDateRange] = useState(getInitialDateRange);
+    // Période partagée par sa valeur (cf. lib/period-storage) : l'URL d'un lien
+    // de vignette l'emporte, puis la dernière période consultée.
+    const [dateRange, setDateRangeState] = useState(readInitialPeriod);
+    const setDateRange = (range: { startDate: Date; endDate: Date }) => {
+        setDateRangeState(range);
+        rememberPeriod(range);
+    };
     const [currentPage, setCurrentPage] = useState(getInitialPage);
     const [sort, setSort] = useState<LogsSort | undefined>(undefined);
     const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(defaultColumnVisibility);

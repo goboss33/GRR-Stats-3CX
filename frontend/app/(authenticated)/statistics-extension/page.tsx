@@ -4,7 +4,8 @@ import { getSelectedServer } from "@/lib/selected-server";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { startOfMonth, endOfMonth, startOfDay, endOfDay, format, parseISO } from "date-fns";
+import { format } from "date-fns";
+import { readInitialPeriod, rememberPeriod } from "@/lib/period-storage";
 import {
     Hash,
     Search,
@@ -76,19 +77,13 @@ function StatisticsExtensionPageInner() {
     const searchParams = useSearchParams();
 
     const [entries, setEntries] = useState<SearchEntry[]>(() => deserializeEntries(searchParams.get("entries")));
-    const [dateRange, setDateRange] = useState(() => {
-        const startParam = searchParams.get("start");
-        const endParam = searchParams.get("end");
-        if (startParam && endParam) {
-            const start = parseISO(startParam);
-            const end = parseISO(endParam);
-            if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
-                return { startDate: startOfDay(start), endDate: endOfDay(end) };
-            }
-        }
-        const now = new Date();
-        return { startDate: startOfMonth(now), endDate: endOfMonth(now) };
-    });
+    // Période partagée par sa valeur (cf. lib/period-storage).
+    const [dateRange, setDateRangeState] = useState(readInitialPeriod);
+    const setDateRange = (range: { startDate: Date; endDate: Date }) => {
+        setDateRangeState(range);
+        rememberPeriod(range);
+    };
+
     const [advancedFilters, setAdvancedFilters] = useState<AdvancedFiltersValue>(DEFAULT_ADVANCED_FILTERS);
 
     const [directory, setDirectory] = useState<ExtensionDirectory>({ extensions: [], ddis: [] });
