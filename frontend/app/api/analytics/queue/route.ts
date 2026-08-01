@@ -7,6 +7,8 @@ import { logger } from "@/lib/logger";
 import { resolveApiKeyScope, isQueueInScope } from "@/lib/access-scope";
 import {
     buildTeamCTEChain,
+    cdrTable,
+    type CallOrigin,
 } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
 
@@ -46,9 +48,14 @@ export async function GET(request: NextRequest) {
         // que le chiffre affiché — auparavant les deux SQL divergeaient.
         const rules = await getClassificationRules();
 
+        // Provenance des appels (toggle Externe / Interne / Les deux).
+        const originParam = url.searchParams.get("origin");
+        const origin: CallOrigin = originParam === "internal" || originParam === "external"
+            ? originParam : "both";
+
         // Requête paramétrée : $1 = queueNumber (texte), $2 = start, $3 = end (Date).
         const query = `
-            WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3" })},
+            WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
             queue_kpis AS (
                 SELECT
                     COUNT(*) as unique_calls,
@@ -74,7 +81,9 @@ export async function GET(request: NextRequest) {
                     COALESCE(other_q.destination_dn_name, other_q.destination_dn_number) as destination_name,
                     COUNT(DISTINCT qc.call_history_id) as count
                 FROM queue_calls qc
-                JOIN cdroutput other_q ON other_q.call_history_id = qc.call_history_id
+                -- Corrélation par appel : même grain que queue_calls, sinon les
+                -- segments des jambes fusionnées échapperaient à la jointure.
+                JOIN ${cdrTable(rules)} other_q ON other_q.call_history_id = qc.call_history_id
                     AND other_q.destination_dn_type = 'queue'
                     AND other_q.destination_dn_number != $1
                 WHERE qc.outcome = 'overflow'

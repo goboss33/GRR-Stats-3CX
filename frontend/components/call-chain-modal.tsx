@@ -21,7 +21,8 @@ import {
     Radio,
     RotateCcw,
     RefreshCw,
-    PhoneIncoming
+    PhoneIncoming,
+    GitMerge
 } from "lucide-react";
 
 import {
@@ -234,6 +235,19 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
 
     // Group all segments chronologically (combine ringing)
     const groupedSegments = useMemo(() => groupSegments(segments), [segments]);
+
+    // Jambes fusionnées (grain « appel client ») : nombre de jambes distinctes,
+    // et pour chaque groupe la jambe qui le porte — la frontière entre deux
+    // jambes est marquée d'un séparateur discret dans la chronologie.
+    const legCount = useMemo(() => {
+        const legs = new Set(segments.map((s) => s.legCallHistoryId).filter(Boolean));
+        return legs.size;
+    }, [segments]);
+
+    const groupLegIds = useMemo(
+        () => groupedSegments.map((g) => (g.queueSegment ?? g.segments[0])?.legCallHistoryId ?? null),
+        [groupedSegments],
+    );
 
     // For each queue group, find the next conversation segment to identify who answered
     const getNextAnsweringAgent = (groupIndex: number): string | null => {
@@ -574,6 +588,15 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
                         <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded">
                             <Clock className="h-4 w-4" />
                             <span>{segments.length} segment{segments.length > 1 ? "s" : ""}</span>
+                            {legCount > 1 && (
+                                <span
+                                    className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700"
+                                    title="Cet appel regroupe l'appel principal et ses jambes de transfert 3CX (réglage « Un client, un appel »). Chaque frontière de jambe est marquée dans la chronologie."
+                                >
+                                    <GitMerge className="h-3 w-3" />
+                                    Appel fusionné · {legCount} jambes
+                                </span>
+                            )}
                         </div>
 
                         {/* Main Timeline */}
@@ -582,25 +605,44 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
                                 const config = categoryConfig[group.category];
                                 const Icon = config.icon;
                                 const isLast = idx === groupedSegments.length - 1;
+                                // Frontière de jambe : le groupe appartient à une
+                                // autre jambe 3CX que le précédent (appel fusionné).
+                                const legBoundary = idx > 0
+                                    && groupLegIds[idx] !== null
+                                    && groupLegIds[idx] !== groupLegIds[idx - 1];
 
                                 return (
-                                    <div key={idx} className="relative flex gap-4 pb-4">
-                                        {/* Timeline line */}
-                                        {!isLast && (
-                                            <div className="absolute left-[19px] top-10 w-0.5 h-full bg-slate-200" />
+                                    <div key={idx}>
+                                        {legBoundary && (
+                                            <div
+                                                className="relative z-10 mb-4 flex items-center gap-2 pl-1"
+                                                title="À partir d'ici, les segments proviennent d'une jambe de transfert 3CX distincte, fusionnée dans cet appel."
+                                            >
+                                                <GitMerge className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                                                <span className="rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">
+                                                    Jambe de transfert
+                                                </span>
+                                                <div className="flex-1 border-t border-dashed border-purple-200" />
+                                            </div>
                                         )}
+                                        <div className="relative flex gap-4 pb-4">
+                                            {/* Timeline line */}
+                                            {!isLast && (
+                                                <div className="absolute left-[19px] top-10 w-0.5 h-full bg-slate-200" />
+                                            )}
 
-                                        {/* Icon */}
-                                        <div className={`relative z-10 flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center border ${config.className}`}>
-                                            <Icon className="h-5 w-5" />
+                                            {/* Icon */}
+                                            <div className={`relative z-10 flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center border ${config.className}`}>
+                                                <Icon className="h-5 w-5" />
+                                            </div>
+
+                                            {/* Content */}
+                                            {group.type === "queue_group" ? (
+                                                renderQueueGroup(group, idx)
+                                            ) : (
+                                                renderSegment(group.segments[0], false, group.category)
+                                            )}
                                         </div>
-
-                                        {/* Content */}
-                                        {group.type === "queue_group" ? (
-                                            renderQueueGroup(group, idx)
-                                        ) : (
-                                            renderSegment(group.segments[0], false, group.category)
-                                        )}
                                     </div>
                                 );
                             })}

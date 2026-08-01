@@ -20,6 +20,8 @@
 // ============================================
 
 import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
+import { cdrTable } from "@/services/domain/call-classification";
+import { getClassificationRules } from "@/lib/classification-rules";
 import type { HeatmapDataPoint } from "@/services/domain/call.types";
 import type { SearchPatternMode } from "@/services/domain/extension-search";
 import type { ExtensionDirectory } from "@/types/extension-stats.types";
@@ -185,6 +187,8 @@ export async function getInboundDayStats(
     const start = startDate.toISOString();
     const end = endDate.toISOString();
     const tz = esc(timezone);
+    // Grain de comptage partagé avec le reste de l'application (règle callGrain).
+    const cdr = cdrTable(await getClassificationRules());
 
     const query = `
     WITH match_list(entry_id, ext_number, ddi_variants, assoc_ext, pat_mode, pat_value) AS (
@@ -195,7 +199,7 @@ export async function getInboundDayStats(
         SELECT m.entry_id, s.call_history_id,
             BOOL_OR(m.ddi_variants IS NOT NULL AND s.source_participant_trunk_did = ANY(m.ddi_variants)) AS via_trunk
         FROM match_list m
-        JOIN cdroutput s ON s.cdr_started_at >= '${start}' AND s.cdr_started_at <= '${end}'
+        JOIN ${cdr} s ON s.cdr_started_at >= '${start}' AND s.cdr_started_at <= '${end}'
           AND (
               (m.ext_number IS NOT NULL AND (
                   s.destination_dn_number = m.ext_number
@@ -221,7 +225,7 @@ export async function getInboundDayStats(
             c.destination_dn_name,
             c.source_dn_type,
             c.source_participant_name
-        FROM cdroutput c
+        FROM ${cdr} c
         JOIN cand ON cand.call_history_id = c.call_history_id
         WHERE c.cdr_started_at >= '${start}' AND c.cdr_started_at <= '${end}'
         ORDER BY c.call_history_id, c.cdr_started_at ASC
@@ -258,7 +262,7 @@ export async function getInboundDayStats(
             MIN(c.cdr_started_at) AS first_started_at,
             MAX(c.cdr_ended_at) AS last_ended_at
         FROM matched_calls mc
-        JOIN cdroutput c ON c.call_history_id = mc.call_history_id
+        JOIN ${cdr} c ON c.call_history_id = mc.call_history_id
         WHERE c.cdr_started_at >= '${start}' AND c.cdr_started_at <= '${end}'
         GROUP BY mc.entry_id, c.call_history_id
     ),
@@ -268,7 +272,7 @@ export async function getInboundDayStats(
             c.destination_dn_type AS last_dest_type,
             c.destination_entity_type AS last_dest_entity_type,
             c.termination_reason_details
-        FROM cdroutput c
+        FROM ${cdr} c
         JOIN matched_calls mc ON mc.call_history_id = c.call_history_id
         WHERE c.cdr_started_at >= '${start}' AND c.cdr_started_at <= '${end}'
         ORDER BY c.call_history_id, c.cdr_ended_at DESC, c.cdr_started_at DESC, c.cdr_id DESC
@@ -279,7 +283,7 @@ export async function getInboundDayStats(
             c.cdr_answered_at AS lh_answered_at,
             c.cdr_started_at AS lh_started_at,
             c.cdr_ended_at AS lh_ended_at
-        FROM cdroutput c
+        FROM ${cdr} c
         JOIN matched_calls mc ON mc.call_history_id = c.call_history_id
         WHERE c.cdr_started_at >= '${start}' AND c.cdr_started_at <= '${end}'
           AND c.destination_dn_type = 'extension'
@@ -322,6 +326,8 @@ export async function getOutboundDayStats(
     const start = startDate.toISOString();
     const end = endDate.toISOString();
     const tz = esc(timezone);
+    // Grain de comptage partagé avec le reste de l'application (règle callGrain).
+    const cdr = cdrTable(await getClassificationRules());
 
     const query = `
     WITH match_list(entry_id, ext_number, ddi_variants, assoc_ext, pat_mode, pat_value) AS (
@@ -334,7 +340,7 @@ export async function getOutboundDayStats(
             c.cdr_started_at, c.cdr_ended_at, c.cdr_answered_at,
             c.destination_dn_type, c.destination_entity_type, c.termination_reason_details
         FROM match_list m
-        JOIN cdroutput c ON c.cdr_started_at >= '${start}' AND c.cdr_started_at <= '${end}'
+        JOIN ${cdr} c ON c.cdr_started_at >= '${start}' AND c.cdr_started_at <= '${end}'
           AND (
               (m.ext_number IS NOT NULL AND (
                   c.source_dn_number = m.ext_number
@@ -454,7 +460,7 @@ export async function getDirectory(serverId: ServerId, forceRefresh = false): Pr
         ORDER BY source_participant_trunk_did, cdr_started_at DESC
     `;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const [extRows, ddiRows] = await Promise.all([
         prisma.$queryRawUnsafe<any[]>(extensionsQuery),
         prisma.$queryRawUnsafe<any[]>(ddisQuery),
@@ -487,6 +493,8 @@ export async function getEntryHeatmap(
     const start = startDate.toISOString();
     const end = endDate.toISOString();
     const tz = esc(timezone);
+    // Grain de comptage partagé avec le reste de l'application (règle callGrain).
+    const cdr = cdrTable(await getClassificationRules());
 
     const query = `
     WITH match_list(entry_id, ext_number, ddi_variants, assoc_ext, pat_mode, pat_value) AS (
@@ -496,7 +504,7 @@ export async function getEntryHeatmap(
         SELECT m.entry_id, s.call_history_id,
             BOOL_OR(m.ddi_variants IS NOT NULL AND s.source_participant_trunk_did = ANY(m.ddi_variants)) AS via_trunk
         FROM match_list m
-        JOIN cdroutput s ON s.cdr_started_at >= '${start}' AND s.cdr_started_at <= '${end}'
+        JOIN ${cdr} s ON s.cdr_started_at >= '${start}' AND s.cdr_started_at <= '${end}'
           AND (
               (m.ext_number IS NOT NULL AND (
                   s.destination_dn_number = m.ext_number
@@ -525,7 +533,7 @@ export async function getEntryHeatmap(
             MIN(c.cdr_started_at) AS first_started_at,
             MAX(c.cdr_ended_at) AS last_ended_at
         FROM cand
-        JOIN cdroutput c ON c.call_history_id = cand.call_history_id
+        JOIN ${cdr} c ON c.call_history_id = cand.call_history_id
         WHERE c.cdr_started_at >= '${start}' AND c.cdr_started_at <= '${end}'
         GROUP BY c.call_history_id
     )

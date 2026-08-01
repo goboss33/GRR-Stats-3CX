@@ -185,6 +185,13 @@ export default function AdminLogsPage() {
         const param = searchParams.get("queueOrigin");
         return param === "queue" || param === "direct" ? param : null;
     });
+    // Provenance (toggle Externe / Interne des statistiques de groupe), posée
+    // par les liens des vignettes : la liste décrit alors exactement la
+    // population du chiffre cliqué.
+    const [callOrigin, setCallOrigin] = useState<"internal" | "external" | null>(() => {
+        const param = searchParams.get("origin");
+        return param === "internal" || param === "external" ? param : null;
+    });
     // L'écran raisonne en vignettes (Répondu / Perdu / Redirigé) ; le socle, en
     // statuts fins. DEFAULT_OUTCOME_GROUPING fait le pont, et c'est la même
     // table que celle utilisée par les statistiques.
@@ -265,6 +272,7 @@ export default function AdminLogsPage() {
         queueOutcomeFilter: queueOutcomeFilter || undefined,
         queueView: queueView || undefined,
         queueOriginFilter: queueOrigin ?? undefined,
+        callOrigin: callOrigin ?? undefined,
     };
 
     // Update URL when filters change - uses DEBOUNCED values for text search
@@ -324,6 +332,10 @@ export default function AdminLogsPage() {
             params.set("queueOrigin", queueOrigin);
         }
 
+        if (callOrigin) {
+            params.set("origin", callOrigin);
+        }
+
         if (queueOutcomeFilter) {
             params.set(
                 "queueOutcome",
@@ -354,6 +366,7 @@ export default function AdminLogsPage() {
         queueOutcomeFilter,
         queueView,
         queueOrigin,
+        callOrigin,
     ]);
 
     // Fetch data
@@ -398,10 +411,11 @@ export default function AdminLogsPage() {
         currentPage,
         sort,
         journeyFilter,
-        // Sans ces deux dependances, changer de vue file ou cocher un statut
+        // Sans ces dependances, changer de vue file ou cocher un statut
         // ne relançait aucune requête : le tableau restait figé.
         queueOutcomeFilter,
         queueView,
+        callOrigin,
     ]);
 
     // Fetch on filter/page change and update URL
@@ -603,10 +617,16 @@ export default function AdminLogsPage() {
         setCurrentPage(1);
     };
 
+    const handleRemoveCallOrigin = () => {
+        setCallOrigin(null);
+        setCurrentPage(1);
+    };
+
     const handleResetAllFilters = () => {
         // Reset all filter states
         setSelectedDirections([]);
         setSelectedStatuses([]);
+        setCallOrigin(null);
         setCallerSearch("");
         setCalleeSearch("");
         setHandledBySearch("");
@@ -744,6 +764,7 @@ export default function AdminLogsPage() {
                 onRemoveWaitTime={handleRemoveWaitTime}
                 onRemoveTimeSlots={handleRemoveTimeSlots}
                 onRemoveJourneyConditions={handleRemoveJourneyConditions}
+                onRemoveCallOrigin={handleRemoveCallOrigin}
                 onResetAll={handleResetAllFilters}
             />
 

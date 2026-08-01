@@ -77,8 +77,9 @@ const QUEUE_RULES: RuleSpec[] = [
         title: "L'appel se termine sur la messagerie",
         example: "Hors des heures d'ouverture, ou lorsqu'un agent renvoie l'appel d'un bouton.",
         options: [
-            { value: "separate", label: "Catégorie interne à part", effect: "Distinguée dans le calcul, mais affichée dans Perdus comme les autres. Permet d'isoler le phénomène plus tard sans changer les chiffres." },
-            { value: "lost", label: "Compter comme perdu", effect: "Fondue dans les abandons dès le calcul. Aucun changement visible, une catégorie de moins à maintenir." },
+            { value: "excluded", label: "Ne pas compter l'appel", effect: "Ni reçu, ni perdu : l'appel sort des statistiques du groupe. C'est la convention des rapports Excel historiques, où la messagerie ne figurait pas dans « appels reçus »." },
+            { value: "separate", label: "Catégorie interne à part", effect: "Comptée dans les reçus et distinguée dans le calcul, mais affichée dans Perdus comme les autres." },
+            { value: "lost", label: "Compter comme perdu", effect: "Fondue dans les abandons dès le calcul. Une catégorie de moins à maintenir." },
             { value: "answered", label: "Compter comme répondu", effect: "Déplace ces appels dans les Répondus. Déconseillé : chez vous l'appelant ne peut pas laisser de message, l'appel se termine simplement." },
         ],
     },
@@ -86,6 +87,15 @@ const QUEUE_RULES: RuleSpec[] = [
 
 /** Règles gouvernant le point de vue de l'entreprise. */
 const COMPANY_RULES: RuleSpec[] = [
+    {
+        key: "callGrain",
+        title: "Qu'est-ce qu'un appel ? (transferts)",
+        example: "Un client appelle, la réception décroche puis le transfère à un collègue. 3CX enregistre le transfert comme un DEUXIÈME appel, relié au premier.",
+        options: [
+            { value: "merged", label: "Un client, un appel (fusion des transferts)", effect: "Les jambes de transfert sont fusionnées dans l'appel principal. C'est le grain des rapports 3CX et de l'Excel historique ; le déroulement complet reste visible dans la modale, jambe par jambe." },
+            { value: "leg", label: "Chaque jambe compte séparément", effect: "Comportement technique brut : un client transféré une fois devient deux appels dans les totaux (~2 % de plus à l'échelle de l'entreprise, mesuré sur juin 2026)." },
+        ],
+    },
     {
         key: "outOfScopeFinalStatus",
         title: "L'appel a été traité par une file hors du périmètre du lecteur",

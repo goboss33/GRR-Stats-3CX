@@ -51,6 +51,7 @@ export function BusinessRulesTab() {
                     voicemail: data.ruleVoicemail ?? current.voicemail,
                     outOfScopeFinalStatus: data.ruleOutOfScopeFinalStatus ?? current.outOfScopeFinalStatus,
                     minAnswerSeconds: data.ruleMinAnswerSec ?? current.minAnswerSeconds,
+                    callGrain: data.ruleCallGrain ?? current.callGrain,
                 }));
                 setLoading(false);
             })
@@ -75,6 +76,7 @@ export function BusinessRulesTab() {
                     ruleVoicemail: rules.voicemail,
                     ruleOutOfScopeFinalStatus: rules.outOfScopeFinalStatus,
                     ruleMinAnswerSec: rules.minAnswerSeconds,
+                    ruleCallGrain: rules.callGrain,
                 }),
             });
             const data = await res.json();

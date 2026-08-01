@@ -29,24 +29,24 @@ function buildSqlSearchCondition(field: string, pattern: ReturnType<typeof parse
     }
 }
 
-function buildBaseWhereClause(startDate: Date, endDate: Date, queueNumber?: string): string {
+function buildBaseWhereClause(startDate: Date, endDate: Date, queueNumber?: string, cdr: string = "cdroutput"): string {
     const conditions = [
         `cdr_started_at >= '${startDate.toISOString()}'`,
         `cdr_started_at <= '${endDate.toISOString()}'`,
     ];
     if (queueNumber) {
-        conditions.push(`call_history_id IN (SELECT DISTINCT call_history_id FROM cdroutput WHERE destination_dn_number = '${queueNumber.replace(/'/g, "''")}' AND destination_dn_type = 'queue' AND cdr_started_at >= '${startDate.toISOString()}' AND cdr_started_at <= '${endDate.toISOString()}')`);
+        conditions.push(`call_history_id IN (SELECT DISTINCT call_history_id FROM ${cdr} WHERE destination_dn_number = '${queueNumber.replace(/'/g, "''")}' AND destination_dn_type = 'queue' AND cdr_started_at >= '${startDate.toISOString()}' AND cdr_started_at <= '${endDate.toISOString()}')`);
     }
     return conditions.join(" AND ");
 }
 
-function buildDateOnlyWhereClause(startDate: Date, endDate: Date, queueNumber?: string): string {
+function buildDateOnlyWhereClause(startDate: Date, endDate: Date, queueNumber?: string, cdr: string = "cdroutput"): string {
     const conditions = [
         `cdr_started_at >= '${startDate.toISOString()}'`,
         `cdr_started_at <= '${endDate.toISOString()}'`,
     ];
     if (queueNumber) {
-        conditions.push(`call_history_id IN (SELECT DISTINCT call_history_id FROM cdroutput WHERE destination_dn_number = '${queueNumber.replace(/'/g, "''")}' AND destination_dn_type = 'queue' AND cdr_started_at >= '${startDate.toISOString()}' AND cdr_started_at <= '${endDate.toISOString()}')`);
+        conditions.push(`call_history_id IN (SELECT DISTINCT call_history_id FROM ${cdr} WHERE destination_dn_number = '${queueNumber.replace(/'/g, "''")}' AND destination_dn_type = 'queue' AND cdr_started_at >= '${startDate.toISOString()}' AND cdr_started_at <= '${endDate.toISOString()}')`);
     }
     return conditions.join(" AND ");
 }
@@ -54,10 +54,12 @@ function buildDateOnlyWhereClause(startDate: Date, endDate: Date, queueNumber?: 
 export function buildAnalyticsCTEs(
     startDate: Date,
     endDate: Date,
-    queueNumber?: string
+    queueNumber?: string,
+    // Table CDR au grain choisi (cf. cdrTable) — même grain que l'application.
+    cdr: string = "cdroutput"
 ): string {
-    const whereClause = buildBaseWhereClause(startDate, endDate, queueNumber);
-    const dateOnlyWhereClause = buildDateOnlyWhereClause(startDate, endDate, queueNumber);
+    const whereClause = buildBaseWhereClause(startDate, endDate, queueNumber, cdr);
+    const dateOnlyWhereClause = buildDateOnlyWhereClause(startDate, endDate, queueNumber, cdr);
 
     return `
         WITH call_aggregates AS (
@@ -67,7 +69,7 @@ export function buildAnalyticsCTEs(
                 MIN(cdr_started_at) as first_started_at,
                 MAX(cdr_ended_at) as last_ended_at,
                 MIN(cdr_answered_at) as first_answered_at
-            FROM cdroutput
+            FROM ${cdr}
             WHERE ${whereClause}
             GROUP BY call_history_id
         ),
@@ -85,7 +87,7 @@ export function buildAnalyticsCTEs(
                 c.destination_participant_name as first_dest_participant_name,
                 c.destination_dn_name as first_dest_dn_name,
                 c.destination_dn_type
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE ${dateOnlyWhereClause}
               AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
             ORDER BY c.call_history_id, c.cdr_started_at ASC
@@ -104,7 +106,7 @@ export function buildAnalyticsCTEs(
                 cdr_ended_at as last_ended_at,
                 termination_reason,
                 termination_reason_details
-            FROM cdroutput
+            FROM ${cdr}
             WHERE ${whereClause}
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
         ),
@@ -117,7 +119,7 @@ export function buildAnalyticsCTEs(
                 cdr_started_at as last_human_started_at,
                 cdr_ended_at as last_human_ended_at,
                 termination_reason_details as last_human_termination_reason_details
-            FROM cdroutput
+            FROM ${cdr}
             WHERE ${whereClause}
               AND destination_dn_type = 'extension'
               AND COALESCE(destination_entity_type, '') != 'voicemail'
@@ -133,7 +135,7 @@ export function buildAnalyticsCTEs(
                 c.cdr_answered_at as answered_at,
                 c.cdr_ended_at as answered_ended_at,
                 EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) as talk_duration_seconds
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE ${dateOnlyWhereClause}
               AND c.cdr_answered_at IS NOT NULL
               AND c.destination_dn_type = 'extension'
@@ -151,7 +153,7 @@ export function buildAnalyticsCTEs(
                 ) as agents,
                 SUM(EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at))) as total_talk_seconds,
                 COUNT(*) as agent_count
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE ${dateOnlyWhereClause}
               AND c.cdr_answered_at IS NOT NULL
               AND c.destination_dn_type = 'extension'
@@ -173,7 +175,7 @@ export function buildAnalyticsCTEs(
                     c.call_history_id,
                     c.destination_dn_number,
                     COALESCE(c.destination_dn_name, c.destination_dn_number) as queue_name
-                FROM cdroutput c
+                FROM ${cdr} c
                 WHERE ${dateOnlyWhereClause}
                   AND c.destination_dn_type = 'queue'
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
@@ -185,7 +187,7 @@ export function buildAnalyticsCTEs(
                 p.originating_cdr_id,
                 p.destination_dn_name as agent_name,
                 p.destination_dn_number as agent_number
-            FROM cdroutput p
+            FROM ${cdr} p
             WHERE ${dateOnlyWhereClause}
               AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
               AND p.creation_forward_reason = 'polling'
@@ -194,23 +196,32 @@ export function buildAnalyticsCTEs(
         ),
         queue_overflow AS (
             SELECT c.cdr_id
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE ${dateOnlyWhereClause}
               AND c.destination_dn_type = 'queue'
               AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
               AND NOT EXISTS (
-                  SELECT 1 FROM cdroutput p
+                  SELECT 1 FROM ${cdr} p
                   WHERE p.originating_cdr_id = c.cdr_id
                     AND p.creation_forward_reason = 'polling'
                     AND p.cdr_answered_at IS NOT NULL
               )
               AND EXISTS (
-                  SELECT 1 FROM cdroutput c2
+                  SELECT 1 FROM ${cdr} c2
                   WHERE c2.call_history_id = c.call_history_id
                     AND c2.destination_dn_type = 'queue'
                     AND c2.destination_dn_number != c.destination_dn_number
                     AND c2.cdr_started_at > c.cdr_started_at
               )
+        ),
+        all_queue_passages_for_journey AS (
+            -- ⚠️ Déclarée AVANT call_journey qui la référence : une CTE non
+            -- récursive ne peut lire que les CTE qui la précèdent (42P01 sinon).
+            SELECT DISTINCT c.call_history_id, c.cdr_id
+            FROM ${cdr} c
+            WHERE ${dateOnlyWhereClause}
+              AND c.destination_dn_type = 'queue'
+              AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
         ),
         call_journey AS (
             SELECT
@@ -269,7 +280,7 @@ export function buildAnalyticsCTEs(
                                 END
                         END as step_result,
                         ROW_NUMBER() OVER (PARTITION BY c.call_history_id ORDER BY c.cdr_started_at) as step_num
-                    FROM cdroutput c
+                    FROM ${cdr} c
                     LEFT JOIN queue_outcome qo ON c.cdr_id = qo.originating_cdr_id
                     LEFT JOIN queue_overflow qov ON c.cdr_id = qov.cdr_id
                     WHERE ${dateOnlyWhereClause}
@@ -284,13 +295,6 @@ export function buildAnalyticsCTEs(
                 WHERE all_steps.step_num <= 15
             ) j
             GROUP BY j.call_history_id
-        ),
-        all_queue_passages_for_journey AS (
-            SELECT DISTINCT c.call_history_id, c.cdr_id
-            FROM cdroutput c
-            WHERE ${dateOnlyWhereClause}
-              AND c.destination_dn_type = 'queue'
-              AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
         )`;
 }
 
@@ -364,15 +368,15 @@ export function buildAnalyticsCountQuery(
     startDate: Date,
     endDate: Date,
     queueNumber: string | undefined,
-    aggregatedWhereConditions: string[]
+    aggregatedWhereConditions: string[],
+    cdr: string = "cdroutput"
 ): string {
-    const whereClause = buildBaseWhereClause(startDate, endDate, queueNumber);
-    const dateOnlyWhereClause = buildDateOnlyWhereClause(startDate, endDate, queueNumber);
+    const whereClause = buildBaseWhereClause(startDate, endDate, queueNumber, cdr);
 
     return `
         WITH call_aggregates AS (
             SELECT call_history_id
-            FROM cdroutput
+            FROM ${cdr}
             WHERE ${whereClause}
             GROUP BY call_history_id
         )

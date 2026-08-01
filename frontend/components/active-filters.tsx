@@ -26,6 +26,8 @@ interface ActiveFiltersProps {
     onRemoveWaitTime: () => void;
     onRemoveJourneyConditions?: () => void;
     onRemoveTimeSlots?: () => void;
+    /** Provenance (toggle Externe / Interne), posée par les liens des statistiques. */
+    onRemoveCallOrigin?: () => void;
     onResetAll: () => void;
 }
 
@@ -75,9 +77,25 @@ export function ActiveFilters({
     onRemoveWaitTime,
     onRemoveJourneyConditions,
     onRemoveTimeSlots,
+    onRemoveCallOrigin,
     onResetAll,
 }: ActiveFiltersProps) {
     const activeFilters: React.ReactNode[] = [];
+
+    // Provenance de l'appel (source du premier segment).
+    if (filters.callOrigin) {
+        activeFilters.push(
+            <Badge
+                key="callOrigin"
+                variant="secondary"
+                className="bg-indigo-100 text-indigo-700 gap-1 px-2 py-1 cursor-pointer hover:bg-indigo-200 transition-colors"
+                onClick={onRemoveCallOrigin}
+            >
+                Provenance : {filters.callOrigin === "internal" ? "Interne" : "Externe"}
+                <X className="h-3 w-3" />
+            </Badge>
+        );
+    }
 
     // Date range (always shown as context)
     const dateLabel = `${format(dateRange.startDate, "dd/MM/yy", { locale: fr })} - ${format(dateRange.endDate, "dd/MM/yy", { locale: fr })}`;

@@ -10,6 +10,7 @@ import {
     DEFAULT_CLASSIFICATION_RULES,
     buildQueueOutcomeSubquery,
     buildTeamCTEChain,
+    cdrTable,
     type ClassificationRules,
     type PassageOutcome,
 } from "@/services/domain/call-classification";
@@ -138,6 +139,10 @@ function buildAggregatedQueryParts(
     const limit = Math.min(100, Math.max(1, pagination.pageSize));
     const skip = (pageNumber - 1) * limit;
 
+    // Grain de comptage : la même table que les statistiques, pour que la liste
+    // des logs décrive la même population que les chiffres.
+    const cdr = cdrTable(rules);
+
     // Collecteur de paramètres liés : bind() auto-numérote les $N (aucune erreur
     // de numérotation possible). La même valeur (dates, motif de recherche) est
     // liée une seule fois et son placeholder réutilisé.
@@ -175,7 +180,7 @@ function buildAggregatedQueryParts(
             whereConditions.push(
                 parts.length > 0
                     ? `call_history_id IN (
-                           SELECT call_history_id FROM cdroutput
+                           SELECT call_history_id FROM ${cdr}
                            WHERE cdr_started_at >= ${startP} AND cdr_started_at <= ${endP}
                              AND (${parts.join(" OR ")})
                        )`
@@ -213,7 +218,7 @@ function buildAggregatedQueryParts(
                         destination_dn_name,
                         source_participant_name,
                         source_dn_type
-                    FROM cdroutput
+                    FROM ${cdr}
                     WHERE cdr_started_at >= ${startP}
                       AND cdr_started_at <= ${endP}
                     ORDER BY call_history_id, cdr_started_at ASC
@@ -230,7 +235,7 @@ function buildAggregatedQueryParts(
                 UNION
                 -- DDI search: the called DID lives in source_participant_trunk_did (any segment)
                 SELECT call_history_id
-                FROM cdroutput
+                FROM ${cdr}
                 WHERE cdr_started_at >= ${startP}
                   AND cdr_started_at <= ${endP}
                   AND ${searchCondition('source_participant_trunk_did', pattern.mode, ph)}
@@ -273,12 +278,12 @@ function buildAggregatedQueryParts(
                 c.call_history_id,
                 c.destination_dn_number AS queue_number,
                 COALESCE(c.destination_dn_name, c.destination_dn_number) AS queue_name
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE c.destination_dn_type = 'queue'
               AND c.destination_dn_number <> ${qExpr}
               AND c.cdr_started_at >= ${startP} AND c.cdr_started_at <= ${endP}
               AND EXISTS (
-                  SELECT 1 FROM cdroutput p
+                  SELECT 1 FROM ${cdr} p
                   WHERE p.originating_cdr_id = c.cdr_id
                     AND p.creation_forward_reason = 'polling'
                     AND p.cdr_answered_at IS NOT NULL
@@ -345,6 +350,14 @@ function buildAggregatedQueryParts(
     const aggregatedWhereConditions: string[] = [];
     const directionFilter = buildSqlDirectionFilter(filters.directions);
     if (directionFilter) aggregatedWhereConditions.push(directionFilter);
+    // Provenance (toggle Externe / Interne des statistiques de groupe) : même
+    // critère que le socle — la source du premier segment. `fs` est le premier
+    // segment, déjà joint par les requêtes de données ET de comptage.
+    if (filters.callOrigin === "internal") {
+        aggregatedWhereConditions.push(`COALESCE(fs.source_dn_type, '') = 'extension'`);
+    } else if (filters.callOrigin === "external") {
+        aggregatedWhereConditions.push(`COALESCE(fs.source_dn_type, '') <> 'extension'`);
+    }
     const statusFilter = buildFinalStatusFilterSQL(filters.statuses, rules.minAnswerSeconds);
     if (statusFilter) aggregatedWhereConditions.push(statusFilter);
 
@@ -486,7 +499,9 @@ function buildAggregateCTEs(
     whereClause: string,
     dateOnlyWhereClause: string,
     calleeFilterCTE: string,
-    extraCTE: string = ""
+    extraCTE: string = "",
+    // Table CDR au grain choisi (cf. cdrTable) — même grain que les statistiques.
+    cdr: string = "cdroutput"
 ): string {
     return `
         WITH call_aggregates AS (
@@ -496,7 +511,7 @@ function buildAggregateCTEs(
                 MIN(cdr_started_at) as first_started_at,
                 MAX(cdr_ended_at) as last_ended_at,
                 MIN(cdr_answered_at) as first_answered_at
-            FROM cdroutput
+            FROM ${cdr}
             WHERE ${whereClause}
             GROUP BY call_history_id
         ),
@@ -514,7 +529,7 @@ function buildAggregateCTEs(
                 c.destination_participant_name as first_dest_participant_name,
                 c.destination_dn_name as first_dest_dn_name,
                 c.destination_dn_type
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE ${dateOnlyWhereClause}
               AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
             ORDER BY c.call_history_id, c.cdr_started_at ASC
@@ -533,7 +548,7 @@ function buildAggregateCTEs(
                 cdr_ended_at as last_ended_at,
                 termination_reason,
                 termination_reason_details
-            FROM cdroutput
+            FROM ${cdr}
             WHERE ${whereClause}
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
         ),
@@ -546,7 +561,7 @@ function buildAggregateCTEs(
                 cdr_started_at as last_human_started_at,
                 cdr_ended_at as last_human_ended_at,
                 termination_reason_details as last_human_termination_reason_details
-            FROM cdroutput
+            FROM ${cdr}
             WHERE ${whereClause}
               -- Un appel SORTANT n'a jamais d'extension en destination : c'est
               -- la source. Ne retenir que les destinations « extension »
@@ -568,7 +583,7 @@ function buildAggregateCTEs(
                 c.cdr_answered_at as answered_at,
                 c.cdr_ended_at as answered_ended_at,
                 EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at)) as talk_duration_seconds
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE ${dateOnlyWhereClause}
               AND c.cdr_answered_at IS NOT NULL
               AND c.destination_dn_type = 'extension'
@@ -586,7 +601,7 @@ function buildAggregateCTEs(
                 ) as agents,
                 SUM(EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_answered_at))) as total_talk_seconds,
                 COUNT(*) as agent_count
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE ${dateOnlyWhereClause}
               AND c.cdr_answered_at IS NOT NULL
               AND c.destination_dn_type = 'extension'
@@ -608,7 +623,7 @@ function buildAggregateCTEs(
                     c.call_history_id,
                     c.destination_dn_number,
                     COALESCE(c.destination_dn_name, c.destination_dn_number) as queue_name
-                FROM cdroutput c
+                FROM ${cdr} c
                 WHERE ${dateOnlyWhereClause}
                   AND c.destination_dn_type = 'queue'
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
@@ -620,7 +635,7 @@ function buildAggregateCTEs(
                 p.originating_cdr_id,
                 p.destination_dn_name as agent_name,
                 p.destination_dn_number as agent_number
-            FROM cdroutput p
+            FROM ${cdr} p
             WHERE ${dateOnlyWhereClause}
               AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
               AND p.creation_forward_reason = 'polling'
@@ -629,18 +644,18 @@ function buildAggregateCTEs(
         ),
         queue_overflow AS (
             SELECT c.cdr_id
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE ${dateOnlyWhereClause}
               AND c.destination_dn_type = 'queue'
               AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
               AND NOT EXISTS (
-                  SELECT 1 FROM cdroutput p
+                  SELECT 1 FROM ${cdr} p
                   WHERE p.originating_cdr_id = c.cdr_id
                     AND p.creation_forward_reason = 'polling'
                     AND p.cdr_answered_at IS NOT NULL
               )
               AND EXISTS (
-                  SELECT 1 FROM cdroutput c2
+                  SELECT 1 FROM ${cdr} c2
                   WHERE c2.call_history_id = c.call_history_id
                     AND c2.destination_dn_type = 'queue'
                     AND c2.destination_dn_number != c.destination_dn_number
@@ -704,7 +719,7 @@ function buildAggregateCTEs(
                                 END
                         END as step_result,
                         ROW_NUMBER() OVER (PARTITION BY c.call_history_id ORDER BY c.cdr_started_at) as step_num
-                    FROM cdroutput c
+                    FROM ${cdr} c
                     LEFT JOIN queue_outcome qo ON c.cdr_id = qo.originating_cdr_id
                     LEFT JOIN queue_overflow qov ON c.cdr_id = qov.cdr_id
                     WHERE ${dateOnlyWhereClause}
@@ -812,10 +827,11 @@ export async function getCallLogsSQL(
 ): Promise<string> {
     await requireActionRole(["ADMIN"]);
     const timezone = await getServerTimezone(serverId);
+    const rules = await getClassificationRules();
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } =
-        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone);
+        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, undefined, rules);
 
-    return buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE)
+    return buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, "", cdrTable(rules))
         + buildDataSelect("")
         + buildDataJoins(calleeFilterJoin, aggregatedWhereConditions, sortClause, limit, skip);
 }
@@ -839,7 +855,9 @@ function buildCountQuery(
     calleeFilterCTE: string,
     calleeFilterJoin: string,
     aggregatedWhereConditions: string[],
-    filters: LogsFilters
+    filters: LogsFilters,
+    // Table CDR au grain choisi (cf. cdrTable) — même grain que les statistiques.
+    cdr: string = "cdroutput"
 ): string {
     const needsHandledBy = !!filters.handledBySearch?.trim();
     const needsCallQueues = !!filters.queueSearch?.trim();
@@ -855,7 +873,7 @@ function buildCountQuery(
                         'name', COALESCE(c.destination_dn_name, c.destination_participant_name, c.destination_dn_number)
                     ) ORDER BY c.cdr_answered_at DESC
                 ) as agents
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE ${dateOnlyWhereClause}
               AND c.cdr_answered_at IS NOT NULL
               AND c.destination_dn_type = 'extension'
@@ -878,7 +896,7 @@ function buildCountQuery(
                     c.call_history_id,
                     c.destination_dn_number,
                     COALESCE(c.destination_dn_name, c.destination_dn_number) as queue_name
-                FROM cdroutput c
+                FROM ${cdr} c
                 WHERE ${dateOnlyWhereClause}
                   AND c.destination_dn_type = 'queue'
                   AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
@@ -892,7 +910,7 @@ function buildCountQuery(
                 p.originating_cdr_id,
                 p.destination_dn_name as agent_name,
                 p.destination_dn_number as agent_number
-            FROM cdroutput p
+            FROM ${cdr} p
             WHERE ${dateOnlyWhereClause}
               AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
               AND p.creation_forward_reason = 'polling'
@@ -901,18 +919,18 @@ function buildCountQuery(
         ),
         queue_overflow AS (
             SELECT c.cdr_id
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE ${dateOnlyWhereClause}
               AND c.destination_dn_type = 'queue'
               AND c.call_history_id IN (SELECT call_history_id FROM call_aggregates)
               AND NOT EXISTS (
-                  SELECT 1 FROM cdroutput p
+                  SELECT 1 FROM ${cdr} p
                   WHERE p.originating_cdr_id = c.cdr_id
                     AND p.creation_forward_reason = 'polling'
                     AND p.cdr_answered_at IS NOT NULL
               )
               AND EXISTS (
-                  SELECT 1 FROM cdroutput c2
+                  SELECT 1 FROM ${cdr} c2
                   WHERE c2.call_history_id = c.call_history_id
                     AND c2.destination_dn_type = 'queue'
                     AND c2.destination_dn_number != c.destination_dn_number
@@ -959,7 +977,7 @@ function buildCountQuery(
                                        ELSE 'not_answered' END
                         END as step_result,
                         ROW_NUMBER() OVER (PARTITION BY c.call_history_id ORDER BY c.cdr_started_at) as step_num
-                    FROM cdroutput c
+                    FROM ${cdr} c
                     LEFT JOIN queue_outcome qo ON c.cdr_id = qo.originating_cdr_id
                     LEFT JOIN queue_overflow qov ON c.cdr_id = qov.cdr_id
                     WHERE ${dateOnlyWhereClause}
@@ -985,7 +1003,7 @@ function buildCountQuery(
                 COUNT(*) as segment_count,
                 MIN(cdr_started_at) as first_started_at,
                 MIN(cdr_answered_at) as first_answered_at
-            FROM cdroutput
+            FROM ${cdr}
             WHERE ${whereClause}
             GROUP BY call_history_id
         ),
@@ -994,7 +1012,7 @@ function buildCountQuery(
                 call_history_id,
                 source_dn_type,
                 destination_dn_type
-            FROM cdroutput
+            FROM ${cdr}
             WHERE ${dateOnlyWhereClause}
               AND call_history_id IN (SELECT call_history_id FROM call_aggregates)
             ORDER BY call_history_id, cdr_started_at ASC
@@ -1009,7 +1027,7 @@ function buildCountQuery(
                 cdr_ended_at as last_ended_at,
                 termination_reason,
                 termination_reason_details
-            FROM cdroutput
+            FROM ${cdr}
             WHERE ${whereClause}
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
         ),
@@ -1019,7 +1037,7 @@ function buildCountQuery(
                 cdr_answered_at as last_human_answered_at,
                 cdr_started_at as last_human_started_at,
                 cdr_ended_at as last_human_ended_at
-            FROM cdroutput
+            FROM ${cdr}
             WHERE ${whereClause}
               -- Un appel SORTANT n'a jamais d'extension en destination : c'est
               -- la source. Ne retenir que les destinations « extension »
@@ -1035,7 +1053,7 @@ function buildCountQuery(
             SELECT DISTINCT ON (c.call_history_id)
                 c.call_history_id,
                 c.cdr_answered_at as answered_at
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE ${dateOnlyWhereClause}
               AND c.cdr_answered_at IS NOT NULL
               AND c.destination_dn_type = 'extension'
@@ -1230,13 +1248,13 @@ export async function getAggregatedCallLogs(
     const pageNumber = Math.max(1, pagination.page);
 
     try {
-        const dataQuery = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, queueViewCTE)
+        const dataQuery = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, queueViewCTE, cdrTable(rules))
             + buildDataSelect(queueViewSelect ?? "")
             + buildDataJoins(calleeFilterJoin, aggregatedWhereConditions, sortClause, limit, skip, queueViewJoin);
 
         const countQuery = buildCountQuery(
             whereClause, dateOnlyWhereClause, calleeFilterCTE, calleeFilterJoin,
-            aggregatedWhereConditions, filters
+            aggregatedWhereConditions, filters, cdrTable(rules)
         );
 
          
@@ -1265,51 +1283,80 @@ export async function getCallChain(serverId: ServerId, callHistoryId: string): P
 
     try {
         const prisma = getPrismaCdr(serverId);
+        const rules = await getClassificationRules();
+        const cdr = cdrTable(rules);
+        const merged = rules.callGrain === "merged";
 
         // L'identifiant d'appel arrive du client : sans cette vérification, il
         // suffirait d'en deviner un pour lire la chaîne complète d'un appel hors
-        // périmètre (numéros compris).
+        // périmètre (numéros compris). Le contrôle porte sur l'appel AU GRAIN
+        // CHOISI : au grain fusionné, une jambe dans le périmètre ouvre le
+        // parcours entier — comme dans les listes qui y mènent.
         const scope = await resolveAccessScope(serverId);
         if (!scope.unrestricted) {
             if (scope.empty) return [];
-            const touches = await prisma.cdroutput.count({
-                where: {
-                    call_history_id: callHistoryId,
-                    OR: [
-                        { destination_dn_type: "queue", destination_dn_number: { in: scope.queueNumbers ?? [] } },
-                        { destination_dn_type: "extension", destination_dn_number: { in: scope.extensionNumbers ?? [] } },
-                    ],
-                },
-            });
-            if (touches === 0) return [];
+            const scopeParams: unknown[] = [callHistoryId];
+            const bindScope = (value: unknown): string => {
+                scopeParams.push(value);
+                return `$${scopeParams.length}`;
+            };
+            const scopeParts: string[] = [];
+            if (scope.queueNumbers && scope.queueNumbers.length > 0) {
+                const ph = scope.queueNumbers.map(bindScope);
+                scopeParts.push(`(destination_dn_type = 'queue' AND destination_dn_number IN (${ph.join(", ")}))`);
+            }
+            if (scope.extensionNumbers && scope.extensionNumbers.length > 0) {
+                const ph = scope.extensionNumbers.map(bindScope);
+                scopeParts.push(`(destination_dn_type = 'extension' AND destination_dn_number IN (${ph.join(", ")}))`);
+            }
+            if (scopeParts.length === 0) return [];
+            const touches = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
+                `SELECT COUNT(*) AS n FROM ${cdr}
+                 WHERE call_history_id = $1::uuid AND (${scopeParts.join(" OR ")})`,
+                ...scopeParams,
+            );
+            if (Number(touches[0]?.n ?? 0) === 0) return [];
         }
-        const segments = await prisma.cdroutput.findMany({
-            where: { call_history_id: callHistoryId },
-            orderBy: { cdr_started_at: "asc" },
-            select: {
-                cdr_id: true,
-                cdr_started_at: true,
-                cdr_answered_at: true,
-                cdr_ended_at: true,
-                source_dn_number: true,
-                source_participant_phone_number: true,
-                source_participant_name: true,
-                source_dn_name: true,
-                source_dn_type: true,
-                source_presentation: true,
-                destination_dn_number: true,
-                destination_participant_phone_number: true,
-                destination_participant_name: true,
-                destination_dn_name: true,
-                destination_dn_type: true,
-                destination_entity_type: true,
-                termination_reason: true,
-                termination_reason_details: true,
-                creation_method: true,
-                creation_forward_reason: true,
-                originating_cdr_id: true,
-            },
-        });
+
+        // Au grain fusionné, la vue expose l'identifiant de la jambe d'origine :
+        // la modale peut alors marquer chaque frontière de transfert.
+        const segments = await prisma.$queryRawUnsafe<Array<{
+            cdr_id: string;
+            cdr_started_at: Date | null;
+            cdr_answered_at: Date | null;
+            cdr_ended_at: Date | null;
+            source_dn_number: string | null;
+            source_participant_phone_number: string | null;
+            source_participant_name: string | null;
+            source_dn_name: string | null;
+            source_dn_type: string | null;
+            source_presentation: string | null;
+            destination_dn_number: string | null;
+            destination_participant_phone_number: string | null;
+            destination_participant_name: string | null;
+            destination_dn_name: string | null;
+            destination_dn_type: string | null;
+            destination_entity_type: string | null;
+            termination_reason: string | null;
+            termination_reason_details: string | null;
+            creation_method: string | null;
+            creation_forward_reason: string | null;
+            originating_cdr_id: string | null;
+            leg_call_history_id: string | null;
+        }>>(
+            `SELECT cdr_id, cdr_started_at, cdr_answered_at, cdr_ended_at,
+                    source_dn_number, source_participant_phone_number, source_participant_name,
+                    source_dn_name, source_dn_type, source_presentation,
+                    destination_dn_number, destination_participant_phone_number, destination_participant_name,
+                    destination_dn_name, destination_dn_type, destination_entity_type,
+                    termination_reason, termination_reason_details,
+                    creation_method, creation_forward_reason, originating_cdr_id,
+                    ${merged ? "leg_call_history_id" : "call_history_id AS leg_call_history_id"}
+             FROM ${cdr}
+             WHERE call_history_id = $1::uuid
+             ORDER BY cdr_started_at ASC`,
+            callHistoryId,
+        );
 
         return segments.map((seg) => {
             const startedAt = seg.cdr_started_at ? new Date(seg.cdr_started_at) : null;
@@ -1370,6 +1417,12 @@ export async function getCallChain(serverId: ServerId, callHistoryId: string): P
                 creationForwardReason: seg.creation_forward_reason || "",
                 originatingCdrId: seg.originating_cdr_id || null,
                 category,
+                legCallHistoryId: seg.leg_call_history_id || null,
+                // Une jambe fusionnée est un segment dont l'identifiant de
+                // jambe diffère de l'appel affiché — impossible au grain « jambe ».
+                isMergedLeg: merged
+                    && !!seg.leg_call_history_id
+                    && seg.leg_call_history_id !== callHistoryId,
             };
         });
     } catch (error) {
@@ -1477,7 +1530,7 @@ export async function getExtensionAggregatedStats(
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, params } =
         buildAggregatedQueryParts(startDate, endDate, filters, { page: 1, pageSize: 1 }, undefined, undefined, scope, rules);
 
-    const ctes = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE);
+    const ctes = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, "", cdrTable(rules));
 
     const statsQuery = `${ctes}
         SELECT

@@ -115,6 +115,13 @@ export interface LogsFilters {
     queueView?: string;
     /** Restreint la vue file aux appels arrivés par la file, ou en direct. */
     queueOriginFilter?: "queue" | "direct";
+    /**
+     * Provenance de l'appel : « interne » si la SOURCE de son premier segment
+     * est une extension, « externe » sinon. C'est le critère du toggle
+     * Externe / Interne des statistiques de groupe — le lien d'une vignette le
+     * transmet pour que la liste décrive la même population que le chiffre.
+     */
+    callOrigin?: "internal" | "external";
     timeSlots?: TimeSlot[];
 }
 
@@ -209,6 +216,15 @@ export interface CallChainSegment {
     creationForwardReason: string;
     originatingCdrId: string | null;
     category: SegmentCategory;
+    /**
+     * Identifiant 3CX de la jambe portant ce segment. Au grain fusionné, il
+     * diffère d'une jambe de transfert à l'autre : la modale s'en sert pour
+     * marquer discrètement chaque frontière. Au grain « jambe », il est
+     * identique pour tous les segments.
+     */
+    legCallHistoryId: string | null;
+    /** true si le segment appartient à une jambe fusionnée (pas l'appel principal). */
+    isMergedLeg: boolean;
 }
 
 // ============================================

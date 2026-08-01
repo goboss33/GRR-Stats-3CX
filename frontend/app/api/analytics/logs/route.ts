@@ -18,6 +18,8 @@ import {
     getDisplayName,
 } from "@/services/domain/call-aggregation";
 import type { CallDirection, CallStatus, LogsSort } from "@/services/domain/call.types";
+import { cdrTable } from "@/services/domain/call-classification";
+import { getClassificationRules } from "@/lib/classification-rules";
 
 function parseSortParam(sortField?: string, sortDir?: string): LogsSort | undefined {
     if (!sortField) return undefined;
@@ -51,10 +53,12 @@ export async function GET(request: NextRequest) {
 
         const skip = (page - 1) * pageSize;
 
-        const ctes = buildAnalyticsCTEs(start, end, queueNumber);
+        // Même grain de comptage que l'application (règle callGrain).
+        const cdr = cdrTable(await getClassificationRules());
+        const ctes = buildAnalyticsCTEs(start, end, queueNumber, cdr);
         const timezone = await getServerTimezone(serverId);
         const orderBy = buildAnalyticsOrderByClause(sort, timezone);
-        const countQuery = buildAnalyticsCountQuery(start, end, queueNumber, []);
+        const countQuery = buildAnalyticsCountQuery(start, end, queueNumber, [], cdr);
 
         const dataQuery = ctes + ANALYTICS_DATA_SELECT + buildAnalyticsDataJoins([], orderBy, pageSize, skip);
 

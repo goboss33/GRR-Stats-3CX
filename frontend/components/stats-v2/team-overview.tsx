@@ -5,7 +5,8 @@ import { formatDurationHuman as formatDuration } from "@/services/domain/call-ag
 import { QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, ExternalLink, TrendingUp } from "lucide-react";
-import { outcomesForBucket, sumBucket } from "@/services/domain/call-classification";
+import { outcomesForBucket, sumBucket, type CallOrigin } from "@/services/domain/call-classification";
+import { OriginToggle } from "@/components/stats-v2/origin-toggle";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import Link from "next/link";
 
@@ -15,6 +16,11 @@ interface TeamOverviewProps {
     queueNumber: string;
     startDate: string;
     endDate: string;
+    /** Provenance affichée (toggle Externe / Interne / Les deux). */
+    origin: CallOrigin;
+    onOriginChange: (origin: CallOrigin) => void;
+    /** Variantes déjà en cache ; les autres apparaissent grisées avec un spinner. */
+    loadedOrigins?: CallOrigin[];
     /** Conserve pour l'appelant : plus utilise ici depuis le socle de classement. */
     agentExtensions?: string[];
 }
@@ -29,7 +35,7 @@ const COLORS = {
     overflow: "#f59e0b",
 };
 
-export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate }: TeamOverviewProps) {
+export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate, origin, onOriginChange, loadedOrigins }: TeamOverviewProps) {
     const totalReceived = kpis.callsReceived + kpis.teamDirectReceived;
     const totalAnswered = kpis.callsAnswered + kpis.teamDirectAnswered;
     // L'ecran reste a quatre chiffres : messagerie et abandons courts sont
@@ -61,8 +67,11 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate 
     // dans la file pouvait apparaitre a la fois dans « Repondus » et « Perdus ».
     // `team` demande d'inclure les appels directs de l'equipe, exactement comme
     // les cartes qui additionnent « File » et « Directs ».
+    // La provenance choisie voyage avec le lien : la liste des logs décrit
+    // alors exactement la population du chiffre cliqué.
+    const originParam = origin !== "both" ? `&origin=${origin}` : "";
     const outcomeLink = (outcomes: readonly string[], team = true) =>
-        `/admin/logs?start=${startDate}&end=${endDate}&queueOutcome=${queueNumber}:${outcomes.join(",")}${team ? ":team" : ""}`;
+        `/admin/logs?start=${startDate}&end=${endDate}&queueOutcome=${queueNumber}:${outcomes.join(",")}${team ? ":team" : ""}${originParam}`;
 
     // Anneau externe : KPIs (Répondus, Perdus, Redirigés)
     const outcomeData = [
@@ -90,17 +99,24 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate 
     return (
         <Card>
             <CardContent className="py-6 px-6">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                {/* Header : titre, provenance et attente moyenne sur UNE ligne.
+                    Même grille 4/8 que le contenu : le toggle partage ainsi le
+                    bord gauche de la vignette « Total reçus ». Le filtre de
+                    provenance agit sur tout l'écran et voyage avec les liens
+                    des cartes. */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center mb-6">
+                    <div className="lg:col-span-4 flex items-center gap-2 text-sm font-medium text-slate-500">
                         <Users className="h-4 w-4" />
                         <span>Bilan du groupe · {queueName}</span>
                     </div>
-                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
-                        <Clock className="h-4 w-4 text-slate-500" />
-                        <span className="text-sm font-medium text-slate-700">
-                            Attente moy: <span className="text-slate-900">{formatDuration(kpis.avgWaitTimeSeconds)}</span>
-                        </span>
+                    <div className="lg:col-span-8 flex flex-wrap items-center justify-between gap-3">
+                        <OriginToggle value={origin} onChange={onOriginChange} loadedOrigins={loadedOrigins} />
+                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
+                            <Clock className="h-4 w-4 text-slate-500" />
+                            <span className="text-sm font-medium text-slate-700">
+                                Attente moy: <span className="text-slate-900">{formatDuration(kpis.avgWaitTimeSeconds)}</span>
+                            </span>
+                        </div>
                     </div>
                 </div>
 

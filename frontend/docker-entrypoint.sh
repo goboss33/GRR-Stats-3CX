@@ -27,7 +27,7 @@ if [ ! -f "$PRISMA_CLI" ]; then
     exit 1
 fi
 
-echo "→ [1/3] Migrations de données (idempotentes)…"
+echo "→ [1/4] Migrations de données (idempotentes)…"
 # Non bloquant : ces scripts sont rejoués à chaque démarrage et ne font rien
 # lorsqu'ils ont déjà été appliqués.
 for sql in prisma/sql/*.sql; do
@@ -37,7 +37,22 @@ for sql in prisma/sql/*.sql; do
         || echo "    ⚠️  échec ignoré sur $sql"
 done
 
-echo "→ [2/3] Synchronisation du schéma (prisma db push)…"
+echo "→ [2/4] Objets SQL des bases CDR (idempotents)…"
+# Les bases CDR ne sont JAMAIS synchronisées par db push (elles appartiennent à
+# l'import 3CX) : leurs index et vues sont posés par ces scripts rejouables.
+# Non bloquant : une base CDR injoignable au démarrage ne doit pas empêcher le
+# serveur de servir l'authentification et les réglages.
+for cdr_url in "$DATABASE_URL_GEROFINANCE" "$DATABASE_URL_EDIFEA"; do
+    [ -n "$cdr_url" ] || continue
+    for sql in prisma/cdr/sql/*.sql; do
+        [ -f "$sql" ] || continue
+        echo "    $sql"
+        run_prisma db execute --url="$cdr_url" --file="$sql" \
+            || echo "    ⚠️  échec ignoré sur $sql"
+    done
+done
+
+echo "→ [3/4] Synchronisation du schéma (prisma db push)…"
 # Bloquant volontairement : sans les tables attendues, l'application serait dans
 # un état indéfini. Pas de --accept-data-loss : toute opération destructive doit
 # être décidée explicitement par un humain.
@@ -52,5 +67,5 @@ if ! run_prisma db push --schema="$AUTH_SCHEMA" --skip-generate; then
     exit 1
 fi
 
-echo "→ [3/3] Démarrage du serveur"
+echo "→ [4/4] Démarrage du serveur"
 exec node server.js

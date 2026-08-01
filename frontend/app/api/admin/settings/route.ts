@@ -9,8 +9,9 @@ const RULE_FIELDS = {
     ruleMultiPassage: ["best", "last", "each"],
     ruleOverflow: ["neutral", "lost", "answered"],
     ruleDirectAndQueue: ["firstContact", "queueWins", "both"],
-    ruleVoicemail: ["separate", "lost", "answered"],
+    ruleVoicemail: ["separate", "lost", "answered", "excluded"],
     ruleOutOfScopeFinalStatus: ["name", "anonymize", "hide"],
+    ruleCallGrain: ["leg", "merged"],
 } as const;
 
 type RuleField = keyof typeof RULE_FIELDS;
@@ -27,6 +28,7 @@ function projectSettings(settings: Record<string, unknown>) {
         ruleVoicemail: settings.ruleVoicemail,
         ruleOutOfScopeFinalStatus: settings.ruleOutOfScopeFinalStatus,
         ruleMinAnswerSec: settings.ruleMinAnswerSec,
+        ruleCallGrain: settings.ruleCallGrain,
     };
 }
 

@@ -140,8 +140,10 @@ export interface ClassificationRules {
      * - "separate" : catégorie à part
      * - "lost"     : compté comme perdu
      * - "answered" : compté comme répondu
+     * - "excluded" : pas compté du tout — l'appel sort des « reçus », comme
+     *                dans les rapports Excel historiques des managers
      */
-    voicemail: "separate" | "lost" | "answered";
+    voicemail: "separate" | "lost" | "answered" | "excluded";
 
     /**
      * Statut final affiché à un utilisateur dont le périmètre ne couvre pas la
@@ -161,6 +163,35 @@ export interface ClassificationRules {
      * appels sans que personne ne puisse la constater.
      */
     minAnswerSeconds: number;
+
+    /**
+     * Unité de comptage : qu'est-ce qu'« un appel » ?
+     *
+     * 3CX crée un call_history_id DISTINCT pour chaque jambe de transfert
+     * (consultation, renvoi), relié à l'appel d'origine par
+     * main_call_history_id. Un client transféré une fois devient donc deux
+     * « appels » au grain technique — et il était compté deux fois (mesuré :
+     * 111 appels sur la file 901 en juin 2026, ~2 % à l'échelle entreprise).
+     *
+     * - "leg"    : chaque call_history_id compte (comportement historique)
+     * - "merged" : les jambes sont fusionnées dans l'appel principal — le
+     *              grain des rapports 3CX et de l'Excel des managers
+     */
+    callGrain: "leg" | "merged";
+}
+
+/**
+ * Table CDR portant le grain choisi.
+ *
+ * La vue `cdroutput_merged` présente cdroutput avec, pour call_history_id, la
+ * clé FUSIONNÉE (COALESCE(main_call_history_id, call_history_id)) — l'identité
+ * de la jambe restant lisible dans leg_call_history_id. Basculer de table
+ * suffit donc à changer le grain d'une requête sans toucher à sa logique :
+ * c'est la garantie que tous les écrans changent de grain ENSEMBLE.
+ * (Vue et index : prisma/cdr/sql/001_effective_call_id.sql.)
+ */
+export function cdrTable(rules: ClassificationRules): string {
+    return rules.callGrain === "merged" ? "cdroutput_merged" : "cdroutput";
 }
 
 /**
@@ -178,6 +209,9 @@ export const DEFAULT_CLASSIFICATION_RULES: ClassificationRules = {
     voicemail: "separate",
     outOfScopeFinalStatus: "name",
     minAnswerSeconds: 1,
+    // "leg" par défaut : le grain fusionné exige la vue cdroutput_merged en
+    // base CDR (cf. cdrTable) — une installation neuve ne doit pas en dépendre.
+    callGrain: "leg",
 };
 
 // ============================================
@@ -214,6 +248,10 @@ export function classifyPassage(facts: PassageFacts, rules: ClassificationRules)
     if (facts.toVoicemail) {
         if (rules.voicemail === "answered") return "answered";
         if (rules.voicemail === "lost") return "abandoned";
+        // "separate" ET "excluded" : le statut reste « messagerie ». Pour
+        // « excluded », c'est la couche de consommation (queue_calls,
+        // direct_calls) qui écarte l'appel — la règle décide alors de la
+        // PRÉSENCE dans les chiffres, pas du statut.
         return "voicemail";
     }
 
@@ -285,11 +323,48 @@ export function buildPassageOutcomeSQL(rules: ClassificationRules): string {
     END`;
 }
 
+/**
+ * Provenance d'un appel, du point de vue de l'équipe qui le reçoit.
+ *
+ * Le critère est la SOURCE DU PREMIER SEGMENT de l'appel : une extension →
+ * « interne » (un collègue appelle) ; tout le reste — provider, ligne externe,
+ * bridge — → « externe » (un client appelle). Au grain fusionné, le premier
+ * segment est celui de l'appel principal : une jambe de transfert interne d'un
+ * appel client reste donc un appel externe, ce qui est le sens attendu.
+ */
+export type CallOrigin = "both" | "external" | "internal";
+
+/**
+ * Condition SQL « l'appel vient de l'interne / de l'externe ».
+ *
+ * @param callIdExpr expression SQL donnant le call_history_id à qualifier
+ * @param cdr        table CDR au grain choisi (cf. cdrTable)
+ */
+export function buildOriginConditionSQL(
+    origin: CallOrigin | undefined,
+    callIdExpr: string,
+    cdr: string,
+): string {
+    if (!origin || origin === "both") return "TRUE";
+    const firstIsInternal = `(
+        SELECT COALESCE(o.source_dn_type, '') = 'extension'
+        FROM ${cdr} o
+        WHERE o.call_history_id = ${callIdExpr}
+        ORDER BY o.cdr_started_at ASC, o.cdr_id ASC
+        LIMIT 1
+    )`;
+    // « IS NOT TRUE » côté externe : un premier segment sans type de source
+    // n'est pas un appel interne, il reste compté côté externe.
+    return origin === "internal" ? `${firstIsInternal} = TRUE` : `${firstIsInternal} IS NOT TRUE`;
+}
+
 export interface PassageCTEParams {
     /** Placeholder ou littéral SQL désignant la file ; `null` = toutes les files. */
     queueExpr: string | null;
     startExpr: string;
     endExpr: string;
+    /** Provenance des appels retenus ; absent ou "both" = pas de filtre. */
+    origin?: CallOrigin;
 }
 
 /**
@@ -301,6 +376,9 @@ export interface PassageCTEParams {
  */
 export function buildQueuePassagesCTE(rules: ClassificationRules, params: PassageCTEParams): string {
     const queueFilter = params.queueExpr ? `AND c.destination_dn_number = ${params.queueExpr}` : "";
+    // Au grain fusionné, les corrélations « même appel » (débordement,
+    // messagerie) couvrent l'appel principal ET ses jambes : c'est le but.
+    const cdr = cdrTable(rules);
 
     return `
     queue_passage_facts AS (
@@ -319,7 +397,7 @@ export function buildQueuePassagesCTE(rules: ClassificationRules, params: Passag
             poll.answer_wait_seconds,
             -- Débordement : une AUTRE file est sollicitée plus tard dans l'appel.
             EXISTS (
-                SELECT 1 FROM cdroutput o
+                SELECT 1 FROM ${cdr} o
                 WHERE o.call_history_id = c.call_history_id
                   AND o.destination_dn_type = 'queue'
                   AND o.destination_dn_number <> c.destination_dn_number
@@ -329,7 +407,7 @@ export function buildQueuePassagesCTE(rules: ClassificationRules, params: Passag
             -- messageries d'une file suivante : le débordement est évalué avant
             -- dans buildPassageOutcomeSQL et l'emporte.
             EXISTS (
-                SELECT 1 FROM cdroutput v
+                SELECT 1 FROM ${cdr} v
                 WHERE v.call_history_id = c.call_history_id
                   AND COALESCE(v.destination_entity_type, '') = 'voicemail'
                   AND v.cdr_started_at >= c.cdr_started_at
@@ -338,7 +416,7 @@ export function buildQueuePassagesCTE(rules: ClassificationRules, params: Passag
             -- délai entre le début de l'appel et l'entrée en file, ce qui n'est
             -- pas une attente.
             EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) AS wait_seconds
-        FROM cdroutput c
+        FROM ${cdr} c
         LEFT JOIN LATERAL (
             SELECT
                 bool_or(p.cdr_answered_at IS NOT NULL) AS answered_here,
@@ -346,7 +424,7 @@ export function buildQueuePassagesCTE(rules: ClassificationRules, params: Passag
                     FILTER (WHERE p.cdr_answered_at IS NOT NULL) AS talk_seconds,
                 MIN(EXTRACT(EPOCH FROM (p.cdr_answered_at - c.cdr_started_at)))
                     FILTER (WHERE p.cdr_answered_at IS NOT NULL) AS answer_wait_seconds
-            FROM cdroutput p
+            FROM ${cdr} p
             WHERE p.originating_cdr_id = c.cdr_id
               AND p.creation_forward_reason = 'polling'
               AND p.destination_dn_type = 'extension'
@@ -470,21 +548,49 @@ export function buildDirectCallsCTE(
     rules: ClassificationRules,
     directCTE: string = "team_direct_segments",
     outcomesCTE: string = "call_queue_outcomes",
+    /** Condition SQL supplémentaire sur `direct_grouped.call_history_id` (provenance). */
+    extraCallCondition: string = "",
 ): string {
+    const wrapperConditions: string[] = [];
+
+    // Règle `voicemail: "excluded"` : un appel direct parti sur la messagerie
+    // sans avoir été répondu n'est pas un appel reçu — il sort du bloc, comme
+    // les statuts « messagerie » sortent du bloc file. Un appel RÉPONDU reste
+    // compté même s'il a fini par toucher une messagerie : la préséance est la
+    // même que côté file (répondu > messagerie). Le critère
+    // (destination_entity_type = 'voicemail') est celui du fait `to_voicemail`
+    // des passages en file.
+    if (rules.voicemail === "excluded") {
+        wrapperConditions.push(`(answered OR NOT EXISTS (
+            SELECT 1 FROM ${cdrTable(rules)} v
+            WHERE v.call_history_id = direct_grouped.call_history_id
+              AND COALESCE(v.destination_entity_type, '') = 'voicemail'
+        ))`);
+    }
+    if (extraCallCondition) {
+        wrapperConditions.push(extraCallCondition);
+    }
+    const wrapperWhere = wrapperConditions.length > 0
+        ? `
+        WHERE ${wrapperConditions.join("\n          AND ")}`
+        : "";
+
     return `
     direct_calls AS (
-        SELECT
-            d.call_history_id,
-            MIN(d.cdr_started_at) AS started_at,
-            bool_or(d.cdr_answered_at IS NOT NULL)
-                OR EXISTS (
-                    SELECT 1 FROM ${outcomesCTE} q
-                    WHERE q.call_history_id = d.call_history_id
-                      AND q.outcome = 'answered'
-                ) AS answered
-        FROM ${directCTE} d
-        WHERE ${buildDirectExclusionSQL(rules, "d")}
-        GROUP BY d.call_history_id
+        SELECT call_history_id, started_at, answered FROM (
+            SELECT
+                d.call_history_id,
+                MIN(d.cdr_started_at) AS started_at,
+                bool_or(d.cdr_answered_at IS NOT NULL)
+                    OR EXISTS (
+                        SELECT 1 FROM ${outcomesCTE} q
+                        WHERE q.call_history_id = d.call_history_id
+                          AND q.outcome = 'answered'
+                    ) AS answered
+            FROM ${directCTE} d
+            WHERE ${buildDirectExclusionSQL(rules, "d")}
+            GROUP BY d.call_history_id
+        ) direct_grouped${wrapperWhere}
     )`;
 }
 
@@ -502,14 +608,26 @@ export function buildDirectCallsCTE(
  */
 export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTEParams): string {
     if (!params.queueExpr) throw new Error("buildTeamCTEChain : une file doit être précisée");
+    const cdr = cdrTable(rules);
+
+    // Filtre de provenance : appliqué aux DEUX blocs de la partition
+    // (queue_calls et direct_calls), donc hérité mécaniquement par tous les
+    // consommateurs — vignettes, tableau par agent, graphiques et logs.
+    const hasOrigin = !!params.origin && params.origin !== "both";
+    const queueOriginCond = hasOrigin
+        ? `\n          AND ${buildOriginConditionSQL(params.origin, "cqo.call_history_id", cdr)}`
+        : "";
+    const directOriginCond = hasOrigin
+        ? buildOriginConditionSQL(params.origin, "direct_grouped.call_history_id", cdr)
+        : "";
 
     return `
     ${buildQueuePassagesCTE(rules, params)},
     ${buildCallQueueOutcomesCTE(rules)},
     queue_agents AS (
         SELECT DISTINCT child.destination_dn_number AS extension
-        FROM cdroutput child
-        JOIN cdroutput parent ON child.originating_cdr_id = parent.cdr_id
+        FROM ${cdr} child
+        JOIN ${cdr} parent ON child.originating_cdr_id = parent.cdr_id
         WHERE child.creation_method = 'route_to'
           AND child.creation_forward_reason = 'polling'
           AND parent.destination_dn_type = 'queue'
@@ -526,7 +644,7 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
             -- L'extension sert au tableau par agent ; les autres consommateurs
             -- l'ignorent.
             c.destination_dn_number AS extension
-        FROM cdroutput c
+        FROM ${cdr} c
         WHERE ${buildDirectSegmentWhereClause("c")}
           AND c.destination_dn_number IN (SELECT extension FROM queue_agents)
           AND c.cdr_started_at >= ${params.startExpr}
@@ -535,9 +653,14 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
     queue_calls AS (
         SELECT cqo.*
         FROM call_queue_outcomes cqo
-        WHERE ${buildQueueExclusionSQL(rules, "cqo.call_history_id", "cqo.cdr_started_at")}
+        WHERE ${buildQueueExclusionSQL(rules, "cqo.call_history_id", "cqo.cdr_started_at")}${
+            // Règle `voicemail: "excluded"` : les appels finis sur la messagerie
+            // ne comptent pas comme reçus. Écarter ici, dans la table que TOUS
+            // les consommateurs lisent (KPIs, logs, graphiques), garantit que
+            // chiffres et listes restent d'accord.
+            rules.voicemail === "excluded" ? "\n          AND cqo.outcome <> 'voicemail'" : ""}${queueOriginCond}
     ),
-    ${buildDirectCallsCTE(rules)}`;
+    ${buildDirectCallsCTE(rules, "team_direct_segments", "call_queue_outcomes", directOriginCond)}`;
 }
 
 /**
@@ -561,7 +684,7 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
             CASE WHEN p.cdr_answered_at IS NOT NULL THEN 1 ELSE 0 END AS was_answered,
             EXTRACT(EPOCH FROM (p.cdr_ended_at - p.cdr_answered_at)) AS talk_seconds,
             p.cdr_answered_at
-        FROM cdroutput p
+        FROM ${cdrTable(rules)} p
         JOIN queue_passages qp ON qp.cdr_id = p.originating_cdr_id
         JOIN queue_calls qc ON qc.call_history_id = p.call_history_id
         WHERE p.creation_forward_reason = 'polling'
@@ -595,6 +718,10 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
                 THEN EXTRACT(EPOCH FROM (d.cdr_ended_at - d.cdr_answered_at)) ELSE 0 END) AS direct_talk_time
         FROM team_direct_segments d
         WHERE ${buildDirectExclusionSQL(rules, "d")}
+          -- Même population que la vignette « Directs » : sans ce filtre, un
+          -- appel écarté du bloc (messagerie exclue) resterait compté au débit
+          -- d'un agent. Sous les autres règles, la condition est sans effet.
+          AND d.call_history_id IN (SELECT call_history_id FROM direct_calls)
         GROUP BY d.extension
     )`;
 }

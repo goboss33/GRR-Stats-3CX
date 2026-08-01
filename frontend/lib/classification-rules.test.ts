@@ -23,6 +23,7 @@ const ROW_COMPLETE = {
     ruleVoicemail: "answered",
     ruleOutOfScopeFinalStatus: "hide",
     ruleMinAnswerSec: 3,
+    ruleCallGrain: "merged",
 };
 
 beforeEach(() => {
@@ -41,6 +42,7 @@ describe("lecture des réglages", () => {
             voicemail: "answered",
             outOfScopeFinalStatus: "hide",
             minAnswerSeconds: 3,
+            callGrain: "merged",
         });
     });
 

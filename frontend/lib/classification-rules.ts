@@ -45,6 +45,7 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
                 ruleVoicemail: true,
                 ruleOutOfScopeFinalStatus: true,
                 ruleMinAnswerSec: true,
+                ruleCallGrain: true,
             },
         });
 
@@ -55,9 +56,10 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
                 // `null` est une valeur légitime : elle désactive la règle.
                 shortAbandonThresholdSeconds: row.ruleShortAbandonSec ?? null,
                 directAndQueue: pick(row.ruleDirectAndQueue, ["firstContact", "queueWins", "both"] as const, "firstContact"),
-                voicemail: pick(row.ruleVoicemail, ["separate", "lost", "answered"] as const, "separate"),
+                voicemail: pick(row.ruleVoicemail, ["separate", "lost", "answered", "excluded"] as const, "separate"),
                 outOfScopeFinalStatus: pick(row.ruleOutOfScopeFinalStatus, ["name", "anonymize", "hide"] as const, "name"),
                 minAnswerSeconds: typeof row.ruleMinAnswerSec === "number" ? row.ruleMinAnswerSec : 1,
+                callGrain: pick(row.ruleCallGrain, ["leg", "merged"] as const, "leg"),
             };
         }
     } catch {

@@ -77,10 +77,14 @@ model AppSettings {
   ruleShortAbandonSec         Int?     @default(10)
   /// Appel direct ET en file : "firstContact" | "queueWins" | "both"
   ruleDirectAndQueue          String   @default("firstContact")
-  /// Messagerie : "separate" | "lost" | "answered"
+  /// Messagerie : "separate" | "lost" | "answered" | "excluded"
   ruleVoicemail               String   @default("separate")
   /// Statut final hors périmètre : "name" | "anonymize" | "hide"
   ruleOutOfScopeFinalStatus   String   @default("name")
+  /// Unité de comptage : "leg" (jambe 3CX) | "merged" (jambes de transfert
+  /// fusionnées dans l'appel principal — exige la vue cdroutput_merged,
+  /// cf. prisma/cdr/sql/001_effective_call_id.sql)
+  ruleCallGrain               String   @default("leg")
   /// Durée minimale d'une conversation pour qu'un décroché compte comme répondu.
   ruleMinAnswerSec            Int      @default(1)
   createdAt                   DateTime @default(now())

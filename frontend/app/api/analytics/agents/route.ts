@@ -8,6 +8,7 @@ import { resolveApiKeyScope, isQueueInScope } from "@/lib/access-scope";
 import {
     buildTeamCTEChain,
     buildAgentCTEChain,
+    type CallOrigin,
 } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
 
@@ -46,9 +47,15 @@ export async function GET(request: NextRequest) {
         // « file » par la règle du premier contact resterait compté ici.
         const rules = await getClassificationRules();
 
+        // Provenance : même filtre que les vignettes, pour que la somme du
+        // tableau reste égale aux cartes.
+        const originParam = url.searchParams.get("origin");
+        const origin: CallOrigin = originParam === "internal" || originParam === "external"
+            ? originParam : "both";
+
         // Requête paramétrée : $1 = queueNumber (texte), $2 = start, $3 = end (Date).
         const query = `
-            WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3" })},
+            WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
             agent_names AS (
                 SELECT DISTINCT ON (destination_dn_number)
                     destination_dn_number as extension,

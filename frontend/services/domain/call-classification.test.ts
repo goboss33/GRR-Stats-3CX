@@ -3,10 +3,14 @@ import {
     DEFAULT_CLASSIFICATION_RULES,
     classifyPassage,
     reducePassages,
+    buildOriginConditionSQL,
     buildPassageOutcomeSQL,
     buildDirectExclusionSQL,
     buildQueueExclusionSQL,
     buildCallQueueOutcomesCTE,
+    buildDirectCallsCTE,
+    buildTeamCTEChain,
+    cdrTable,
     OUTCOME_RANK,
     DEFAULT_OUTCOME_GROUPING,
     outcomesForBucket,
@@ -82,6 +86,48 @@ describe("classifyPassage — règles reconfigurables", () => {
     it("messagerie comptée comme répondue", () => {
         const f = facts({ toVoicemail: true });
         expect(classifyPassage(f, rules({ voicemail: "answered" }))).toBe("answered");
+    });
+
+    it("messagerie exclue : le statut reste « messagerie » — la présence se joue en aval", () => {
+        // La règle "excluded" décide de la PRÉSENCE de l'appel dans les
+        // chiffres, pas de son statut : c'est queue_calls / direct_calls qui
+        // écartent l'appel, pour que tous les consommateurs le fassent ensemble.
+        const f = facts({ toVoicemail: true });
+        expect(classifyPassage(f, rules({ voicemail: "excluded" }))).toBe("voicemail");
+    });
+});
+
+describe("exclusion des messageries (voicemail: « excluded »)", () => {
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
+
+    it("le bloc file écarte les appels messagerie", () => {
+        const sql = buildTeamCTEChain(rules({ voicemail: "excluded" }), P);
+        expect(sql).toContain("cqo.outcome <> 'voicemail'");
+    });
+
+    it("sous les autres règles, le bloc file ne les écarte pas", () => {
+        for (const voicemail of ["separate", "lost", "answered"] as const) {
+            expect(buildTeamCTEChain(rules({ voicemail }), P))
+                .not.toContain("cqo.outcome <> 'voicemail'");
+        }
+    });
+
+    it("le bloc direct écarte les appels messagerie non répondus", () => {
+        const sql = buildDirectCallsCTE(rules({ voicemail: "excluded" }));
+        // Un appel répondu reste compté même passé par la messagerie ; seul
+        // l'appel non répondu fini sur messagerie sort des chiffres.
+        expect(sql).toContain("WHERE (answered OR NOT EXISTS");
+        expect(sql).toContain("destination_entity_type");
+    });
+
+    it("sous les autres règles, le bloc direct est inchangé", () => {
+        const sql = buildDirectCallsCTE(rules({ voicemail: "separate" }));
+        expect(sql).not.toContain("answered OR NOT EXISTS");
+    });
+
+    it("le SQL du statut de passage garde la branche « voicemail »", () => {
+        // L'exclusion ne remappe pas le statut : elle filtre après coup.
+        expect(buildPassageOutcomeSQL(rules({ voicemail: "excluded" }))).toContain("'voicemail'");
     });
 });
 
@@ -204,6 +250,62 @@ describe("regroupement d'affichage", () => {
 
     it("un compteur absent vaut zéro plutôt que NaN", () => {
         expect(sumBucket({ abandoned: 5 }, "lost")).toBe(5);
+    });
+});
+
+describe("provenance des appels (origin)", () => {
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
+
+    it("« both » ou absent : aucun filtre dans la chaîne", () => {
+        expect(buildTeamCTEChain(rules(), P)).not.toContain("source_dn_type = 'extension'");
+        expect(buildTeamCTEChain(rules(), { ...P, origin: "both" }))
+            .not.toContain("source_dn_type = 'extension'");
+    });
+
+    it("« internal » : la source du premier segment doit être une extension", () => {
+        const sql = buildTeamCTEChain(rules(), { ...P, origin: "internal" });
+        expect(sql).toContain("COALESCE(o.source_dn_type, '') = 'extension'");
+        expect(sql).toContain("= TRUE");
+    });
+
+    it("« external » : tout le reste, y compris une source sans type", () => {
+        const sql = buildTeamCTEChain(rules(), { ...P, origin: "external" });
+        expect(sql).toContain("IS NOT TRUE");
+    });
+
+    it("le filtre s'applique aux DEUX blocs de la partition", () => {
+        const sql = buildTeamCTEChain(rules(), { ...P, origin: "internal" });
+        // Bloc file (cqo) ET bloc directs (direct_grouped) : sans l'un des
+        // deux, le total ne serait plus la somme des vignettes.
+        expect(sql).toContain("cqo.call_history_id\n        ORDER BY");
+        expect(sql).toContain("direct_grouped.call_history_id\n        ORDER BY");
+    });
+
+    it("le critère lit la table au grain choisi", () => {
+        const sql = buildOriginConditionSQL("internal", "x.call_history_id", "cdroutput_merged");
+        expect(sql).toContain("FROM cdroutput_merged o");
+    });
+});
+
+describe("grain de comptage (callGrain)", () => {
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
+
+    it("« leg » lit la table brute, « merged » la vue fusionnée", () => {
+        expect(cdrTable(rules({ callGrain: "leg" }))).toBe("cdroutput");
+        expect(cdrTable(rules({ callGrain: "merged" }))).toBe("cdroutput_merged");
+    });
+
+    it("au grain fusionné, TOUTE la chaîne d'équipe lit la vue", () => {
+        const sql = buildTeamCTEChain(rules({ callGrain: "merged" }), P);
+        // Une seule occurrence de la table brute qui subsisterait ferait
+        // diverger les corrélations « même appel » entre jambes et principal.
+        expect(sql).not.toMatch(/\bcdroutput\b(?!_merged)/);
+        expect(sql).toContain("cdroutput_merged");
+    });
+
+    it("au grain « jambe », la vue n'apparaît nulle part", () => {
+        const sql = buildTeamCTEChain(rules({ callGrain: "leg" }), P);
+        expect(sql).not.toContain("cdroutput_merged");
     });
 });
 

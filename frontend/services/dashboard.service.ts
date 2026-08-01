@@ -10,6 +10,7 @@ import {
     getGlobalMetricsRaw,
 } from "@/services/repositories/cdr.repository";
 import { resolveAccessScope, unrestrictedScope, type AccessScope } from "@/lib/access-scope";
+import type { CallOrigin } from "@/services/domain/call-classification";
 import type {
     GlobalMetrics,
     TimelineDataPoint,
@@ -205,14 +206,15 @@ export async function getQueueTimelineData(
     serverId: ServerId,
     queueNumber: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    origin: CallOrigin = "both"
 ): Promise<TimelineDataPoint[]> {
     const diffMs = endDate.getTime() - startDate.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
     const interval = diffDays <= 2 ? "hour" : "day";
     const timezone = await getServerTimezone(serverId);
 
-    const rawData = await getQueueTimelineDataRaw(serverId, queueNumber, startDate, endDate, timezone);
+    const rawData = await getQueueTimelineDataRaw(serverId, queueNumber, startDate, endDate, timezone, origin);
 
     return rawData.map((row) => {
         const date = new Date(row.date_group);
@@ -236,10 +238,11 @@ export async function getQueueHeatmapData(
     serverId: ServerId,
     queueNumber: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    origin: CallOrigin = "both"
 ): Promise<HeatmapDataPoint[]> {
     const timezone = await getServerTimezone(serverId);
-    const rawData = await getQueueHeatmapDataRaw(serverId, queueNumber, startDate, endDate, timezone);
+    const rawData = await getQueueHeatmapDataRaw(serverId, queueNumber, startDate, endDate, timezone, origin);
     return rawData.map((row) => ({
         dayOfWeek: row.day_of_week,
         hourOfDay: row.hour_of_day,

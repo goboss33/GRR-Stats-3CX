@@ -15,9 +15,12 @@ import { Prisma } from "@prisma/cdr-client";
 import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import type { AccessScope } from "@/lib/access-scope";
 import {
+    buildOriginConditionSQL,
     buildTeamCTEChain,
+    cdrTable,
     outcomesForBucket,
     TEAM_CALLS_UNION_SQL,
+    type CallOrigin,
 } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
 import {
@@ -83,7 +86,9 @@ export interface QueueMemberRow {
  */
 // Non exportée : ce module est "use server", où tout export doit être une
 // fonction asynchrone (un helper synchrone exporté casse la compilation).
-function buildScopeFilter(scope?: AccessScope): Prisma.Sql {
+// `table` porte le grain de comptage (cf. cdrTable) : au grain fusionné, une
+// jambe dans le périmètre ramène l'appel principal ENTIER, et réciproquement.
+function buildScopeFilter(scope: AccessScope | undefined, table: Prisma.Sql): Prisma.Sql {
     if (!scope || scope.unrestricted) return Prisma.empty;
     if (scope.empty) return Prisma.sql`AND false`;
 
@@ -101,7 +106,7 @@ function buildScopeFilter(scope?: AccessScope): Prisma.Sql {
     if (conditions.length === 0) return Prisma.sql`AND false`;
 
     return Prisma.sql`AND call_history_id IN (
-        SELECT call_history_id FROM cdroutput WHERE ${Prisma.join(conditions, " OR ")}
+        SELECT call_history_id FROM ${table} WHERE ${Prisma.join(conditions, " OR ")}
     )`;
 }
 
@@ -136,7 +141,11 @@ export async function getGlobalMetricsRaw(
     scope?: AccessScope
 ): Promise<GlobalMetricsRow> {
     const prisma = getPrismaCdr(serverId);
-    const scopeFilter = buildScopeFilter(scope);
+    // Le grain de comptage (jambe ou appel fusionné) vient des règles de
+    // classement : même unité que les statistiques d'équipe et les journaux.
+    const rules = await getClassificationRules();
+    const cdr = Prisma.raw(cdrTable(rules));
+    const scopeFilter = buildScopeFilter(scope, cdr);
     // Listes de types système : du SQL, pas des valeurs (cf. note sur getTimelineDataRaw).
     const realPartyTypes = Prisma.raw(SQL_REAL_PARTY_DEST_TYPES);
     const statusCase = Prisma.raw(buildFinalStatusCaseSQL());
@@ -153,7 +162,7 @@ export async function getGlobalMetricsRaw(
                 call_history_id,
                 MIN(cdr_started_at) as first_started_at,
                 MIN(cdr_answered_at) as first_answered_at
-            FROM cdroutput
+            FROM ${cdr}
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
               ${scopeFilter}
@@ -168,7 +177,7 @@ export async function getGlobalMetricsRaw(
                 cdr_started_at as last_started_at,
                 cdr_ended_at as last_ended_at,
                 termination_reason_details
-            FROM cdroutput
+            FROM ${cdr}
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
@@ -177,7 +186,7 @@ export async function getGlobalMetricsRaw(
             SELECT DISTINCT ON (c.call_history_id)
                 c.call_history_id,
                 c.cdr_answered_at as answered_at
-            FROM cdroutput c
+            FROM ${cdr} c
             WHERE c.cdr_answered_at IS NOT NULL
               AND c.destination_dn_type = 'extension'
               AND c.cdr_started_at >= ${startDate}
@@ -190,7 +199,7 @@ export async function getGlobalMetricsRaw(
                 cdr_answered_at as lh_answered_at,
                 cdr_started_at as lh_started_at,
                 cdr_ended_at as lh_ended_at
-            FROM cdroutput
+            FROM ${cdr}
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
               AND destination_dn_type IN (${realPartyTypes})
@@ -199,7 +208,7 @@ export async function getGlobalMetricsRaw(
         ),
         agent_counts AS (
             SELECT c2.call_history_id, COUNT(DISTINCT c2.destination_dn_number) as agent_count
-            FROM cdroutput c2
+            FROM ${cdr} c2
             WHERE c2.cdr_answered_at IS NOT NULL
               AND c2.destination_dn_type = 'extension'
               AND c2.cdr_started_at >= ${startDate}
@@ -288,15 +297,17 @@ export async function getTimelineDataRaw(
     // Ce sont des constantes du code, jamais des entrées utilisateur.
     const systemDestTypes = Prisma.raw(SQL_SYSTEM_DEST_TYPES);
     const systemEntityTypes = Prisma.raw(SQL_SYSTEM_ENTITY_TYPES);
+    const rules = await getClassificationRules();
+    const cdr = Prisma.raw(cdrTable(rules));
 
     const query = Prisma.sql`
         WITH call_aggregates AS (
             SELECT call_history_id,
                    MIN(cdr_started_at) AS first_started_at
-            FROM cdroutput
+            FROM ${cdr}
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
-              ${buildScopeFilter(scope)}
+              ${buildScopeFilter(scope, cdr)}
             GROUP BY call_history_id
         ),
         last_segments AS (
@@ -308,7 +319,7 @@ export async function getTimelineDataRaw(
                 cdr_started_at AS last_started_at,
                 cdr_ended_at AS last_ended_at,
                 termination_reason_details
-            FROM cdroutput
+            FROM ${cdr}
             WHERE call_history_id IN (SELECT call_history_id FROM call_aggregates)
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
         ),
@@ -316,7 +327,7 @@ export async function getTimelineDataRaw(
             SELECT DISTINCT ON (call_history_id)
                 call_history_id,
                 cdr_answered_at AS answered_at
-            FROM cdroutput
+            FROM ${cdr}
             WHERE call_history_id IN (SELECT call_history_id FROM call_aggregates)
               AND cdr_answered_at IS NOT NULL
               AND destination_dn_type = 'extension'
@@ -374,7 +385,8 @@ export async function getQueueTimelineDataRaw(
     queueNumber: string,
     startDate: Date,
     endDate: Date,
-    timezone: string = "Europe/Zurich"
+    timezone: string = "Europe/Zurich",
+    origin: CallOrigin = "both"
 ): Promise<TimelineRow[]> {
     const prisma = getPrismaCdr(serverId);
     const rules = await getClassificationRules();
@@ -386,7 +398,7 @@ export async function getQueueTimelineDataRaw(
     const lostList = outcomesForBucket("lost").map((o) => `'${o}'`).join(", ");
 
     return prisma.$queryRawUnsafe<TimelineRow[]>(
-        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3" })},
+        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
          team_calls AS (${TEAM_CALLS_UNION_SQL})
          SELECT
              date_trunc($4, started_at AT TIME ZONE $5) AS date_group,
@@ -409,6 +421,8 @@ export async function getHeatmapDataRaw(
     scope?: AccessScope
 ): Promise<HeatmapRow[]> {
     const prisma = getPrismaCdr(serverId);
+    const rules = await getClassificationRules();
+    const cdr = Prisma.raw(cdrTable(rules));
     const queueFilter = queueNumber
         ? Prisma.sql`AND destination_dn_number = ${queueNumber} AND destination_dn_type = 'queue'`
         : Prisma.empty;
@@ -422,11 +436,11 @@ export async function getHeatmapDataRaw(
             SELECT
                 call_history_id,
                 MIN(cdr_started_at) AS first_started_at
-            FROM cdroutput
+            FROM ${cdr}
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
               ${queueFilter}
-              ${buildScopeFilter(scope)}
+              ${buildScopeFilter(scope, cdr)}
             GROUP BY call_history_id
         )
         SELECT
@@ -450,13 +464,14 @@ export async function getQueueHeatmapDataRaw(
     queueNumber: string,
     startDate: Date,
     endDate: Date,
-    timezone: string = "Europe/Zurich"
+    timezone: string = "Europe/Zurich",
+    origin: CallOrigin = "both"
 ): Promise<HeatmapRow[]> {
     const prisma = getPrismaCdr(serverId);
     const rules = await getClassificationRules();
 
     return prisma.$queryRawUnsafe<HeatmapRow[]>(
-        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3" })},
+        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
          team_calls AS (${TEAM_CALLS_UNION_SQL})
          SELECT
              EXTRACT(ISODOW FROM started_at AT TIME ZONE $4)::int AS day_of_week,
@@ -483,7 +498,10 @@ export async function getConcurrentCallsData(
     const prisma = getPrismaCdr(serverId);
     const diffMs = endDate.getTime() - startDate.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    const scopeFilter = buildScopeFilter(scope);
+    // Volontairement au grain « jambe », quel que soit le réglage : la licence
+    // 3CX compte les communications simultanées, et un transfert en cours
+    // occupe bien DEUX communications. Fusionner ici sous-estimerait la charge.
+    const scopeFilter = buildScopeFilter(scope, Prisma.raw("cdroutput"));
 
     // Granularité du regroupement selon la période analysée.
     const bucketExpr = (column: string): Prisma.Sql => {
@@ -543,18 +561,28 @@ export async function getDailyTrendRaw(
     queueNumber: string,
     startDate: Date,
     endDate: Date,
-    timezone: string = "Europe/Zurich"
+    timezone: string = "Europe/Zurich",
+    origin: CallOrigin = "both"
 ): Promise<TrendRow[]> {
     const prisma = getPrismaCdr(serverId);
-    return prisma.$queryRaw<TrendRow[]>`
+    const table = cdrTable(await getClassificationRules());
+    const cdr = Prisma.raw(table);
+    // Provenance : valeur d'énumération contrôlée, jamais une entrée libre.
+    const originCond = Prisma.raw(buildOriginConditionSQL(origin, "call_history_id", table));
+    // ⚠️ Composée avec Prisma.sql PUIS passée en argument : dans la forme
+    // « tagged template », un fragment Prisma.raw serait lié comme une VALEUR
+    // ($2) au lieu d'être injecté dans le SQL -> "syntax error at or near $2"
+    // (cf. note sur getHeatmapDataRaw).
+    const query = Prisma.sql`
         WITH unique_queue_calls AS (
             SELECT DISTINCT ON (call_history_id)
                 call_history_id, cdr_id, DATE(cdr_started_at AT TIME ZONE ${timezone}) as call_date
-            FROM cdroutput
+            FROM ${cdr}
             WHERE destination_dn_number = ${queueNumber}
               AND destination_dn_type = 'queue'
               AND cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
+              AND ${originCond}
             ORDER BY call_history_id, cdr_started_at ASC, cdr_id ASC
         ),
         daily_stats AS (
@@ -565,11 +593,12 @@ export async function getDailyTrendRaw(
                    COUNT(DISTINCT CASE WHEN c.termination_reason_details = 'terminated_by_originator'
                                   AND c.cdr_answered_at IS NULL THEN uqc.call_history_id END) as abandoned
             FROM unique_queue_calls uqc
-            LEFT JOIN cdroutput c ON c.originating_cdr_id = uqc.cdr_id
+            LEFT JOIN ${cdr} c ON c.originating_cdr_id = uqc.cdr_id
             GROUP BY uqc.call_date
         )
         SELECT * FROM daily_stats ORDER BY call_date;
     `;
+    return prisma.$queryRaw<TrendRow[]>(query);
 }
 
 export async function getHourlyTrendRaw(
@@ -577,18 +606,24 @@ export async function getHourlyTrendRaw(
     queueNumber: string,
     startDate: Date,
     endDate: Date,
-    timezone: string = "Europe/Zurich"
+    timezone: string = "Europe/Zurich",
+    origin: CallOrigin = "both"
 ): Promise<TrendRow[]> {
     const prisma = getPrismaCdr(serverId);
-    return prisma.$queryRaw<TrendRow[]>`
+    const table = cdrTable(await getClassificationRules());
+    const cdr = Prisma.raw(table);
+    const originCond = Prisma.raw(buildOriginConditionSQL(origin, "call_history_id", table));
+    // ⚠️ Même précaution que getDailyTrendRaw : Prisma.sql puis appel en argument.
+    const query = Prisma.sql`
         WITH unique_queue_calls AS (
             SELECT DISTINCT ON (call_history_id)
                 call_history_id, cdr_id, EXTRACT(HOUR FROM cdr_started_at AT TIME ZONE ${timezone}) as call_hour
-            FROM cdroutput
+            FROM ${cdr}
             WHERE destination_dn_number = ${queueNumber}
               AND destination_dn_type = 'queue'
               AND cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
+              AND ${originCond}
             ORDER BY call_history_id, cdr_started_at ASC, cdr_id ASC
         ),
         hourly_stats AS (
@@ -599,11 +634,12 @@ export async function getHourlyTrendRaw(
                    COUNT(DISTINCT CASE WHEN c.termination_reason_details = 'terminated_by_originator'
                                   AND c.cdr_answered_at IS NULL THEN uqc.call_history_id END) as abandoned
             FROM unique_queue_calls uqc
-            LEFT JOIN cdroutput c ON c.originating_cdr_id = uqc.cdr_id
+            LEFT JOIN ${cdr} c ON c.originating_cdr_id = uqc.cdr_id
             GROUP BY uqc.call_hour
         )
         SELECT * FROM hourly_stats ORDER BY call_hour;
     `;
+    return prisma.$queryRaw<TrendRow[]>(query);
 }
 
 // ============================================

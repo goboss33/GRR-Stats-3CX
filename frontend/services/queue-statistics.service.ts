@@ -21,7 +21,7 @@ import type {
     HourlyTrend,
     OverflowDestination,
 } from "@/services/domain/call.types";
-import type { PassageOutcome } from "@/services/domain/call-classification";
+import type { CallOrigin, PassageOutcome } from "@/services/domain/call-classification";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:3000";
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
@@ -88,7 +88,11 @@ export async function getQueueStatistics(
     serverId: ServerId,
     queueNumber: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    // Provenance (toggle Externe / Interne / Les deux) : transmise à TOUTES les
+    // sous-requêtes — vignettes, agents, tendances, courbe, heatmap — pour que
+    // l'écran entier décrive la même population.
+    origin: CallOrigin = "both"
 ): Promise<QueueStatistics> {
     // Une file hors périmètre doit être refusée même si son numéro est deviné :
     // masquer l'entrée du sélecteur ne suffit pas.
@@ -99,12 +103,12 @@ export async function getQueueStatistics(
 
     const [queueName, kpis, agents, dailyTrend, hourlyTrend, timelineData, heatmapData] = await Promise.all([
         getQueueName(serverId, queueNumber),
-        computeQueueKPIs(serverId, queueNumber, startDate, endDate),
-        computeAgentStats(serverId, queueNumber, startDate, endDate),
-        computeDailyTrend(serverId, queueNumber, startDate, endDate),
-        computeHourlyTrend(serverId, queueNumber, startDate, endDate),
-        getQueueTimelineData(serverId, queueNumber, startDate, endDate),
-        getQueueHeatmapData(serverId, queueNumber, startDate, endDate),
+        computeQueueKPIs(serverId, queueNumber, startDate, endDate, origin),
+        computeAgentStats(serverId, queueNumber, startDate, endDate, origin),
+        computeDailyTrend(serverId, queueNumber, startDate, endDate, origin),
+        computeHourlyTrend(serverId, queueNumber, startDate, endDate, origin),
+        getQueueTimelineData(serverId, queueNumber, startDate, endDate, origin),
+        getQueueHeatmapData(serverId, queueNumber, startDate, endDate, origin),
     ]);
 
     return {
@@ -127,13 +131,15 @@ async function computeQueueKPIs(
     serverId: ServerId,
     queueNumber: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    origin: CallOrigin = "both"
 ): Promise<QueueKPIs> {
     const apiData = await fetchApi<ApiQueueResponse>("/api/analytics/queue", {
         server: serverId,
         queueNumber,
         start: startDate.toISOString(),
         end: endDate.toISOString(),
+        origin,
     });
 
     const teamDirectReceived = apiData.directReceived;
@@ -173,13 +179,15 @@ async function computeAgentStats(
     serverId: ServerId,
     queueNumber: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    origin: CallOrigin = "both"
 ): Promise<AgentStats[]> {
     const apiData = await fetchApi<ApiAgentResponse>("/api/analytics/agents", {
         server: serverId,
         queueNumber,
         start: startDate.toISOString(),
         end: endDate.toISOString(),
+        origin,
     });
 
     return apiData.agents.map((agent) => {
@@ -207,10 +215,11 @@ async function computeDailyTrend(
     serverId: ServerId,
     queueNumber: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    origin: CallOrigin = "both"
 ): Promise<DailyTrend[]> {
     const timezone = await getServerTimezone(serverId);
-    const result = await getDailyTrendRaw(serverId, queueNumber, startDate, endDate, timezone);
+    const result = await getDailyTrendRaw(serverId, queueNumber, startDate, endDate, timezone, origin);
     return result.map((row) => {
         const dateStr = row.call_date
             ? new Date(row.call_date).toISOString().split("T")[0]
@@ -228,10 +237,11 @@ async function computeHourlyTrend(
     serverId: ServerId,
     queueNumber: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    origin: CallOrigin = "both"
 ): Promise<HourlyTrend[]> {
     const timezone = await getServerTimezone(serverId);
-    const result = await getHourlyTrendRaw(serverId, queueNumber, startDate, endDate, timezone);
+    const result = await getHourlyTrendRaw(serverId, queueNumber, startDate, endDate, timezone, origin);
 
     const hourlyMap = new Map<number, HourlyTrend>();
     for (let h = 0; h < 24; h++) {

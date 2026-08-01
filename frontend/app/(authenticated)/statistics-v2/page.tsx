@@ -3,7 +3,7 @@
 import { getSelectedServer } from "@/lib/selected-server";
 import { logger } from "@/lib/logger";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { startOfDay, endOfDay, format } from "date-fns";
 import { useUrlPeriod } from "@/lib/url-state";
 import { BarChart3, RefreshCw, Users } from "lucide-react";
@@ -19,16 +19,33 @@ import { HeatmapChart } from "@/components/heatmap-chart";
 import { QueueSelector } from "@/components/stats/queue-selector";
 import { ServerId } from "@/lib/prisma-cdr";
 import type { QueueStatistics } from "@/types/statistics.types";
+import type { CallOrigin } from "@/services/domain/call-classification";
 
+
+const ORIGINS: CallOrigin[] = ["both", "external", "internal"];
 
 export default function StatisticsV2Page() {
     const [queues, setQueues] = useState<QueueInfo[]>([]);
     const [noPerimeter, setNoPerimeter] = useState(false);
     const [selectedQueueNumber, setSelectedQueueNumber] = useState<string | null>(null);
     const [selectedQueueName, setSelectedQueueName] = useState<string>("");
-    const [statistics, setStatistics] = useState<QueueStatistics | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingQueues, setIsLoadingQueues] = useState(true);
+    // Provenance des appels (toggle Externe / Interne / Les deux) : transmise
+    // au service, qui filtre TOUTES les sous-requêtes de l'écran d'un coup.
+    const [origin, setOrigin] = useState<CallOrigin>("both");
+
+    // Cache des trois variantes de provenance pour le contexte courant
+    // (serveur + groupe + période) : la variante affichée est chargée d'abord,
+    // les deux autres suivent en tâche de fond — le toggle bascule alors sans
+    // rechargement. Le jeton de contexte écarte les réponses devenues
+    // obsolètes (changement de groupe ou de période en cours de route).
+    const [statsCache, setStatsCache] = useState<Partial<Record<CallOrigin, QueueStatistics>>>({});
+    const contextKeyRef = useRef<string>("");
+    const originRef = useRef<CallOrigin>(origin);
+    originRef.current = origin;
+
+    const statistics = statsCache[origin] ?? null;
 
     // Default to current month
     // La période vient de l'URL (cf. lib/url-state).
@@ -45,32 +62,65 @@ export default function StatisticsV2Page() {
             .finally(() => setIsLoadingQueues(false));
     }, []);
 
-    // Load statistics when queue or date changes
-    useEffect(() => {
-        logger.debug("[StatisticsV2] useEffect triggered:", { selectedQueueNumber, startDate: dateRange.startDate, endDate: dateRange.endDate });
+    /**
+     * Charge UNE variante de provenance et la range dans le cache — sauf si le
+     * contexte a changé entre-temps (la réponse est alors simplement ignorée).
+     * `withSpinner` distingue le chargement affiché (variante active) du
+     * préchargement silencieux.
+     */
+    const fetchIntoCache = useCallback(async (ctxKey: string, o: CallOrigin, withSpinner: boolean) => {
         if (!selectedQueueNumber) return;
-
-        setIsLoading(true);
-        const serverId = getSelectedServer();
-        logger.debug("[StatisticsV2] Calling getQueueStatistics with:", { serverId, queueNumber: selectedQueueNumber, startDate: dateRange.startDate, endDate: dateRange.endDate });
-        getQueueStatistics(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate)
-            .then((data) => {
-                logger.debug("[StatisticsV2] getQueueStatistics success:", data);
-                setStatistics(data);
-            })
-            .catch((error) => {
-                logger.error("[StatisticsV2] getQueueStatistics error:", error);
-            })
-            .finally(() => setIsLoading(false));
+        if (withSpinner) setIsLoading(true);
+        try {
+            const serverId = getSelectedServer();
+            const data = await getQueueStatistics(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate, o);
+            if (contextKeyRef.current !== ctxKey) return;
+            setStatsCache((cache) => ({ ...cache, [o]: data }));
+        } catch (error) {
+            logger.error("[StatisticsV2] getQueueStatistics error:", { origin: o, error });
+        } finally {
+            if (withSpinner && contextKeyRef.current === ctxKey) setIsLoading(false);
+        }
     }, [selectedQueueNumber, dateRange.startDate, dateRange.endDate]);
 
-    const handleRefresh = () => {
+    /**
+     * (Re)charge le contexte : la variante affichée d'abord — visible dès
+     * qu'elle arrive — puis les deux autres EN SÉQUENCE et en tâche de fond.
+     * Séquence volontaire : ces requêtes sont lourdes et se contentionnent
+     * quand on les parallélise (cf. note dans dashboard.service).
+     */
+    const reloadAll = useCallback((primary: CallOrigin) => {
         if (!selectedQueueNumber) return;
-        setIsLoading(true);
-        const serverId = getSelectedServer();
-        getQueueStatistics(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate)
-            .then(setStatistics)
-            .finally(() => setIsLoading(false));
+        // Date.now() dans le jeton : un « Rafraîchir » sur le même contexte
+        // doit lui aussi périmer les réponses encore en vol.
+        const ctxKey = `${getSelectedServer()}|${selectedQueueNumber}|${dateRange.startDate.toISOString()}|${dateRange.endDate.toISOString()}|${Date.now()}`;
+        contextKeyRef.current = ctxKey;
+        setStatsCache({});
+        void (async () => {
+            await fetchIntoCache(ctxKey, primary, true);
+            for (const o of ORIGINS) {
+                if (o === primary) continue;
+                if (contextKeyRef.current !== ctxKey) return;
+                await fetchIntoCache(ctxKey, o, false);
+            }
+        })();
+    }, [selectedQueueNumber, dateRange.startDate, dateRange.endDate, fetchIntoCache]);
+
+    // Load statistics when queue or date changes
+    useEffect(() => {
+        logger.debug("[StatisticsV2] contexte modifié :", { selectedQueueNumber });
+        reloadAll(originRef.current);
+    }, [reloadAll, selectedQueueNumber]);
+
+    const handleRefresh = () => reloadAll(origin);
+
+    // Bascule instantanée quand la variante est en cache ; sinon chargement
+    // classique (l'utilisateur a cliqué plus vite que le préchargement).
+    const handleOriginChange = (next: CallOrigin) => {
+        setOrigin(next);
+        if (!statsCache[next]) {
+            void fetchIntoCache(contextKeyRef.current, next, true);
+        }
     };
 
     const handleQueueSelect = (queueNumber: string, queueName: string) => {
@@ -176,6 +226,9 @@ export default function StatisticsV2Page() {
                         queueNumber={statistics.queueNumber}
                         startDate={format(dateRange.startDate, "yyyy-MM-dd")}
                         endDate={format(dateRange.endDate, "yyyy-MM-dd")}
+                        origin={origin}
+                        onOriginChange={handleOriginChange}
+                        loadedOrigins={ORIGINS.filter((o) => !!statsCache[o])}
                         agentExtensions={statistics.agents.map(a => a.extension)}
                     />
 
