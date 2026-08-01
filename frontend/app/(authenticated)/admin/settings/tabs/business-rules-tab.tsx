@@ -181,6 +181,23 @@ export function BusinessRulesTab() {
                 onMinSignificantDurationChange={setMinSignificantDurationSec}
             />
 
+            {/* Point d'enregistrement unique du seuil et des règles de
+                classement. handleSave existait sans plus aucun bouton pour
+                l'appeler (perdu lors d'une refonte de l'onglet) : les réglages
+                étaient devenus non modifiables depuis l'écran. */}
+            <div className="sticky bottom-4 z-10 flex items-center justify-end gap-3 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-md backdrop-blur">
+                <p className="text-xs text-slate-500">
+                    Les réglages ci-dessus ne s&apos;appliquent qu&apos;une fois enregistrés
+                    (effet rétroactif sur les périodes passées).
+                </p>
+                <Button onClick={handleSave} disabled={saving}>
+                    {saving
+                        ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        : <Save className="mr-2 h-4 w-4" />}
+                    Enregistrer les règles
+                </Button>
+            </div>
+
             <Card>
                 <CardHeader>
                     <CardTitle>Types de destinations système</CardTitle>
