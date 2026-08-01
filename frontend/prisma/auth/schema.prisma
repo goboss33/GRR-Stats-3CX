@@ -85,6 +85,10 @@ model AppSettings {
   /// fusionnées dans l'appel principal — exige la vue cdroutput_merged,
   /// cf. prisma/cdr/sql/001_effective_call_id.sql)
   ruleCallGrain               String   @default("leg")
+  /// Appel répondu puis servi hors du groupe : "overflow" (Redirigé) | "answered"
+  ruleAnsweredThenTransferred String   @default("overflow")
+  /// Crédit du tableau par agent : "lastAnswer" (dernier décrocheur) | "each"
+  ruleAgentCredit             String   @default("lastAnswer")
   /// Durée minimale d'une conversation pour qu'un décroché compte comme répondu.
   ruleMinAnswerSec            Int      @default(1)
   createdAt                   DateTime @default(now())

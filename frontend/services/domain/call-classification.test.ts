@@ -3,6 +3,7 @@ import {
     DEFAULT_CLASSIFICATION_RULES,
     classifyPassage,
     reducePassages,
+    buildAgentCTEChain,
     buildOriginConditionSQL,
     buildPassageOutcomeSQL,
     buildDirectExclusionSQL,
@@ -30,6 +31,7 @@ const facts = (over: Partial<PassageFacts> = {}): PassageFacts => ({
     overflowed: false,
     toVoicemail: false,
     waitSeconds: 60,
+    servedInTeam: true,
     ...over,
 });
 
@@ -94,6 +96,59 @@ describe("classifyPassage — règles reconfigurables", () => {
         // écartent l'appel, pour que tous les consommateurs le fassent ensemble.
         const f = facts({ toVoicemail: true });
         expect(classifyPassage(f, rules({ voicemail: "excluded" }))).toBe("voicemail");
+    });
+});
+
+describe("répondu puis servi hors du groupe (answeredThenTransferred)", () => {
+    it("« overflow » : répondu ici mais servi ailleurs devient Redirigé", () => {
+        const f = facts({ answeredHere: true, servedInTeam: false });
+        expect(classifyPassage(f, rules({ answeredThenTransferred: "overflow" }))).toBe("overflow");
+    });
+
+    it("« overflow » : répondu et servi dans le groupe reste Répondu", () => {
+        const f = facts({ answeredHere: true, servedInTeam: true });
+        expect(classifyPassage(f, rules({ answeredThenTransferred: "overflow" }))).toBe("answered");
+    });
+
+    it("« answered » : le décroché du groupe suffit, quelle que soit la suite", () => {
+        const f = facts({ answeredHere: true, servedInTeam: false });
+        expect(classifyPassage(f, rules({ answeredThenTransferred: "answered" }))).toBe("answered");
+    });
+
+    it("un appel non répondu ici n'est pas concerné par la règle", () => {
+        // servedInTeam ne requalifie jamais un abandon : la branche ne
+        // s'applique qu'aux appels décrochés par le groupe.
+        const f = facts({ servedInTeam: false });
+        expect(classifyPassage(f, rules({ answeredThenTransferred: "overflow" }))).toBe("abandoned");
+    });
+
+    it("le SQL reflète la branche, et l'omet quand la règle est inactive", () => {
+        expect(buildPassageOutcomeSQL(rules({ answeredThenTransferred: "overflow" })))
+            .toContain("served_in_team");
+        expect(buildPassageOutcomeSQL(rules({ answeredThenTransferred: "answered" })))
+            .not.toContain("served_in_team");
+    });
+
+    it("le bloc directs gagne un troisième sort quand la règle est active", () => {
+        const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
+        const sql = buildTeamCTEChain(rules({ answeredThenTransferred: "overflow" }), P);
+        expect(sql).toContain("ELSE 'overflow'");
+        const off = buildTeamCTEChain(rules({ answeredThenTransferred: "answered" }), P);
+        expect(off).toContain("CASE WHEN answered THEN 'answered' ELSE 'abandoned' END");
+    });
+});
+
+describe("crédit du tableau par agent (agentCredit)", () => {
+    it("« lastAnswer » : crédit au dernier décrocheur, restreint aux appels Répondus", () => {
+        const sql = buildAgentCTEChain(rules({ agentCredit: "lastAnswer" }));
+        expect(sql).toContain("la.last_agent = qp.agent_ext AND qp.outcome = 'answered'");
+        expect(sql).toContain("dla.last_ext = d.extension AND dc.outcome = 'answered'");
+    });
+
+    it("« each » : chaque décrocheur compte l'appel", () => {
+        const sql = buildAgentCTEChain(rules({ agentCredit: "each" }));
+        expect(sql).toContain("WHEN qp.was_answered = 1 THEN qp.call_history_id");
+        expect(sql).toContain("WHEN d.cdr_answered_at IS NOT NULL THEN d.call_history_id");
     });
 });
 
@@ -178,8 +233,12 @@ describe("cohérence TypeScript / SQL", () => {
     });
 
     it("le SQL reflète le remappage du débordement", () => {
-        expect(buildPassageOutcomeSQL(rules({ overflow: "lost" }))).not.toContain("'overflow'");
-        expect(buildPassageOutcomeSQL(rules({ overflow: "neutral" }))).toContain("'overflow'");
+        // Règle answeredThenTransferred neutralisée : sa branche « répondu mais
+        // servi ailleurs » produit elle aussi 'overflow', ce n'est pas l'objet
+        // de ce test.
+        const sansHandoff = { answeredThenTransferred: "answered" as const };
+        expect(buildPassageOutcomeSQL(rules({ overflow: "lost", ...sansHandoff }))).not.toContain("'overflow'");
+        expect(buildPassageOutcomeSQL(rules({ overflow: "neutral", ...sansHandoff }))).toContain("'overflow'");
     });
 
     it("le seuil est injecté comme un nombre, jamais interpolé depuis une chaîne", () => {

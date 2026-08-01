@@ -1,4 +1,4 @@
-import { buildDirectSegmentWhereClause } from "./call-aggregation";
+import { buildDirectSegmentWhereClause, SQL_REAL_PARTY_DEST_TYPES } from "./call-aggregation";
 
 /**
  * Socle de classement des appels — SOURCE UNIQUE DE VÉRITÉ.
@@ -178,6 +178,38 @@ export interface ClassificationRules {
      *              grain des rapports 3CX et de l'Excel des managers
      */
     callGrain: "leg" | "merged";
+
+    /**
+     * Appel RÉPONDU par le groupe puis reparti hors du groupe (transfert vers
+     * une autre équipe ou un numéro externe), et effectivement décroché là-bas.
+     *
+     * Le critère est le DERNIER décroché humain de l'appel : s'il est hors des
+     * agents du groupe, le client a finalement été servi ailleurs. Un transfert
+     * qui échoue (personne ne décroche ailleurs, ou l'agent reprend l'appel)
+     * laisse le groupe dernier serveur → l'appel reste Répondu.
+     *
+     * - "overflow" : compté Redirigé — l'appel n'est « Répondu » que chez
+     *                l'équipe qui a servi le client en dernier, ce qui rend les
+     *                chiffres additifs entre équipes
+     * - "answered" : compté Répondu — le groupe est jugé sur son décroché,
+     *                quelle que soit la suite
+     */
+    answeredThenTransferred: "overflow" | "answered";
+
+    /**
+     * Appel décroché par PLUSIEURS agents (transferts internes, renvois) :
+     * qui reçoit le crédit dans le tableau par agent ?
+     *
+     * - "lastAnswer" : le dernier décrocheur du groupe — la somme du tableau
+     *                  égale alors la vignette Répondus (règle historique de
+     *                  la file, étendue aux appels directs)
+     * - "each"       : chaque agent décrocheur — montre l'activité de chacun,
+     *                  mais un appel partagé compte dans plusieurs lignes et la
+     *                  somme dépasse le total
+     *
+     * Ne change QUE le tableau par agent, jamais les vignettes.
+     */
+    agentCredit: "lastAnswer" | "each";
 }
 
 /**
@@ -212,6 +244,10 @@ export const DEFAULT_CLASSIFICATION_RULES: ClassificationRules = {
     // "leg" par défaut : le grain fusionné exige la vue cdroutput_merged en
     // base CDR (cf. cdrTable) — une installation neuve ne doit pas en dépendre.
     callGrain: "leg",
+    // Arbitrages d'août 2026 : un appel n'est « Répondu » que chez l'équipe qui
+    // a servi le client en dernier, et le crédit agent suit la même logique.
+    answeredThenTransferred: "overflow",
+    agentCredit: "lastAnswer",
 };
 
 // ============================================
@@ -224,6 +260,12 @@ export interface PassageFacts {
     overflowed: boolean;
     toVoicemail: boolean;
     waitSeconds: number | null;
+    /**
+     * Le DERNIER décroché humain de l'appel appartient au groupe. Faux quand
+     * l'appel, répondu ici, a fini par être servi ailleurs (règle
+     * `answeredThenTransferred`).
+     */
+    servedInTeam: boolean;
 }
 
 /**
@@ -237,7 +279,12 @@ export interface PassageFacts {
  * file suivante.
  */
 export function classifyPassage(facts: PassageFacts, rules: ClassificationRules): PassageOutcome {
-    if (facts.answeredHere) return "answered";
+    if (facts.answeredHere) {
+        // Répondu ici mais finalement servi hors du groupe : la règle décide
+        // si le groupe garde le crédit ou si l'appel est « Redirigé ».
+        if (rules.answeredThenTransferred === "overflow" && !facts.servedInTeam) return "overflow";
+        return "answered";
+    }
 
     if (facts.overflowed) {
         if (rules.overflow === "answered") return "answered";
@@ -304,6 +351,10 @@ function sqlRankToOutcomeCase(column: string): string {
  * tables de vérité sur l'ensemble des combinaisons.
  */
 export function buildPassageOutcomeSQL(rules: ClassificationRules): string {
+    // Miroir de la branche « répondu ici mais servi ailleurs » de classifyPassage.
+    const answeredResult = rules.answeredThenTransferred === "overflow"
+        ? "CASE WHEN served_in_team THEN 'answered' ELSE 'overflow' END"
+        : "'answered'";
     const overflowResult =
         rules.overflow === "answered" ? "'answered'" : rules.overflow === "lost" ? "'abandoned'" : "'overflow'";
     const voicemailResult =
@@ -315,12 +366,43 @@ export function buildPassageOutcomeSQL(rules: ClassificationRules): string {
             : "";
 
     return `CASE
-        WHEN answered_here THEN 'answered'
+        WHEN answered_here THEN ${answeredResult}
         WHEN overflowed    THEN ${overflowResult}
         WHEN to_voicemail  THEN ${voicemailResult}
         ${shortAbandonBranch}
         ELSE 'abandoned'
     END`;
+}
+
+/**
+ * Condition SQL « le dernier décroché humain de l'appel appartient au groupe »
+ * (fait `servedInTeam`). Le groupe est la CTE `queue_agents`, qui doit donc
+ * précéder tout usage. Un appel jamais décroché vaut TRUE par convention : le
+ * fait ne sert qu'aux appels répondus, et cette convention évite de requalifier
+ * les autres branches.
+ *
+ * Renvoie "TRUE" quand la règle est inactive : aucun coût dans la requête.
+ */
+export function buildServedInTeamSQL(
+    rules: ClassificationRules,
+    callIdExpr: string,
+    params: PassageCTEParams,
+): string {
+    if (rules.answeredThenTransferred !== "overflow") return "TRUE";
+    const cdr = cdrTable(rules);
+    return `COALESCE((
+        SELECT la.destination_dn_type = 'extension'
+               AND la.destination_dn_number IN (SELECT extension FROM queue_agents)
+        FROM ${cdr} la
+        WHERE la.call_history_id = ${callIdExpr}
+          AND la.cdr_answered_at IS NOT NULL
+          AND la.destination_dn_type IN (${SQL_REAL_PARTY_DEST_TYPES})
+          AND COALESCE(la.destination_entity_type, '') != 'voicemail'
+          AND la.cdr_started_at >= ${params.startExpr}
+          AND la.cdr_started_at <= ${params.endExpr}
+        ORDER BY la.cdr_ended_at DESC, la.cdr_started_at DESC, la.cdr_id DESC
+        LIMIT 1
+    ), TRUE)`;
 }
 
 /**
@@ -415,7 +497,10 @@ export function buildQueuePassagesCTE(rules: ClassificationRules, params: Passag
             -- Temps réellement passé DANS la file. L'ancien calcul mesurait le
             -- délai entre le début de l'appel et l'entrée en file, ce qui n'est
             -- pas une attente.
-            EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) AS wait_seconds
+            EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) AS wait_seconds,
+            -- Le dernier décroché humain de l'appel est-il un agent du groupe ?
+            -- (règle answeredThenTransferred ; "TRUE" constant quand inactive)
+            ${buildServedInTeamSQL(rules, "c.call_history_id", params)} AS served_in_team
         FROM ${cdr} c
         LEFT JOIN LATERAL (
             SELECT
@@ -550,6 +635,11 @@ export function buildDirectCallsCTE(
     outcomesCTE: string = "call_queue_outcomes",
     /** Condition SQL supplémentaire sur `direct_grouped.call_history_id` (provenance). */
     extraCallCondition: string = "",
+    /**
+     * Condition « servi dans le groupe » sur `direct_grouped.call_history_id`
+     * (règle answeredThenTransferred). Vide = règle inactive, sorts binaires.
+     */
+    servedInTeamCondition: string = "",
 ): string {
     const wrapperConditions: string[] = [];
 
@@ -575,9 +665,23 @@ export function buildDirectCallsCTE(
         WHERE ${wrapperConditions.join("\n          AND ")}`
         : "";
 
+    // Statut du bloc directs — trois sorts possibles depuis la règle
+    // `answeredThenTransferred` : répondu, redirigé (répondu ici mais servi
+    // ailleurs), ou abandonné. Le CASE est l'unique définition, consommée par
+    // les vignettes, les graphiques et le filtre du clic vers les logs.
+    const directOutcome = servedInTeamCondition
+        ? `CASE
+                WHEN NOT answered THEN 'abandoned'
+                WHEN ${servedInTeamCondition} THEN 'answered'
+                ELSE 'overflow'
+           END`
+        : `CASE WHEN answered THEN 'answered' ELSE 'abandoned' END`;
+
     return `
     direct_calls AS (
-        SELECT call_history_id, started_at, answered FROM (
+        SELECT call_history_id, started_at,
+               ${directOutcome} AS outcome
+        FROM (
             SELECT
                 d.call_history_id,
                 MIN(d.cdr_started_at) AS started_at,
@@ -621,9 +725,16 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
         ? buildOriginConditionSQL(params.origin, "direct_grouped.call_history_id", cdr)
         : "";
 
+    // Fait « servi dans le groupe » pour le bloc directs (même définition que
+    // côté file). Vide quand la règle est inactive.
+    const directServedCond = rules.answeredThenTransferred === "overflow"
+        ? buildServedInTeamSQL(rules, "direct_grouped.call_history_id", params)
+        : "";
+
+    // ⚠️ queue_agents est déclarée EN PREMIER : le fait served_in_team des
+    // passages la référence, et une CTE non récursive ne peut lire que les CTE
+    // qui la précèdent.
     return `
-    ${buildQueuePassagesCTE(rules, params)},
-    ${buildCallQueueOutcomesCTE(rules)},
     queue_agents AS (
         SELECT DISTINCT child.destination_dn_number AS extension
         FROM ${cdr} child
@@ -635,6 +746,8 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
           AND child.cdr_started_at >= ${params.startExpr}
           AND child.cdr_started_at <= ${params.endExpr}
     ),
+    ${buildQueuePassagesCTE(rules, params)},
+    ${buildCallQueueOutcomesCTE(rules)},
     team_direct_segments AS (
         SELECT
             c.call_history_id,
@@ -660,7 +773,7 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
             // chiffres et listes restent d'accord.
             rules.voicemail === "excluded" ? "\n          AND cqo.outcome <> 'voicemail'" : ""}${queueOriginCond}
     ),
-    ${buildDirectCallsCTE(rules, "team_direct_segments", "call_queue_outcomes", directOriginCond)}`;
+    ${buildDirectCallsCTE(rules, "team_direct_segments", "call_queue_outcomes", directOriginCond, directServedCond)}`;
 }
 
 /**
@@ -670,11 +783,35 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
  * écarté du bloc « file » par la règle du premier contact resterait compté au
  * crédit d'un agent, et la somme du tableau dépasserait la vignette.
  *
- * Invariant garanti : chaque appel répondu a exactement un agent « résolveur »
- * (le dernier à avoir décroché), donc la somme de `resolved` sur les agents
- * égale le nombre d'appels répondus du bloc « file ».
+ * Le CRÉDIT suit la règle `agentCredit` :
+ * - "lastAnswer" : un appel répondu est crédité au dernier décrocheur du
+ *   groupe, et seulement s'il est resté « Répondu » (un appel requalifié
+ *   Redirigé par `answeredThenTransferred` ne crédite personne). Invariant :
+ *   la somme des crédits égale la vignette Répondus, bloc par bloc.
+ * - "each" : chaque agent décrocheur compte l'appel — la somme peut dépasser
+ *   la vignette, c'est le prix de la lecture « activité de chacun ».
+ *
+ * Les SOLLICITATIONS (calls_received / direct_received) restent par agent dans
+ * tous les cas : un appel qui sonne chez trois agents a occupé trois personnes.
  */
 export function buildAgentCTEChain(rules: ClassificationRules): string {
+    const lastAnswerCredit = rules.agentCredit === "lastAnswer";
+
+    // File : crédit au dernier décrocheur (restreint aux appels Répondus), ou
+    // à chaque décrocheur.
+    const queueResolved = lastAnswerCredit
+        ? `COUNT(DISTINCT CASE WHEN la.last_agent = qp.agent_ext AND qp.outcome = 'answered'
+                THEN qp.call_history_id END) AS resolved`
+        : `COUNT(DISTINCT CASE WHEN qp.was_answered = 1 THEN qp.call_history_id END) AS resolved`;
+
+    // Directs : même logique. NB : sous « firstContact », un appel direct
+    // répondu via la file n'a pas de décroché direct — il reste alors sans
+    // crédit dans le tableau (cas marginal, documenté).
+    const directAnswered = lastAnswerCredit
+        ? `COUNT(DISTINCT CASE WHEN dla.last_ext = d.extension AND dc.outcome = 'answered'
+                THEN d.call_history_id END) AS direct_answered`
+        : `COUNT(DISTINCT CASE WHEN d.cdr_answered_at IS NOT NULL THEN d.call_history_id END) AS direct_answered`;
+
     return `
     queue_polling AS (
         SELECT
@@ -683,7 +820,8 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
             p.destination_dn_number AS agent_ext,
             CASE WHEN p.cdr_answered_at IS NOT NULL THEN 1 ELSE 0 END AS was_answered,
             EXTRACT(EPOCH FROM (p.cdr_ended_at - p.cdr_answered_at)) AS talk_seconds,
-            p.cdr_answered_at
+            p.cdr_answered_at,
+            qc.outcome
         FROM ${cdrTable(rules)} p
         JOIN queue_passages qp ON qp.cdr_id = p.originating_cdr_id
         JOIN queue_calls qc ON qc.call_history_id = p.call_history_id
@@ -702,26 +840,36 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
         SELECT
             qp.agent_ext AS extension,
             COUNT(DISTINCT qp.originating_cdr_id) AS calls_received,
-            COUNT(DISTINCT CASE WHEN la.last_agent = qp.agent_ext THEN qp.call_history_id END) AS resolved,
+            ${queueResolved},
             SUM(CASE WHEN qp.was_answered = 1 THEN qp.talk_seconds ELSE 0 END) AS queue_talk_time
         FROM queue_polling qp
         LEFT JOIN last_answered_agent la ON qp.call_history_id = la.call_history_id
         WHERE qp.agent_ext IN (SELECT extension FROM queue_agents)
         GROUP BY qp.agent_ext
     ),
+    direct_last_answer AS (
+        -- Dernier décrocheur DIRECT de chaque appel du bloc directs.
+        SELECT DISTINCT ON (d.call_history_id)
+            d.call_history_id,
+            d.extension AS last_ext
+        FROM team_direct_segments d
+        WHERE ${buildDirectExclusionSQL(rules, "d")}
+          AND d.cdr_answered_at IS NOT NULL
+        ORDER BY d.call_history_id, d.cdr_answered_at DESC, d.cdr_ended_at DESC
+    ),
     agent_direct AS (
         SELECT
             d.extension,
             COUNT(DISTINCT d.call_history_id) AS direct_received,
-            COUNT(DISTINCT CASE WHEN d.cdr_answered_at IS NOT NULL THEN d.call_history_id END) AS direct_answered,
+            ${directAnswered},
             SUM(CASE WHEN d.cdr_answered_at IS NOT NULL
                 THEN EXTRACT(EPOCH FROM (d.cdr_ended_at - d.cdr_answered_at)) ELSE 0 END) AS direct_talk_time
         FROM team_direct_segments d
+        -- Même population que la vignette « Directs » : un appel écarté du bloc
+        -- (messagerie exclue, provenance) ne compte pas au débit d'un agent.
+        JOIN direct_calls dc ON dc.call_history_id = d.call_history_id
+        LEFT JOIN direct_last_answer dla ON dla.call_history_id = d.call_history_id
         WHERE ${buildDirectExclusionSQL(rules, "d")}
-          -- Même population que la vignette « Directs » : sans ce filtre, un
-          -- appel écarté du bloc (messagerie exclue) resterait compté au débit
-          -- d'un agent. Sous les autres règles, la condition est sans effet.
-          AND d.call_history_id IN (SELECT call_history_id FROM direct_calls)
         GROUP BY d.extension
     )`;
 }
@@ -751,16 +899,20 @@ export function buildQueueOutcomeSubquery(
     // Les cartes du bilan d'équipe additionnent file ET appels directs ; le
     // filtre doit donc couvrir la même union, sans quoi le clic sur « Total
     // reçus » ne ramènerait que la part « file ».
-    // Côté directs, seuls deux sorts existent : répondu, ou perdu.
+    // Côté directs, trois sorts existent : répondu, redirigé (règle
+    // answeredThenTransferred), ou perdu.
+    const DIRECT_OUTCOMES: PassageOutcome[] = ["answered", "overflow", "abandoned"];
     const directMapped: string[] = [];
     if (params.includeTeamDirect) {
-        // Un appel direct n'a que deux sorts possibles. Si aucun statut de file
-        // n'est demandé, c'est qu'on veut les directs dans leur ensemble.
+        // Si aucun statut de file n'est demandé, c'est qu'on veut les directs
+        // dans leur ensemble.
         if (params.outcomes.length === 0) {
             directMapped.push("TRUE");
         } else {
-            if (params.outcomes.includes("answered")) directMapped.push("answered");
-            if (params.outcomes.includes("abandoned")) directMapped.push("NOT answered");
+            const wanted = DIRECT_OUTCOMES.filter((o) => params.outcomes.includes(o));
+            if (wanted.length > 0) {
+                directMapped.push(`outcome IN (${wanted.map((o) => `'${o}'`).join(", ")})`);
+            }
         }
     }
 
@@ -797,8 +949,7 @@ export const TEAM_CALLS_UNION_SQL = `
     SELECT call_history_id, cdr_started_at AS started_at, outcome
     FROM queue_calls
     UNION ALL
-    SELECT call_history_id, started_at,
-           CASE WHEN answered THEN 'answered' ELSE 'abandoned' END AS outcome
+    SELECT call_history_id, started_at, outcome
     FROM direct_calls
 `;
 

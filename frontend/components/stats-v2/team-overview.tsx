@@ -44,7 +44,9 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
     // sert a la fois a additionner et a construire le lien, donc les deux ne
     // peuvent pas diverger.
     const totalLost = sumBucket(kpis.outcomeCounts, "lost") + kpis.directLost;
-    const totalOverflow = kpis.callsOverflow;
+    // Redirigés = file ET directs : un appel direct répondu ici mais servi hors
+    // du groupe (règle answeredThenTransferred) est lui aussi reparti ailleurs.
+    const totalOverflow = kpis.callsOverflow + kpis.directOverflow;
     const performanceRate = totalReceived > 0
         ? Math.round((totalAnswered / totalReceived) * 100)
         : 0;
@@ -251,9 +253,10 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                 </div>
                             </Link>
 
-                            {/* Redirigés */}
+                            {/* Redirigés — file + directs : le lien inclut les
+                                directs (team) pour lister la même population. */}
                             <Link
-                                href={outcomeLink(outcomesForBucket("overflow"), false)}
+                                href={outcomeLink(outcomesForBucket("overflow"))}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-amber-300 hover:shadow-md transition-all cursor-pointer"
@@ -267,7 +270,7 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                 </div>
                                 <div className="text-2xl font-bold text-amber-700">{totalOverflow}</div>
                                 <div className="text-[10px] text-slate-500 mt-0.5">
-                                    Vers autres files
+                                    File: {kpis.callsOverflow} · Directs: {kpis.directOverflow}
                                 </div>
                             </Link>
 

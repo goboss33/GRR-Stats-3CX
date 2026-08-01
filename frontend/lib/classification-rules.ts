@@ -46,6 +46,8 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
                 ruleOutOfScopeFinalStatus: true,
                 ruleMinAnswerSec: true,
                 ruleCallGrain: true,
+                ruleAnsweredThenTransferred: true,
+                ruleAgentCredit: true,
             },
         });
 
@@ -60,6 +62,8 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
                 outOfScopeFinalStatus: pick(row.ruleOutOfScopeFinalStatus, ["name", "anonymize", "hide"] as const, "name"),
                 minAnswerSeconds: typeof row.ruleMinAnswerSec === "number" ? row.ruleMinAnswerSec : 1,
                 callGrain: pick(row.ruleCallGrain, ["leg", "merged"] as const, "leg"),
+                answeredThenTransferred: pick(row.ruleAnsweredThenTransferred, ["overflow", "answered"] as const, "overflow"),
+                agentCredit: pick(row.ruleAgentCredit, ["lastAnswer", "each"] as const, "lastAnswer"),
             };
         }
     } catch {

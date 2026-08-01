@@ -318,6 +318,8 @@ export interface QueueKPIs {
     pingPongPercentage: number;
     teamDirectReceived: number;
     teamDirectAnswered: number;
+    /** Directs répondus ici mais servis hors du groupe (règle answeredThenTransferred). */
+    directOverflow: number;
     directLost: number;
     overflowDestinations: OverflowDestination[];
     avgWaitTimeSeconds: number;

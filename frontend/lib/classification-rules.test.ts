@@ -24,6 +24,8 @@ const ROW_COMPLETE = {
     ruleOutOfScopeFinalStatus: "hide",
     ruleMinAnswerSec: 3,
     ruleCallGrain: "merged",
+    ruleAnsweredThenTransferred: "answered",
+    ruleAgentCredit: "each",
 };
 
 beforeEach(() => {
@@ -43,6 +45,8 @@ describe("lecture des réglages", () => {
             outOfScopeFinalStatus: "hide",
             minAnswerSeconds: 3,
             callGrain: "merged",
+            answeredThenTransferred: "answered",
+            agentCredit: "each",
         });
     });
 

@@ -110,7 +110,7 @@ const CURRENT = `
         (SELECT COUNT(*) FROM queue_calls WHERE outcome='voicemail') as messagerie,
         (SELECT COUNT(*) FROM queue_calls WHERE outcome='short_abandon') as abandons_courts,
         (SELECT COUNT(*) FROM direct_calls) as directs_recus,
-        (SELECT COUNT(*) FROM direct_calls WHERE answered) as directs_repondus
+        (SELECT COUNT(*) FROM direct_calls WHERE outcome = 'answered') as directs_repondus
 `;
 
 const CHAMPS = ["recus", "repondus", "perdus", "rediriges", "messagerie", "abandons_courts", "directs_recus", "directs_repondus"] as const;

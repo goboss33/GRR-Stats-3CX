@@ -295,15 +295,10 @@ function buildAggregatedQueryParts(
         LEFT JOIN direct_calls dc ON dc.call_history_id = ca.call_history_id
         LEFT JOIN answering_queue aq ON aq.call_history_id = ca.call_history_id`;
         // Un appel direct de l'équipe a lui aussi un sort, et la vignette le
-        // compte (« Répondus : File 32 · Directs 620 »). Il n'a que deux issues
-        // possibles, faute de passage en file : répondu, ou perdu.
+        // compte (« Répondus : File 32 · Directs 620 »). Trois issues possibles :
+        // répondu, redirigé (servi hors du groupe), ou perdu.
         queueViewSelect = `,
-            COALESCE(
-                qv.outcome,
-                CASE WHEN dc.call_history_id IS NOT NULL
-                     THEN CASE WHEN dc.answered THEN 'answered' ELSE 'abandoned' END
-                END
-            ) as queue_view_status,
+            COALESCE(qv.outcome, dc.outcome) as queue_view_status,
             (dc.call_history_id IS NOT NULL) as queue_view_is_direct,
             aq.queue_number as answering_queue_number,
             aq.queue_name as answering_queue_name`;

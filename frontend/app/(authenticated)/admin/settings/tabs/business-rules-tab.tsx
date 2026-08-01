@@ -52,6 +52,8 @@ export function BusinessRulesTab() {
                     outOfScopeFinalStatus: data.ruleOutOfScopeFinalStatus ?? current.outOfScopeFinalStatus,
                     minAnswerSeconds: data.ruleMinAnswerSec ?? current.minAnswerSeconds,
                     callGrain: data.ruleCallGrain ?? current.callGrain,
+                    answeredThenTransferred: data.ruleAnsweredThenTransferred ?? current.answeredThenTransferred,
+                    agentCredit: data.ruleAgentCredit ?? current.agentCredit,
                 }));
                 setLoading(false);
             })
@@ -77,6 +79,8 @@ export function BusinessRulesTab() {
                     ruleOutOfScopeFinalStatus: rules.outOfScopeFinalStatus,
                     ruleMinAnswerSec: rules.minAnswerSeconds,
                     ruleCallGrain: rules.callGrain,
+                    ruleAnsweredThenTransferred: rules.answeredThenTransferred,
+                    ruleAgentCredit: rules.agentCredit,
                 }),
             });
             const data = await res.json();

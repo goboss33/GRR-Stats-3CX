@@ -73,6 +73,24 @@ const QUEUE_RULES: RuleSpec[] = [
         ],
     },
     {
+        key: "answeredThenTransferred",
+        title: "L'appel est répondu puis transféré hors du groupe",
+        example: "La réception décroche, puis transfère à une autre équipe (ou un numéro externe) qui décroche à son tour. Le client a finalement été servi ailleurs.",
+        options: [
+            { value: "overflow", label: "Redirigé", effect: "L'appel n'est « Répondu » que chez l'équipe qui a servi le client en dernier — les chiffres des équipes deviennent additifs. Un transfert qui échoue (personne ne décroche ailleurs) laisse l'appel Répondu ici." },
+            { value: "answered", label: "Répondu", effect: "Le groupe est jugé sur son décroché, quelle que soit la suite. Un même client peut alors être « Répondu » chez deux équipes." },
+        ],
+    },
+    {
+        key: "agentCredit",
+        title: "Un appel décroché par plusieurs agents : qui a le crédit ?",
+        example: "Sarah décroche puis transfère à Noémie qui reprend le client. Une conversation, deux décrochés — dans quelle ligne du tableau par agent l'appel compte-t-il ?",
+        options: [
+            { value: "lastAnswer", label: "Le dernier décrocheur", effect: "L'appel est crédité à un seul agent (celui qui a servi le client en dernier) : la somme du tableau égale la vignette Répondus. Règle historique de la file, étendue aux appels directs." },
+            { value: "each", label: "Chaque agent décrocheur", effect: "L'appel compte chez Sarah ET chez Noémie : on lit l'activité de chacun, mais la somme du tableau dépasse le total d'appels." },
+        ],
+    },
+    {
         key: "voicemail",
         title: "L'appel se termine sur la messagerie",
         example: "Hors des heures d'ouverture, ou lorsqu'un agent renvoie l'appel d'un bouton.",

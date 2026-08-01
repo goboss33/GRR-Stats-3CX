@@ -50,9 +50,9 @@ async function main() {
             ? carte.outcomes.includes("answered") && carte.outcomes.includes("abandoned")
                 ? "+ (SELECT COUNT(*) FROM direct_calls)"
                 : carte.outcomes.includes("answered")
-                    ? "+ (SELECT COUNT(*) FROM direct_calls WHERE answered)"
+                    ? "+ (SELECT COUNT(*) FROM direct_calls WHERE outcome = 'answered')"
                     : carte.outcomes.includes("abandoned")
-                        ? "+ (SELECT COUNT(*) FROM direct_calls WHERE NOT answered)"
+                        ? "+ (SELECT COUNT(*) FROM direct_calls WHERE outcome = 'abandoned')"
                         : ""
             : "";
 

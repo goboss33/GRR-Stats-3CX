@@ -72,7 +72,8 @@ export async function GET(request: NextRequest) {
             direct_calls_stats AS (
                 SELECT
                     COUNT(*) as direct_received,
-                    COUNT(*) FILTER (WHERE answered) as direct_answered
+                    COUNT(*) FILTER (WHERE outcome = 'answered') as direct_answered,
+                    COUNT(*) FILTER (WHERE outcome = 'overflow') as direct_overflow
                 FROM direct_calls
             ),
             overflow_destinations AS (
@@ -110,6 +111,7 @@ export async function GET(request: NextRequest) {
                 qk.avg_talk_time,
                 COALESCE(dcs.direct_received, 0) as direct_received,
                 COALESCE(dcs.direct_answered, 0) as direct_answered,
+                COALESCE(dcs.direct_overflow, 0) as direct_overflow,
                 COALESCE(
                     (SELECT json_agg(json_build_object('destination', od.destination, 'destinationName', od.destination_name, 'count', od.count))
                      FROM overflow_destinations od),
@@ -173,7 +175,10 @@ export async function GET(request: NextRequest) {
             avgTalkTimeSeconds: Number(row.avg_talk_time) || 0,
             directReceived: Number(row.direct_received),
             directAnswered: Number(row.direct_answered),
-            directLost: Number(row.direct_received) - Number(row.direct_answered),
+            // Un appel direct répondu ici mais servi ailleurs est « Redirigé »
+            // (règle answeredThenTransferred) : ni répondu, ni perdu.
+            directOverflow: Number(row.direct_overflow),
+            directLost: Number(row.direct_received) - Number(row.direct_answered) - Number(row.direct_overflow),
             overflowDestinations: typeof row.overflow_destinations === 'string'
                 ? JSON.parse(row.overflow_destinations)
                 : row.overflow_destinations,

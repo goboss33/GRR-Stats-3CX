@@ -24,7 +24,7 @@ async function compte(rules: ClassificationRules) {
              (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'short_abandon') AS short_abandon,
              (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'abandoned')     AS abandoned,
              (SELECT COUNT(*) FROM direct_calls)                                AS direct_total,
-             (SELECT COUNT(*) FROM direct_calls WHERE answered)                 AS direct_answered,
+             (SELECT COUNT(*) FROM direct_calls WHERE outcome = 'answered')                 AS direct_answered,
              (SELECT COUNT(*) FROM (
                   SELECT call_history_id FROM queue_passages
                   GROUP BY call_history_id HAVING COUNT(*) > 1) m)              AS multi_passage`,

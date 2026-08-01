@@ -12,6 +12,8 @@ const RULE_FIELDS = {
     ruleVoicemail: ["separate", "lost", "answered", "excluded"],
     ruleOutOfScopeFinalStatus: ["name", "anonymize", "hide"],
     ruleCallGrain: ["leg", "merged"],
+    ruleAnsweredThenTransferred: ["overflow", "answered"],
+    ruleAgentCredit: ["lastAnswer", "each"],
 } as const;
 
 type RuleField = keyof typeof RULE_FIELDS;
@@ -29,6 +31,8 @@ function projectSettings(settings: Record<string, unknown>) {
         ruleOutOfScopeFinalStatus: settings.ruleOutOfScopeFinalStatus,
         ruleMinAnswerSec: settings.ruleMinAnswerSec,
         ruleCallGrain: settings.ruleCallGrain,
+        ruleAnsweredThenTransferred: settings.ruleAnsweredThenTransferred,
+        ruleAgentCredit: settings.ruleAgentCredit,
     };
 }
 

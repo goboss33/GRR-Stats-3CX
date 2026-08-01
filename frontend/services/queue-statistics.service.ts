@@ -66,6 +66,7 @@ interface ApiQueueResponse {
     avgTalkTimeSeconds: number;
     directReceived: number;
     directAnswered: number;
+    directOverflow: number;
     directLost: number;
     overflowDestinations: Array<{ destination: string; destinationName: string; count: number }>;
 }
@@ -168,6 +169,7 @@ async function computeQueueKPIs(
         pingPongPercentage: apiData.pingPongPercentage,
         teamDirectReceived,
         teamDirectAnswered,
+        directOverflow: apiData.directOverflow,
         directLost: apiData.directLost,
         overflowDestinations,
         avgWaitTimeSeconds: apiData.avgWaitTimeSeconds,

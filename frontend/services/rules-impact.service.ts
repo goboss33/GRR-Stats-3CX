@@ -55,7 +55,8 @@ async function countWithRules(
              (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'short_abandon') AS short_abandon,
              (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'abandoned')     AS abandoned,
              (SELECT COUNT(*) FROM direct_calls)                                AS direct_total,
-             (SELECT COUNT(*) FROM direct_calls WHERE answered)                 AS direct_answered,
+             (SELECT COUNT(*) FROM direct_calls WHERE outcome = 'answered')     AS direct_answered,
+             (SELECT COUNT(*) FROM direct_calls WHERE outcome = 'overflow')     AS direct_overflow,
              (SELECT COUNT(*) FROM (
                   SELECT call_history_id FROM queue_passages
                   GROUP BY call_history_id HAVING COUNT(*) > 1
@@ -74,14 +75,15 @@ async function countWithRules(
 
     const directTotal = Number(r.direct_total);
     const directAnswered = Number(r.direct_answered);
+    const directOverflow = Number(r.direct_overflow);
 
     // Mêmes regroupements que les vignettes : ce sont ces quatre chiffres que
     // l'administrateur reconnaîtra sur l'écran de statistiques.
     return {
         received: sumBucket(counts, "received") + directTotal,
         answered: sumBucket(counts, "answered") + directAnswered,
-        lost: sumBucket(counts, "lost") + (directTotal - directAnswered),
-        overflow: sumBucket(counts, "overflow"),
+        lost: sumBucket(counts, "lost") + (directTotal - directAnswered - directOverflow),
+        overflow: sumBucket(counts, "overflow") + directOverflow,
         multiPassageCalls: Number(r.multi_passage),
     };
 }
