@@ -19,6 +19,8 @@ interface AgentPerformanceTableV2Props {
     totalQueueCallsReceived: number;
     totalDirectCallsAnswered: number;
     totalDirectCallsReceived: number;
+    /** Le transfert accompli compte-t-il dans la prise en charge ? (règle) */
+    handedOffInPerformance?: "success" | "neutral";
 }
 
 type SortField = "name" | "queueAnswered" | "directAnswered" | "transferred" | "totalAnswered" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds" | "participationRate";
@@ -29,7 +31,7 @@ const columnTooltips: Record<string, string> = {
     queueAnswered: "Appels résolus via la file d'attente (résolveur final = dernier à décrocher) / appels où l'agent a été sollicité",
     directAnswered: "Appels directs répondus / appels directs reçus",
     transferred: "Transferts accomplis crédités à l'agent : il a décroché, puis l'appel a été servi ailleurs (autre équipe ou numéro externe). File + directs.",
-    totalAnswered: "Total appels répondus (file + directs) / total reçus",
+    totalAnswered: "Pris en charge = répondus + transferts accomplis (file + directs) / sollicitations",
     totalHandlingTimeSeconds: "Durée totale cumulée en conversation (file + directs)",
     avgHandlingTimeSeconds: "Durée moyenne de conversation par appel répondu (file + directs)",
     participationRate: "% de participation = (appels répondus + transférés de l'agent / répondus + transférés de l'équipe) × 100",
@@ -47,9 +49,14 @@ export function AgentPerformanceTableV2({
     totalQueueCallsReceived,
     totalDirectCallsAnswered,
     totalDirectCallsReceived,
+    handedOffInPerformance = "success",
 }: AgentPerformanceTableV2Props) {
     const [sortField, setSortField] = useState<SortField>("participationRate");
     const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+    // Un transfert accompli est une prise en charge (règle configurable) : la
+    // colonne « Pris en charge » et la jauge suivent la même définition que la
+    // barre de l'écran.
+    const handedOffCounts = handedOffInPerformance === "success";
 
     // Total answered calls for participation rate
     const totalTeamAnswered = totalQueueCallsAnswered + totalDirectCallsAnswered;
@@ -63,17 +70,22 @@ export function AgentPerformanceTableV2({
     // une participation au même titre qu'une réponse (travail des réceptions).
     const agentsWithMetrics = useMemo(() => {
         const teamHandled = totalTeamAnswered + totalTeamTransferred;
-        return agents.map(agent => ({
-            ...agent,
-            participationRate: teamHandled > 0
-                ? Math.round(((agent.answered + agent.directAnswered + agent.queueTransferred + agent.directTransferred) / teamHandled) * 100)
-                : 0,
-            // Champs dérivés servant uniquement de clés de tri (cf. type SortField)
-            queueAnswered: agent.answered,
-            transferred: agent.queueTransferred + agent.directTransferred,
-            totalAnswered: agent.answered + agent.directAnswered,
-        }));
-    }, [agents, totalTeamAnswered, totalTeamTransferred]);
+        return agents.map(agent => {
+            const transferred = agent.queueTransferred + agent.directTransferred;
+            return {
+                ...agent,
+                participationRate: teamHandled > 0
+                    ? Math.round(((agent.answered + agent.directAnswered + transferred) / teamHandled) * 100)
+                    : 0,
+                // Champs dérivés servant uniquement de clés de tri (cf. type SortField)
+                queueAnswered: agent.answered,
+                transferred,
+                // « Pris en charge » : répondus + transferts accomplis quand la
+                // règle les compte — même définition que la barre de l'écran.
+                totalAnswered: agent.answered + agent.directAnswered + (handedOffCounts ? transferred : 0),
+            };
+        });
+    }, [agents, totalTeamAnswered, totalTeamTransferred, handedOffCounts]);
 
     const handleSort = (field: SortField) => {
         if (sortField === field) {
@@ -111,9 +123,10 @@ export function AgentPerformanceTableV2({
         return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
     };
 
-    // Max total calls across all agents (for relative bar width)
+    // Max total calls across all agents (for relative bar width) — la charge
+    // inclut les transferts accomplis : c'est du travail fait.
     const maxTotalCalls = Math.max(
-        ...agents.map(a => a.answered + a.directAnswered),
+        ...agents.map(a => a.answered + a.directAnswered + a.queueTransferred + a.directTransferred),
         1
     );
 
@@ -133,12 +146,15 @@ export function AgentPerformanceTableV2({
         ? Math.round((totals.totalHandlingTimeSeconds) / (totals.answered + totalDirectCallsAnswered))
         : 0;
 
-    // Workload bar component
+    // Workload bar component — répondus en teinte pleine, transferts accomplis
+    // en teinte claire (même grammaire que le donut du bilan).
     const WorkloadBar = ({ agent }: { agent: AgentStats }) => {
-        const totalCalls = agent.answered + agent.directAnswered;
+        const transferred = agent.queueTransferred + agent.directTransferred;
+        const totalCalls = agent.answered + agent.directAnswered + transferred;
         const barWidth = maxTotalCalls > 0 ? (totalCalls / maxTotalCalls) * 100 : 0;
         const queuePct = totalCalls > 0 ? (agent.answered / totalCalls) * 100 : 0;
         const directPct = totalCalls > 0 ? (agent.directAnswered / totalCalls) * 100 : 0;
+        const transferredPct = totalCalls > 0 ? (transferred / totalCalls) * 100 : 0;
 
         return (
             <div className="mt-1.5 flex items-center gap-2">
@@ -153,6 +169,11 @@ export function AgentPerformanceTableV2({
                             className="h-full bg-blue-500 transition-all"
                             style={{ width: `${directPct}%` }}
                             title={`Direct: ${agent.directAnswered}`}
+                        />
+                        <div
+                            className="h-full bg-violet-300 transition-all"
+                            style={{ width: `${transferredPct}%` }}
+                            title={`Transférés: ${transferred}`}
                         />
                     </div>
                 </div>
@@ -221,6 +242,10 @@ export function AgentPerformanceTableV2({
                                 <div className="w-3 h-2.5 rounded-sm bg-blue-500" />
                                 Directs
                             </div>
+                            <div className="flex items-center gap-1">
+                                <div className="w-3 h-2.5 rounded-sm bg-violet-300" />
+                                Transférés
+                            </div>
                         </div>
                     </div>
                 </CardHeader>
@@ -233,7 +258,7 @@ export function AgentPerformanceTableV2({
                                     <SortHeader field="queueAnswered" label="File (résolu)" />
                                     <SortHeader field="directAnswered" label="Directs" />
                                     <SortHeader field="transferred" label="Transférés" />
-                                    <SortHeader field="totalAnswered" label="Total" />
+                                    <SortHeader field="totalAnswered" label="Pris en charge" />
                                     <SortHeader field="totalHandlingTimeSeconds" label="Durée totale" />
                                     <SortHeader field="avgHandlingTimeSeconds" label="Durée moy." />
                                     <SortHeader field="participationRate" label="%" />
@@ -258,10 +283,10 @@ export function AgentPerformanceTableV2({
                                             <span className="text-slate-400 text-sm">/{agent.directReceived}</span>
                                         </td>
                                         <td className="px-3 py-3">
-                                            <span className="font-semibold text-amber-700">{agent.queueTransferred + agent.directTransferred}</span>
+                                            <span className="font-semibold text-amber-700">{agent.transferred}</span>
                                         </td>
                                         <td className="px-3 py-3">
-                                            <span className="font-semibold text-slate-900">{agent.answered + agent.directAnswered}</span>
+                                            <span className="font-semibold text-slate-900">{agent.totalAnswered}</span>
                                             <span className="text-slate-400 text-sm">/{agent.callsReceived + agent.directReceived}</span>
                                         </td>
                                         <td className="px-3 py-3 text-slate-700">
@@ -303,7 +328,9 @@ export function AgentPerformanceTableV2({
                                         <span className="text-amber-700">{totalTeamTransferred}</span>
                                     </td>
                                     <td className="px-3 py-3">
-                                        <span className="text-slate-900">{totals.answered + totalDirectCallsAnswered}</span>
+                                        {/* Même définition que la barre « Prise en charge » du
+                                            bilan : la ligne TOTAL retombe sur son pourcentage. */}
+                                        <span className="text-slate-900">{totals.answered + totalDirectCallsAnswered + (handedOffCounts ? totalTeamTransferred : 0)}</span>
                                         <span className="text-slate-400 text-sm">/{totalQueueCallsReceived + totalDirectCallsReceived}</span>
                                     </td>
                                     <td className="px-3 py-3 text-slate-800">

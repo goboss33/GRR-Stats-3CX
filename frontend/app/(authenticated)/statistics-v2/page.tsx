@@ -239,6 +239,7 @@ export default function StatisticsV2Page() {
                         totalQueueCallsReceived={statistics.kpis.callsReceived}
                         totalDirectCallsAnswered={statistics.kpis.teamDirectAnswered}
                         totalDirectCallsReceived={statistics.kpis.teamDirectReceived}
+                        handedOffInPerformance={statistics.kpis.handedOffInPerformance}
                     />
 
                     {/* Évolution du Volume + Carte des Affluences */}

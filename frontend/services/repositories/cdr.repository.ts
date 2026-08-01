@@ -393,18 +393,22 @@ export async function getQueueTimelineDataRaw(
     const diffDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
     const interval = diffDays <= 2 ? "hour" : "day";
 
-    // Les statuts regroupés sous « Perdus » viennent de la même table que les
-    // vignettes : changer le regroupement met la courbe à jour du même coup.
+    // Les statuts regroupés sous « Perdus » et « Redirigés » viennent de la
+    // même table que les vignettes : changer le regroupement met la courbe à
+    // jour du même coup. « Redirigés » couvre donc transférés ET débordés —
+    // sans quoi les transferts accomplis (le métier des réceptions)
+    // disparaissaient de la courbe et du total.
     const lostList = outcomesForBucket("lost").map((o) => `'${o}'`).join(", ");
+    const overflowList = outcomesForBucket("overflow").map((o) => `'${o}'`).join(", ");
 
     return prisma.$queryRawUnsafe<TimelineRow[]>(
         `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
          team_calls AS (${TEAM_CALLS_UNION_SQL})
          SELECT
              date_trunc($4, started_at AT TIME ZONE $5) AS date_group,
-             COUNT(*) FILTER (WHERE outcome = 'answered')        AS answered,
-             COUNT(*) FILTER (WHERE outcome IN (${lostList}))    AS missed,
-             COUNT(*) FILTER (WHERE outcome = 'overflow')        AS overflow
+             COUNT(*) FILTER (WHERE outcome = 'answered')          AS answered,
+             COUNT(*) FILTER (WHERE outcome IN (${lostList}))      AS missed,
+             COUNT(*) FILTER (WHERE outcome IN (${overflowList}))  AS overflow
          FROM team_calls
          GROUP BY 1
          ORDER BY 1`,

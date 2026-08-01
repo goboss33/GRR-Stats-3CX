@@ -25,10 +25,17 @@ interface TeamOverviewProps {
     agentExtensions?: string[];
 }
 
+// Grammaire de l'anneau intérieur : la TEINTE dit le canal (bleu = directs,
+// violet = file), l'INTENSITÉ et la TEXTURE disent le sort — plein foncé =
+// répondu ici, plein clair = transféré (pris en charge, remis à quelqu'un),
+// hachuré = non abouti. L'ambre reste réservé à l'anneau extérieur et à la
+// vignette Redirigés : l'introduire ici casserait la lecture par canal.
 const COLORS = {
     direct: "#3b82f6",
+    directTransferred: "#93c5fd",
     directUnanswered: "#93c5fd",
     queue: "#8b5cf6",
+    queueTransferred: "#c4b5fd",
     queueUnanswered: "#c4b5fd",
     answered: "#10b981",
     abandoned: "#ef4444",
@@ -57,15 +64,20 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
         ? Math.round((totalHandled / totalReceived) * 100)
         : 0;
 
+    // Taux de prise en charge PAR BLOC — même définition que la barre globale :
+    // répondu ou transféré, c'est pris en charge.
+    const directHandled = kpis.teamDirectAnswered + (handedOffCounts ? kpis.directHandedOff : 0);
+    const queueHandled = kpis.callsAnswered + (handedOffCounts ? kpis.callsHandedOff : 0);
     const directRate = kpis.teamDirectReceived > 0
-        ? Math.round((kpis.teamDirectAnswered / kpis.teamDirectReceived) * 100)
+        ? Math.round((directHandled / kpis.teamDirectReceived) * 100)
         : 0;
     const queueRate = kpis.callsReceived > 0
-        ? Math.round((kpis.callsAnswered / kpis.callsReceived) * 100)
+        ? Math.round((queueHandled / kpis.callsReceived) * 100)
         : 0;
 
-    const directUnanswered = kpis.teamDirectReceived - kpis.teamDirectAnswered;
-    const queueUnanswered = kpis.callsReceived - kpis.callsAnswered;
+    // Non abouti = ni répondu ici, ni transféré : perdus et débordés.
+    const directUnanswered = kpis.teamDirectReceived - kpis.teamDirectAnswered - kpis.directHandedOff;
+    const queueUnanswered = kpis.callsReceived - kpis.callsAnswered - kpis.callsHandedOff;
 
 
     // Lien vers les logs filtres par le SOCLE de classement : la population
@@ -97,10 +109,12 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
 
     const innerData = [
         { name: "Directs (répondus)", value: kpis.teamDirectAnswered, color: COLORS.direct, hatched: false },
-        { name: "Directs (non répondus)", value: directUnanswered, color: COLORS.directUnanswered, hatched: true },
+        { name: "Directs (transférés)", value: kpis.directHandedOff, color: COLORS.directTransferred, hatched: false },
+        { name: "Directs (non aboutis)", value: directUnanswered, color: COLORS.directUnanswered, hatched: true },
         { name: "Gap", value: gapValue, color: "transparent", hatched: false },
         { name: "File (répondus)", value: kpis.callsAnswered, color: COLORS.queue, hatched: false },
-        { name: "File (non répondus)", value: queueUnanswered, color: COLORS.queueUnanswered, hatched: true },
+        { name: "File (transférés)", value: kpis.callsHandedOff, color: COLORS.queueTransferred, hatched: false },
+        { name: "File (non aboutis)", value: queueUnanswered, color: COLORS.queueUnanswered, hatched: true },
         { name: "Gap", value: gapValue, color: "transparent", hatched: false },
     ].filter(d => d.value > 0);
 
@@ -335,7 +349,14 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                         <div className="text-[10px] text-blue-600">Répondus</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className={`font-bold ${directRate >= 80 ? 'text-emerald-700' : directRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}>
+                                        <div className="font-bold text-blue-400">{kpis.directHandedOff}</div>
+                                        <div className="text-[10px] text-blue-600">Transférés</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div
+                                            className={`font-bold ${directRate >= 80 ? 'text-emerald-700' : directRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}
+                                            title="Prise en charge du bloc : (répondus + transférés) / reçus"
+                                        >
                                             {directRate}%
                                         </div>
                                         <div className="text-[10px] text-blue-600">Taux</div>
@@ -362,7 +383,14 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                         <div className="text-[10px] text-violet-600">Répondus</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className={`font-bold ${queueRate >= 80 ? 'text-emerald-700' : queueRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}>
+                                        <div className="font-bold text-violet-400">{kpis.callsHandedOff}</div>
+                                        <div className="text-[10px] text-violet-600">Transférés</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div
+                                            className={`font-bold ${queueRate >= 80 ? 'text-emerald-700' : queueRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}
+                                            title="Prise en charge du bloc : (répondus + transférés) / reçus"
+                                        >
                                             {queueRate}%
                                         </div>
                                         <div className="text-[10px] text-violet-600">Taux</div>
