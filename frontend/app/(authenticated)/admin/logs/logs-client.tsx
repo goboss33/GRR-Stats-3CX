@@ -168,7 +168,7 @@ export default function AdminLogsPage() {
         const [queueNumber, outcomes, team] = param.split(":");
         if (!queueNumber || !outcomes) return null;
         const parsed = outcomes.split(",").filter((o): o is PassageOutcome =>
-            ["answered", "overflow", "voicemail", "short_abandon", "abandoned"].includes(o),
+            ["answered", "handed_off", "overflow", "voicemail", "short_abandon", "abandoned"].includes(o),
         );
         return parsed.length > 0 ? { queueNumber, outcomes: parsed, includeTeamDirect: team === "team" } : null;
     });

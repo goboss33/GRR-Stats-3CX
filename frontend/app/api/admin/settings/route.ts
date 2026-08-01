@@ -14,6 +14,7 @@ const RULE_FIELDS = {
     ruleCallGrain: ["leg", "merged"],
     ruleAnsweredThenTransferred: ["overflow", "answered"],
     ruleAgentCredit: ["lastAnswer", "each"],
+    ruleHandedOffInPerformance: ["success", "neutral"],
 } as const;
 
 type RuleField = keyof typeof RULE_FIELDS;
@@ -33,6 +34,7 @@ function projectSettings(settings: Record<string, unknown>) {
         ruleCallGrain: settings.ruleCallGrain,
         ruleAnsweredThenTransferred: settings.ruleAnsweredThenTransferred,
         ruleAgentCredit: settings.ruleAgentCredit,
+        ruleHandedOffInPerformance: settings.ruleHandedOffInPerformance,
     };
 }
 

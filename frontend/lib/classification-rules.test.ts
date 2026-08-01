@@ -26,6 +26,7 @@ const ROW_COMPLETE = {
     ruleCallGrain: "merged",
     ruleAnsweredThenTransferred: "answered",
     ruleAgentCredit: "each",
+    ruleHandedOffInPerformance: "neutral",
 };
 
 beforeEach(() => {
@@ -47,6 +48,7 @@ describe("lecture des réglages", () => {
             callGrain: "merged",
             answeredThenTransferred: "answered",
             agentCredit: "each",
+            handedOffInPerformance: "neutral",
         });
     });
 

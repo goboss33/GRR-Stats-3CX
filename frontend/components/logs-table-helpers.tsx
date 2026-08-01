@@ -48,6 +48,9 @@ export const statusConfig: Record<CallStatus, { icon: typeof Phone; className: s
  */
 export const queueOutcomeConfig: Record<PassageOutcome, { label: string; className: string }> = {
     answered: { label: "Répondu", className: "bg-emerald-100 text-emerald-700" },
+    // Transféré = décroché ici puis servi ailleurs (le transfert accompli) ;
+    // Redirigé = parti ailleurs sans décroché ici. Même vignette, deux natures.
+    handed_off: { label: "Transféré", className: "bg-amber-100 text-amber-700" },
     overflow: { label: "Redirigé", className: "bg-amber-100 text-amber-700" },
     // Messagerie et abandons courts existent dans le socle — ils restent
     // configurables et pilotent le calcul — mais les vignettes ne les nomment

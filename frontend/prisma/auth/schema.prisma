@@ -89,6 +89,8 @@ model AppSettings {
   ruleAnsweredThenTransferred String   @default("overflow")
   /// Crédit du tableau par agent : "lastAnswer" (dernier décrocheur) | "each"
   ruleAgentCredit             String   @default("lastAnswer")
+  /// Transfert accompli dans la performance : "success" | "neutral"
+  ruleHandedOffInPerformance  String   @default("success")
   /// Durée minimale d'une conversation pour qu'un décroché compte comme répondu.
   ruleMinAnswerSec            Int      @default(1)
   createdAt                   DateTime @default(now())

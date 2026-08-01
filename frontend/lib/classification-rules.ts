@@ -48,6 +48,7 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
                 ruleCallGrain: true,
                 ruleAnsweredThenTransferred: true,
                 ruleAgentCredit: true,
+                ruleHandedOffInPerformance: true,
             },
         });
 
@@ -64,6 +65,7 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
                 callGrain: pick(row.ruleCallGrain, ["leg", "merged"] as const, "leg"),
                 answeredThenTransferred: pick(row.ruleAnsweredThenTransferred, ["overflow", "answered"] as const, "overflow"),
                 agentCredit: pick(row.ruleAgentCredit, ["lastAnswer", "each"] as const, "lastAnswer"),
+                handedOffInPerformance: pick(row.ruleHandedOffInPerformance, ["success", "neutral"] as const, "success"),
             };
         }
     } catch {

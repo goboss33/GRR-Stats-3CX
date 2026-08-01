@@ -22,6 +22,7 @@ import type {
     OverflowDestination,
 } from "@/services/domain/call.types";
 import type { CallOrigin, PassageOutcome } from "@/services/domain/call-classification";
+import { getClassificationRules } from "@/lib/classification-rules";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:3000";
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
@@ -59,6 +60,7 @@ interface ApiQueueResponse {
     abandonedBefore10s: number;
     abandonedAfter10s: number;
     callsOverflow: number;
+    callsHandedOff: number;
     totalPassages: number;
     pingPongCount: number;
     pingPongPercentage: number;
@@ -66,8 +68,9 @@ interface ApiQueueResponse {
     avgTalkTimeSeconds: number;
     directReceived: number;
     directAnswered: number;
-    directOverflow: number;
+    directHandedOff: number;
     directLost: number;
+    classificationRules?: { handedOffInPerformance?: "success" | "neutral" };
     overflowDestinations: Array<{ destination: string; destinationName: string; count: number }>;
 }
 
@@ -77,9 +80,11 @@ interface ApiAgentResponse {
         name: string;
         callsReceived: number;
         answered: number;
+        queueTransferred: number;
         queueTalkTimeSeconds: number;
         directReceived: number;
         directAnswered: number;
+        directTransferred: number;
         directTalkTimeSeconds: number;
     }>;
     queueNumber: string;
@@ -164,13 +169,15 @@ async function computeQueueKPIs(
         callsToVoicemail: apiData.callsToVoicemail,
         outcomeCounts: apiData.outcomeCounts,
         callsOverflow: apiData.callsOverflow,
+        callsHandedOff: apiData.callsHandedOff,
         totalPassages: apiData.totalPassages,
         pingPongCount: apiData.pingPongCount,
         pingPongPercentage: apiData.pingPongPercentage,
         teamDirectReceived,
         teamDirectAnswered,
-        directOverflow: apiData.directOverflow,
+        directHandedOff: apiData.directHandedOff,
         directLost: apiData.directLost,
+        handedOffInPerformance: apiData.classificationRules?.handedOffInPerformance ?? "success",
         overflowDestinations,
         avgWaitTimeSeconds: apiData.avgWaitTimeSeconds,
         avgTalkTimeSeconds: apiData.avgTalkTimeSeconds,
@@ -192,19 +199,28 @@ async function computeAgentStats(
         origin,
     });
 
+    // Le taux d'un agent suit la même définition que la barre d'équipe : un
+    // transfert accompli est une prise en charge (règle handedOffInPerformance).
+    const rules = await getClassificationRules();
+    const handedOffCounts = rules.handedOffInPerformance === "success";
+
     return apiData.agents.map((agent) => {
         const totalReceived = agent.callsReceived + agent.directReceived;
         const totalAnswered = agent.answered + agent.directAnswered;
+        const totalTransferred = agent.queueTransferred + agent.directTransferred;
+        const totalHandled = totalAnswered + (handedOffCounts ? totalTransferred : 0);
 
         return {
             extension: agent.extension,
             name: agent.name,
             callsReceived: agent.callsReceived,
             answered: agent.answered,
+            queueTransferred: agent.queueTransferred,
             directReceived: agent.directReceived,
             directAnswered: agent.directAnswered,
+            directTransferred: agent.directTransferred,
             directTalkTimeSeconds: agent.directTalkTimeSeconds,
-            answerRate: totalReceived > 0 ? Math.round((totalAnswered / totalReceived) * 100) : 0,
+            answerRate: totalReceived > 0 ? Math.round((totalHandled / totalReceived) * 100) : 0,
             avgHandlingTimeSeconds: totalAnswered > 0
                 ? Math.round((agent.queueTalkTimeSeconds + agent.directTalkTimeSeconds) / totalAnswered)
                 : 0,

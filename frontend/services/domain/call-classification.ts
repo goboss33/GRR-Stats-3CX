@@ -37,7 +37,8 @@ import { buildDirectSegmentWhereClause, SQL_REAL_PARTY_DEST_TYPES } from "./call
  */
 export type PassageOutcome =
     | "answered"        // un agent de la file a décroché
-    | "overflow"        // l'appel est reparti vers une autre file
+    | "handed_off"      // décroché ICI puis servi ailleurs : le transfert accompli
+    | "overflow"        // reparti vers une autre file SANS avoir été décroché ici
     | "voicemail"       // l'appel s'est terminé sur la messagerie
     | "short_abandon"   // raccroché avant le seuil (hésitation, erreur de numéro)
     | "abandoned";      // abandon caractérisé
@@ -52,10 +53,13 @@ export type PassageOutcome =
  */
 export const OUTCOME_RANK: Record<PassageOutcome, number> = {
     answered: 1,
-    overflow: 2,
-    voicemail: 3,
-    abandoned: 4,
-    short_abandon: 5,
+    // Le transfert accompli vaut presque une réponse : l'équipe a décroché et
+    // le client a fini servi. Il prime donc sur le simple débordement.
+    handed_off: 2,
+    overflow: 3,
+    voicemail: 4,
+    abandoned: 5,
+    short_abandon: 6,
 };
 
 /**
@@ -77,6 +81,10 @@ export type KpiBucket = "received" | "answered" | "lost" | "overflow";
  */
 export const DEFAULT_OUTCOME_GROUPING: Record<PassageOutcome, Exclude<KpiBucket, "received">> = {
     answered: "answered",
+    // Transféré et débordé partagent la vignette « Redirigés » (l'appel est
+    // reparti ailleurs) mais PAS le même verdict : la performance compte le
+    // transfert accompli comme un succès (règle handedOffInPerformance).
+    handed_off: "overflow",
     overflow: "overflow",
     voicemail: "lost",
     short_abandon: "lost",
@@ -188,13 +196,32 @@ export interface ClassificationRules {
      * qui échoue (personne ne décroche ailleurs, ou l'agent reprend l'appel)
      * laisse le groupe dernier serveur → l'appel reste Répondu.
      *
-     * - "overflow" : compté Redirigé — l'appel n'est « Répondu » que chez
+     * - "overflow" : l'appel devient « Transféré » (statut handed_off, affiché
+     *                dans les Redirigés) — il n'est « Répondu » que chez
      *                l'équipe qui a servi le client en dernier, ce qui rend les
      *                chiffres additifs entre équipes
      * - "answered" : compté Répondu — le groupe est jugé sur son décroché,
      *                quelle que soit la suite
      */
     answeredThenTransferred: "overflow" | "answered";
+
+    /**
+     * Un transfert accompli (handed_off) compte-t-il dans la PERFORMANCE de
+     * l'équipe (taux de prise en charge) ?
+     *
+     * C'est la question des réceptions : leur métier EST de transférer. Un
+     * appel décroché puis remis en mains propres à quelqu'un qui a servi le
+     * client est un travail fait — le débordement sans décroché, lui, reste
+     * toujours un échec.
+     *
+     * - "success" : performance = (répondus + transférés) / reçus
+     * - "neutral" : performance = répondus / reçus (le transfert ne compte ni
+     *               pour ni contre)
+     *
+     * Ne change QUE le taux affiché (barre de performance, % agents), jamais
+     * les vignettes ni les listes.
+     */
+    handedOffInPerformance: "success" | "neutral";
 
     /**
      * Appel décroché par PLUSIEURS agents (transferts internes, renvois) :
@@ -248,6 +275,9 @@ export const DEFAULT_CLASSIFICATION_RULES: ClassificationRules = {
     // a servi le client en dernier, et le crédit agent suit la même logique.
     answeredThenTransferred: "overflow",
     agentCredit: "lastAnswer",
+    // Le transfert accompli est un travail fait — décisif pour les réceptions
+    // (mesuré : Pully passait de 23 % à 88 % de prise en charge sur juin 2026).
+    handedOffInPerformance: "success",
 };
 
 // ============================================
@@ -281,8 +311,8 @@ export interface PassageFacts {
 export function classifyPassage(facts: PassageFacts, rules: ClassificationRules): PassageOutcome {
     if (facts.answeredHere) {
         // Répondu ici mais finalement servi hors du groupe : la règle décide
-        // si le groupe garde le crédit ou si l'appel est « Redirigé ».
-        if (rules.answeredThenTransferred === "overflow" && !facts.servedInTeam) return "overflow";
+        // si le groupe garde le crédit (Répondu) ou si c'est un « Transféré ».
+        if (rules.answeredThenTransferred === "overflow" && !facts.servedInTeam) return "handed_off";
         return "answered";
     }
 
@@ -353,7 +383,7 @@ function sqlRankToOutcomeCase(column: string): string {
 export function buildPassageOutcomeSQL(rules: ClassificationRules): string {
     // Miroir de la branche « répondu ici mais servi ailleurs » de classifyPassage.
     const answeredResult = rules.answeredThenTransferred === "overflow"
-        ? "CASE WHEN served_in_team THEN 'answered' ELSE 'overflow' END"
+        ? "CASE WHEN served_in_team THEN 'answered' ELSE 'handed_off' END"
         : "'answered'";
     const overflowResult =
         rules.overflow === "answered" ? "'answered'" : rules.overflow === "lost" ? "'abandoned'" : "'overflow'";
@@ -666,14 +696,14 @@ export function buildDirectCallsCTE(
         : "";
 
     // Statut du bloc directs — trois sorts possibles depuis la règle
-    // `answeredThenTransferred` : répondu, redirigé (répondu ici mais servi
+    // `answeredThenTransferred` : répondu, transféré (répondu ici mais servi
     // ailleurs), ou abandonné. Le CASE est l'unique définition, consommée par
     // les vignettes, les graphiques et le filtre du clic vers les logs.
     const directOutcome = servedInTeamCondition
         ? `CASE
                 WHEN NOT answered THEN 'abandoned'
                 WHEN ${servedInTeamCondition} THEN 'answered'
-                ELSE 'overflow'
+                ELSE 'handed_off'
            END`
         : `CASE WHEN answered THEN 'answered' ELSE 'abandoned' END`;
 
@@ -804,6 +834,16 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
                 THEN qp.call_history_id END) AS resolved`
         : `COUNT(DISTINCT CASE WHEN qp.was_answered = 1 THEN qp.call_history_id END) AS resolved`;
 
+    // Transferts accomplis : crédités à l'agent qui a accompli le transfert —
+    // le dernier décrocheur du groupe avant que l'appel soit servi ailleurs.
+    // C'est le travail des réceptions ; il a sa propre colonne, jamais mélangé
+    // aux résolus. Invariant : la somme égale la vignette « Transférés ».
+    const queueTransferred = lastAnswerCredit
+        ? `COUNT(DISTINCT CASE WHEN la.last_agent = qp.agent_ext AND qp.outcome = 'handed_off'
+                THEN qp.call_history_id END) AS transferred`
+        : `COUNT(DISTINCT CASE WHEN qp.was_answered = 1 AND qp.outcome = 'handed_off'
+                THEN qp.call_history_id END) AS transferred`;
+
     // Directs : même logique. NB : sous « firstContact », un appel direct
     // répondu via la file n'a pas de décroché direct — il reste alors sans
     // crédit dans le tableau (cas marginal, documenté).
@@ -811,6 +851,12 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
         ? `COUNT(DISTINCT CASE WHEN dla.last_ext = d.extension AND dc.outcome = 'answered'
                 THEN d.call_history_id END) AS direct_answered`
         : `COUNT(DISTINCT CASE WHEN d.cdr_answered_at IS NOT NULL THEN d.call_history_id END) AS direct_answered`;
+
+    const directTransferred = lastAnswerCredit
+        ? `COUNT(DISTINCT CASE WHEN dla.last_ext = d.extension AND dc.outcome = 'handed_off'
+                THEN d.call_history_id END) AS direct_transferred`
+        : `COUNT(DISTINCT CASE WHEN d.cdr_answered_at IS NOT NULL AND dc.outcome = 'handed_off'
+                THEN d.call_history_id END) AS direct_transferred`;
 
     return `
     queue_polling AS (
@@ -841,6 +887,7 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
             qp.agent_ext AS extension,
             COUNT(DISTINCT qp.originating_cdr_id) AS calls_received,
             ${queueResolved},
+            ${queueTransferred},
             SUM(CASE WHEN qp.was_answered = 1 THEN qp.talk_seconds ELSE 0 END) AS queue_talk_time
         FROM queue_polling qp
         LEFT JOIN last_answered_agent la ON qp.call_history_id = la.call_history_id
@@ -862,6 +909,7 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
             d.extension,
             COUNT(DISTINCT d.call_history_id) AS direct_received,
             ${directAnswered},
+            ${directTransferred},
             SUM(CASE WHEN d.cdr_answered_at IS NOT NULL
                 THEN EXTRACT(EPOCH FROM (d.cdr_ended_at - d.cdr_answered_at)) ELSE 0 END) AS direct_talk_time
         FROM team_direct_segments d
@@ -899,9 +947,9 @@ export function buildQueueOutcomeSubquery(
     // Les cartes du bilan d'équipe additionnent file ET appels directs ; le
     // filtre doit donc couvrir la même union, sans quoi le clic sur « Total
     // reçus » ne ramènerait que la part « file ».
-    // Côté directs, trois sorts existent : répondu, redirigé (règle
+    // Côté directs, trois sorts existent : répondu, transféré (règle
     // answeredThenTransferred), ou perdu.
-    const DIRECT_OUTCOMES: PassageOutcome[] = ["answered", "overflow", "abandoned"];
+    const DIRECT_OUTCOMES: PassageOutcome[] = ["answered", "handed_off", "abandoned"];
     const directMapped: string[] = [];
     if (params.includeTeamDirect) {
         // Si aucun statut de file n'est demandé, c'est qu'on veut les directs

@@ -100,9 +100,9 @@ describe("classifyPassage — règles reconfigurables", () => {
 });
 
 describe("répondu puis servi hors du groupe (answeredThenTransferred)", () => {
-    it("« overflow » : répondu ici mais servi ailleurs devient Redirigé", () => {
+    it("« overflow » : répondu ici mais servi ailleurs devient « Transféré »", () => {
         const f = facts({ answeredHere: true, servedInTeam: false });
-        expect(classifyPassage(f, rules({ answeredThenTransferred: "overflow" }))).toBe("overflow");
+        expect(classifyPassage(f, rules({ answeredThenTransferred: "overflow" }))).toBe("handed_off");
     });
 
     it("« overflow » : répondu et servi dans le groupe reste Répondu", () => {
@@ -122,6 +122,13 @@ describe("répondu puis servi hors du groupe (answeredThenTransferred)", () => {
         expect(classifyPassage(f, rules({ answeredThenTransferred: "overflow" }))).toBe("abandoned");
     });
 
+    it("le transfert accompli prime sur le simple débordement (rang)", () => {
+        // Un appel décroché puis transféré, dont un autre passage a débordé :
+        // sous « best », c'est le transfert accompli qui l'emporte.
+        expect(reducePassages(["overflow", "handed_off"], rules({ multiPassage: "best" }))).toBe("handed_off");
+        expect(reducePassages(["handed_off", "answered"], rules({ multiPassage: "best" }))).toBe("answered");
+    });
+
     it("le SQL reflète la branche, et l'omet quand la règle est inactive", () => {
         expect(buildPassageOutcomeSQL(rules({ answeredThenTransferred: "overflow" })))
             .toContain("served_in_team");
@@ -132,9 +139,13 @@ describe("répondu puis servi hors du groupe (answeredThenTransferred)", () => {
     it("le bloc directs gagne un troisième sort quand la règle est active", () => {
         const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
         const sql = buildTeamCTEChain(rules({ answeredThenTransferred: "overflow" }), P);
-        expect(sql).toContain("ELSE 'overflow'");
+        expect(sql).toContain("ELSE 'handed_off'");
         const off = buildTeamCTEChain(rules({ answeredThenTransferred: "answered" }), P);
         expect(off).toContain("CASE WHEN answered THEN 'answered' ELSE 'abandoned' END");
+    });
+
+    it("« Redirigés » regroupe transferts accomplis et débordements", () => {
+        expect(outcomesForBucket("overflow").sort()).toEqual(["handed_off", "overflow"]);
     });
 });
 
@@ -292,7 +303,7 @@ describe("regroupement d'affichage", () => {
     });
 
     it("« Total reçus » couvre tous les statuts", () => {
-        expect(outcomesForBucket("received")).toHaveLength(5);
+        expect(outcomesForBucket("received")).toHaveLength(6);
         expect(sumBucket(counts, "received")).toBe(1969);
     });
 

@@ -312,15 +312,20 @@ export interface QueueKPIs {
     abandonedBefore10s: number;
     abandonedAfter10s: number;
     callsToVoicemail: number;
+    /** Débordements : partis vers une autre file SANS décroché ici. */
     callsOverflow: number;
+    /** Transferts accomplis (file) : décrochés ici puis servis ailleurs. */
+    callsHandedOff: number;
     totalPassages: number;
     pingPongCount: number;
     pingPongPercentage: number;
     teamDirectReceived: number;
     teamDirectAnswered: number;
-    /** Directs répondus ici mais servis hors du groupe (règle answeredThenTransferred). */
-    directOverflow: number;
+    /** Transferts accomplis (directs) : décrochés ici puis servis ailleurs. */
+    directHandedOff: number;
     directLost: number;
+    /** Le transfert accompli compte-t-il dans le taux de prise en charge ? */
+    handedOffInPerformance: "success" | "neutral";
     overflowDestinations: OverflowDestination[];
     avgWaitTimeSeconds: number;
     avgTalkTimeSeconds: number;
@@ -331,8 +336,12 @@ export interface AgentStats {
     name: string;
     callsReceived: number;
     answered: number;
+    /** Transferts accomplis crédités à l'agent, côté file. */
+    queueTransferred: number;
     directReceived: number;
     directAnswered: number;
+    /** Transferts accomplis crédités à l'agent, côté directs. */
+    directTransferred: number;
     directTalkTimeSeconds: number;
     answerRate: number;
     avgHandlingTimeSeconds: number;

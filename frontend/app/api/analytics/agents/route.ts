@@ -71,9 +71,11 @@ export async function GET(request: NextRequest) {
                 COALESCE(an.name, qa.extension) as name,
                 COALESCE(aqs.calls_received, 0) as calls_received,
                 COALESCE(aqs.resolved, 0) as resolved,
+                COALESCE(aqs.transferred, 0) as transferred,
                 COALESCE(aqs.queue_talk_time, 0) as queue_talk_time,
                 COALESCE(ad.direct_received, 0) as direct_received,
                 COALESCE(ad.direct_answered, 0) as direct_answered,
+                COALESCE(ad.direct_transferred, 0) as direct_transferred,
                 COALESCE(ad.direct_talk_time, 0) as direct_talk_time
             FROM queue_agents qa
             LEFT JOIN agent_names an ON qa.extension = an.extension
@@ -91,9 +93,13 @@ export async function GET(request: NextRequest) {
             name: row.name,
             callsReceived: Number(row.calls_received),
             answered: Number(row.resolved),
+            // Transferts accomplis credités à cet agent (dernier décrocheur du
+            // groupe avant que l'appel soit servi ailleurs).
+            queueTransferred: Number(row.transferred),
             queueTalkTimeSeconds: Math.round(Number(row.queue_talk_time)),
             directReceived: Number(row.direct_received),
             directAnswered: Number(row.direct_answered),
+            directTransferred: Number(row.direct_transferred),
             directTalkTimeSeconds: Math.round(Number(row.direct_talk_time)),
         }));
 

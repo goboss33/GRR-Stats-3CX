@@ -77,8 +77,17 @@ const QUEUE_RULES: RuleSpec[] = [
         title: "L'appel est répondu puis transféré hors du groupe",
         example: "La réception décroche, puis transfère à une autre équipe (ou un numéro externe) qui décroche à son tour. Le client a finalement été servi ailleurs.",
         options: [
-            { value: "overflow", label: "Redirigé", effect: "L'appel n'est « Répondu » que chez l'équipe qui a servi le client en dernier — les chiffres des équipes deviennent additifs. Un transfert qui échoue (personne ne décroche ailleurs) laisse l'appel Répondu ici." },
+            { value: "overflow", label: "Transféré (dans les Redirigés)", effect: "L'appel n'est « Répondu » que chez l'équipe qui a servi le client en dernier — les chiffres des équipes deviennent additifs. Un transfert qui échoue (personne ne décroche ailleurs) laisse l'appel Répondu ici." },
             { value: "answered", label: "Répondu", effect: "Le groupe est jugé sur son décroché, quelle que soit la suite. Un même client peut alors être « Répondu » chez deux équipes." },
+        ],
+    },
+    {
+        key: "handedOffInPerformance",
+        title: "Le transfert accompli dans le taux de prise en charge",
+        example: "Le métier d'une réception est de router les appels : décrocher puis transférer à la bonne personne EST son travail. Sans cette règle, Pully affichait 23 % de performance pour un travail fait à 88 %.",
+        options: [
+            { value: "success", label: "Compte comme une prise en charge", effect: "Prise en charge = (répondus + transferts accomplis) / reçus. Le débordement SANS décroché reste un échec. Même formule pour toutes les équipes, réceptions comprises." },
+            { value: "neutral", label: "Ne compte pas", effect: "Prise en charge = répondus / reçus. Les équipes qui transfèrent beaucoup (réceptions) verront leur taux chuter mécaniquement." },
         ],
     },
     {

@@ -54,6 +54,7 @@ export function BusinessRulesTab() {
                     callGrain: data.ruleCallGrain ?? current.callGrain,
                     answeredThenTransferred: data.ruleAnsweredThenTransferred ?? current.answeredThenTransferred,
                     agentCredit: data.ruleAgentCredit ?? current.agentCredit,
+                    handedOffInPerformance: data.ruleHandedOffInPerformance ?? current.handedOffInPerformance,
                 }));
                 setLoading(false);
             })
@@ -81,6 +82,7 @@ export function BusinessRulesTab() {
                     ruleCallGrain: rules.callGrain,
                     ruleAnsweredThenTransferred: rules.answeredThenTransferred,
                     ruleAgentCredit: rules.agentCredit,
+                    ruleHandedOffInPerformance: rules.handedOffInPerformance,
                 }),
             });
             const data = await res.json();

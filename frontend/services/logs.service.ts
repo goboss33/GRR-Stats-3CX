@@ -309,7 +309,7 @@ function buildAggregatedQueryParts(
     // celle agrégée par la vignette « Total reçus », donc le compte affiché en
     // haut des logs est celui de la statistique. Sans filtre explicite on prend
     // tout ; le filtre de colonne ne fait ensuite que réduire à l'intérieur.
-    const ALL_OUTCOMES: PassageOutcome[] = ["answered", "overflow", "voicemail", "short_abandon", "abandoned"];
+    const ALL_OUTCOMES: PassageOutcome[] = ["answered", "handed_off", "overflow", "voicemail", "short_abandon", "abandoned"];
     const outcomeFilter = filters.queueOutcomeFilter
         ?? (viewQueue ? { queueNumber: viewQueue, outcomes: ALL_OUTCOMES, includeTeamDirect: true } : null);
 

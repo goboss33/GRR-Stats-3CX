@@ -44,11 +44,17 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
     // sert a la fois a additionner et a construire le lien, donc les deux ne
     // peuvent pas diverger.
     const totalLost = sumBucket(kpis.outcomeCounts, "lost") + kpis.directLost;
-    // Redirigés = file ET directs : un appel direct répondu ici mais servi hors
-    // du groupe (règle answeredThenTransferred) est lui aussi reparti ailleurs.
-    const totalOverflow = kpis.callsOverflow + kpis.directOverflow;
+    // Redirigés = transférés (décrochés ici, servis ailleurs) + débordés
+    // (partis sans décroché), file et directs confondus.
+    const totalHandedOff = kpis.callsHandedOff + kpis.directHandedOff;
+    const totalOverflow = kpis.callsOverflow + totalHandedOff;
+    // Taux de prise en charge : un transfert accompli est un travail fait —
+    // décisif pour les réceptions, dont le métier EST de transférer (règle
+    // handedOffInPerformance, configurable).
+    const handedOffCounts = kpis.handedOffInPerformance === "success";
+    const totalHandled = totalAnswered + (handedOffCounts ? totalHandedOff : 0);
     const performanceRate = totalReceived > 0
-        ? Math.round((totalAnswered / totalReceived) * 100)
+        ? Math.round((totalHandled / totalReceived) * 100)
         : 0;
 
     const directRate = kpis.teamDirectReceived > 0
@@ -270,24 +276,34 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                 </div>
                                 <div className="text-2xl font-bold text-amber-700">{totalOverflow}</div>
                                 <div className="text-[10px] text-slate-500 mt-0.5">
-                                    File: {kpis.callsOverflow} · Directs: {kpis.directOverflow}
+                                    Transférés: {totalHandedOff} · Débordés: {kpis.callsOverflow}
                                 </div>
                             </Link>
 
                         </div>
 
-                        {/* Performance Bar */}
+                        {/* Performance Bar — taux de prise en charge : répondus
+                            + transferts accomplis quand la règle les compte. */}
                         <div className="pt-3 border-t border-slate-200">
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
                                     <TrendingUp className="h-4 w-4 text-slate-500" />
-                                    <span className="text-sm font-medium text-slate-600">Performance globale</span>
+                                    <span
+                                        className="text-sm font-medium text-slate-600"
+                                        title={handedOffCounts
+                                            ? "Prise en charge = répondus + transferts accomplis (décrochés ici puis servis ailleurs), rapportés aux reçus"
+                                            : "Répondus rapportés aux reçus"}
+                                    >
+                                        Prise en charge
+                                    </span>
                                     <span className={`text-sm font-bold ${performanceRate >= 80 ? 'text-emerald-700' : performanceRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}>
                                         {performanceRate}%
                                     </span>
                                 </div>
                                 <div className="text-xs text-slate-500">
-                                    {totalAnswered} répondus / {totalReceived} reçus
+                                    {handedOffCounts && totalHandedOff > 0
+                                        ? `${totalAnswered} répondus + ${totalHandedOff} transférés / ${totalReceived} reçus`
+                                        : `${totalAnswered} répondus / ${totalReceived} reçus`}
                                 </div>
                             </div>
                             <div className="h-2 bg-slate-200 rounded-full overflow-hidden">

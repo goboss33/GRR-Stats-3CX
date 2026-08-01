@@ -50,13 +50,14 @@ async function countWithRules(
         `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3" })}
          SELECT
              (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'answered')      AS answered,
+             (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'handed_off')    AS handed_off,
              (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'overflow')      AS overflow,
              (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'voicemail')     AS voicemail,
              (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'short_abandon') AS short_abandon,
              (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'abandoned')     AS abandoned,
              (SELECT COUNT(*) FROM direct_calls)                                AS direct_total,
              (SELECT COUNT(*) FROM direct_calls WHERE outcome = 'answered')     AS direct_answered,
-             (SELECT COUNT(*) FROM direct_calls WHERE outcome = 'overflow')     AS direct_overflow,
+             (SELECT COUNT(*) FROM direct_calls WHERE outcome = 'handed_off')   AS direct_handed_off,
              (SELECT COUNT(*) FROM (
                   SELECT call_history_id FROM queue_passages
                   GROUP BY call_history_id HAVING COUNT(*) > 1
@@ -67,6 +68,7 @@ async function countWithRules(
     const r = rows[0];
     const counts: Partial<Record<PassageOutcome, number>> = {
         answered: Number(r.answered),
+        handed_off: Number(r.handed_off),
         overflow: Number(r.overflow),
         voicemail: Number(r.voicemail),
         short_abandon: Number(r.short_abandon),
@@ -75,15 +77,15 @@ async function countWithRules(
 
     const directTotal = Number(r.direct_total);
     const directAnswered = Number(r.direct_answered);
-    const directOverflow = Number(r.direct_overflow);
+    const directHandedOff = Number(r.direct_handed_off);
 
     // Mêmes regroupements que les vignettes : ce sont ces quatre chiffres que
     // l'administrateur reconnaîtra sur l'écran de statistiques.
     return {
         received: sumBucket(counts, "received") + directTotal,
         answered: sumBucket(counts, "answered") + directAnswered,
-        lost: sumBucket(counts, "lost") + (directTotal - directAnswered - directOverflow),
-        overflow: sumBucket(counts, "overflow") + directOverflow,
+        lost: sumBucket(counts, "lost") + (directTotal - directAnswered - directHandedOff),
+        overflow: sumBucket(counts, "overflow") + directHandedOff,
         multiPassageCalls: Number(r.multi_passage),
     };
 }

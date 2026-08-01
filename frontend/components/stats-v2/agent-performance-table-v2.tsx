@@ -21,17 +21,18 @@ interface AgentPerformanceTableV2Props {
     totalDirectCallsReceived: number;
 }
 
-type SortField = "name" | "queueAnswered" | "directAnswered" | "totalAnswered" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds" | "participationRate";
+type SortField = "name" | "queueAnswered" | "directAnswered" | "transferred" | "totalAnswered" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds" | "participationRate";
 type SortDirection = "asc" | "desc";
 
 const columnTooltips: Record<string, string> = {
     name: "Nom de l'agent, extension, et jauge de charge visuelle (vert = file, bleu = directs)",
     queueAnswered: "Appels résolus via la file d'attente (résolveur final = dernier à décrocher) / appels où l'agent a été sollicité",
     directAnswered: "Appels directs répondus / appels directs reçus",
+    transferred: "Transferts accomplis crédités à l'agent : il a décroché, puis l'appel a été servi ailleurs (autre équipe ou numéro externe). File + directs.",
     totalAnswered: "Total appels répondus (file + directs) / total reçus",
     totalHandlingTimeSeconds: "Durée totale cumulée en conversation (file + directs)",
     avgHandlingTimeSeconds: "Durée moyenne de conversation par appel répondu (file + directs)",
-    participationRate: "% de participation = (appels répondus de l'agent / appels répondus totaux de l'équipe) × 100",
+    participationRate: "% de participation = (appels répondus + transférés de l'agent / répondus + transférés de l'équipe) × 100",
 };
 
 function getParticipationColor(rate: number): string {
@@ -52,19 +53,27 @@ export function AgentPerformanceTableV2({
 
     // Total answered calls for participation rate
     const totalTeamAnswered = totalQueueCallsAnswered + totalDirectCallsAnswered;
+    // Transferts accomplis de l'équipe : somme des crédits agents (sous la
+    // règle « dernier décrocheur », elle égale la vignette Transférés).
+    const totalTeamTransferred = agents.reduce(
+        (acc, a) => acc + a.queueTransferred + a.directTransferred, 0,
+    );
 
-    // Compute participation rates for all agents
+    // Compute participation rates for all agents — un transfert accompli est
+    // une participation au même titre qu'une réponse (travail des réceptions).
     const agentsWithMetrics = useMemo(() => {
+        const teamHandled = totalTeamAnswered + totalTeamTransferred;
         return agents.map(agent => ({
             ...agent,
-            participationRate: totalTeamAnswered > 0
-                ? Math.round(((agent.answered + agent.directAnswered) / totalTeamAnswered) * 100)
+            participationRate: teamHandled > 0
+                ? Math.round(((agent.answered + agent.directAnswered + agent.queueTransferred + agent.directTransferred) / teamHandled) * 100)
                 : 0,
             // Champs dérivés servant uniquement de clés de tri (cf. type SortField)
             queueAnswered: agent.answered,
+            transferred: agent.queueTransferred + agent.directTransferred,
             totalAnswered: agent.answered + agent.directAnswered,
         }));
-    }, [agents, totalTeamAnswered]);
+    }, [agents, totalTeamAnswered, totalTeamTransferred]);
 
     const handleSort = (field: SortField) => {
         if (sortField === field) {
@@ -223,6 +232,7 @@ export function AgentPerformanceTableV2({
                                     <SortHeader field="name" label="Agent" />
                                     <SortHeader field="queueAnswered" label="File (résolu)" />
                                     <SortHeader field="directAnswered" label="Directs" />
+                                    <SortHeader field="transferred" label="Transférés" />
                                     <SortHeader field="totalAnswered" label="Total" />
                                     <SortHeader field="totalHandlingTimeSeconds" label="Durée totale" />
                                     <SortHeader field="avgHandlingTimeSeconds" label="Durée moy." />
@@ -246,6 +256,9 @@ export function AgentPerformanceTableV2({
                                         <td className="px-3 py-3">
                                             <span className="font-semibold text-blue-700">{agent.directAnswered}</span>
                                             <span className="text-slate-400 text-sm">/{agent.directReceived}</span>
+                                        </td>
+                                        <td className="px-3 py-3">
+                                            <span className="font-semibold text-amber-700">{agent.queueTransferred + agent.directTransferred}</span>
                                         </td>
                                         <td className="px-3 py-3">
                                             <span className="font-semibold text-slate-900">{agent.answered + agent.directAnswered}</span>
@@ -285,6 +298,9 @@ export function AgentPerformanceTableV2({
                                                 Totaux dédupliqués au niveau équipe (un appel transféré entre agents compte une seule fois)
                                             </TooltipContent>
                                         </Tooltip>
+                                    </td>
+                                    <td className="px-3 py-3">
+                                        <span className="text-amber-700">{totalTeamTransferred}</span>
                                     </td>
                                     <td className="px-3 py-3">
                                         <span className="text-slate-900">{totals.answered + totalDirectCallsAnswered}</span>

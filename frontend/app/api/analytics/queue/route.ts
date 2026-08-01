@@ -63,6 +63,7 @@ export async function GET(request: NextRequest) {
                     COUNT(*) FILTER (WHERE outcome = 'abandoned') as unique_abandoned,
                     COUNT(*) FILTER (WHERE outcome = 'short_abandon') as unique_short_abandon,
                     COUNT(*) FILTER (WHERE outcome = 'overflow') as unique_overflow,
+                    COUNT(*) FILTER (WHERE outcome = 'handed_off') as unique_handed_off,
                     COUNT(*) FILTER (WHERE outcome = 'voicemail') as unique_voicemail,
                     ROUND(AVG(answer_wait_seconds)::numeric, 1) as avg_wait_time,
                     ROUND(AVG(talk_seconds) FILTER (WHERE outcome = 'answered')::numeric, 1) as avg_talk_time
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest) {
                 SELECT
                     COUNT(*) as direct_received,
                     COUNT(*) FILTER (WHERE outcome = 'answered') as direct_answered,
-                    COUNT(*) FILTER (WHERE outcome = 'overflow') as direct_overflow
+                    COUNT(*) FILTER (WHERE outcome = 'handed_off') as direct_handed_off
                 FROM direct_calls
             ),
             overflow_destinations AS (
@@ -87,7 +88,7 @@ export async function GET(request: NextRequest) {
                 JOIN ${cdrTable(rules)} other_q ON other_q.call_history_id = qc.call_history_id
                     AND other_q.destination_dn_type = 'queue'
                     AND other_q.destination_dn_number != $1
-                WHERE qc.outcome = 'overflow'
+                WHERE qc.outcome IN ('overflow', 'handed_off')
                 GROUP BY other_q.destination_dn_number, other_q.destination_dn_name
                 ORDER BY count DESC
                 LIMIT 10
@@ -105,13 +106,14 @@ export async function GET(request: NextRequest) {
                 qk.unique_abandoned,
                 qk.unique_short_abandon,
                 qk.unique_overflow,
+                qk.unique_handed_off,
                 qk.unique_voicemail,
                 pc.n as total_passages,
                 qk.avg_wait_time,
                 qk.avg_talk_time,
                 COALESCE(dcs.direct_received, 0) as direct_received,
                 COALESCE(dcs.direct_answered, 0) as direct_answered,
-                COALESCE(dcs.direct_overflow, 0) as direct_overflow,
+                COALESCE(dcs.direct_handed_off, 0) as direct_handed_off,
                 COALESCE(
                     (SELECT json_agg(json_build_object('destination', od.destination, 'destinationName', od.destination_name, 'count', od.count))
                      FROM overflow_destinations od),
@@ -159,6 +161,7 @@ export async function GET(request: NextRequest) {
             // ils restent disponibles pour le detail et les reglages a venir.
             outcomeCounts: {
                 answered: Number(row.unique_answered),
+                handed_off: Number(row.unique_handed_off),
                 overflow: Number(row.unique_overflow),
                 voicemail: Number(row.unique_voicemail),
                 short_abandon: Number(row.unique_short_abandon),
@@ -167,6 +170,8 @@ export async function GET(request: NextRequest) {
             abandonedBefore10s: Number(row.unique_short_abandon),
             abandonedAfter10s: Number(row.unique_abandoned),
             callsOverflow: Number(row.unique_overflow),
+            // Transferts accomplis de la file : décrochés ici, servis ailleurs.
+            callsHandedOff: Number(row.unique_handed_off),
             classificationRules: rules,
             totalPassages,
             pingPongCount,
@@ -175,10 +180,10 @@ export async function GET(request: NextRequest) {
             avgTalkTimeSeconds: Number(row.avg_talk_time) || 0,
             directReceived: Number(row.direct_received),
             directAnswered: Number(row.direct_answered),
-            // Un appel direct répondu ici mais servi ailleurs est « Redirigé »
+            // Un appel direct répondu ici mais servi ailleurs est « Transféré »
             // (règle answeredThenTransferred) : ni répondu, ni perdu.
-            directOverflow: Number(row.direct_overflow),
-            directLost: Number(row.direct_received) - Number(row.direct_answered) - Number(row.direct_overflow),
+            directHandedOff: Number(row.direct_handed_off),
+            directLost: Number(row.direct_received) - Number(row.direct_answered) - Number(row.direct_handed_off),
             overflowDestinations: typeof row.overflow_destinations === 'string'
                 ? JSON.parse(row.overflow_destinations)
                 : row.overflow_destinations,
