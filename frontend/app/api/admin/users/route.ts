@@ -20,6 +20,7 @@ export async function GET() {
             role: true,
             authProvider: true,
             createdAt: true,
+            lastLoginAt: true,
         },
         orderBy: { createdAt: "desc" },
     });

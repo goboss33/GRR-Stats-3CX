@@ -87,6 +87,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             },
         }),
     ],
+    events: {
+        // Horodate la dernière connexion RÉUSSIE, quel que soit le fournisseur.
+        // L'événement ne se déclenche qu'après acceptation — et ne doit jamais
+        // faire échouer la connexion, d'où l'erreur avalée avec trace.
+        async signIn({ user }) {
+            if (!user?.email) return;
+            try {
+                await prismaAuth.user.update({
+                    where: { email: user.email },
+                    data: { lastLoginAt: new Date() },
+                });
+            } catch (error) {
+                logger.warn("[Auth] Impossible d'horodater la connexion :", error);
+            }
+        },
+    },
     callbacks: {
         async signIn({ user, account, profile }) {
             if (account?.provider === "microsoft-entra-id") {
