@@ -42,6 +42,7 @@ model User {
   tenantAccess       UserTenantAccess[]
   queuePerimeter     UserQueuePerimeter[]
   extensionOverrides UserExtensionOverride[]
+  queueFavorites     UserQueueFavorite[]
 }
 
 /// Rôles applicatifs (cf. PRD droits d'accès §4).
@@ -153,6 +154,20 @@ model QueueRegistry {
 
   @@unique([tenantId, queueNumber])
   @@index([tenantId, status])
+}
+
+/// Files favorites d'un utilisateur : épinglées en tête du sous-menu
+/// « Mes équipes » (et demain des cartes du tableau de bord). Purement
+/// personnel — aucun effet sur les droits ni sur les chiffres.
+model UserQueueFavorite {
+  userId      String
+  tenantId    String
+  queueNumber String
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, tenantId, queueNumber])
 }
 
 enum QueueStatus {

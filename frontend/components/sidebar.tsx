@@ -23,6 +23,7 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { SidebarProfileMenu } from "@/components/sidebar-profile-menu";
+import { SidebarTeams } from "@/components/sidebar-teams";
 
 interface SidebarProps {
     userRole: string;
@@ -47,6 +48,8 @@ interface NavItem {
     icon: React.ComponentType<{ className?: string }>;
     roles: string[];
     children?: NavSubItem[];
+    /** Sous-menu DYNAMIQUE des équipes du périmètre (cf. SidebarTeams). */
+    teamsSubmenu?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -69,6 +72,7 @@ const navItems: NavItem[] = [
         href: "/statistics-v2",
         icon: Users,
         roles: ["ADMIN", "MODERATOR", "MANAGER"],
+        teamsSubmenu: true,
     },
     {
         label: "Extension / DDI",
@@ -272,7 +276,12 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
                             );
                         }
 
-                        return <div key={item.href}>{linkContent}</div>;
+                        return (
+                            <div key={item.href}>
+                                {linkContent}
+                                {item.teamsSubmenu && !collapsed && <SidebarTeams />}
+                            </div>
+                        );
                     })}
                 </nav>
 
