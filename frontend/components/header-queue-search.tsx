@@ -53,7 +53,7 @@ export function HeaderQueueSearch() {
     };
 
     return (
-        <div className="w-80">
+        <div className="w-[26rem]">
             {/* show="both" : chercher un AGENT ouvre la statistique de son
                 groupe — chaque entrée du picker porte le queueNumber de
                 rattachement, agent compris. */}
@@ -64,6 +64,7 @@ export function HeaderQueueSearch() {
                 onSelect={(item) => openQueueStats(item.queueNumber)}
                 placeholder="Rechercher un groupe ou un agent…"
                 size="compact"
+                inputClassName="h-10"
             />
         </div>
     );
