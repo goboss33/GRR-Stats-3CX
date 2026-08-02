@@ -53,9 +53,10 @@ export async function GET(request: NextRequest) {
 
         const skip = (page - 1) * pageSize;
 
-        // Même grain de comptage que l'application (règle callGrain).
-        const cdr = cdrTable(await getClassificationRules());
-        const ctes = buildAnalyticsCTEs(start, end, queueNumber, cdr);
+        // Même grain de comptage et même seuil de bruit que l'application.
+        const rules = await getClassificationRules();
+        const cdr = cdrTable(rules);
+        const ctes = buildAnalyticsCTEs(start, end, queueNumber, cdr, rules.minSignificantDurationSeconds);
         const timezone = await getServerTimezone(serverId);
         const orderBy = buildAnalyticsOrderByClause(sort, timezone);
         const countQuery = buildAnalyticsCountQuery(start, end, queueNumber, [], cdr);

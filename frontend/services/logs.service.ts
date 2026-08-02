@@ -496,7 +496,9 @@ function buildAggregateCTEs(
     calleeFilterCTE: string,
     extraCTE: string = "",
     // Table CDR au grain choisi (cf. cdrTable) — même grain que les statistiques.
-    cdr: string = "cdroutput"
+    cdr: string = "cdroutput",
+    // Seuil du bruit de routage (règle minSignificantDurationSeconds).
+    noiseThresholdSec: number = 1
 ): string {
     return `
         WITH call_aggregates AS (
@@ -723,7 +725,7 @@ function buildAggregateCTEs(
                           c.destination_entity_type = 'voicemail'
                           OR c.destination_dn_type = 'queue'
                           OR c.destination_dn_type IN ('provider', 'external_line')
-                          OR (${buildDirectSegmentWhereClause('c')})
+                          OR (${buildDirectSegmentWhereClause('c', { durationThreshold: noiseThresholdSec })})
                       )
                 ) all_steps
                 WHERE all_steps.step_num <= 15
@@ -826,7 +828,7 @@ export async function getCallLogsSQL(
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } =
         buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, undefined, rules);
 
-    return buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, "", cdrTable(rules))
+    return buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, "", cdrTable(rules), rules.minSignificantDurationSeconds)
         + buildDataSelect("")
         + buildDataJoins(calleeFilterJoin, aggregatedWhereConditions, sortClause, limit, skip);
 }
@@ -852,7 +854,9 @@ function buildCountQuery(
     aggregatedWhereConditions: string[],
     filters: LogsFilters,
     // Table CDR au grain choisi (cf. cdrTable) — même grain que les statistiques.
-    cdr: string = "cdroutput"
+    cdr: string = "cdroutput",
+    // Seuil du bruit de routage (règle minSignificantDurationSeconds).
+    noiseThresholdSec: number = 1
 ): string {
     const needsHandledBy = !!filters.handledBySearch?.trim();
     const needsCallQueues = !!filters.queueSearch?.trim();
@@ -981,7 +985,7 @@ function buildCountQuery(
                           c.destination_entity_type = 'voicemail'
                           OR c.destination_dn_type = 'queue'
                           OR c.destination_dn_type IN ('provider', 'external_line')
-                          OR (${buildDirectSegmentWhereClause('c')})
+                          OR (${buildDirectSegmentWhereClause('c', { durationThreshold: noiseThresholdSec })})
                       )
                 ) all_steps WHERE all_steps.step_num <= 15
             ) j GROUP BY j.call_history_id
@@ -1243,13 +1247,13 @@ export async function getAggregatedCallLogs(
     const pageNumber = Math.max(1, pagination.page);
 
     try {
-        const dataQuery = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, queueViewCTE, cdrTable(rules))
+        const dataQuery = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, queueViewCTE, cdrTable(rules), rules.minSignificantDurationSeconds)
             + buildDataSelect(queueViewSelect ?? "")
             + buildDataJoins(calleeFilterJoin, aggregatedWhereConditions, sortClause, limit, skip, queueViewJoin);
 
         const countQuery = buildCountQuery(
             whereClause, dateOnlyWhereClause, calleeFilterCTE, calleeFilterJoin,
-            aggregatedWhereConditions, filters, cdrTable(rules)
+            aggregatedWhereConditions, filters, cdrTable(rules), rules.minSignificantDurationSeconds
         );
 
          
@@ -1525,7 +1529,7 @@ export async function getExtensionAggregatedStats(
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, params } =
         buildAggregatedQueryParts(startDate, endDate, filters, { page: 1, pageSize: 1 }, undefined, undefined, scope, rules);
 
-    const ctes = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, "", cdrTable(rules));
+    const ctes = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, "", cdrTable(rules), rules.minSignificantDurationSeconds);
 
     const statsQuery = `${ctes}
         SELECT

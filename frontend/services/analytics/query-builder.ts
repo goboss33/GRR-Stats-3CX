@@ -56,7 +56,9 @@ export function buildAnalyticsCTEs(
     endDate: Date,
     queueNumber?: string,
     // Table CDR au grain choisi (cf. cdrTable) — même grain que l'application.
-    cdr: string = "cdroutput"
+    cdr: string = "cdroutput",
+    // Seuil du bruit de routage (règle minSignificantDurationSeconds).
+    noiseThresholdSec: number = 1
 ): string {
     const whereClause = buildBaseWhereClause(startDate, endDate, queueNumber, cdr);
     const dateOnlyWhereClause = buildDateOnlyWhereClause(startDate, endDate, queueNumber, cdr);
@@ -289,7 +291,7 @@ export function buildAnalyticsCTEs(
                           c.destination_entity_type = 'voicemail'
                           OR c.destination_dn_type = 'queue'
                           OR c.destination_dn_type IN ('provider', 'external_line')
-                          OR (${buildDirectSegmentWhereClause('c', { excludeQueueOriginated: true, queuePassagesCTEName: 'all_queue_passages_for_journey' })})
+                          OR (${buildDirectSegmentWhereClause('c', { excludeQueueOriginated: true, queuePassagesCTEName: 'all_queue_passages_for_journey', durationThreshold: noiseThresholdSec })})
                       )
                 ) all_steps
                 WHERE all_steps.step_num <= 15

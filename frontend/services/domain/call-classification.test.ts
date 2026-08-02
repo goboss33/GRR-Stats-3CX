@@ -357,6 +357,27 @@ describe("provenance des appels (origin)", () => {
     });
 });
 
+describe("seuil de bruit et abandons courts exclus", () => {
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
+
+    it("le seuil des sollicitations brèves est injecté depuis les règles", () => {
+        // Longtemps un réglage fantôme : enregistré mais jamais lu — la
+        // constante à 1 s primait. Il doit maintenant suivre la règle.
+        const sql = buildTeamCTEChain(rules({ minSignificantDurationSeconds: 7 }), P);
+        expect(sql).toContain("< 7");
+        expect(buildTeamCTEChain(rules(), P)).toContain("< 1");
+    });
+
+    it("« excluded » : les abandons courts sortent des reçus", () => {
+        const sql = buildTeamCTEChain(rules({ shortAbandonDisposition: "excluded" }), P);
+        expect(sql).toContain("cqo.outcome <> 'short_abandon'");
+    });
+
+    it("« lost » (défaut) : les abandons courts restent comptés", () => {
+        expect(buildTeamCTEChain(rules(), P)).not.toContain("cqo.outcome <> 'short_abandon'");
+    });
+});
+
 describe("grain de comptage (callGrain)", () => {
     const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
 

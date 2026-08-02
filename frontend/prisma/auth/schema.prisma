@@ -75,6 +75,9 @@ model AppSettings {
   ruleOverflow                String   @default("neutral")
   /// Seuil des abandons courts, en secondes. `null` désactive la règle.
   ruleShortAbandonSec         Int?     @default(10)
+  /// Sort des abandons courts : "lost" (comptés dans Perdus) | "excluded"
+  /// (pas comptés du tout — l'appel sort des reçus)
+  ruleShortAbandonDisposition String   @default("lost")
   /// Appel direct ET en file : "firstContact" | "queueWins" | "both"
   ruleDirectAndQueue          String   @default("firstContact")
   /// Messagerie : "separate" | "lost" | "answered" | "excluded"

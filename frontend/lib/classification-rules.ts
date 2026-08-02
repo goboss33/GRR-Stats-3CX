@@ -49,6 +49,8 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
                 ruleAnsweredThenTransferred: true,
                 ruleAgentCredit: true,
                 ruleHandedOffInPerformance: true,
+                minSignificantDurationSec: true,
+                ruleShortAbandonDisposition: true,
             },
         });
 
@@ -66,6 +68,8 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
                 answeredThenTransferred: pick(row.ruleAnsweredThenTransferred, ["overflow", "answered"] as const, "overflow"),
                 agentCredit: pick(row.ruleAgentCredit, ["lastAnswer", "each"] as const, "lastAnswer"),
                 handedOffInPerformance: pick(row.ruleHandedOffInPerformance, ["success", "neutral"] as const, "success"),
+                minSignificantDurationSeconds: typeof row.minSignificantDurationSec === "number" ? row.minSignificantDurationSec : 1,
+                shortAbandonDisposition: pick(row.ruleShortAbandonDisposition, ["lost", "excluded"] as const, "lost"),
             };
         }
     } catch {

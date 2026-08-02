@@ -55,6 +55,8 @@ export function BusinessRulesTab() {
                     answeredThenTransferred: data.ruleAnsweredThenTransferred ?? current.answeredThenTransferred,
                     agentCredit: data.ruleAgentCredit ?? current.agentCredit,
                     handedOffInPerformance: data.ruleHandedOffInPerformance ?? current.handedOffInPerformance,
+                    minSignificantDurationSeconds: data.minSignificantDurationSec ?? current.minSignificantDurationSeconds,
+                    shortAbandonDisposition: data.ruleShortAbandonDisposition ?? current.shortAbandonDisposition,
                 }));
                 setLoading(false);
             })
@@ -83,6 +85,7 @@ export function BusinessRulesTab() {
                     ruleAnsweredThenTransferred: rules.answeredThenTransferred,
                     ruleAgentCredit: rules.agentCredit,
                     ruleHandedOffInPerformance: rules.handedOffInPerformance,
+                    ruleShortAbandonDisposition: rules.shortAbandonDisposition,
                 }),
             });
             const data = await res.json();
@@ -178,7 +181,12 @@ export function BusinessRulesTab() {
                 rules={rules}
                 onChange={setRules}
                 minSignificantDurationSec={minSignificantDurationSec}
-                onMinSignificantDurationChange={setMinSignificantDurationSec}
+                onMinSignificantDurationChange={(v) => {
+                    setMinSignificantDurationSec(v);
+                    // Le seuil vit aussi dans l'objet de règles : la mesure
+                    // d'impact doit voir la valeur en cours d'essai.
+                    setRules((r) => ({ ...r, minSignificantDurationSeconds: v }));
+                }}
             />
 
             {/* Point d'enregistrement unique du seuil et des règles de

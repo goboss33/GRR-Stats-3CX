@@ -27,6 +27,8 @@ const ROW_COMPLETE = {
     ruleAnsweredThenTransferred: "answered",
     ruleAgentCredit: "each",
     ruleHandedOffInPerformance: "neutral",
+    minSignificantDurationSec: 4,
+    ruleShortAbandonDisposition: "excluded",
 };
 
 beforeEach(() => {
@@ -49,6 +51,8 @@ describe("lecture des réglages", () => {
             answeredThenTransferred: "answered",
             agentCredit: "each",
             handedOffInPerformance: "neutral",
+            minSignificantDurationSeconds: 4,
+            shortAbandonDisposition: "excluded",
         });
     });
 

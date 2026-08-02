@@ -358,15 +358,14 @@ export function ClassificationRulesCard({
 
                     {QUEUE_RULES.map(renderRule)}
 
-                    <div className="space-y-1.5 border-t border-slate-100 pt-4">
+                    <div className="space-y-2 border-t border-slate-100 pt-4">
                         <Label className="text-sm font-semibold text-slate-900">Abandons très courts</Label>
                         <p className="text-xs italic text-slate-500">
                             Un appelant compose un mauvais numéro et raccroche après trois secondes.
                         </p>
                         <p className="text-xs text-slate-500">
-                            En dessous de ce seuil, l&apos;abandon est distingué dans le calcul. Il reste
-                            compté dans « Perdus » : ce réglage ne change donc aucun chiffre affiché,
-                            seulement la ventilation interne. Laisser vide pour désactiver.
+                            En dessous de ce seuil, l&apos;abandon est distingué dans le calcul.
+                            Laisser vide pour désactiver la distinction.
                         </p>
                         <Input
                             type="number"
@@ -380,6 +379,41 @@ export function ClassificationRulesCard({
                                 shortAbandonThresholdSeconds: e.target.value === "" ? null : Number(e.target.value),
                             })}
                         />
+                        <p className="pt-1 text-xs text-slate-500">
+                            Et que fait-on de ces abandons très courts ?
+                        </p>
+                        <div className="space-y-1.5">
+                            {([
+                                { value: "lost", label: "Comptés dans « Perdus »", effect: "L'appel reste un reçu : un client qui a réellement appelé, même trois secondes, compte. Seule la ventilation interne distingue l'abandon court." },
+                                { value: "excluded", label: "Exclus des reçus", effect: "L'appel sort complètement des statistiques (ni reçu, ni perdu) — même mécanique que la messagerie exclue. Le taux de prise en charge remonte mécaniquement." },
+                            ] as const).map((opt) => {
+                                const selected = rules.shortAbandonDisposition === opt.value;
+                                return (
+                                    <button
+                                        key={opt.value}
+                                        type="button"
+                                        onClick={() => onChange({ ...rules, shortAbandonDisposition: opt.value })}
+                                        className={`w-full rounded-lg border p-2.5 text-left transition-colors ${
+                                            selected
+                                                ? "border-blue-400 bg-blue-50/60"
+                                                : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                                        }`}
+                                    >
+                                        <div className="flex items-start gap-2">
+                                            <div className={`mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
+                                                selected ? "border-blue-500 bg-blue-500" : "border-slate-300"
+                                            }`} />
+                                            <div>
+                                                <div className={`text-sm ${selected ? "font-medium text-slate-900" : "text-slate-700"}`}>
+                                                    {opt.label}
+                                                </div>
+                                                <div className="mt-0.5 text-xs text-slate-500">{opt.effect}</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
                 </CardContent>
             </Card>

@@ -15,6 +15,7 @@ const RULE_FIELDS = {
     ruleAnsweredThenTransferred: ["overflow", "answered"],
     ruleAgentCredit: ["lastAnswer", "each"],
     ruleHandedOffInPerformance: ["success", "neutral"],
+    ruleShortAbandonDisposition: ["lost", "excluded"],
 } as const;
 
 type RuleField = keyof typeof RULE_FIELDS;
@@ -35,6 +36,7 @@ function projectSettings(settings: Record<string, unknown>) {
         ruleAnsweredThenTransferred: settings.ruleAnsweredThenTransferred,
         ruleAgentCredit: settings.ruleAgentCredit,
         ruleHandedOffInPerformance: settings.ruleHandedOffInPerformance,
+        ruleShortAbandonDisposition: settings.ruleShortAbandonDisposition,
     };
 }
 

@@ -206,6 +206,26 @@ export interface ClassificationRules {
     answeredThenTransferred: "overflow" | "answered";
 
     /**
+     * Durée minimale (secondes) d'une sollicitation directe NON RÉPONDUE pour
+     * qu'elle compte comme une vraie tentative. En dessous, c'est un artefact
+     * de routage (renvoi actif, rebond système) : le segment n'entre pas dans
+     * les statistiques. Décide de la PRÉSENCE, jamais du statut.
+     *
+     * Longtemps un « réglage fantôme » : enregistré et affiché, mais jamais lu
+     * par les requêtes, qui utilisaient la constante à 1 s. Il vit désormais
+     * ici, dans l'objet de règles chargé par toutes les requêtes.
+     */
+    minSignificantDurationSeconds: number;
+
+    /**
+     * Sort des abandons très courts (sous le seuil shortAbandonThresholdSeconds).
+     * - "lost"     : comptés reçus, rangés dans Perdus (comportement historique)
+     * - "excluded" : pas comptés du tout — l'appel sort des « reçus », comme
+     *                la messagerie sous voicemail: "excluded"
+     */
+    shortAbandonDisposition: "lost" | "excluded";
+
+    /**
      * Un transfert accompli (handed_off) compte-t-il dans la PERFORMANCE de
      * l'équipe (taux de prise en charge) ?
      *
@@ -278,6 +298,8 @@ export const DEFAULT_CLASSIFICATION_RULES: ClassificationRules = {
     // Le transfert accompli est un travail fait — décisif pour les réceptions
     // (mesuré : Pully passait de 23 % à 88 % de prise en charge sur juin 2026).
     handedOffInPerformance: "success",
+    minSignificantDurationSeconds: 1,
+    shortAbandonDisposition: "lost",
 };
 
 // ============================================
@@ -788,7 +810,7 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
             -- l'ignorent.
             c.destination_dn_number AS extension
         FROM ${cdr} c
-        WHERE ${buildDirectSegmentWhereClause("c")}
+        WHERE ${buildDirectSegmentWhereClause("c", { durationThreshold: rules.minSignificantDurationSeconds })}
           AND c.destination_dn_number IN (SELECT extension FROM queue_agents)
           AND c.cdr_started_at >= ${params.startExpr}
           AND c.cdr_started_at <= ${params.endExpr}
@@ -801,7 +823,10 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
             // ne comptent pas comme reçus. Écarter ici, dans la table que TOUS
             // les consommateurs lisent (KPIs, logs, graphiques), garantit que
             // chiffres et listes restent d'accord.
-            rules.voicemail === "excluded" ? "\n          AND cqo.outcome <> 'voicemail'" : ""}${queueOriginCond}
+            rules.voicemail === "excluded" ? "\n          AND cqo.outcome <> 'voicemail'" : ""}${
+            // Même doctrine pour les abandons très courts quand la règle
+            // `shortAbandonDisposition: "excluded"` les sort des reçus.
+            rules.shortAbandonDisposition === "excluded" ? "\n          AND cqo.outcome <> 'short_abandon'" : ""}${queueOriginCond}
     ),
     ${buildDirectCallsCTE(rules, "team_direct_segments", "call_queue_outcomes", directOriginCond, directServedCond)}`;
 }
