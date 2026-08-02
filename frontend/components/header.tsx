@@ -2,21 +2,11 @@
 
 import { usePathname } from "next/navigation";
 import { DateRangePicker } from "@/components/date-range-picker";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { OriginToggle } from "@/components/stats-v2/origin-toggle";
 import { useHeaderScope } from "@/components/header-scope";
 import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
-
-const roleBadgeColors: Record<string, string> = {
-    ADMIN: "bg-red-500/20 text-red-400 border-red-500/30",
-    MANAGER: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-    USER: "bg-green-500/20 text-green-400 border-green-500/30",
-};
-
-const roleLabels: Record<string, string> = {
-    ADMIN: "Administrateur",
-    MANAGER: "Manager",
-    USER: "Utilisateur",
-};
 
 const pageTitleMap: Record<string, string> = {
     "/dashboard": "Tableau de bord",
@@ -101,7 +91,24 @@ function HeaderOriginToggle() {
     );
 }
 
-export function Header({ userRole, userName }: { userRole: string; userName: string }) {
+/** Bouton « Actualiser » : relaie l'action déclarée par la page affichée. */
+function HeaderRefreshButton() {
+    const { refresh, refreshing } = useHeaderScope();
+    return (
+        <Button
+            variant="outline"
+            size="icon"
+            onClick={() => refresh?.()}
+            disabled={!refresh || refreshing}
+            title={refresh ? "Actualiser les données" : "Sans effet sur cet écran"}
+            className="bg-white shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-40"
+        >
+            <RefreshCw className={`h-4 w-4 text-slate-600 ${refreshing ? "animate-spin" : ""}`} />
+        </Button>
+    );
+}
+
+export function Header({ userName }: { userName: string }) {
     const pathname = usePathname();
     const title = getPageTitle(pathname);
 
@@ -130,14 +137,7 @@ export function Header({ userRole, userName }: { userRole: string; userName: str
                     <HeaderPeriodPicker />
                 </ContextControl>
 
-                {userRole && (
-                    <span
-                        className={`px-3 py-1 text-xs font-medium rounded-full border ${roleBadgeColors[userRole] || roleBadgeColors.USER
-                            }`}
-                    >
-                        {roleLabels[userRole] || userRole}
-                    </span>
-                )}
+                <HeaderRefreshButton />
             </div>
         </header>
     );

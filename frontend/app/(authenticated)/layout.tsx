@@ -51,7 +51,7 @@ export default async function AuthenticatedLayout({
                 {/* Le provider relie les pages au header : elles y déclarent
                     quelles provenances sont préchargées (spinners du toggle). */}
                 <HeaderScopeProvider>
-                    <Header userRole={userRole} userName={userName} />
+                    <Header userName={userName} />
                     <main className="flex-1 overflow-y-auto p-6">
                         <Suspense fallback={<Loading />}>
                             {children}

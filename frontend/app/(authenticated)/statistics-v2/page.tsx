@@ -6,9 +6,8 @@ import { logger } from "@/lib/logger";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { startOfDay, endOfDay, format } from "date-fns";
 import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
-import { useReportLoadedOrigins } from "@/components/header-scope";
-import { BarChart3, RefreshCw, Users } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useReportLoadedOrigins, useRegisterHeaderRefresh } from "@/components/header-scope";
+import { BarChart3, Users } from "lucide-react";
 import { QueueInfo } from "@/types/queues.types";
 import { getQueueStatistics } from "@/services/queue-statistics.service";
 import { getScopedQueueOptions } from "@/services/queues.service";
@@ -120,7 +119,11 @@ export default function StatisticsV2Page() {
         reloadAll(originRef.current);
     }, [reloadAll, selectedQueueNumber]);
 
-    const handleRefresh = () => reloadAll(origin);
+    // « Actualiser » est dans le header de l'application ; sans groupe choisi
+    // il n'y a rien à recharger côté détail, mais l'aperçu se rafraîchit via
+    // le rechargement de la page — on ne déclare l'action que pour le détail.
+    const handleRefresh = useCallback(() => reloadAll(originRef.current), [reloadAll]);
+    useRegisterHeaderRefresh(handleRefresh, isLoading);
 
     // Bascule par le header : instantanée quand la variante est en cache ;
     // sinon chargement classique (clic plus rapide que le préchargement).
@@ -183,20 +186,6 @@ export default function StatisticsV2Page() {
                             onSelect={handleQueueSelect}
                             placeholder="Rechercher un groupe ou un agent..."
                         />
-                    </div>
-
-
-                    {/* Refresh */}
-                    <div className="flex items-end">
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={handleRefresh}
-                            disabled={!selectedQueueNumber || isLoading}
-                            className="h-11 w-11"
-                        >
-                            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-                        </Button>
                     </div>
                 </div>
                 )}

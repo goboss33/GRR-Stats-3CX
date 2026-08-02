@@ -3,16 +3,15 @@
 import { getSelectedServer } from "@/lib/selected-server";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Hourglass, Voicemail } from "lucide-react";
+import { Phone, PhoneOff, Clock, TrendingUp, Hourglass, Voicemail } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
 import { finalStatusesForBucket } from "@/services/domain/call-aggregation";
 import { format } from "date-fns";
 import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
-import { useReportLoadedOrigins } from "@/components/header-scope";
+import { useReportLoadedOrigins, useRegisterHeaderRefresh } from "@/components/header-scope";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
@@ -137,7 +136,9 @@ export default function DashboardClient() {
         reloadAll();
     }, [reloadAll]);
 
-    const handleRefresh = () => reloadAll();
+    // Le bouton « Actualiser » vit dans le header de l'application : la page
+    // lui déclare son action (et l'état de rotation).
+    useRegisterHeaderRefresh(reloadAll, isLoading);
 
 
     return (
@@ -152,17 +153,7 @@ export default function DashboardClient() {
                         Vue d'ensemble et performances de l'entreprise
                     </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={handleRefresh}
-                        disabled={isLoading}
-                        className="bg-white shadow-sm hover:bg-slate-50 transition-colors"
-                    >
-                        <RefreshCw className={`h-4 w-4 text-slate-600 ${isLoading ? "animate-spin" : ""}`} />
-                    </Button>
-                </div>
+
             </div>
 
             {/* Chiffres-clés. Une seule vignette réutilisée : le balisage n'est
