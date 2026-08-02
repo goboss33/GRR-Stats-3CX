@@ -11,7 +11,6 @@ import {
     ChevronDown,
     Phone,
     FileText,
-    BarChart3,
     Users,
     Hash,
 } from "lucide-react";
@@ -63,22 +62,19 @@ const navItems: NavItem[] = [
         icon: FileText,
         roles: ["ADMIN", "MODERATOR", "MANAGER"],
     },
+    // Les statistiques au premier niveau : « Mes équipes » est l'écran
+    // d'atterrissage du manager (aperçu des groupes), un sous-menu le cachait.
     {
-        label: "Statistiques",
-        icon: BarChart3,
+        label: "Mes équipes",
+        href: "/statistics-v2",
+        icon: Users,
         roles: ["ADMIN", "MODERATOR", "MANAGER"],
-        children: [
-            {
-                label: "Groupe",
-                href: "/statistics-v2",
-                icon: Users,
-            },
-            {
-                label: "Extension / DDI",
-                href: "/statistics-extension",
-                icon: Hash,
-            },
-        ],
+    },
+    {
+        label: "Extension / DDI",
+        href: "/statistics-extension",
+        icon: Hash,
+        roles: ["ADMIN", "MODERATOR", "MANAGER"],
     },
 ];
 

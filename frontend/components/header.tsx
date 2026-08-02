@@ -23,7 +23,8 @@ const pageTitleMap: Record<string, string> = {
     "/admin/logs": "Logs d'appels",
     "/admin/settings": "Paramètres",
     "/documentation": "Documentation",
-    "/statistics": "Statistiques",
+    "/statistics-v2": "Mes équipes",
+    "/statistics-extension": "Extension / DDI",
 };
 
 function getPageTitle(pathname: string): string {
@@ -32,7 +33,8 @@ function getPageTitle(pathname: string): string {
     if (pathname.startsWith("/admin/logs")) return "Logs d'appels";
     if (pathname.startsWith("/admin/settings")) return "Paramètres";
     if (pathname.startsWith("/documentation")) return "Documentation";
-    if (pathname.startsWith("/statistics")) return "Statistiques";
+    if (pathname.startsWith("/statistics-extension")) return "Extension / DDI";
+    if (pathname.startsWith("/statistics")) return "Mes équipes";
     return "Tableau de bord";
 }
 
