@@ -746,21 +746,31 @@ export async function getQueueName(serverId: ServerId, queueNumber: string): Pro
     return queueInfo[0]?.queue_name || queueNumber;
 }
 
-// L'annuaire files/agents agrège TOUT l'historique CDR (7,5 s mesurées sur
-// sept mois) et il est identique pour tous les utilisateurs — le périmètre se
-// filtre en aval. Un cache court le sort du chemin critique de l'écran de
-// sélection ; la vraie borne temporelle viendra avec le chantier des files
-// inactives.
+// L'annuaire files/agents agrège TOUT l'historique CDR (~3-7 s mesurées sur
+// sept mois : ~660 000 lignes jointes puis agrégées, incompressible sans borne
+// temporelle — laquelle viendra avec le chantier des files inactives) et il
+// est identique pour tous les utilisateurs, le périmètre se filtrant en aval.
+//
+// Il est donc servi en STALE-WHILE-REVALIDATE : une version fraîche (< TTL)
+// est rendue telle quelle ; une version périmée est rendue IMMÉDIATEMENT
+// pendant qu'un rafraîchissement unique tourne en arrière-plan. Combiné au
+// préchauffage du démarrage (warmQueueDirectory, cf. instrumentation.ts),
+// aucun utilisateur n'attend jamais cette requête.
 const QUEUE_MEMBERS_TTL_MS = 5 * 60_000;
-const queueMembersCache = new Map<string, { rows: QueueMemberRow[]; expiresAt: number }>();
+interface QueueMembersCacheEntry {
+    rows: QueueMemberRow[];
+    fetchedAt: number;
+    refreshing: boolean;
+}
+const queueMembersCache = new Map<string, QueueMembersCacheEntry>();
+// Démarrage à froid : dédoublonne les requêtes simultanées avant le premier cache.
+const queueMembersColdFetch = new Map<string, Promise<QueueMemberRow[]>>();
 
-export async function getQueueMembersRaw(serverId: ServerId): Promise<QueueMemberRow[]> {
-    const cached = queueMembersCache.get(serverId);
-    if (cached && cached.expiresAt > Date.now()) return cached.rows;
+async function queryQueueMembers(serverId: ServerId): Promise<QueueMemberRow[]> {
     const prisma = getPrismaCdr(serverId);
     const rows = await prisma.$queryRaw<QueueMemberRow[]>`
         WITH QueueMembers AS (
-            SELECT 
+            SELECT
                 parent.destination_dn_number AS queue_number,
                 parent.destination_dn_name AS queue_name,
                 child.destination_dn_number AS agent_extension,
@@ -769,7 +779,7 @@ export async function getQueueMembersRaw(serverId: ServerId): Promise<QueueMembe
                 MAX(child.cdr_started_at) as last_seen_at
             FROM cdroutput child
             JOIN cdroutput parent ON child.originating_cdr_id = parent.cdr_id
-            WHERE child.creation_method = 'route_to' 
+            WHERE child.creation_method = 'route_to'
               AND child.creation_forward_reason = 'polling'
               AND parent.destination_dn_type = 'queue'
             GROUP BY parent.destination_dn_number, parent.destination_dn_name,
@@ -777,8 +787,55 @@ export async function getQueueMembersRaw(serverId: ServerId): Promise<QueueMembe
         )
         SELECT * FROM QueueMembers ORDER BY queue_number, agent_extension;
     `;
-    queueMembersCache.set(serverId, { rows, expiresAt: Date.now() + QUEUE_MEMBERS_TTL_MS });
+    queueMembersCache.set(serverId, { rows, fetchedAt: Date.now(), refreshing: false });
     return rows;
+}
+
+export async function getQueueMembersRaw(serverId: ServerId): Promise<QueueMemberRow[]> {
+    const entry = queueMembersCache.get(serverId);
+
+    if (entry) {
+        // Périmé : on sert l'ancien SANS attendre, et on relance UNE remise à
+        // jour en arrière-plan. L'annuaire bouge à l'échelle de la semaine,
+        // quelques minutes de retard sont sans enjeu.
+        if (Date.now() - entry.fetchedAt >= QUEUE_MEMBERS_TTL_MS && !entry.refreshing) {
+            entry.refreshing = true;
+            void queryQueueMembers(serverId).catch((error) => {
+                entry.refreshing = false;
+                console.error("[annuaire] rafraîchissement en arrière-plan échoué :", error);
+            });
+        }
+        return entry.rows;
+    }
+
+    // Jamais chargé depuis le démarrage (le préchauffage a échoué ou n'a pas
+    // fini) : on paie la requête une fois, sans la dupliquer si plusieurs
+    // visiteurs arrivent en même temps.
+    let pending = queueMembersColdFetch.get(serverId);
+    if (!pending) {
+        pending = queryQueueMembers(serverId).finally(() => queueMembersColdFetch.delete(serverId));
+        queueMembersColdFetch.set(serverId, pending);
+    }
+    return pending;
+}
+
+/**
+ * Préchauffe l'annuaire de chaque tenant au démarrage du serveur (appelé par
+ * instrumentation.ts, en tir décroché) : le premier visiteur trouve le cache
+ * déjà rempli au lieu de payer les secondes de la requête à froid.
+ */
+export async function warmQueueDirectory(): Promise<void> {
+    const { getAvailableServers } = await import("@/lib/servers");
+    for (const serverId of getAvailableServers()) {
+        try {
+            const t0 = Date.now();
+            await queryQueueMembers(serverId);
+            console.log(`[annuaire] préchauffé pour ${serverId} en ${Date.now() - t0} ms`);
+        } catch (error) {
+            // Un tenant injoignable ne doit pas empêcher de préchauffer l'autre.
+            console.error(`[annuaire] préchauffage impossible pour ${serverId} :`, error);
+        }
+    }
 }
 
 // ============================================
