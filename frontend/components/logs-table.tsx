@@ -211,7 +211,9 @@ export function LogsTable({
                                 </TableHead>
                             )}
                             {columnVisibility.status && (
-                                <TableHead className="w-24 text-center">Statut final</TableHead>
+                                // w-32 : « Non répondu » (sortants) est le libellé le
+                                // plus long et doit tenir sur une ligne.
+                                <TableHead className="w-32 text-center">Statut final</TableHead>
                             )}
                             {columnVisibility.duration && (
                                 <TableHead className="w-20 text-right">

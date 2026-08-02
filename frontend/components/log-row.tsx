@@ -239,8 +239,8 @@ export function LogRow({ log, queueViewActive, columnVisibility, onRowClick }: L
 
             {columnVisibility.status && (
                 <TableCell className="text-center">
-                    <Badge variant="secondary" className={`gap-1 ${statConfig.className}`}>
-                        <StatIcon className="h-3 w-3" />
+                    <Badge variant="secondary" className={`gap-1 whitespace-nowrap ${statConfig.className}`}>
+                        <StatIcon className="h-3 w-3 shrink-0" />
                         {statLabel}
                     </Badge>
                     {/* Ce que la file consultée n'a pas traité a pu l'être
