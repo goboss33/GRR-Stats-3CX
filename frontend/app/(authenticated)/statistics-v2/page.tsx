@@ -5,7 +5,8 @@ import { logger } from "@/lib/logger";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { startOfDay, endOfDay, format } from "date-fns";
-import { useUrlPeriod } from "@/lib/url-state";
+import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
+import { useReportLoadedOrigins } from "@/components/header-scope";
 import { BarChart3, RefreshCw, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QueueInfo } from "@/types/queues.types";
@@ -31,9 +32,10 @@ export default function StatisticsV2Page() {
     const [selectedQueueName, setSelectedQueueName] = useState<string>("");
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingQueues, setIsLoadingQueues] = useState(true);
-    // Provenance des appels (toggle Externe / Interne / Les deux) : transmise
-    // au service, qui filtre TOUTES les sous-requêtes de l'écran d'un coup.
-    const [origin, setOrigin] = useState<CallOrigin>("both");
+    // Provenance des appels (Externe / Interne / Les deux) : contexte global,
+    // lue dans l'URL et pilotée par le toggle du HEADER. Transmise au service,
+    // qui filtre TOUTES les sous-requêtes de l'écran d'un coup.
+    const { origin } = useUrlOrigin();
 
     // Cache des trois variantes de provenance pour le contexte courant
     // (serveur + groupe + période) : la variante affichée est chargée d'abord,
@@ -46,6 +48,9 @@ export default function StatisticsV2Page() {
     originRef.current = origin;
 
     const statistics = statsCache[origin] ?? null;
+
+    // Remonte au header les provenances déjà consultables (spinners du toggle).
+    useReportLoadedOrigins(ORIGINS.filter((o) => !!statsCache[o]));
 
     // Default to current month
     // La période vient de l'URL (cf. lib/url-state).
@@ -114,14 +119,15 @@ export default function StatisticsV2Page() {
 
     const handleRefresh = () => reloadAll(origin);
 
-    // Bascule instantanée quand la variante est en cache ; sinon chargement
-    // classique (l'utilisateur a cliqué plus vite que le préchargement).
-    const handleOriginChange = (next: CallOrigin) => {
-        setOrigin(next);
-        if (!statsCache[next]) {
-            void fetchIntoCache(contextKeyRef.current, next, true);
+    // Bascule par le header : instantanée quand la variante est en cache ;
+    // sinon chargement classique (clic plus rapide que le préchargement).
+    useEffect(() => {
+        if (!statsCache[origin] && contextKeyRef.current && selectedQueueNumber) {
+            void fetchIntoCache(contextKeyRef.current, origin, true);
         }
-    };
+        // statsCache volontairement absent : ne réagir qu'à la bascule.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [origin, fetchIntoCache, selectedQueueNumber]);
 
     const handleQueueSelect = (queueNumber: string, queueName: string) => {
         logger.debug("[QueueSelector] handleQueueSelect called:", { queueNumber, queueName });
@@ -227,8 +233,6 @@ export default function StatisticsV2Page() {
                         startDate={format(dateRange.startDate, "yyyy-MM-dd")}
                         endDate={format(dateRange.endDate, "yyyy-MM-dd")}
                         origin={origin}
-                        onOriginChange={handleOriginChange}
-                        loadedOrigins={ORIGINS.filter((o) => !!statsCache[o])}
                         agentExtensions={statistics.agents.map(a => a.extension)}
                     />
 

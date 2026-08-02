@@ -8,14 +8,14 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
 import { finalStatusesForBucket } from "@/services/domain/call-aggregation";
 import { format } from "date-fns";
-import { useUrlPeriod } from "@/lib/url-state";
+import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
+import { useReportLoadedOrigins } from "@/components/header-scope";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
-import { OriginToggle } from "@/components/stats-v2/origin-toggle";
 
 import {
     getGlobalMetrics,
@@ -64,15 +64,18 @@ export default function DashboardClient() {
     //
     // « Externe » d'abord : c'est la lecture client, celle qu'on vient chercher.
     // Les deux autres provenances se préchargent en tâche de fond — le toggle
-    // les grise (spinner) tant qu'elles ne sont pas consultables, puis bascule
-    // sans rechargement. Même mécanique que l'écran de statistiques de groupe.
-    const [origin, setOrigin] = useState<CallOrigin>("external");
+    // du HEADER les grise (spinner) tant qu'elles ne sont pas consultables,
+    // puis bascule sans rechargement. La provenance est un contexte global :
+    // elle vit dans l'URL (cf. lib/url-state), comme la période.
+    const { origin } = useUrlOrigin();
     const [dataCache, setDataCache] = useState<Partial<Record<CallOrigin, DashboardData>>>({});
     // Le jeton de contexte écarte les réponses devenues obsolètes (changement
     // de période — ou « Rafraîchir » — pendant un préchargement en vol).
     const contextKeyRef = useRef<string>("");
     const originRef = useRef<CallOrigin>(origin);
     originRef.current = origin;
+
+    useReportLoadedOrigins(ORIGINS.filter((o) => !!dataCache[o]));
 
     const current = dataCache[origin] ?? null;
     const metrics = current?.metrics ?? null;
@@ -97,6 +100,9 @@ export default function DashboardClient() {
             : origin === "external" ? ["inbound", "bridge"]
                 : ["inbound", "internal", "bridge"];
         p.set("directions", directions.join(","));
+        // Toujours explicite : le défaut global étant « externe », un lien sans
+        // origin depuis la vue « Les deux » ferait mentir la liste.
+        p.set("origin", origin);
         return `/admin/logs?${p.toString()}`;
     };
 
@@ -155,15 +161,16 @@ export default function DashboardClient() {
 
     const handleRefresh = () => reloadAll(origin);
 
-    // Bascule instantanée quand la provenance est en cache ; sinon chargement
-    // classique (clic plus rapide que le préchargement — toggle grisé, mais
-    // on reste robuste).
-    const handleOriginChange = (next: CallOrigin) => {
-        setOrigin(next);
-        if (!dataCache[next]) {
-            void fetchIntoCache(contextKeyRef.current, next, true);
+    // Bascule par le header : instantanée quand la provenance est en cache ;
+    // sinon chargement classique (clic plus rapide que le préchargement).
+    useEffect(() => {
+        if (!dataCache[origin] && contextKeyRef.current) {
+            void fetchIntoCache(contextKeyRef.current, origin, true);
         }
-    };
+        // dataCache volontairement absent des dépendances : l'effet ne doit
+        // réagir qu'à la bascule de provenance, pas au remplissage du cache.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [origin, fetchIntoCache]);
 
 
     return (
@@ -179,13 +186,6 @@ export default function DashboardClient() {
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                    {/* Provenance du flux entrant : même sémantique que sur les
-                        statistiques de groupe. */}
-                    <OriginToggle
-                        value={origin}
-                        onChange={handleOriginChange}
-                        loadedOrigins={ORIGINS.filter((o) => !!dataCache[o])}
-                    />
                     <Button
                         variant="outline"
                         size="icon"

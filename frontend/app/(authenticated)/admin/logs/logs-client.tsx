@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RefreshCw, Download, FileText, Columns3, Code } from "lucide-react";
 import { format } from "date-fns";
-import { useUrlPeriod, applyPeriodToParams } from "@/lib/url-state";
+import { useUrlPeriod, useUrlOrigin, applyPeriodToParams } from "@/lib/url-state";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -185,13 +185,12 @@ export default function AdminLogsPage() {
         const param = searchParams.get("queueOrigin");
         return param === "queue" || param === "direct" ? param : null;
     });
-    // Provenance (toggle Externe / Interne des statistiques de groupe), posée
-    // par les liens des vignettes : la liste décrit alors exactement la
-    // population du chiffre cliqué.
-    const [callOrigin, setCallOrigin] = useState<"internal" | "external" | null>(() => {
-        const param = searchParams.get("origin");
-        return param === "internal" || param === "external" ? param : null;
-    });
+    // Provenance : le CONTEXTE GLOBAL (toggle du header, paramètre d'URL
+    // partagé avec le tableau de bord et les statistiques). Une seule vérité :
+    // le header et cette liste ne peuvent pas se contredire. « Les deux »
+    // équivaut à « pas de filtre ».
+    const { origin: urlOrigin, setOrigin: setUrlOrigin } = useUrlOrigin();
+    const callOrigin: "internal" | "external" | null = urlOrigin === "both" ? null : urlOrigin;
     // L'écran raisonne en vignettes (Répondu / Perdu / Redirigé) ; le socle, en
     // statuts fins. DEFAULT_OUTCOME_GROUPING fait le pont, et c'est la même
     // table que celle utilisée par les statistiques.
@@ -618,7 +617,9 @@ export default function AdminLogsPage() {
     };
 
     const handleRemoveCallOrigin = () => {
-        setCallOrigin(null);
+        // Retirer le filtre = repasser le contexte global sur « Les deux » —
+        // le toggle du header suit, puisqu'il lit le même paramètre d'URL.
+        setUrlOrigin("both");
         setCurrentPage(1);
     };
 
@@ -626,7 +627,7 @@ export default function AdminLogsPage() {
         // Reset all filter states
         setSelectedDirections([]);
         setSelectedStatuses([]);
-        setCallOrigin(null);
+        setUrlOrigin("both");
         setCallerSearch("");
         setCalleeSearch("");
         setHandledBySearch("");

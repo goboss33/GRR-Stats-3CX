@@ -2,7 +2,9 @@
 
 import { usePathname } from "next/navigation";
 import { DateRangePicker } from "@/components/date-range-picker";
-import { useUrlPeriod } from "@/lib/url-state";
+import { OriginToggle } from "@/components/stats-v2/origin-toggle";
+import { useHeaderScope } from "@/components/header-scope";
+import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
 
 const roleBadgeColors: Record<string, string> = {
     ADMIN: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -35,6 +37,36 @@ function getPageTitle(pathname: string): string {
 }
 
 /**
+ * Applicabilité des contrôles de contexte, par écran.
+ *
+ * Un contrôle global ignoré en silence serait un mensonge visuel : sur les
+ * écrans où le contexte ne s'applique pas, il reste VISIBLE mais grisé, avec
+ * une infobulle qui le dit. (L'écran extension/DDI mélange les deux directions
+ * par ligne : la provenance n'y filtrerait proprement que la moitié entrante.)
+ */
+function originApplies(pathname: string): boolean {
+    return pathname.startsWith("/dashboard")
+        || pathname.startsWith("/statistics-v2")
+        || pathname.startsWith("/admin/logs");
+}
+
+function periodApplies(pathname: string): boolean {
+    return originApplies(pathname) || pathname.startsWith("/statistics-extension");
+}
+
+/** Grise un contrôle de contexte inapplicable, sans le cacher. */
+function ContextControl({ applies, title, children }: {
+    applies: boolean; title: string; children: React.ReactNode;
+}) {
+    if (applies) return <>{children}</>;
+    return (
+        <div className="pointer-events-none opacity-40" title={title} aria-disabled="true">
+            {children}
+        </div>
+    );
+}
+
+/**
  * Sélecteur de période, unique pour toute l'application. Il ne détient rien :
  * il écrit l'URL, et chaque écran relit.
  */
@@ -45,6 +77,24 @@ function HeaderPeriodPicker() {
             dateRange={{ startDate, endDate }}
             onDateRangeChange={setPeriod}
             displayFormat="short"
+        />
+    );
+}
+
+/**
+ * Toggle de provenance, unique lui aussi : il écrit l'URL (`origin`), le
+ * tableau de bord, les statistiques de groupe et les journaux relisent. Les
+ * variantes pas encore préchargées par la page affichée sont grisées avec un
+ * spinner (remontées via HeaderScopeProvider).
+ */
+function HeaderOriginToggle() {
+    const { origin, setOrigin } = useUrlOrigin();
+    const { loadedOrigins } = useHeaderScope();
+    return (
+        <OriginToggle
+            value={origin}
+            onChange={setOrigin}
+            loadedOrigins={loadedOrigins ?? undefined}
         />
     );
 }
@@ -65,7 +115,18 @@ export function Header({ userRole, userName }: { userRole: string; userName: str
             </div>
 
             <div className="flex items-center gap-4">
-                <HeaderPeriodPicker />
+                <ContextControl
+                    applies={originApplies(pathname)}
+                    title="Sans effet sur cet écran"
+                >
+                    <HeaderOriginToggle />
+                </ContextControl>
+                <ContextControl
+                    applies={periodApplies(pathname)}
+                    title="Sans effet sur cet écran"
+                >
+                    <HeaderPeriodPicker />
+                </ContextControl>
 
                 {userRole && (
                     <span

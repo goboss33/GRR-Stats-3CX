@@ -95,17 +95,64 @@ export function useUrlPeriod(): Period & { setPeriod: (period: Period) => void }
     return useMemo(() => ({ ...period, setPeriod }), [period, setPeriod]);
 }
 
+// ============================================
+// PROVENANCE (Externe / Interne / Les deux)
+// ============================================
+
+import type { CallOrigin } from "@/services/domain/call-classification";
+
 /**
- * Ajoute la période courante à un lien de navigation.
+ * « Externe » par défaut : la lecture client, celle qu'on vient chercher neuf
+ * fois sur dix — arbitrage d'août 2026, aligné sur tous les écrans.
+ */
+const DEFAULT_ORIGIN: CallOrigin = "external";
+
+/** Provenance décrite par un paramètre d'URL ; toute valeur inconnue retombe sur le défaut. */
+export function originFromParam(raw: string | null): CallOrigin {
+    return raw === "internal" || raw === "external" || raw === "both" ? raw : DEFAULT_ORIGIN;
+}
+
+/**
+ * Provenance courante et moyen d'en changer — le pendant de `useUrlPeriod`.
+ *
+ * Comme la période, la provenance est un CONTEXTE de consultation, pas un
+ * filtre d'écran : elle vit dans l'URL, le toggle du header l'écrit, et chaque
+ * écran concerné (tableau de bord, statistiques de groupe, journaux) la relit.
+ * Un seul état, plusieurs poignées — impossible de faire mentir le header.
+ */
+export function useUrlOrigin(): { origin: CallOrigin; setOrigin: (origin: CallOrigin) => void } {
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+
+    const origin = originFromParam(searchParams.get("origin"));
+
+    const query = searchParams.toString();
+    const setOrigin = useCallback((next: CallOrigin) => {
+        const params = new URLSearchParams(query);
+        params.set("origin", next);
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    }, [router, pathname, query]);
+
+    return useMemo(() => ({ origin, setOrigin }), [origin, setOrigin]);
+}
+
+/**
+ * Ajoute le contexte de consultation courant — période ET provenance — à un
+ * lien de navigation.
  *
  * Sans cela, passer des statistiques aux journaux par la barre latérale
  * repartirait sur le mois en cours : le contexte se perdrait au moment même où
  * l'on en a le plus besoin.
  */
 export function withPeriod(href: string, searchParams: URLSearchParams | ReadonlyURLSearchParams): string {
+    const parts: string[] = [];
     const start = searchParams.get("start");
     const end = searchParams.get("end");
-    if (!start || !end) return href;
+    if (start && end) parts.push(`start=${start}`, `end=${end}`);
+    const origin = searchParams.get("origin");
+    if (origin) parts.push(`origin=${origin}`);
+    if (parts.length === 0) return href;
     const separator = href.includes("?") ? "&" : "?";
-    return `${href}${separator}start=${start}&end=${end}`;
+    return `${href}${separator}${parts.join("&")}`;
 }
