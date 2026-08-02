@@ -3,6 +3,7 @@
 import { getSelectedServer } from "@/lib/selected-server";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Phone, PhoneOff, Clock, TrendingUp, Hourglass, Voicemail } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
@@ -17,6 +18,9 @@ import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
 
 import { getDashboardAllOrigins } from "@/services/dashboard.service";
+import { getScopedQueueOptions } from "@/services/queues.service";
+import { QueueOverviewGrid } from "@/components/stats-v2/queue-overview-grid";
+import type { QueueInfo } from "@/types/queues.types";
 import type { CallOrigin } from "@/services/domain/call-classification";
 
 import type {
@@ -63,6 +67,10 @@ export default function DashboardClient() {
     // puis bascule sans rechargement. La provenance est un contexte global :
     // elle vit dans l'URL (cf. lib/url-state), comme la période.
     const { origin } = useUrlOrigin();
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    // Les équipes du périmètre, pour la grille de cartes sous les graphiques.
+    const [teamQueues, setTeamQueues] = useState<QueueInfo[]>([]);
     const [dataCache, setDataCache] = useState<Partial<Record<CallOrigin, DashboardData>>>({});
     // Le jeton de contexte écarte les réponses devenues obsolètes (changement
     // de période — ou « Rafraîchir » — pendant un préchargement en vol).
@@ -135,6 +143,23 @@ export default function DashboardClient() {
     useEffect(() => {
         reloadAll();
     }, [reloadAll]);
+
+    useEffect(() => {
+        getScopedQueueOptions(getSelectedServer())
+            .then((options) => setTeamQueues(options.queues))
+            .catch(() => undefined);
+    }, []);
+
+    // Cliquer une carte ouvre la statistique de l'équipe, contexte conservé.
+    const openTeamStats = useCallback((queueNumber: string) => {
+        const params = new URLSearchParams();
+        for (const key of ["start", "end", "origin"]) {
+            const value = searchParams.get(key);
+            if (value) params.set(key, value);
+        }
+        params.set("queue", queueNumber);
+        router.push(`/statistics-v2?${params.toString()}`);
+    }, [router, searchParams]);
 
     // Le bouton « Actualiser » vit dans le header de l'application : la page
     // lui déclare son action (et l'état de rotation).
@@ -259,6 +284,20 @@ export default function DashboardClient() {
                 </Card>
             </div>
 
+            {/* Mes équipes — l'aperçu du périmètre, favorites d'abord. Le
+                clin d'œil du manager : pastille rouge = équipe à aller voir. */}
+            {teamQueues.length > 0 && (
+                <div className="space-y-3">
+                    <h2 className="text-lg font-bold text-slate-900">Mes équipes</h2>
+                    <QueueOverviewGrid
+                        queues={teamQueues}
+                        startDate={dateRange.startDate}
+                        endDate={dateRange.endDate}
+                        origin={origin}
+                        onSelect={openTeamStats}
+                    />
+                </div>
+            )}
         </div>
     );
 }

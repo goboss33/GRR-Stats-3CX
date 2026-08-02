@@ -67,9 +67,10 @@ const navItems: NavItem[] = [
     },
     // Les statistiques au premier niveau : « Mes équipes » est l'écran
     // d'atterrissage du manager (aperçu des groupes), un sous-menu le cachait.
+    // Intitulé de section, pas un lien : la navigation se fait par les équipes
+    // elles-mêmes (sous-menu) — /statistics-v2 sans file redirige au dashboard.
     {
         label: "Mes équipes",
-        href: "/statistics-v2",
         icon: Users,
         roles: ["ADMIN", "MODERATOR", "MANAGER"],
         teamsSubmenu: true,
@@ -244,6 +245,38 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
                             );
                         }
 
+                        // Intitulé de section « Mes équipes » : pas un lien —
+                        // replié, l'icône rouvre simplement la barre.
+                        if (item.teamsSubmenu) {
+                            return (
+                                <div key={item.label} className="flex min-h-0 flex-col">
+                                    {collapsed ? (
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <button
+                                                    onClick={() => setCollapsed(false)}
+                                                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 transition-all duration-200 hover:bg-slate-800 hover:text-white"
+                                                >
+                                                    <item.icon className="h-5 w-5 flex-shrink-0" />
+                                                </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right" className="bg-slate-800 text-white border-slate-700">
+                                                {item.label}
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center gap-3 px-3 py-2.5 text-slate-400">
+                                                <item.icon className="h-5 w-5 flex-shrink-0" />
+                                                <span className="text-sm font-medium">{item.label}</span>
+                                            </div>
+                                            <SidebarTeams />
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        }
+
                         const isActive = item.href
                             ? pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href))
                             : false;
@@ -276,15 +309,7 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
                             );
                         }
 
-                        return (
-                            // min-h-0 + flex-col : quand la liste des équipes
-                            // est longue, c'est ELLE qui rétrécit et défile —
-                            // jamais les entrées de menu qui suivent.
-                            <div key={item.href} className={item.teamsSubmenu ? "flex min-h-0 flex-col" : "shrink-0"}>
-                                {linkContent}
-                                {item.teamsSubmenu && !collapsed && <SidebarTeams />}
-                            </div>
-                        );
+                        return <div key={item.href} className="shrink-0">{linkContent}</div>;
                     })}
                 </nav>
 

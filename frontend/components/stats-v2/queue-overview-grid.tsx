@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { QueueOverviewCard } from "@/components/stats-v2/queue-overview-card";
 import { getQueueOverviewKpis } from "@/services/queue-statistics.service";
+import { getQueueFavorites } from "@/services/queue-favorites.service";
 import { getSelectedServer } from "@/lib/selected-server";
 import { logger } from "@/lib/logger";
 import type { QueueInfo } from "@/types/queues.types";
@@ -11,22 +13,24 @@ import type { QueueKPIs } from "@/types/statistics.types";
 import type { CallOrigin } from "@/services/domain/call-classification";
 
 /**
- * Aperçu des groupes du périmètre — la grille de cartes de l'écran de
- * sélection.
+ * Aperçu des groupes du périmètre — la grille de cartes du tableau de bord.
  *
- * Chargement PROGRESSIF : la grille de squelettes s'affiche immédiatement
- * (la recherche au-dessus reste utilisable sans attendre), puis chaque carte
- * se remplit dès que sa réponse arrive. Les requêtes partent par vagues
- * (limite de concurrence) pour ne pas marteler la base — chaque carte coûte
- * la requête KPI du détail (~0,5 s), LA MÊME, pour que l'aperçu et le détail
- * affichent les mêmes chiffres par construction.
+ * FAVORITES D'ABORD : au-delà d'une douzaine de groupes, seules les équipes
+ * épinglées (ou les douze premières, sans favoris) s'affichent, le reste se
+ * déplie à la demande — un périmètre d'administrateur (~85 files) ne doit pas
+ * engloutir le tableau de bord. Seules les cartes VISIBLES chargent leurs
+ * chiffres : déplier déclenche le chargement du reste.
  *
- * Tri stable par numéro de file (des cartes qui se réordonnent pendant le
- * chargement seraient pénibles) ; les pastilles rouges font le repérage.
- * Les files sans appel sur la période sont repliées sous la grille.
+ * Chargement PROGRESSIF : squelettes immédiats, chaque carte se remplit dès
+ * que sa réponse arrive (pool borné, ~0,5 s par carte — LA MÊME requête KPI
+ * que l'écran détail, pour que l'aperçu et le détail affichent les mêmes
+ * chiffres par construction). Tri stable par numéro ; les groupes sans appel
+ * sur la période se replient sous la grille.
  */
 
 const CONCURRENCY = 5;
+/** Au-delà, le repli s'active : favorites (ou 12 premières) + « Afficher tout ». */
+const COLLAPSE_THRESHOLD = 12;
 
 interface Props {
     queues: QueueInfo[];
@@ -41,52 +45,81 @@ export function QueueOverviewGrid({ queues, startDate, endDate, origin, onSelect
     // Files dont la requête a échoué : retirées de la grille plutôt que de
     // laisser un squelette éternel.
     const [failed, setFailed] = useState<Set<string>>(new Set());
+    const [favorites, setFavorites] = useState<Set<string>>(new Set());
+    const [expanded, setExpanded] = useState(false);
     const contextKeyRef = useRef("");
+    const inflightRef = useRef<Set<string>>(new Set());
+
+    useEffect(() => {
+        getQueueFavorites(getSelectedServer())
+            .then((list) => setFavorites(new Set(list)))
+            .catch(() => undefined);
+    }, []);
 
     const sorted = useMemo(
         () => [...queues].sort((a, b) => a.queueNumber.localeCompare(b.queueNumber, undefined, { numeric: true })),
         [queues],
     );
 
+    // Qui s'affiche ? Tout le monde sous le seuil ; sinon les favorites (ou
+    // les douze premières à défaut), le reste derrière le déplioir.
+    const { shown, hiddenCount } = useMemo(() => {
+        if (expanded || sorted.length <= COLLAPSE_THRESHOLD) {
+            return { shown: sorted, hiddenCount: 0 };
+        }
+        const pinned = sorted.filter((q) => favorites.has(q.queueNumber));
+        const visible = pinned.length > 0 ? pinned : sorted.slice(0, COLLAPSE_THRESHOLD);
+        return { shown: visible, hiddenCount: sorted.length - visible.length };
+    }, [sorted, favorites, expanded]);
+
+    // Charge les cartes VISIBLES qui ne le sont pas encore — déplier étend le
+    // chargement au reste, changer de contexte remet tout à zéro.
+    const ctxKey = `${getSelectedServer()}|${startDate.toISOString()}|${endDate.toISOString()}|${origin}|${sorted.map((q) => q.queueNumber).join(",")}`;
+    const shownKey = shown.map((q) => q.queueNumber).join(",");
     useEffect(() => {
-        if (sorted.length === 0) return;
-        const ctxKey = `${getSelectedServer()}|${startDate.toISOString()}|${endDate.toISOString()}|${origin}|${sorted.map((q) => q.queueNumber).join(",")}`;
-        if (contextKeyRef.current === ctxKey) return;
-        contextKeyRef.current = ctxKey;
-        setKpisByQueue({});
-        setFailed(new Set());
+        if (shown.length === 0) return;
+        if (contextKeyRef.current !== ctxKey) {
+            contextKeyRef.current = ctxKey;
+            setKpisByQueue({});
+            setFailed(new Set());
+            inflightRef.current = new Set();
+        }
 
         const serverId = getSelectedServer();
-        const pending = [...sorted];
-        // Pool de travailleurs : CONCURRENCY requêtes en vol au maximum, les
-        // réponses remplissent les cartes au fil de l'eau.
+        const pending = shown
+            .map((q) => q.queueNumber)
+            .filter((n) => !inflightRef.current.has(n));
+        pending.forEach((n) => inflightRef.current.add(n));
+
         const worker = async () => {
             for (;;) {
-                const queue = pending.shift();
-                if (!queue || contextKeyRef.current !== ctxKey) return;
+                const queueNumber = pending.shift();
+                if (!queueNumber || contextKeyRef.current !== ctxKey) return;
                 try {
-                    const kpis = await getQueueOverviewKpis(serverId, queue.queueNumber, startDate, endDate, origin);
+                    const kpis = await getQueueOverviewKpis(serverId, queueNumber, startDate, endDate, origin);
                     if (contextKeyRef.current !== ctxKey) return;
-                    setKpisByQueue((current) => ({ ...current, [queue.queueNumber]: kpis }));
+                    setKpisByQueue((current) => ({ ...current, [queueNumber]: kpis }));
                 } catch (error) {
-                    logger.error("[QueueOverview] KPI en échec :", { queue: queue.queueNumber, error });
+                    logger.error("[QueueOverview] KPI en échec :", { queue: queueNumber, error });
                     if (contextKeyRef.current !== ctxKey) return;
-                    setFailed((current) => new Set(current).add(queue.queueNumber));
+                    setFailed((current) => new Set(current).add(queueNumber));
                 }
             }
         };
         for (let i = 0; i < CONCURRENCY; i++) void worker();
-    }, [sorted, startDate, endDate, origin]);
+        // startDate/endDate portés par ctxKey (identité de Date instable).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ctxKey, shownKey]);
 
     if (sorted.length === 0) return null;
 
-    // Une file « sans appel » ne l'est qu'une fois sa réponse arrivée.
+    // Un groupe « sans appel » ne l'est qu'une fois sa réponse arrivée.
     const isEmpty = (q: QueueInfo) => {
         const kpis = kpisByQueue[q.queueNumber];
         return kpis !== undefined && kpis.callsReceived + kpis.teamDirectReceived === 0;
     };
-    const visible = sorted.filter((q) => !failed.has(q.queueNumber) && !isEmpty(q));
-    const empty = sorted.filter((q) => isEmpty(q));
+    const visible = shown.filter((q) => !failed.has(q.queueNumber) && !isEmpty(q));
+    const empty = shown.filter((q) => isEmpty(q));
 
     return (
         <div className="space-y-4">
@@ -101,6 +134,18 @@ export function QueueOverviewGrid({ queues, startDate, endDate, origin, onSelect
                     />
                 ))}
             </div>
+
+            {(hiddenCount > 0 || (expanded && sorted.length > COLLAPSE_THRESHOLD)) && (
+                <button
+                    type="button"
+                    onClick={() => setExpanded((e) => !e)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white py-2 text-sm font-medium text-slate-500 transition-colors hover:border-blue-300 hover:text-slate-800"
+                >
+                    {expanded
+                        ? <>Réduire <ChevronUp className="h-4 w-4" /></>
+                        : <>Afficher les {hiddenCount} autres groupes <ChevronDown className="h-4 w-4" /></>}
+                </button>
+            )}
 
             {empty.length > 0 && (
                 <details className="text-sm text-slate-500">

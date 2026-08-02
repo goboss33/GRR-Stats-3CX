@@ -4,12 +4,10 @@ import { getSelectedServer } from "@/lib/selected-server";
 import { logger } from "@/lib/logger";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { startOfDay, endOfDay, format } from "date-fns";
+import { useRouter, useSearchParams } from "next/navigation";
+import { format } from "date-fns";
 import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
 import { useReportLoadedOrigins, useRegisterHeaderRefresh } from "@/components/header-scope";
-import { BarChart3, Users } from "lucide-react";
-import { QueueInfo } from "@/types/queues.types";
 import { getQueueStatistics } from "@/services/queue-statistics.service";
 import { getScopedQueueOptions } from "@/services/queues.service";
 import { NoPerimeterNotice } from "@/components/no-perimeter-notice";
@@ -17,9 +15,6 @@ import { TeamOverview } from "@/components/stats-v2/team-overview";
 import { AgentPerformanceTableV2 } from "@/components/stats-v2/agent-performance-table-v2";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
-import { QueueSelector } from "@/components/stats/queue-selector";
-import { QueueOverviewGrid } from "@/components/stats-v2/queue-overview-grid";
-import { ServerId } from "@/lib/prisma-cdr";
 import type { QueueStatistics } from "@/types/statistics.types";
 import type { CallOrigin } from "@/services/domain/call-classification";
 
@@ -28,9 +23,7 @@ const ORIGINS: CallOrigin[] = ["both", "external", "internal"];
 
 export default function StatisticsV2Page() {
     const router = useRouter();
-    const pathname = usePathname();
     const searchParams = useSearchParams();
-    const [queues, setQueues] = useState<QueueInfo[]>([]);
     const [noPerimeter, setNoPerimeter] = useState(false);
     // La file consultée EST l'URL (?queue=…) : cartes du dashboard, recherche
     // du header, sous-menu et liens partagés naviguent tous vers le même
@@ -64,14 +57,11 @@ export default function StatisticsV2Page() {
     // La période vient de l'URL (cf. lib/url-state).
     const dateRange = useUrlPeriod();
 
-    // Load queues on mount
+    // Seul le signal « aucun périmètre » est encore utile ici : la liste des
+    // files vit désormais sur le tableau de bord (aperçu) et dans le header.
     useEffect(() => {
-        const serverId = getSelectedServer();
-        getScopedQueueOptions(serverId)
-            .then((options) => {
-                setQueues(options.queues);
-                setNoPerimeter(options.noPerimeter);
-            })
+        getScopedQueueOptions(getSelectedServer())
+            .then((options) => setNoPerimeter(options.noPerimeter))
             .finally(() => setIsLoadingQueues(false));
     }, []);
 
@@ -141,13 +131,17 @@ export default function StatisticsV2Page() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [origin, fetchIntoCache, selectedQueueNumber]);
 
-    // Sélectionner une équipe est une navigation (le bouton Retour ramène à
-    // l'écran précédent) ; le reste du contexte (période, provenance) voyage.
-    const handleQueueSelect = (queueNumber: string) => {
-        const params = new URLSearchParams(searchParams.toString());
-        params.set("queue", queueNumber);
-        router.push(`${pathname}?${params.toString()}`, { scroll: false });
-    };
+    // Cet écran est le DÉTAIL d'une équipe ; sans file dans l'URL, la page
+    // d'atterrissage est le tableau de bord (qui porte l'aperçu des groupes).
+    useEffect(() => {
+        if (selectedQueueNumber) return;
+        const params = new URLSearchParams();
+        for (const key of ["start", "end", "origin"]) {
+            const value = searchParams.get(key);
+            if (value) params.set(key, value);
+        }
+        router.replace(`/dashboard${params.size > 0 ? `?${params.toString()}` : ""}`);
+    }, [selectedQueueNumber, searchParams, router]);
 
 
 
@@ -164,58 +158,8 @@ export default function StatisticsV2Page() {
 
     return (
         <div className="p-6 max-w-[1800px] mx-auto space-y-6">
-            {/* Header */}
-            <div className="flex flex-col gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
-                        <BarChart3 className="h-8 w-8 text-blue-600" />
-                        Statistiques par groupe
-                    </h1>
-                    <p className="text-slate-500 mt-1">
-                        Vue d'ensemble des performances par équipe (file d'attente + appels directs)
-                    </p>
-                </div>
-
-                {noPerimeter && (
-                    <NoPerimeterNotice context="Les statistiques portent sur les groupes qui vous sont attribués, et aucun ne l'est pour le moment." />
-                )}
-
-                {/* Filters Row */}
-                {!noPerimeter && (
-                <div className="flex flex-wrap items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
-                    {/* Queue selector */}
-                    <div className="flex-1 min-w-[300px] max-w-md">
-                        <label className="text-sm font-medium text-slate-600 mb-1.5 block">
-                            Groupe
-                        </label>
-                        <QueueSelector
-                            queues={queues}
-                            selectedQueueNumber={selectedQueueNumber}
-                            onSelect={handleQueueSelect}
-                            placeholder="Rechercher un groupe ou un agent..."
-                        />
-                    </div>
-                </div>
-                )}
-            </div>
-
-            {/* Aucun groupe choisi : l'aperçu du périmètre — une carte par
-                groupe, remplie au fil de l'eau. La recherche au-dessus reste
-                le chemin rapide pour qui sait où il va. */}
-            {!noPerimeter && !selectedQueueNumber && !isLoadingQueues && queues.length > 0 && (
-                <QueueOverviewGrid
-                    queues={queues}
-                    startDate={dateRange.startDate}
-                    endDate={dateRange.endDate}
-                    origin={origin}
-                    onSelect={handleQueueSelect}
-                />
-            )}
-            {!noPerimeter && !selectedQueueNumber && !isLoadingQueues && queues.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-20 text-slate-500">
-                    <Users className="h-16 w-16 mb-4 text-slate-300" />
-                    <h2 className="text-xl font-semibold text-slate-700">Aucune file dans votre périmètre</h2>
-                </div>
+            {noPerimeter && (
+                <NoPerimeterNotice context="Les statistiques portent sur les groupes qui vous sont attribués, et aucun ne l'est pour le moment." />
             )}
 
             {/* Loading */}
