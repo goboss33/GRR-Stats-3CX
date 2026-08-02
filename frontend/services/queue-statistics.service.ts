@@ -134,6 +134,28 @@ export async function getQueueStatistics(
     };
 }
 
+/**
+ * KPIs seuls d'une file — pour les cartes de l'aperçu des groupes.
+ *
+ * MÊME route d'API que l'écran détail (computeQueueKPIs) : une carte et le
+ * détail qu'elle ouvre affichent les mêmes chiffres par construction. Les
+ * sous-requêtes lourdes du détail (agents, courbes, heatmap) ne sont pas
+ * exécutées ici.
+ */
+export async function getQueueOverviewKpis(
+    serverId: ServerId,
+    queueNumber: string,
+    startDate: Date,
+    endDate: Date,
+    origin: CallOrigin = "both"
+): Promise<QueueKPIs> {
+    const scope = await resolveAccessScope(serverId);
+    if (!isQueueInScope(scope, queueNumber)) {
+        throw new Error("Cette file d'attente n'est pas dans votre périmètre");
+    }
+    return computeQueueKPIs(serverId, queueNumber, startDate, endDate, origin);
+}
+
 async function computeQueueKPIs(
     serverId: ServerId,
     queueNumber: string,

@@ -6,6 +6,7 @@ import { QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, ExternalLink, TrendingUp } from "lucide-react";
 import { outcomesForBucket, sumBucket, type CallOrigin } from "@/services/domain/call-classification";
+import { computeTeamTotals } from "@/services/domain/team-totals";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import Link from "next/link";
 
@@ -39,29 +40,14 @@ const COLORS = {
 };
 
 export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate, origin }: TeamOverviewProps) {
-    const totalReceived = kpis.callsReceived + kpis.teamDirectReceived;
-    const totalAnswered = kpis.callsAnswered + kpis.teamDirectAnswered;
-    // L'ecran reste a quatre chiffres : messagerie et abandons courts sont
-    // regroupes dans « Perdus ». Le detail n'est pas perdu pour autant, le clic
-    // ouvre les logs de la population exacte. La table DEFAULT_OUTCOME_GROUPING
-    // sert a la fois a additionner et a construire le lien, donc les deux ne
-    // peuvent pas diverger.
-    const totalLost = sumBucket(kpis.outcomeCounts, "lost") + kpis.directLost;
-    // Redirigés = transférés (décrochés ici, servis ailleurs) + débordés
-    // (partis sans décroché), file et directs confondus — un direct non
-    // répondu reparti vers une autre file est un débordé comme un autre
-    // (règle unansweredDirectOverflow).
-    const totalHandedOff = kpis.callsHandedOff + kpis.directHandedOff;
-    const totalOverflowed = kpis.callsOverflow + kpis.directOverflow;
-    const totalOverflow = totalOverflowed + totalHandedOff;
-    // Taux de prise en charge : un transfert accompli est un travail fait —
-    // décisif pour les réceptions, dont le métier EST de transférer (règle
-    // handedOffInPerformance, configurable).
+    // Les totaux des vignettes viennent du helper PARTAGÉ avec les cartes de
+    // l'aperçu des groupes (services/domain/team-totals) : les deux écrans ne
+    // peuvent pas diverger. Le détail fin (regroupements, liens) reste ici.
+    const {
+        totalReceived, totalAnswered, totalLost, totalHandedOff,
+        totalOverflowed, totalRedirected: totalOverflow, performanceRate,
+    } = computeTeamTotals(kpis);
     const handedOffCounts = kpis.handedOffInPerformance === "success";
-    const totalHandled = totalAnswered + (handedOffCounts ? totalHandedOff : 0);
-    const performanceRate = totalReceived > 0
-        ? Math.round((totalHandled / totalReceived) * 100)
-        : 0;
 
     // Taux de prise en charge PAR BLOC — même définition que la barre globale :
     // répondu ou transféré, c'est pris en charge.

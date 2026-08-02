@@ -18,6 +18,7 @@ import { AgentPerformanceTableV2 } from "@/components/stats-v2/agent-performance
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
 import { QueueSelector } from "@/components/stats/queue-selector";
+import { QueueOverviewGrid } from "@/components/stats-v2/queue-overview-grid";
 import { ServerId } from "@/lib/prisma-cdr";
 import type { QueueStatistics } from "@/types/statistics.types";
 import type { CallOrigin } from "@/services/domain/call-classification";
@@ -201,16 +202,22 @@ export default function StatisticsV2Page() {
                 )}
             </div>
 
-            {/* No queue selected */}
-            {!noPerimeter && !selectedQueueNumber && (
+            {/* Aucun groupe choisi : l'aperçu du périmètre — une carte par
+                groupe, remplie au fil de l'eau. La recherche au-dessus reste
+                le chemin rapide pour qui sait où il va. */}
+            {!noPerimeter && !selectedQueueNumber && !isLoadingQueues && queues.length > 0 && (
+                <QueueOverviewGrid
+                    queues={queues}
+                    startDate={dateRange.startDate}
+                    endDate={dateRange.endDate}
+                    origin={origin}
+                    onSelect={handleQueueSelect}
+                />
+            )}
+            {!noPerimeter && !selectedQueueNumber && !isLoadingQueues && queues.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-20 text-slate-500">
                     <Users className="h-16 w-16 mb-4 text-slate-300" />
-                    <h2 className="text-xl font-semibold text-slate-700">
-                        Sélectionnez une file d'attente
-                    </h2>
-                    <p className="mt-2">
-                        Choisissez une file pour voir les statistiques détaillées de l'équipe
-                    </p>
+                    <h2 className="text-xl font-semibold text-slate-700">Aucune file dans votre périmètre</h2>
                 </div>
             )}
 
