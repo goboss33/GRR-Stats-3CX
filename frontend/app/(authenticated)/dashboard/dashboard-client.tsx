@@ -15,22 +15,20 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
-import { ConcurrentCallsChart } from "@/components/concurrent-calls-chart";
+import { OriginToggle } from "@/components/stats-v2/origin-toggle";
 
 import {
     getGlobalMetrics,
     getTimelineData,
     getHeatmapData,
-    getConcurrentCallsChartData,
 } from "@/services/dashboard.service";
-import { ServerId } from "@/lib/prisma-cdr";
+import type { DashboardDirection } from "@/services/domain/call-aggregation";
+import type { CallOrigin } from "@/services/domain/call-classification";
 
 import type {
     GlobalMetrics,
     TimelineDataPoint,
     HeatmapDataPoint,
-    ConcurrentCallsDataPoint,
-    ConcurrentCallsSummary,
 } from "@/types/stats.types";
 
 
@@ -53,8 +51,12 @@ export default function DashboardClient() {
     const [metrics, setMetrics] = useState<GlobalMetrics | null>(null);
     const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([]);
     const [heatmapData, setHeatmapData] = useState<HeatmapDataPoint[]>([]);
-    const [concurrentCallsData, setConcurrentCallsData] = useState<ConcurrentCallsDataPoint[]>([]);
-    const [concurrentCallsSummary, setConcurrentCallsSummary] = useState<ConcurrentCallsSummary | null>(null);
+    // Direction (flux reçu / flux émis) et provenance (collègue / client).
+    // En mode Sortant, la provenance n'a pas de sens : le toggle se grise et
+    // les libellés changent (« Aboutis » : c'est l'interlocuteur qui décroche).
+    const [direction, setDirection] = useState<DashboardDirection>("inbound");
+    const [origin, setOrigin] = useState<CallOrigin>("both");
+    const isOutbound = direction === "outbound";
 
     // « Perdus » = manqués et occupés. La messagerie garde sa case : elle
     // décrit autre chose qu'un abandon, et l'exploitation s'en sert.
@@ -67,6 +69,15 @@ export default function DashboardClient() {
         p.set("start", format(dateRange.startDate, "yyyy-MM-dd"));
         p.set("end", format(dateRange.endDate, "yyyy-MM-dd"));
         if (statuts?.length) p.set("statuses", statuts.join(","));
+        // La population listée doit être celle du chiffre cliqué : la
+        // direction et la provenance du tableau de bord voyagent avec le lien
+        // (le filtre « directions » des journaux parle en directions fines).
+        const directions = isOutbound
+            ? ["outbound"]
+            : origin === "internal" ? ["internal"]
+                : origin === "external" ? ["inbound", "bridge"]
+                    : ["inbound", "internal", "bridge"];
+        p.set("directions", directions.join(","));
         return `/admin/logs?${p.toString()}`;
     };
 
@@ -79,18 +90,15 @@ export default function DashboardClient() {
         setIsLoading(true);
         try {
             const serverId = getSelectedServer();
-            const [metricsData, timeline, heatmap, concurrentCalls] = await Promise.all([
-                getGlobalMetrics(serverId, dateRange.startDate, dateRange.endDate),
-                getTimelineData(serverId, dateRange.startDate, dateRange.endDate),
-                getHeatmapData(serverId, dateRange.startDate, dateRange.endDate),
-                getConcurrentCallsChartData(serverId, dateRange.startDate, dateRange.endDate),
+            const [metricsData, timeline, heatmap] = await Promise.all([
+                getGlobalMetrics(serverId, dateRange.startDate, dateRange.endDate, direction, origin),
+                getTimelineData(serverId, dateRange.startDate, dateRange.endDate, direction, origin),
+                getHeatmapData(serverId, dateRange.startDate, dateRange.endDate, direction, origin),
             ]);
 
             setMetrics(metricsData);
             setTimelineData(timeline);
             setHeatmapData(heatmap);
-            setConcurrentCallsData(concurrentCalls.data);
-            setConcurrentCallsSummary(concurrentCalls.summary);
             setIsInitialLoad(false);
         } catch (error) {
             console.error("Error fetching dashboard data:", error);
@@ -98,7 +106,7 @@ export default function DashboardClient() {
         } finally {
             setIsLoading(false);
         }
-    }, [dateRange.startDate, dateRange.endDate]);
+    }, [dateRange.startDate, dateRange.endDate, direction, origin]);
 
     useEffect(() => {
         fetchData();
@@ -119,7 +127,37 @@ export default function DashboardClient() {
                         Vue d'ensemble et performances de l'entreprise
                     </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                    {/* Direction : flux reçu ou flux émis. Pas d'option cumulée —
+                        les statuts n'ont pas le même sens dans les deux sens. */}
+                    <div
+                        role="group"
+                        aria-label="Direction des appels"
+                        className="inline-flex items-center rounded-full bg-slate-200/70 p-1"
+                    >
+                        {([
+                            { value: "inbound", label: "Entrants", title: "Appels reçus par l'entreprise" },
+                            { value: "outbound", label: "Sortants", title: "Appels émis vers l'extérieur" },
+                        ] as const).map((opt) => (
+                            <button
+                                key={opt.value}
+                                type="button"
+                                title={opt.title}
+                                aria-pressed={direction === opt.value}
+                                onClick={() => setDirection(opt.value)}
+                                className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                                    direction === opt.value
+                                        ? "bg-blue-600 text-white shadow-sm"
+                                        : "text-slate-600 hover:text-slate-900"
+                                }`}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                    {/* Provenance : grisée côté Sortant (un sortant est par
+                        nature émis par l'interne vers l'externe). */}
+                    <OriginToggle value={origin} onChange={setOrigin} disabled={isOutbound} />
                     <Button
                         variant="outline"
                         size="icon"
@@ -136,7 +174,7 @@ export default function DashboardClient() {
                 plus recopié, donc plus de divergences de mise en forme. */}
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
                 <KpiCard
-                    label="Appels uniques"
+                    label={isOutbound ? "Appels émis" : "Appels reçus"}
                     href={lienLogs()}
                     value={(metrics?.totalCalls ?? 0).toLocaleString("fr-CH")}
                     icon={Phone}
@@ -145,26 +183,28 @@ export default function DashboardClient() {
                     isLoading={isLoading}
                 />
                 <KpiCard
-                    label="Répondus"
+                    label={isOutbound ? "Aboutis" : "Répondus"}
                     href={lienLogs(finalStatusesForBucket('answered'))}
                     value={(metrics?.answeredCalls ?? 0).toLocaleString("fr-CH")}
                     icon={TrendingUp}
                     tone="positive"
-                    subtitle={`${answerRate} % de taux global`}
+                    subtitle={isOutbound
+                        ? `${answerRate} % décrochés en face`
+                        : `${answerRate} % de taux global`}
                     trend={{ current: metrics?.answeredCalls ?? 0, previous: metrics?.prevAnsweredCalls ?? 0 }}
                     isLoading={isLoading}
                 />
                 <KpiCard
-                    label="Perdus"
+                    label={isOutbound ? "Sans réponse" : "Perdus"}
                     href={lienLogs(finalStatusesForBucket('lost'))}
                     value={lostCalls.toLocaleString("fr-CH")}
                     icon={PhoneOff}
                     tone="negative"
-                    subtitle="Appels non aboutis"
+                    subtitle={isOutbound ? "L'interlocuteur n'a pas décroché" : "Appels non aboutis"}
                     trend={{ current: lostCalls, previous: prevLostCalls, lowerIsBetter: true }}
                     isLoading={isLoading}
                 />
-                <KpiCard
+                {!isOutbound && <KpiCard
                     label="Messagerie"
                     href={lienLogs(finalStatusesForBucket('voicemail'))}
                     value={(metrics?.voicemailCalls ?? 0).toLocaleString("fr-CH")}
@@ -173,7 +213,7 @@ export default function DashboardClient() {
                     subtitle="Hors heures ou renvoi"
                     trend={{ current: metrics?.voicemailCalls ?? 0, previous: metrics?.prevVoicemailCalls ?? 0, lowerIsBetter: true }}
                     isLoading={isLoading}
-                />
+                />}
                 <KpiCard
                     label="Discussion"
                     value={formatDuration(metrics?.avgDurationSeconds ?? 0)}
@@ -186,7 +226,7 @@ export default function DashboardClient() {
                     label="Attente moy."
                     value={formatDuration(metrics?.avgWaitTimeSeconds ?? 0)}
                     icon={Hourglass}
-                    subtitle="Avant ou entre transferts"
+                    subtitle={isOutbound ? "Avant le décroché en face" : "Avant ou entre transferts"}
                     trend={{ current: metrics?.avgWaitTimeSeconds ?? 0, previous: metrics?.prevAvgWaitTimeSeconds ?? 0, lowerIsBetter: true }}
                     isLoading={isLoading}
                 />
@@ -235,26 +275,6 @@ export default function DashboardClient() {
                 </Card>
             </div>
 
-            {/* Concurrent Calls - ECG Style */}
-            <Card className="border-none shadow-md bg-gradient-to-b from-white to-slate-50/50">
-                <CardHeader>
-                    <CardTitle className="text-lg font-bold text-slate-900">Appels Simultanés — Monitoring Licence</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    {isLoading && !isInitialLoad ? (
-                        <div className="h-[400px] space-y-4 pt-4">
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                                {Array.from({ length: 4 }).map((_, i) => (
-                                    <Skeleton key={i} className="h-20 rounded-xl" />
-                                ))}
-                            </div>
-                            <Skeleton className="h-[300px] rounded-xl" />
-                        </div>
-                    ) : concurrentCallsSummary ? (
-                        <ConcurrentCallsChart data={concurrentCallsData} summary={concurrentCallsSummary} />
-                    ) : null}
-                </CardContent>
-            </Card>
         </div>
     );
 }

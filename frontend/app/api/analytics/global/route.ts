@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiKey } from "../auth";
-import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
+import { ServerId } from "@/lib/prisma-cdr";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
 import { parseDateParam } from "@/lib/date-params";
 import { logger } from "@/lib/logger";
 import { resolveApiKeyScope } from "@/lib/access-scope";
 import { getGlobalMetricsRaw } from "@/services/repositories/cdr.repository";
-import {
-    SQL_SYSTEM_DEST_TYPES,
-    SQL_SYSTEM_ENTITY_TYPES,
-} from "@/services/domain/call-aggregation";
+import type { DashboardDirection } from "@/services/domain/call-aggregation";
+import type { CallOrigin } from "@/services/domain/call-classification";
 
 function computePreviousPeriod(startDate: Date, endDate: Date): { prevStart: Date; prevEnd: Date } {
     const durationMs = endDate.getTime() - startDate.getTime();
@@ -29,119 +27,34 @@ export async function GET(request: NextRequest) {
             ? serverParam as ServerId 
             : getDefaultServer();
         
-        const prisma = getPrismaCdr(serverId);
-        
         const start = parseDateParam(url.searchParams.get("start"), new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
         const end = parseDateParam(url.searchParams.get("end"), new Date());
         const includePrevious = url.searchParams.get("includePrevious") !== "false";
 
         const { prevStart, prevEnd } = computePreviousPeriod(start, end);
 
-        // Requête paramétrée : $1 = début, $2 = fin (Date). Réutilisée pour la
-        // période courante et la période N-1.
-        const metricsQuery = `
-            WITH call_aggregates AS (
-                SELECT
-                    call_history_id,
-                    COUNT(*) as segment_count,
-                    MIN(cdr_started_at) as first_started_at,
-                    MAX(cdr_ended_at) as last_ended_at,
-                    MIN(cdr_answered_at) as first_answered_at
-                FROM cdroutput
-                WHERE cdr_started_at >= $1
-                  AND cdr_started_at <= $2
-                GROUP BY call_history_id
-            ),
-            last_segments AS (
-                SELECT DISTINCT ON (call_history_id)
-                    call_history_id,
-                    destination_dn_type as last_dest_type,
-                    destination_entity_type as last_dest_entity_type,
-                    cdr_answered_at,
-                    cdr_started_at as last_started_at,
-                    cdr_ended_at as last_ended_at,
-                    termination_reason_details
-                FROM cdroutput
-                WHERE cdr_started_at >= $1
-                  AND cdr_started_at <= $2
-                ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
-            ),
-            answered_segments AS (
-                SELECT DISTINCT ON (c.call_history_id)
-                    c.call_history_id,
-                    c.cdr_answered_at as answered_at
-                FROM cdroutput c
-                WHERE c.cdr_answered_at IS NOT NULL
-                  AND c.destination_dn_type = 'extension'
-                  AND c.cdr_started_at >= $1
-                  AND c.cdr_started_at <= $2
-                ORDER BY c.call_history_id, c.cdr_answered_at ASC, c.cdr_id ASC
-            ),
-            call_outcomes AS (
-                SELECT
-                    ca.call_history_id,
-                    CASE
-                        WHEN ls.last_dest_type IN ('vmail_console', 'voicemail') OR ls.last_dest_entity_type = 'voicemail' THEN 'voicemail'
-                        WHEN ls.termination_reason_details ILIKE '%busy%' THEN 'busy'
-                        WHEN ls.cdr_answered_at IS NOT NULL
-                             AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
-                             AND (
-                                 (ls.last_dest_type IN (${SQL_SYSTEM_DEST_TYPES}) OR ls.last_dest_entity_type IN (${SQL_SYSTEM_ENTITY_TYPES}))
-                                 AND ans.answered_at IS NOT NULL
-                                 OR
-                                 (ls.last_dest_type NOT IN (${SQL_SYSTEM_DEST_TYPES}) AND ls.last_dest_entity_type NOT IN (${SQL_SYSTEM_ENTITY_TYPES}))
-                             )
-                        THEN 'answered'
-                        ELSE 'missed'
-                    END as status
-                FROM call_aggregates ca
-                JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
-                LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
-            ),
-            answered_calls_data AS (
-                SELECT
-                    ca.call_history_id,
-                    EXTRACT(EPOCH FROM (ls.last_ended_at - ls.cdr_answered_at)) as talk_duration,
-                    EXTRACT(EPOCH FROM (COALESCE(ans.answered_at, ca.first_answered_at) - ca.first_started_at)) as wait_time,
-                    (SELECT COUNT(DISTINCT c2.destination_dn_number)
-                     FROM cdroutput c2
-                     WHERE c2.call_history_id = ca.call_history_id
-                       AND c2.cdr_answered_at IS NOT NULL
-                       AND c2.destination_dn_type = 'extension'
-                    ) as agent_count
-                FROM call_aggregates ca
-                JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
-                LEFT JOIN answered_segments ans ON ca.call_history_id = ans.call_history_id
-                WHERE ls.cdr_answered_at IS NOT NULL
-            )
-            SELECT
-                COUNT(*) as total_calls,
-                COUNT(*) FILTER (WHERE co.status = 'answered') as answered_calls,
-                COUNT(*) FILTER (WHERE co.status = 'missed') as missed_calls,
-                COUNT(*) FILTER (WHERE co.status = 'voicemail') as voicemail_calls,
-                COUNT(*) FILTER (WHERE co.status = 'busy') as busy_calls,
-                ROUND(AVG(acd.talk_duration)::numeric, 1) as avg_human_duration,
-                ROUND(AVG(acd.wait_time)::numeric, 1) as avg_wait_time,
-                ROUND(AVG(acd.agent_count)::numeric, 2) as avg_agents_per_call,
-                COUNT(*) FILTER (WHERE acd.agent_count = 1) as agents_1,
-                COUNT(*) FILTER (WHERE acd.agent_count = 2) as agents_2,
-                COUNT(*) FILTER (WHERE acd.agent_count >= 3) as agents_3_plus
-            FROM call_aggregates ca
-            JOIN call_outcomes co ON ca.call_history_id = co.call_history_id
-            LEFT JOIN answered_calls_data acd ON ca.call_history_id = acd.call_history_id
-        `;
+        // Direction (entrant / sortant) et provenance (interne / externe) :
+        // mêmes filtres que le tableau de bord. Absents = toutes directions,
+        // le comportement historique de l'API.
+        const directionParam = url.searchParams.get("direction");
+        const direction: DashboardDirection | undefined =
+            directionParam === "inbound" || directionParam === "outbound" ? directionParam : undefined;
+        const originParam = url.searchParams.get("origin");
+        const origin: CallOrigin | undefined =
+            originParam === "internal" || originParam === "external" || originParam === "both"
+                ? originParam : undefined;
 
         // Portée héritée du propriétaire de la clé.
         const scope = await resolveApiKeyScope(authResult.apiKeyId, serverId);
 
         logger.debug("[global/route] Executing current period query:", { start, end });
-        const current = await getGlobalMetricsRaw(serverId, start, end, scope);
+        const current = await getGlobalMetricsRaw(serverId, start, end, scope, direction, origin);
         logger.debug("[global/route] Current period query completed");
 
         let previous = null;
         if (includePrevious) {
             logger.debug("[global/route] Executing previous period query:", { prevStart, prevEnd });
-            const prevRow = await getGlobalMetricsRaw(serverId, prevStart, prevEnd, scope);
+            const prevRow = await getGlobalMetricsRaw(serverId, prevStart, prevEnd, scope, direction, origin);
             logger.debug("[global/route] Previous period query completed");
             previous = {
                 totalCalls: Number(prevRow.total_calls),

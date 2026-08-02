@@ -446,6 +446,54 @@ export function determineCallDirection(params: {
     return 'inbound';
 }
 
+/**
+ * Expression SQL de la direction d'un appel — image fidèle de
+ * `determineCallDirection`, à partir des types du premier segment (source et
+ * destination) et du dernier segment (destination, pour le pont EDIFEA).
+ * Les deux DOIVENT rester synchronisées, comme statut TS/SQL plus haut.
+ */
+export function buildCallDirectionCaseSQL(params: {
+    sourceTypeExpr: string;
+    firstDestTypeExpr: string;
+    lastDestTypeExpr: string;
+}): string {
+    const src = `LOWER(COALESCE(${params.sourceTypeExpr}, ''))`;
+    const fdst = `LOWER(COALESCE(${params.firstDestTypeExpr}, ''))`;
+    const ldst = `LOWER(COALESCE(${params.lastDestTypeExpr}, ''))`;
+    const internalSystem = INTERNAL_SYSTEM_DEST_TYPES.map((t) => `'${t}'`).join(", ");
+    return `CASE
+        WHEN ${src} = 'bridge' OR ${fdst} = 'bridge' OR ${ldst} = 'bridge' THEN 'bridge'
+        WHEN ${src} = 'extension' AND (${fdst} = 'extension' OR ${fdst} IN (${internalSystem})) THEN 'internal'
+        WHEN ${src} = 'extension' THEN 'outbound'
+        ELSE 'inbound'
+    END`;
+}
+
+/** Direction retenue par le tableau de bord : le flux reçu, ou le flux émis. */
+export type DashboardDirection = "inbound" | "outbound";
+
+/**
+ * Condition SQL du couple de filtres du tableau de bord (direction +
+ * provenance). Côté « Entrant », la provenance ventile comme sur les
+ * statistiques de groupe : « interne » = un collègue appelle, « externe » =
+ * tout le reste — le pont EDIFEA (un appelant d'une autre entité) est rangé
+ * côté externe. Côté « Sortant », la provenance n'a pas de sens (un sortant
+ * est par nature émis par l'interne vers l'externe) : elle est ignorée.
+ */
+export function buildDirectionConditionSQL(params: {
+    direction: DashboardDirection;
+    origin?: "both" | "external" | "internal";
+    sourceTypeExpr: string;
+    firstDestTypeExpr: string;
+    lastDestTypeExpr: string;
+}): string {
+    const dirCase = buildCallDirectionCaseSQL(params);
+    if (params.direction === "outbound") return `${dirCase} = 'outbound'`;
+    if (params.origin === "internal") return `${dirCase} = 'internal'`;
+    if (params.origin === "external") return `${dirCase} IN ('inbound', 'bridge')`;
+    return `${dirCase} <> 'outbound'`;
+}
+
 // ============================================
 // HELPERS
 // ============================================

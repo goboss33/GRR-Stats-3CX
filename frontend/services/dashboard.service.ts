@@ -11,6 +11,7 @@ import {
 } from "@/services/repositories/cdr.repository";
 import { resolveAccessScope, unrestrictedScope, type AccessScope } from "@/lib/access-scope";
 import type { CallOrigin } from "@/services/domain/call-classification";
+import type { DashboardDirection } from "@/services/domain/call-aggregation";
 import type {
     GlobalMetrics,
     TimelineDataPoint,
@@ -19,25 +20,6 @@ import type {
     ConcurrentCallsSummary,
 } from "@/services/domain/call.types";
 import { getServerTimezone, getServerLicenceThreshold, getServerTrunkThreshold } from "@/lib/servers";
-
-const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:3000";
-const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
-
-async function fetchApi<T>(endpoint: string, params: Record<string, string>): Promise<T> {
-    const url = new URL(`${INTERNAL_API_URL}${endpoint}`);
-    Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
-
-    const res = await fetch(url.toString(), {
-        headers: { "X-API-Key": INTERNAL_API_KEY },
-    });
-
-    if (!res.ok) {
-        const errorText = await res.text().catch(() => "Unknown error");
-        throw new Error(`API ${endpoint} returned ${res.status}: ${errorText}`);
-    }
-
-    return res.json() as Promise<T>;
-}
 
 interface ApiGlobalResponse {
     totalCalls: number;
@@ -74,7 +56,9 @@ async function resolveDashboardScope(serverId: ServerId): Promise<AccessScope> {
 export async function getGlobalMetrics(
     serverId: ServerId,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    direction: DashboardDirection = "inbound",
+    origin: CallOrigin = "both"
 ): Promise<GlobalMetrics> {
     const scope = await resolveDashboardScope(serverId);
 
@@ -86,8 +70,8 @@ export async function getGlobalMetrics(
     // Requête locale filtrée (l'API interne, elle, n'est pas consciente du périmètre).
     // Exécution SÉQUENTIELLE, comme le faisait la route : cette requête est lourde
     // (sous-requête corrélée par appel) et la paralléliser aggrave la contention.
-    const current = await getGlobalMetricsRaw(serverId, startDate, endDate, scope);
-    const previous = await getGlobalMetricsRaw(serverId, prevStart, prevEnd, scope);
+    const current = await getGlobalMetricsRaw(serverId, startDate, endDate, scope, direction, origin);
+    const previous = await getGlobalMetricsRaw(serverId, prevStart, prevEnd, scope, direction, origin);
 
     const num = (v: string | null) => Number(v) || 0;
     const apiData: ApiGlobalResponse = {
@@ -160,7 +144,9 @@ export async function getGlobalMetrics(
 export async function getTimelineData(
     serverId: ServerId,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    direction: DashboardDirection = "inbound",
+    origin: CallOrigin = "both"
 ): Promise<TimelineDataPoint[]> {
     const diffMs = endDate.getTime() - startDate.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
@@ -168,7 +154,7 @@ export async function getTimelineData(
     const timezone = await getServerTimezone(serverId);
     const scope = await resolveDashboardScope(serverId);
 
-    const rawData = await getTimelineDataRaw(serverId, startDate, endDate, timezone, scope);
+    const rawData = await getTimelineDataRaw(serverId, startDate, endDate, timezone, scope, direction, origin);
 
     return rawData.map((row) => {
         const date = new Date(row.date_group);
@@ -190,11 +176,13 @@ export async function getTimelineData(
 export async function getHeatmapData(
     serverId: ServerId,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    direction: DashboardDirection = "inbound",
+    origin: CallOrigin = "both"
 ): Promise<HeatmapDataPoint[]> {
     const timezone = await getServerTimezone(serverId);
     const scope = await resolveDashboardScope(serverId);
-    const rawData = await getHeatmapDataRaw(serverId, startDate, endDate, timezone, undefined, scope);
+    const rawData = await getHeatmapDataRaw(serverId, startDate, endDate, timezone, undefined, scope, direction, origin);
     return rawData.map((row) => ({
         dayOfWeek: row.day_of_week,
         hourOfDay: row.hour_of_day,

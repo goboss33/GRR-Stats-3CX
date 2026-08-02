@@ -4,7 +4,11 @@ import { toast } from "sonner";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, CheckCircle2, Building2 } from "lucide-react";
+import { Loader2, CheckCircle2, Building2, Activity } from "lucide-react";
+import { getSelectedServer } from "@/lib/selected-server";
+import { getConcurrentCallsChartData } from "@/services/dashboard.service";
+import { ConcurrentCallsChart } from "@/components/concurrent-calls-chart";
+import type { ConcurrentCallsDataPoint, ConcurrentCallsSummary } from "@/types/stats.types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,12 +42,29 @@ export function TenantTab() {
     const [saving, setSaving] = useState(false);
     const [currentServer, setCurrentServer] = useState<string>("");
     const [availableServers, setAvailableServers] = useState<TenantInfo[]>([]);
+    // Monitoring de licence (appels simultanés), avec sa propre période.
+    const [licenceDays, setLicenceDays] = useState(7);
+    const [licenceLoading, setLicenceLoading] = useState(true);
+    const [licenceData, setLicenceData] = useState<ConcurrentCallsDataPoint[]>([]);
+    const [licenceSummary, setLicenceSummary] = useState<ConcurrentCallsSummary | null>(null);
     // Adaptateur : route les appels setMessage(...) existants vers les toasts.
     const setMessage = (m: { type: "success" | "error"; text: string } | null) => {
         if (!m) return;
         if (m.type === "success") toast.success(m.text);
         else toast.error(m.text);
     };
+
+    useEffect(() => {
+        let cancelled = false;
+        setLicenceLoading(true);
+        const end = new Date();
+        const start = new Date(end.getTime() - licenceDays * 24 * 60 * 60 * 1000);
+        getConcurrentCallsChartData(getSelectedServer(), start, end)
+            .then((r) => { if (!cancelled) { setLicenceData(r.data); setLicenceSummary(r.summary); } })
+            .catch(() => { if (!cancelled) setLicenceSummary(null); })
+            .finally(() => { if (!cancelled) setLicenceLoading(false); });
+        return () => { cancelled = true; };
+    }, [licenceDays]);
 
     useEffect(() => {
         fetch("/api/admin/tenants")
@@ -291,6 +312,50 @@ export function TenantTab() {
                             <li>La page se rechargera automatiquement après le changement de tenant</li>
                         </ul>
                     </div>
+                </CardContent>
+            </Card>
+
+            {/* Monitoring de licence — déménagé depuis le tableau de bord : ce
+                graphe dimensionne les licences 3CX, il compte donc TOUTES les
+                directions (entrants, sortants, internes) — une ligne occupée
+                est occupée dans les deux sens. Le garder sur le dashboard
+                laissait croire qu'il suivait les filtres des statistiques. */}
+            <Card>
+                <CardHeader>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <CardTitle className="flex items-center gap-2">
+                                <Activity className="h-5 w-5 text-blue-600" />
+                                Appels simultanés — Monitoring licence
+                            </CardTitle>
+                            <CardDescription>
+                                Toutes directions confondues (entrants, sortants, internes) : c&apos;est
+                                l&apos;occupation réelle des lignes qui dimensionne la licence.
+                            </CardDescription>
+                        </div>
+                        <Select value={String(licenceDays)} onValueChange={(v) => setLicenceDays(Number(v))}>
+                            <SelectTrigger className="w-40">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="1">Dernières 24 h</SelectItem>
+                                <SelectItem value="7">7 derniers jours</SelectItem>
+                                <SelectItem value="30">30 derniers jours</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    {licenceLoading ? (
+                        <div className="flex h-64 items-center justify-center gap-2 text-sm text-slate-500">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Chargement du monitoring…
+                        </div>
+                    ) : licenceSummary ? (
+                        <ConcurrentCallsChart data={licenceData} summary={licenceSummary} />
+                    ) : (
+                        <p className="py-8 text-center text-sm text-slate-500">Aucune donnée sur la période.</p>
+                    )}
                 </CardContent>
             </Card>
         </div>

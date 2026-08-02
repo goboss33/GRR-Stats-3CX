@@ -27,7 +27,9 @@ import {
     SQL_SYSTEM_DEST_TYPES,
     SQL_REAL_PARTY_DEST_TYPES,
     buildFinalStatusCaseSQL,
+    buildDirectionConditionSQL,
     SQL_SYSTEM_ENTITY_TYPES,
+    type DashboardDirection,
 } from "@/services/domain/call-aggregation";
 
 // ============================================
@@ -134,11 +136,53 @@ export interface GlobalMetricsRow {
  * Source unique partagée par le dashboard et /api/analytics/global : dupliquer
  * cette requête ferait diverger les chiffres de l'interface et de l'API.
  */
+/**
+ * Fragments du filtre de direction du tableau de bord (Entrant / Sortant ×
+ * provenance) : la CTE des premiers segments, sa jointure, et la condition —
+ * vides quand aucun filtre n'est demandé, pour ne rien coûter aux appels
+ * existants (API sans paramètre).
+ */
+function buildDirectionFragments(
+    direction: DashboardDirection | undefined,
+    origin: CallOrigin | undefined,
+    cdr: Prisma.Sql,
+    startDate: Date,
+    endDate: Date,
+    lastDestTypeExpr: string,
+): { firstsCTE: Prisma.Sql; firstsJoin: Prisma.Sql; condition: Prisma.Sql } {
+    if (!direction) {
+        return { firstsCTE: Prisma.empty, firstsJoin: Prisma.empty, condition: Prisma.empty };
+    }
+    return {
+        firstsCTE: Prisma.sql`
+        firsts AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                source_dn_type AS first_source_type,
+                destination_dn_type AS first_dest_type
+            FROM ${cdr}
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_started_at ASC, cdr_id ASC
+        ),`,
+        firstsJoin: Prisma.raw(`JOIN firsts fs ON fs.call_history_id = ca.call_history_id`),
+        condition: Prisma.raw(`AND ${buildDirectionConditionSQL({
+            direction,
+            origin,
+            sourceTypeExpr: "fs.first_source_type",
+            firstDestTypeExpr: "fs.first_dest_type",
+            lastDestTypeExpr,
+        })}`),
+    };
+}
+
 export async function getGlobalMetricsRaw(
     serverId: ServerId,
     startDate: Date,
     endDate: Date,
-    scope?: AccessScope
+    scope?: AccessScope,
+    direction?: DashboardDirection,
+    origin?: CallOrigin
 ): Promise<GlobalMetricsRow> {
     const prisma = getPrismaCdr(serverId);
     // Le grain de comptage (jambe ou appel fusionné) vient des règles de
@@ -149,6 +193,7 @@ export async function getGlobalMetricsRaw(
     // Listes de types système : du SQL, pas des valeurs (cf. note sur getTimelineDataRaw).
     const realPartyTypes = Prisma.raw(SQL_REAL_PARTY_DEST_TYPES);
     const statusCase = Prisma.raw(buildFinalStatusCaseSQL());
+    const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate, "ls.last_dest_type");
 
     const query = Prisma.sql`
         -- Les trois CTE de base etaient assemblees TROIS fois — pour les statuts,
@@ -214,7 +259,7 @@ export async function getGlobalMetricsRaw(
               AND c2.cdr_started_at >= ${startDate}
               AND c2.cdr_started_at <= ${endDate}
             GROUP BY c2.call_history_id
-        ),
+        ),${dir.firstsCTE}
         assemble AS (
             SELECT
                 ca.call_history_id,
@@ -236,6 +281,8 @@ export async function getGlobalMetricsRaw(
             LEFT JOIN answered_segments ans ON ans.call_history_id = ca.call_history_id
             LEFT JOIN last_real_party lrp ON lrp.call_history_id = ca.call_history_id
             LEFT JOIN agent_counts agc ON agc.call_history_id = ca.call_history_id
+            ${dir.firstsJoin}
+            WHERE TRUE ${dir.condition}
         ),
         enrichi AS (
             SELECT
@@ -282,7 +329,9 @@ export async function getTimelineDataRaw(
     startDate: Date,
     endDate: Date,
     timezone: string = "Europe/Zurich",
-    scope?: AccessScope
+    scope?: AccessScope,
+    direction?: DashboardDirection,
+    origin?: CallOrigin
 ): Promise<TimelineRow[]> {
     const prisma = getPrismaCdr(serverId);
     const diffMs = endDate.getTime() - startDate.getTime();
@@ -299,6 +348,7 @@ export async function getTimelineDataRaw(
     const systemEntityTypes = Prisma.raw(SQL_SYSTEM_ENTITY_TYPES);
     const rules = await getClassificationRules();
     const cdr = Prisma.raw(cdrTable(rules));
+    const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate, "ls.last_dest_type");
 
     const query = Prisma.sql`
         WITH call_aggregates AS (
@@ -332,7 +382,7 @@ export async function getTimelineDataRaw(
               AND cdr_answered_at IS NOT NULL
               AND destination_dn_type = 'extension'
             ORDER BY call_history_id, cdr_answered_at ASC, cdr_id ASC
-        ),
+        ),${dir.firstsCTE}
         call_outcomes AS (
             SELECT
                 ca.call_history_id,
@@ -355,6 +405,8 @@ export async function getTimelineDataRaw(
             FROM call_aggregates ca
             JOIN last_segments ls ON ls.call_history_id = ca.call_history_id
             LEFT JOIN answered_segments ans ON ans.call_history_id = ca.call_history_id
+            ${dir.firstsJoin}
+            WHERE TRUE ${dir.condition}
         )
         SELECT
             date_trunc(${interval}, first_started_at AT TIME ZONE ${timezone}) AS date_group,
@@ -422,13 +474,42 @@ export async function getHeatmapDataRaw(
     endDate: Date,
     timezone: string = "Europe/Zurich",
     queueNumber?: string,
-    scope?: AccessScope
+    scope?: AccessScope,
+    direction?: DashboardDirection,
+    origin?: CallOrigin
 ): Promise<HeatmapRow[]> {
     const prisma = getPrismaCdr(serverId);
     const rules = await getClassificationRules();
     const cdr = Prisma.raw(cdrTable(rules));
     const queueFilter = queueNumber
         ? Prisma.sql`AND destination_dn_number = ${queueNumber} AND destination_dn_type = 'queue'`
+        : Prisma.empty;
+    // Filtre de direction : la heatmap n'a ni CTE des premiers ni des derniers
+    // segments — elle reçoit les deux, en bloc, quand le filtre est demandé.
+    const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate, "ls.last_dest_type");
+    const extraCTEs = direction
+        ? Prisma.sql`,
+        firsts AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                source_dn_type AS first_source_type,
+                destination_dn_type AS first_dest_type
+            FROM ${cdr}
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_started_at ASC, cdr_id ASC
+        ),
+        lasts AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id, destination_dn_type AS last_dest_type
+            FROM ${cdr}
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        )`
+        : Prisma.empty;
+    const lastsJoin = direction
+        ? Prisma.raw(`JOIN lasts ls ON ls.call_history_id = ca.call_history_id`)
         : Prisma.empty;
 
     // ⚠️ La requête est composée avec Prisma.sql PUIS passée en argument unique à
@@ -446,12 +527,15 @@ export async function getHeatmapDataRaw(
               ${queueFilter}
               ${buildScopeFilter(scope, cdr)}
             GROUP BY call_history_id
-        )
+        )${extraCTEs}
         SELECT
             EXTRACT(ISODOW FROM first_started_at AT TIME ZONE ${timezone})::int AS day_of_week,
             EXTRACT(HOUR FROM first_started_at AT TIME ZONE ${timezone})::int AS hour_of_day,
             COUNT(*) AS volume
-        FROM unique_calls
+        FROM unique_calls ca
+        ${dir.firstsJoin}
+        ${lastsJoin}
+        WHERE TRUE ${dir.condition}
         GROUP BY day_of_week, hour_of_day
     `;
 

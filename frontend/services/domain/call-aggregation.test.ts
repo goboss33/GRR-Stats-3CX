@@ -5,6 +5,8 @@ import {
     buildFinalStatusFilterSQL,
     DEFAULT_MIN_ANSWER_SECONDS,
     determineCallDirection,
+    buildCallDirectionCaseSQL,
+    buildDirectionConditionSQL,
     determineSegmentCategory,
     isSystemType,
     formatDuration,
@@ -321,5 +323,55 @@ describe("formatDurationHuman", () => {
     it("une durée nulle ou négative reste lisible", () => {
         expect(formatDurationHuman(0)).toBe("0s");
         expect(formatDurationHuman(-3)).toBe("0s");
+    });
+});
+
+describe("buildCallDirectionCaseSQL — miroir SQL de determineCallDirection", () => {
+    const exprs = { sourceTypeExpr: "fs.src", firstDestTypeExpr: "fs.fdst", lastDestTypeExpr: "ls.ldst" };
+
+    it("couvre les quatre directions, dans l'ordre de la fonction TS", () => {
+        const sql = buildCallDirectionCaseSQL(exprs);
+        const ordre = ["'bridge'", "'internal'", "'outbound'", "'inbound'"];
+        const positions = ordre.map((k) => sql.indexOf(k));
+        expect(positions.every((x) => x >= 0)).toBe(true);
+        expect([...positions]).toEqual([...positions].sort((a, b) => a - b));
+    });
+
+    it("l'interne couvre extension → extension ET extension → système interne", () => {
+        const sql = buildCallDirectionCaseSQL(exprs);
+        expect(sql).toContain("'queue'");
+        expect(sql).toContain("'ring_group'");
+    });
+
+    it("le pont est détecté sur les trois colonnes (source, première et dernière destination)", () => {
+        const sql = buildCallDirectionCaseSQL(exprs);
+        expect(sql.split("= 'bridge'")).toHaveLength(4);
+    });
+});
+
+describe("buildDirectionConditionSQL — filtres du tableau de bord", () => {
+    const exprs = { sourceTypeExpr: "fs.src", firstDestTypeExpr: "fs.fdst", lastDestTypeExpr: "ls.ldst" };
+
+    it("« Sortant » : la provenance est ignorée", () => {
+        const sql = buildDirectionConditionSQL({ direction: "outbound", origin: "internal", ...exprs });
+        expect(sql).toContain("= 'outbound'");
+        expect(sql).not.toContain("IN ('inbound'");
+    });
+
+    it("« Entrant + Externe » : le pont EDIFEA est rangé côté externe", () => {
+        const sql = buildDirectionConditionSQL({ direction: "inbound", origin: "external", ...exprs });
+        expect(sql).toContain("IN ('inbound', 'bridge')");
+    });
+
+    it("« Entrant + Interne » : seuls les appels de collègues", () => {
+        expect(buildDirectionConditionSQL({ direction: "inbound", origin: "internal", ...exprs }))
+            .toContain("= 'internal'");
+    });
+
+    it("« Entrant + Les deux » : tout sauf le flux émis", () => {
+        expect(buildDirectionConditionSQL({ direction: "inbound", origin: "both", ...exprs }))
+            .toContain("<> 'outbound'");
+        expect(buildDirectionConditionSQL({ direction: "inbound", ...exprs }))
+            .toContain("<> 'outbound'");
     });
 });
