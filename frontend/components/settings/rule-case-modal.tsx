@@ -49,18 +49,22 @@ export function RuleCaseModal({
     const [cases, setCases] = useState<ExemplarCase[] | null>(null);
     const [index, setIndex] = useState(0);
     const [segments, setSegments] = useState<CallChainSegment[]>([]);
-    const [loading, setLoading] = useState(false);
+    // Deux attentes distinctes : pendant la RECHERCHE des cas, la modale
+    // n'affiche qu'un spinner (pas de filtre) ; pendant le chargement du
+    // DÉROULEMENT d'un cas, le filtre et la navigation restent en place.
+    const [searching, setSearching] = useState(false);
+    const [loadingChain, setLoadingChain] = useState(false);
 
     // Recherche des cas à l'ouverture et à chaque changement de file —
     // y compris sans file : la recherche couvre alors tous les groupes.
     useEffect(() => {
         if (!open) return;
         let cancelled = false;
-        setLoading(true); setCases(null); setSegments([]); setIndex(0);
+        setSearching(true); setCases(null); setSegments([]); setIndex(0);
         findCases(getSelectedServer(), queue)
             .then((found) => { if (!cancelled) setCases(found); })
             .catch(() => { if (!cancelled) setCases([]); })
-            .finally(() => { if (!cancelled) setLoading(false); });
+            .finally(() => { if (!cancelled) setSearching(false); });
         return () => { cancelled = true; };
     }, [open, queue, findCases]);
 
@@ -69,10 +73,10 @@ export function RuleCaseModal({
     useEffect(() => {
         if (!active) return;
         let cancelled = false;
-        setLoading(true);
+        setLoadingChain(true);
         getCallChain(getSelectedServer(), active.callHistoryId)
             .then((segs) => { if (!cancelled) setSegments(segs); })
-            .finally(() => { if (!cancelled) setLoading(false); });
+            .finally(() => { if (!cancelled) setLoadingChain(false); });
         return () => { cancelled = true; };
     }, [active]);
 
@@ -95,6 +99,9 @@ export function RuleCaseModal({
                     </DialogTitle>
                 </DialogHeader>
 
+                {/* Le filtre n'apparaît qu'une fois la recherche aboutie :
+                    à l'ouverture, seul le spinner occupe la modale. */}
+                {!searching && cases !== null && (
                 <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <div className="min-w-[240px] flex-1">
                         <div className="mb-1 flex items-baseline justify-between">
@@ -144,22 +151,23 @@ export function RuleCaseModal({
                         </div>
                     )}
                 </div>
+                )}
 
-                {loading && (
+                {(searching || loadingChain) && (
                     <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Recherche d&apos;un appel représentatif…
+                        {searching ? "Recherche de cas dans vos appels…" : "Chargement du déroulement…"}
                     </div>
                 )}
 
-                {!loading && cases && cases.length === 0 && (
+                {!searching && cases && cases.length === 0 && (
                     <div className="py-8 text-center text-sm text-slate-500">
                         Aucun appel de ce type sur les 30 derniers jours
                         {queue ? " dans ce groupe. Essayez « Tous les groupes »." : "."}
                     </div>
                 )}
 
-                {!loading && active && segments.length > 0 && (
+                {!searching && !loadingChain && active && segments.length > 0 && (
                     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
                         <p className="rounded-lg border border-blue-100 bg-blue-50/70 px-4 py-2.5 text-sm text-slate-700">
                             Le{" "}
