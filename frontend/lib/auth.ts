@@ -27,6 +27,28 @@ function getRoleFromGroups(groups: string[]): string | null {
     return null;
 }
 
+/**
+ * « Dernière activité » : une session JWT vit 30 jours, lastLoginAt ne dit donc
+ * pas qui UTILISE l'app. À chaque lecture de session on horodate lastSeenAt —
+ * au plus une fois par heure et par utilisateur (throttle mémoire : l'app
+ * tourne en conteneur unique, un redémarrage coûte au pire une écriture par
+ * utilisateur). Tir décroché : ni la latence ni une erreur ne doivent toucher
+ * la session.
+ */
+const LAST_SEEN_THROTTLE_MS = 60 * 60 * 1000;
+const lastSeenWrites = new Map<string, number>();
+
+function touchLastSeen(userId: string): void {
+    if (!userId) return;
+    const now = Date.now();
+    const previous = lastSeenWrites.get(userId);
+    if (previous && now - previous < LAST_SEEN_THROTTLE_MS) return;
+    lastSeenWrites.set(userId, now);
+    void prismaAuth.user
+        .update({ where: { id: userId }, data: { lastSeenAt: new Date() } })
+        .catch((error) => logger.warn("[Auth] Impossible d'horodater l'activité :", error));
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
     providers: [
         Credentials({
@@ -278,6 +300,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 session.user.firstName = token.firstName as string | null;
                 session.user.lastName = token.lastName as string | null;
                 session.user.authProvider = token.authProvider as string;
+                touchLastSeen(session.user.id);
             }
             return session;
         },

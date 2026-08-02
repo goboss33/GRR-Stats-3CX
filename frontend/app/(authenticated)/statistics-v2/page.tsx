@@ -49,8 +49,10 @@ export default function StatisticsV2Page() {
 
     const statistics = statsCache[origin] ?? null;
 
-    // Remonte au header les provenances déjà consultables (spinners du toggle).
-    useReportLoadedOrigins(ORIGINS.filter((o) => !!statsCache[o]));
+    // Remonte au header les provenances déjà consultables (spinners du
+    // toggle). Sans groupe choisi, rien n'est à charger : la bascule est une
+    // simple présélection, tout reste cliquable.
+    useReportLoadedOrigins(selectedQueueNumber ? ORIGINS.filter((o) => !!statsCache[o]) : ORIGINS);
 
     // Default to current month
     // La période vient de l'URL (cf. lib/url-state).

@@ -21,6 +21,7 @@ export async function GET() {
             authProvider: true,
             createdAt: true,
             lastLoginAt: true,
+            lastSeenAt: true,
         },
         orderBy: { createdAt: "desc" },
     });

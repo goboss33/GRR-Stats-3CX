@@ -23,6 +23,7 @@ interface AppUser {
     authProvider: string;
     createdAt: string;
     lastLoginAt: string | null;
+    lastSeenAt: string | null;
 }
 
 export function UsersTab() {
@@ -179,7 +180,7 @@ export function UsersTab() {
                                     <th className="text-left py-3 px-4 font-medium text-slate-600">Rôle</th>
                                     <th className="text-left py-3 px-4 font-medium text-slate-600">Connexion</th>
                                     <th className="text-left py-3 px-4 font-medium text-slate-600">Créé le</th>
-                                    <th className="text-left py-3 px-4 font-medium text-slate-600">Dernière connexion</th>
+                                    <th className="text-left py-3 px-4 font-medium text-slate-600">Dernière activité</th>
                                     <th className="text-right py-3 px-4 font-medium text-slate-600">Actions</th>
                                 </tr>
                             </thead>
@@ -227,9 +228,12 @@ export function UsersTab() {
                                                 )}
                                             </td>
                                             <td className="py-3 px-4 text-slate-500">{new Date(user.createdAt).toLocaleDateString("fr-FR")}</td>
-                                            <td className="py-3 px-4 text-slate-500">
-                                                {user.lastLoginAt
-                                                    ? new Date(user.lastLoginAt).toLocaleString("fr-CH", {
+                                            <td className="py-3 px-4 text-slate-500"
+                                                title={user.lastLoginAt
+                                                    ? `Dernière authentification : ${new Date(user.lastLoginAt).toLocaleString("fr-CH")}`
+                                                    : undefined}>
+                                                {(user.lastSeenAt ?? user.lastLoginAt)
+                                                    ? new Date((user.lastSeenAt ?? user.lastLoginAt)!).toLocaleString("fr-CH", {
                                                         day: "2-digit", month: "2-digit", year: "numeric",
                                                         hour: "2-digit", minute: "2-digit",
                                                     })

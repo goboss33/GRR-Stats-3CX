@@ -746,9 +746,19 @@ export async function getQueueName(serverId: ServerId, queueNumber: string): Pro
     return queueInfo[0]?.queue_name || queueNumber;
 }
 
+// L'annuaire files/agents agrège TOUT l'historique CDR (7,5 s mesurées sur
+// sept mois) et il est identique pour tous les utilisateurs — le périmètre se
+// filtre en aval. Un cache court le sort du chemin critique de l'écran de
+// sélection ; la vraie borne temporelle viendra avec le chantier des files
+// inactives.
+const QUEUE_MEMBERS_TTL_MS = 5 * 60_000;
+const queueMembersCache = new Map<string, { rows: QueueMemberRow[]; expiresAt: number }>();
+
 export async function getQueueMembersRaw(serverId: ServerId): Promise<QueueMemberRow[]> {
+    const cached = queueMembersCache.get(serverId);
+    if (cached && cached.expiresAt > Date.now()) return cached.rows;
     const prisma = getPrismaCdr(serverId);
-    return prisma.$queryRaw<QueueMemberRow[]>`
+    const rows = await prisma.$queryRaw<QueueMemberRow[]>`
         WITH QueueMembers AS (
             SELECT 
                 parent.destination_dn_number AS queue_number,
@@ -767,6 +777,8 @@ export async function getQueueMembersRaw(serverId: ServerId): Promise<QueueMembe
         )
         SELECT * FROM QueueMembers ORDER BY queue_number, agent_extension;
     `;
+    queueMembersCache.set(serverId, { rows, expiresAt: Date.now() + QUEUE_MEMBERS_TTL_MS });
+    return rows;
 }
 
 // ============================================

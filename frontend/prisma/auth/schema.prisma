@@ -28,6 +28,10 @@ model User {
   /// Dernière connexion réussie (horodatée par l'événement signIn de NextAuth,
   /// quel que soit le fournisseur — mot de passe ou Microsoft).
   lastLoginAt    DateTime?
+  /// Dernière ACTIVITÉ : mise à jour au fil des requêtes authentifiées, avec un
+  /// throttle d'une heure (cf. session callback) — une session JWT de 30 jours
+  /// rend lastLoginAt trop grossier pour lire « qui utilise l'app ».
+  lastSeenAt     DateTime?
 
   /// Permissions individuelles (cf. PRD droits d'accès §4.3) — toutes restrictives
   /// par défaut : on n'accorde que ce qui est explicitement coché par un ADMIN.
