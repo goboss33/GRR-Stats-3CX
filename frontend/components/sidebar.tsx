@@ -146,7 +146,7 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto [scrollbar-width:thin] [scrollbar-color:#334155_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700 hover:[&::-webkit-scrollbar-thumb]:bg-slate-600">
+                <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden py-4 px-2">
                     {filteredItems.map((item) => {
                         const parentActive = isParentActive(item);
                         const menuExpanded = isMenuExpanded(item.label);
@@ -277,7 +277,10 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
                         }
 
                         return (
-                            <div key={item.href}>
+                            // min-h-0 + flex-col : quand la liste des équipes
+                            // est longue, c'est ELLE qui rétrécit et défile —
+                            // jamais les entrées de menu qui suivent.
+                            <div key={item.href} className={item.teamsSubmenu ? "flex min-h-0 flex-col" : "shrink-0"}>
                                 {linkContent}
                                 {item.teamsSubmenu && !collapsed && <SidebarTeams />}
                             </div>

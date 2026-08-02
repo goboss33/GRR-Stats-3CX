@@ -113,7 +113,7 @@ export function SidebarTeams() {
     };
 
     return (
-        <div className="ml-4 mt-1 border-l border-slate-800 pl-2">
+        <div className="ml-4 mt-1 min-h-0 overflow-y-auto border-l border-slate-800 pl-2 [scrollbar-width:thin] [scrollbar-color:#334155_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700 hover:[&::-webkit-scrollbar-thumb]:bg-slate-600">
             <div className="divide-y divide-slate-800/60">
                 {pinned.map(renderTeam)}
             </div>
