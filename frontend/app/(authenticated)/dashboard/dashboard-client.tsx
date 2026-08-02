@@ -2,7 +2,7 @@
 
 import { getSelectedServer } from "@/lib/selected-server";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { RefreshCw, Phone, PhoneOff, Clock, TrendingUp, Hourglass, Voicemail } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
@@ -39,6 +39,15 @@ import type {
 
 // Composant pour afficher l'évolution N-1 avec une petite flèche de couleur
 
+interface DashboardData {
+    metrics: GlobalMetrics;
+    timelineData: TimelineDataPoint[];
+    heatmapData: HeatmapDataPoint[];
+}
+
+/** Ordre de préchargement : la lecture client d'abord, puis collègues, puis tout. */
+const ORIGINS: CallOrigin[] = ["external", "internal", "both"];
+
 export default function DashboardClient() {
     const [isLoading, setIsLoading] = useState(true);
     const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -47,15 +56,28 @@ export default function DashboardClient() {
     // aussi bien par le serveur que par le client.
     const dateRange = useUrlPeriod();
 
-    const [metrics, setMetrics] = useState<GlobalMetrics | null>(null);
-    const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([]);
-    const [heatmapData, setHeatmapData] = useState<HeatmapDataPoint[]>([]);
     // Provenance (collègue / client). Le tableau de bord ne montre QUE le flux
     // entrant — décision d'août 2026 : les sortants polluaient les « manqués »
     // (3 270 sur juin), et qui veut leurs chiffres passe par les journaux, où
     // le filtre de direction existe. Le socle SQL sait toujours les filtrer
     // (API analytics/global : paramètre direction).
-    const [origin, setOrigin] = useState<CallOrigin>("both");
+    //
+    // « Externe » d'abord : c'est la lecture client, celle qu'on vient chercher.
+    // Les deux autres provenances se préchargent en tâche de fond — le toggle
+    // les grise (spinner) tant qu'elles ne sont pas consultables, puis bascule
+    // sans rechargement. Même mécanique que l'écran de statistiques de groupe.
+    const [origin, setOrigin] = useState<CallOrigin>("external");
+    const [dataCache, setDataCache] = useState<Partial<Record<CallOrigin, DashboardData>>>({});
+    // Le jeton de contexte écarte les réponses devenues obsolètes (changement
+    // de période — ou « Rafraîchir » — pendant un préchargement en vol).
+    const contextKeyRef = useRef<string>("");
+    const originRef = useRef<CallOrigin>(origin);
+    originRef.current = origin;
+
+    const current = dataCache[origin] ?? null;
+    const metrics = current?.metrics ?? null;
+    const timelineData = current?.timelineData ?? [];
+    const heatmapData = current?.heatmapData ?? [];
 
     // « Perdus » = manqués et occupés. La messagerie garde sa case : elle
     // décrit autre chose qu'un abandon, et l'exploitation s'en sert.
@@ -83,33 +105,65 @@ export default function DashboardClient() {
         : 0;
     const prevLostCalls = (metrics?.prevMissedCalls || 0) + (metrics?.prevBusyCalls || 0);
 
-    const fetchData = useCallback(async () => {
-        setIsLoading(true);
+    /**
+     * Charge UNE provenance et la range dans le cache — sauf si le contexte a
+     * changé entre-temps (la réponse est alors ignorée). `withSpinner`
+     * distingue le chargement affiché du préchargement silencieux.
+     */
+    const fetchIntoCache = useCallback(async (ctxKey: string, o: CallOrigin, withSpinner: boolean) => {
+        if (withSpinner) setIsLoading(true);
         try {
             const serverId = getSelectedServer();
             const [metricsData, timeline, heatmap] = await Promise.all([
-                getGlobalMetrics(serverId, dateRange.startDate, dateRange.endDate, "inbound", origin),
-                getTimelineData(serverId, dateRange.startDate, dateRange.endDate, "inbound", origin),
-                getHeatmapData(serverId, dateRange.startDate, dateRange.endDate, "inbound", origin),
+                getGlobalMetrics(serverId, dateRange.startDate, dateRange.endDate, "inbound", o),
+                getTimelineData(serverId, dateRange.startDate, dateRange.endDate, "inbound", o),
+                getHeatmapData(serverId, dateRange.startDate, dateRange.endDate, "inbound", o),
             ]);
-
-            setMetrics(metricsData);
-            setTimelineData(timeline);
-            setHeatmapData(heatmap);
-            setIsInitialLoad(false);
+            if (contextKeyRef.current !== ctxKey) return;
+            setDataCache((cache) => ({ ...cache, [o]: { metrics: metricsData, timelineData: timeline, heatmapData: heatmap } }));
+            if (withSpinner) setIsInitialLoad(false);
         } catch (error) {
             console.error("Error fetching dashboard data:", error);
-            setIsInitialLoad(false);
+            if (withSpinner) setIsInitialLoad(false);
         } finally {
-            setIsLoading(false);
+            if (withSpinner && contextKeyRef.current === ctxKey) setIsLoading(false);
         }
-    }, [dateRange.startDate, dateRange.endDate, origin]);
+    }, [dateRange.startDate, dateRange.endDate]);
+
+    /**
+     * (Re)charge le contexte : la provenance affichée d'abord — visible dès
+     * qu'elle arrive — puis les deux autres EN SÉQUENCE et en tâche de fond
+     * (ces requêtes sont lourdes ; parallélisées, elles se contentionnent).
+     */
+    const reloadAll = useCallback((primary: CallOrigin) => {
+        const ctxKey = `${getSelectedServer()}|${dateRange.startDate.toISOString()}|${dateRange.endDate.toISOString()}|${Date.now()}`;
+        contextKeyRef.current = ctxKey;
+        setDataCache({});
+        void (async () => {
+            await fetchIntoCache(ctxKey, primary, true);
+            for (const o of ORIGINS) {
+                if (o === primary) continue;
+                if (contextKeyRef.current !== ctxKey) return;
+                await fetchIntoCache(ctxKey, o, false);
+            }
+        })();
+    }, [dateRange.startDate, dateRange.endDate, fetchIntoCache]);
 
     useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+        reloadAll(originRef.current);
+    }, [reloadAll]);
 
-    const handleRefresh = () => fetchData();
+    const handleRefresh = () => reloadAll(origin);
+
+    // Bascule instantanée quand la provenance est en cache ; sinon chargement
+    // classique (clic plus rapide que le préchargement — toggle grisé, mais
+    // on reste robuste).
+    const handleOriginChange = (next: CallOrigin) => {
+        setOrigin(next);
+        if (!dataCache[next]) {
+            void fetchIntoCache(contextKeyRef.current, next, true);
+        }
+    };
 
 
     return (
@@ -127,7 +181,11 @@ export default function DashboardClient() {
                 <div className="flex flex-wrap items-center gap-3">
                     {/* Provenance du flux entrant : même sémantique que sur les
                         statistiques de groupe. */}
-                    <OriginToggle value={origin} onChange={setOrigin} />
+                    <OriginToggle
+                        value={origin}
+                        onChange={handleOriginChange}
+                        loadedOrigins={ORIGINS.filter((o) => !!dataCache[o])}
+                    />
                     <Button
                         variant="outline"
                         size="icon"
