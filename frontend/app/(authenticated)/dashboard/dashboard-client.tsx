@@ -17,11 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
 
-import {
-    getGlobalMetrics,
-    getTimelineData,
-    getHeatmapData,
-} from "@/services/dashboard.service";
+import { getDashboardAllOrigins } from "@/services/dashboard.service";
 import type { CallOrigin } from "@/services/domain/call-classification";
 
 import type {
@@ -112,65 +108,36 @@ export default function DashboardClient() {
     const prevLostCalls = (metrics?.prevMissedCalls || 0) + (metrics?.prevBusyCalls || 0);
 
     /**
-     * Charge UNE provenance et la range dans le cache — sauf si le contexte a
-     * changé entre-temps (la réponse est alors ignorée). `withSpinner`
-     * distingue le chargement affiché du préchargement silencieux.
+     * (Re)charge le contexte : UN SEUL chargement produit les trois
+     * provenances (requêtes groupées par classe de direction, composées côté
+     * service) — le toggle entier devient consultable en même temps que
+     * l'écran. Le jeton de contexte écarte les réponses périmées.
      */
-    const fetchIntoCache = useCallback(async (ctxKey: string, o: CallOrigin, withSpinner: boolean) => {
-        if (withSpinner) setIsLoading(true);
-        try {
-            const serverId = getSelectedServer();
-            const [metricsData, timeline, heatmap] = await Promise.all([
-                getGlobalMetrics(serverId, dateRange.startDate, dateRange.endDate, "inbound", o),
-                getTimelineData(serverId, dateRange.startDate, dateRange.endDate, "inbound", o),
-                getHeatmapData(serverId, dateRange.startDate, dateRange.endDate, "inbound", o),
-            ]);
-            if (contextKeyRef.current !== ctxKey) return;
-            setDataCache((cache) => ({ ...cache, [o]: { metrics: metricsData, timelineData: timeline, heatmapData: heatmap } }));
-            if (withSpinner) setIsInitialLoad(false);
-        } catch (error) {
-            console.error("Error fetching dashboard data:", error);
-            if (withSpinner) setIsInitialLoad(false);
-        } finally {
-            if (withSpinner && contextKeyRef.current === ctxKey) setIsLoading(false);
-        }
-    }, [dateRange.startDate, dateRange.endDate]);
-
-    /**
-     * (Re)charge le contexte : la provenance affichée d'abord — visible dès
-     * qu'elle arrive — puis les deux autres EN SÉQUENCE et en tâche de fond
-     * (ces requêtes sont lourdes ; parallélisées, elles se contentionnent).
-     */
-    const reloadAll = useCallback((primary: CallOrigin) => {
+    const reloadAll = useCallback(() => {
         const ctxKey = `${getSelectedServer()}|${dateRange.startDate.toISOString()}|${dateRange.endDate.toISOString()}|${Date.now()}`;
         contextKeyRef.current = ctxKey;
         setDataCache({});
-        void (async () => {
-            await fetchIntoCache(ctxKey, primary, true);
-            for (const o of ORIGINS) {
-                if (o === primary) continue;
+        setIsLoading(true);
+        getDashboardAllOrigins(getSelectedServer(), dateRange.startDate, dateRange.endDate)
+            .then((all) => {
                 if (contextKeyRef.current !== ctxKey) return;
-                await fetchIntoCache(ctxKey, o, false);
-            }
-        })();
-    }, [dateRange.startDate, dateRange.endDate, fetchIntoCache]);
+                setDataCache(all);
+                setIsInitialLoad(false);
+            })
+            .catch((error) => {
+                console.error("Error fetching dashboard data:", error);
+                if (contextKeyRef.current === ctxKey) setIsInitialLoad(false);
+            })
+            .finally(() => {
+                if (contextKeyRef.current === ctxKey) setIsLoading(false);
+            });
+    }, [dateRange.startDate, dateRange.endDate]);
 
     useEffect(() => {
-        reloadAll(originRef.current);
+        reloadAll();
     }, [reloadAll]);
 
-    const handleRefresh = () => reloadAll(origin);
-
-    // Bascule par le header : instantanée quand la provenance est en cache ;
-    // sinon chargement classique (clic plus rapide que le préchargement).
-    useEffect(() => {
-        if (!dataCache[origin] && contextKeyRef.current) {
-            void fetchIntoCache(contextKeyRef.current, origin, true);
-        }
-        // dataCache volontairement absent des dépendances : l'effet ne doit
-        // réagir qu'à la bascule de provenance, pas au remplissage du cache.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [origin, fetchIntoCache]);
+    const handleRefresh = () => reloadAll();
 
 
     return (

@@ -28,6 +28,7 @@ import {
     SQL_REAL_PARTY_DEST_TYPES,
     buildFinalStatusCaseSQL,
     buildDirectionConditionSQL,
+    buildCallDirectionCaseSQL,
     SQL_SYSTEM_ENTITY_TYPES,
     type DashboardDirection,
 } from "@/services/domain/call-aggregation";
@@ -318,6 +319,340 @@ export async function getGlobalMetricsRaw(
 
     const rows = await prisma.$queryRaw<GlobalMetricsRow[]>(query);
     return rows[0];
+}
+
+// ============================================
+// MÉTRIQUES / COURBE / HEATMAP PAR CLASSE DE DIRECTION
+// ============================================
+//
+// Le toggle de provenance du tableau de bord a trois positions, mais ce sont
+// des SOMMES de classes disjointes : Externe = inbound + bridge, Interne =
+// internal, Les deux = les trois. Plutôt que d'exécuter trois fois les mêmes
+// requêtes lourdes (mesuré : ~2,5 s de métriques par variante), on les groupe
+// par classe et le service compose les trois variantes — coût d'UNE variante,
+// toggle entier prêt d'un coup. Les moyennes voyagent en (somme, effectif)
+// pour rester composables. Miroir de getGlobalMetricsRaw : toute évolution de
+// l'une doit se reporter sur l'autre (mêmes CTE, mêmes définitions).
+
+export interface GlobalMetricsByOriginRow {
+    direction_class: string;
+    total_calls: bigint;
+    answered_calls: bigint;
+    missed_calls: bigint;
+    voicemail_calls: bigint;
+    busy_calls: bigint;
+    talk_sum: string | null;
+    talk_count: bigint;
+    wait_sum: string | null;
+    wait_count: bigint;
+    agents_sum: string | null;
+    agents_count: bigint;
+    agents_1: bigint;
+    agents_2: bigint;
+    agents_3_plus: bigint;
+}
+
+export interface TimelineByOriginRow {
+    date_group: Date;
+    direction_class: string;
+    answered: bigint;
+    missed: bigint;
+}
+
+export interface HeatmapByOriginRow {
+    day_of_week: number;
+    hour_of_day: number;
+    direction_class: string;
+    volume: bigint;
+}
+
+/** CTE des premiers segments + expression de classe, partagées par les trois requêtes groupées. */
+function buildOriginClassFragments(cdr: Prisma.Sql, startDate: Date, endDate: Date): {
+    firstsCTE: Prisma.Sql; directionClassExpr: Prisma.Sql;
+} {
+    return {
+        firstsCTE: Prisma.sql`
+        firsts AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                source_dn_type AS first_source_type,
+                destination_dn_type AS first_dest_type
+            FROM ${cdr}
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_started_at ASC, cdr_id ASC
+        ),`,
+        directionClassExpr: Prisma.raw(buildCallDirectionCaseSQL({
+            sourceTypeExpr: "fs.first_source_type",
+            firstDestTypeExpr: "fs.first_dest_type",
+            lastDestTypeExpr: "ls.last_dest_type",
+        })),
+    };
+}
+
+export async function getGlobalMetricsByOriginRaw(
+    serverId: ServerId,
+    startDate: Date,
+    endDate: Date,
+    scope?: AccessScope
+): Promise<GlobalMetricsByOriginRow[]> {
+    const prisma = getPrismaCdr(serverId);
+    const rules = await getClassificationRules();
+    const cdr = Prisma.raw(cdrTable(rules));
+    const scopeFilter = buildScopeFilter(scope, cdr);
+    const realPartyTypes = Prisma.raw(SQL_REAL_PARTY_DEST_TYPES);
+    const statusCase = Prisma.raw(buildFinalStatusCaseSQL());
+    const oc = buildOriginClassFragments(cdr, startDate, endDate);
+
+    const query = Prisma.sql`
+        WITH call_aggregates AS (
+            SELECT
+                call_history_id,
+                MIN(cdr_started_at) as first_started_at,
+                MIN(cdr_answered_at) as first_answered_at
+            FROM ${cdr}
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+              ${scopeFilter}
+            GROUP BY call_history_id
+        ),
+        last_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                destination_dn_type as last_dest_type,
+                destination_entity_type as last_dest_entity_type,
+                cdr_answered_at,
+                cdr_started_at as last_started_at,
+                cdr_ended_at as last_ended_at,
+                termination_reason_details
+            FROM ${cdr}
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        ),
+        answered_segments AS (
+            SELECT DISTINCT ON (c.call_history_id)
+                c.call_history_id,
+                c.cdr_answered_at as answered_at
+            FROM ${cdr} c
+            WHERE c.cdr_answered_at IS NOT NULL
+              AND c.destination_dn_type = 'extension'
+              AND c.cdr_started_at >= ${startDate}
+              AND c.cdr_started_at <= ${endDate}
+            ORDER BY c.call_history_id, c.cdr_answered_at ASC, c.cdr_id ASC
+        ),
+        last_real_party AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                cdr_answered_at as lh_answered_at,
+                cdr_started_at as lh_started_at,
+                cdr_ended_at as lh_ended_at
+            FROM ${cdr}
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+              AND destination_dn_type IN (${realPartyTypes})
+              AND COALESCE(destination_entity_type, '') != 'voicemail'
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        ),
+        agent_counts AS (
+            SELECT c2.call_history_id, COUNT(DISTINCT c2.destination_dn_number) as agent_count
+            FROM ${cdr} c2
+            WHERE c2.cdr_answered_at IS NOT NULL
+              AND c2.destination_dn_type = 'extension'
+              AND c2.cdr_started_at >= ${startDate}
+              AND c2.cdr_started_at <= ${endDate}
+            GROUP BY c2.call_history_id
+        ),${oc.firstsCTE}
+        assemble AS (
+            SELECT
+                ca.call_history_id,
+                ${oc.directionClassExpr} as direction_class,
+                ca.first_started_at,
+                ca.first_answered_at,
+                ls.last_dest_type        as ls_last_dest_type,
+                ls.last_dest_entity_type as ls_last_dest_entity_type,
+                ls.cdr_answered_at       as ls_cdr_answered_at,
+                ls.last_started_at       as ls_last_started_at,
+                ls.last_ended_at         as ls_last_ended_at,
+                ls.termination_reason_details as ls_termination_reason_details,
+                ans.answered_at,
+                lrp.lh_answered_at,
+                lrp.lh_started_at,
+                lrp.lh_ended_at,
+                agc.agent_count as raw_agent_count
+            FROM call_aggregates ca
+            JOIN last_segments ls ON ls.call_history_id = ca.call_history_id
+            JOIN firsts fs ON fs.call_history_id = ca.call_history_id
+            LEFT JOIN answered_segments ans ON ans.call_history_id = ca.call_history_id
+            LEFT JOIN last_real_party lrp ON lrp.call_history_id = ca.call_history_id
+            LEFT JOIN agent_counts agc ON agc.call_history_id = ca.call_history_id
+        ),
+        enrichi AS (
+            SELECT
+                direction_class,
+                ${statusCase} as status,
+                CASE WHEN ls_cdr_answered_at IS NOT NULL
+                     THEN EXTRACT(EPOCH FROM (ls_last_ended_at - ls_cdr_answered_at)) END as talk_duration,
+                CASE WHEN ls_cdr_answered_at IS NOT NULL
+                     THEN EXTRACT(EPOCH FROM (COALESCE(answered_at, first_answered_at) - first_started_at)) END as wait_time,
+                CASE WHEN ls_cdr_answered_at IS NOT NULL
+                     THEN COALESCE(raw_agent_count, 0) END as agent_count
+            FROM assemble
+        )
+        SELECT
+            direction_class,
+            COUNT(*) as total_calls,
+            COUNT(*) FILTER (WHERE status = 'answered') as answered_calls,
+            COUNT(*) FILTER (WHERE status = 'missed') as missed_calls,
+            COUNT(*) FILTER (WHERE status = 'voicemail') as voicemail_calls,
+            COUNT(*) FILTER (WHERE status = 'busy') as busy_calls,
+            SUM(talk_duration) as talk_sum,
+            COUNT(talk_duration) as talk_count,
+            SUM(wait_time) as wait_sum,
+            COUNT(wait_time) as wait_count,
+            SUM(agent_count) as agents_sum,
+            COUNT(agent_count) as agents_count,
+            COUNT(*) FILTER (WHERE agent_count = 1) as agents_1,
+            COUNT(*) FILTER (WHERE agent_count = 2) as agents_2,
+            COUNT(*) FILTER (WHERE agent_count >= 3) as agents_3_plus
+        FROM enrichi
+        GROUP BY direction_class
+    `;
+
+    return prisma.$queryRaw<GlobalMetricsByOriginRow[]>(query);
+}
+
+export async function getTimelineByOriginRaw(
+    serverId: ServerId,
+    startDate: Date,
+    endDate: Date,
+    timezone: string = "Europe/Zurich",
+    scope?: AccessScope
+): Promise<TimelineByOriginRow[]> {
+    const prisma = getPrismaCdr(serverId);
+    const diffDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+    const interval = diffDays <= 2 ? "hour" : "day";
+    const systemDestTypes = Prisma.raw(SQL_SYSTEM_DEST_TYPES);
+    const systemEntityTypes = Prisma.raw(SQL_SYSTEM_ENTITY_TYPES);
+    const rules = await getClassificationRules();
+    const cdr = Prisma.raw(cdrTable(rules));
+    const oc = buildOriginClassFragments(cdr, startDate, endDate);
+
+    const query = Prisma.sql`
+        WITH call_aggregates AS (
+            SELECT call_history_id,
+                   MIN(cdr_started_at) AS first_started_at
+            FROM ${cdr}
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+              ${buildScopeFilter(scope, cdr)}
+            GROUP BY call_history_id
+        ),
+        last_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                destination_dn_type AS last_dest_type,
+                destination_entity_type AS last_dest_entity_type,
+                cdr_answered_at AS last_answered_at,
+                cdr_started_at AS last_started_at,
+                cdr_ended_at AS last_ended_at,
+                termination_reason_details
+            FROM ${cdr}
+            WHERE call_history_id IN (SELECT call_history_id FROM call_aggregates)
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        ),
+        answered_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                cdr_answered_at AS answered_at
+            FROM ${cdr}
+            WHERE call_history_id IN (SELECT call_history_id FROM call_aggregates)
+              AND cdr_answered_at IS NOT NULL
+              AND destination_dn_type = 'extension'
+            ORDER BY call_history_id, cdr_answered_at ASC, cdr_id ASC
+        ),${oc.firstsCTE}
+        call_outcomes AS (
+            SELECT
+                ca.call_history_id,
+                ca.first_started_at,
+                ${oc.directionClassExpr} AS direction_class,
+                CASE
+                    WHEN ls.last_dest_type IN ('vmail_console', 'voicemail') OR ls.last_dest_entity_type = 'voicemail'
+                        THEN 'voicemail'
+                    WHEN LOWER(COALESCE(ls.termination_reason_details, '')) LIKE '%busy%'
+                        THEN 'busy'
+                    WHEN ls.last_answered_at IS NOT NULL
+                         AND EXTRACT(EPOCH FROM (ls.last_ended_at - ls.last_started_at)) > 1
+                        THEN CASE
+                            WHEN ls.last_dest_type IN (${systemDestTypes})
+                                 OR ls.last_dest_entity_type IN (${systemEntityTypes})
+                                THEN CASE WHEN ans.answered_at IS NOT NULL THEN 'answered' ELSE 'abandoned' END
+                            ELSE 'answered'
+                            END
+                    ELSE 'abandoned'
+                END AS outcome
+            FROM call_aggregates ca
+            JOIN last_segments ls ON ls.call_history_id = ca.call_history_id
+            JOIN firsts fs ON fs.call_history_id = ca.call_history_id
+            LEFT JOIN answered_segments ans ON ans.call_history_id = ca.call_history_id
+        )
+        SELECT
+            date_trunc(${interval}, first_started_at AT TIME ZONE ${timezone}) AS date_group,
+            direction_class,
+            COUNT(*) FILTER (WHERE outcome = 'answered') AS answered,
+            COUNT(*) FILTER (WHERE outcome IN ('abandoned', 'busy')) AS missed
+        FROM call_outcomes
+        GROUP BY date_group, direction_class
+        ORDER BY date_group ASC
+    `;
+
+    return prisma.$queryRaw<TimelineByOriginRow[]>(query);
+}
+
+export async function getHeatmapByOriginRaw(
+    serverId: ServerId,
+    startDate: Date,
+    endDate: Date,
+    timezone: string = "Europe/Zurich",
+    scope?: AccessScope
+): Promise<HeatmapByOriginRow[]> {
+    const prisma = getPrismaCdr(serverId);
+    const rules = await getClassificationRules();
+    const cdr = Prisma.raw(cdrTable(rules));
+    const oc = buildOriginClassFragments(cdr, startDate, endDate);
+
+    const query = Prisma.sql`
+        WITH unique_calls AS (
+            SELECT
+                call_history_id,
+                MIN(cdr_started_at) AS first_started_at
+            FROM ${cdr}
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+              ${buildScopeFilter(scope, cdr)}
+            GROUP BY call_history_id
+        ),${oc.firstsCTE}
+        lasts AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id, destination_dn_type AS last_dest_type
+            FROM ${cdr}
+            WHERE cdr_started_at >= ${startDate}
+              AND cdr_started_at <= ${endDate}
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        )
+        SELECT
+            EXTRACT(ISODOW FROM first_started_at AT TIME ZONE ${timezone})::int AS day_of_week,
+            EXTRACT(HOUR FROM first_started_at AT TIME ZONE ${timezone})::int AS hour_of_day,
+            ${oc.directionClassExpr} AS direction_class,
+            COUNT(*) AS volume
+        FROM unique_calls ca
+        JOIN firsts fs ON fs.call_history_id = ca.call_history_id
+        JOIN lasts ls ON ls.call_history_id = ca.call_history_id
+        GROUP BY day_of_week, hour_of_day, direction_class
+        ORDER BY day_of_week, hour_of_day
+    `;
+
+    return prisma.$queryRaw<HeatmapByOriginRow[]>(query);
 }
 
 // ============================================

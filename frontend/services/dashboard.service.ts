@@ -8,6 +8,10 @@ import {
     getQueueTimelineDataRaw,
     getQueueHeatmapDataRaw,
     getGlobalMetricsRaw,
+    getGlobalMetricsByOriginRaw,
+    getTimelineByOriginRaw,
+    getHeatmapByOriginRaw,
+    type GlobalMetricsByOriginRow,
 } from "@/services/repositories/cdr.repository";
 import { resolveAccessScope, unrestrictedScope, type AccessScope } from "@/lib/access-scope";
 import type { CallOrigin } from "@/services/domain/call-classification";
@@ -139,6 +143,164 @@ export async function getGlobalMetrics(
             threePlusAgents: apiData.agentsDistribution.agents3Plus,
         },
     };
+}
+
+// ============================================
+// LES TROIS PROVENANCES EN UN CHARGEMENT
+// ============================================
+
+/** Ce que le tableau de bord affiche pour UNE provenance. */
+export interface DashboardOriginBundle {
+    metrics: GlobalMetrics;
+    timelineData: TimelineDataPoint[];
+    heatmapData: HeatmapDataPoint[];
+}
+
+/**
+ * Quelles classes de direction alimentent chaque position du toggle. Le pont
+ * EDIFEA est rangé côté externe (un appelant d'une autre entité) ; les
+ * sortants n'apparaissent jamais sur le tableau de bord.
+ */
+const ORIGIN_CLASSES: Record<CallOrigin, string[]> = {
+    external: ["inbound", "bridge"],
+    internal: ["internal"],
+    both: ["inbound", "bridge", "internal"],
+};
+
+const ALL_ORIGINS: CallOrigin[] = ["external", "internal", "both"];
+
+/** Compteurs d'une variante, composés depuis les lignes par classe. */
+function composeMetrics(rows: GlobalMetricsByOriginRow[], classes: string[]) {
+    const picked = rows.filter((r) => classes.includes(r.direction_class));
+    const sum = (f: (r: GlobalMetricsByOriginRow) => number) => picked.reduce((a, r) => a + f(r), 0);
+    const totalCalls = sum((r) => Number(r.total_calls));
+    const talkCount = sum((r) => Number(r.talk_count));
+    const waitCount = sum((r) => Number(r.wait_count));
+    const agentsCount = sum((r) => Number(r.agents_count));
+    return {
+        totalCalls,
+        answeredCalls: sum((r) => Number(r.answered_calls)),
+        missedCalls: sum((r) => Number(r.missed_calls)),
+        voicemailCalls: sum((r) => Number(r.voicemail_calls)),
+        busyCalls: sum((r) => Number(r.busy_calls)),
+        // Moyennes recomposées en pondérant par les effectifs : c'est pour cela
+        // que les lignes par classe voyagent en (somme, effectif).
+        avgDurationSeconds: talkCount > 0 ? Math.round((sum((r) => Number(r.talk_sum ?? 0)) / talkCount) * 10) / 10 : 0,
+        avgWaitTimeSeconds: waitCount > 0 ? Math.round((sum((r) => Number(r.wait_sum ?? 0)) / waitCount) * 10) / 10 : 0,
+        avgAgentsPerCall: agentsCount > 0 ? Math.round((sum((r) => Number(r.agents_sum ?? 0)) / agentsCount) * 100) / 100 : 0,
+        agents1: sum((r) => Number(r.agents_1)),
+        agents2: sum((r) => Number(r.agents_2)),
+        agents3Plus: sum((r) => Number(r.agents_3_plus)),
+    };
+}
+
+function timelineLabel(date: Date, interval: "hour" | "day"): string {
+    if (interval === "hour") return `${String(date.getUTCHours()).padStart(2, "0")}:00`;
+    return `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Les trois variantes de provenance du tableau de bord en UN chargement.
+ *
+ * Les requêtes sont groupées par classe de direction et composées ici : le
+ * coût est celui d'UNE variante (mesuré : ~2,5 s de métriques par variante en
+ * exécution séparée), et le toggle entier devient consultable d'un coup — plus
+ * de préchargement séquentiel ni de spinners qui traînent.
+ */
+export async function getDashboardAllOrigins(
+    serverId: ServerId,
+    startDate: Date,
+    endDate: Date
+): Promise<Record<CallOrigin, DashboardOriginBundle>> {
+    const scope = await resolveDashboardScope(serverId);
+    const timezone = await getServerTimezone(serverId);
+
+    const durationMs = endDate.getTime() - startDate.getTime();
+    const prevEnd = new Date(startDate.getTime() - 1);
+    const prevStart = new Date(prevEnd.getTime() - durationMs);
+
+    const diffDays = durationMs / (1000 * 60 * 60 * 24);
+    const interval: "hour" | "day" = diffDays <= 2 ? "hour" : "day";
+
+    // Métriques N puis N-1 en SÉQUENCE (requêtes lourdes qui se contentionnent
+    // en parallèle) ; la courbe et la heatmap, plus légères, en parallèle.
+    const [metricsRows, timelineRows, heatmapRows] = await Promise.all([
+        getGlobalMetricsByOriginRaw(serverId, startDate, endDate, scope),
+        getTimelineByOriginRaw(serverId, startDate, endDate, timezone, scope),
+        getHeatmapByOriginRaw(serverId, startDate, endDate, timezone, scope),
+    ]);
+    const prevMetricsRows = await getGlobalMetricsByOriginRaw(serverId, prevStart, prevEnd, scope);
+
+    const result = {} as Record<CallOrigin, DashboardOriginBundle>;
+    for (const origin of ALL_ORIGINS) {
+        const classes = ORIGIN_CLASSES[origin];
+        const cur = composeMetrics(metricsRows, classes);
+        const prev = composeMetrics(prevMetricsRows, classes);
+
+        // Courbe : sommes par point de date, sur les classes de la variante.
+        const byDate = new Map<number, { date: Date; answered: number; missed: number }>();
+        for (const row of timelineRows) {
+            if (!classes.includes(row.direction_class)) continue;
+            const date = new Date(row.date_group);
+            const key = date.getTime();
+            const entry = byDate.get(key) ?? { date, answered: 0, missed: 0 };
+            entry.answered += Number(row.answered);
+            entry.missed += Number(row.missed);
+            byDate.set(key, entry);
+        }
+        const timelineData: TimelineDataPoint[] = [...byDate.values()]
+            .sort((a, b) => a.date.getTime() - b.date.getTime())
+            .map((e) => ({
+                date: e.date.toISOString(),
+                label: timelineLabel(e.date, interval),
+                answered: e.answered,
+                missed: e.missed,
+            }));
+
+        // Heatmap : mêmes sommes, par case (jour × heure).
+        const byCell = new Map<string, HeatmapDataPoint>();
+        for (const row of heatmapRows) {
+            if (!classes.includes(row.direction_class)) continue;
+            const key = `${row.day_of_week}|${row.hour_of_day}`;
+            const cell = byCell.get(key) ?? { dayOfWeek: row.day_of_week, hourOfDay: row.hour_of_day, value: 0 };
+            cell.value += Number(row.volume);
+            byCell.set(key, cell);
+        }
+
+        const answerRate = cur.totalCalls > 0 ? (cur.answeredCalls / cur.totalCalls) * 100 : 0;
+        const prevAnswerRate = prev.totalCalls > 0 ? (prev.answeredCalls / prev.totalCalls) * 100 : 0;
+
+        result[origin] = {
+            metrics: {
+                totalCalls: cur.totalCalls,
+                answeredCalls: cur.answeredCalls,
+                missedCalls: cur.missedCalls,
+                voicemailCalls: cur.voicemailCalls,
+                busyCalls: cur.busyCalls,
+                avgDurationSeconds: cur.avgDurationSeconds,
+                answerRate: Math.round(answerRate * 10) / 10,
+                avgWaitTimeSeconds: cur.avgWaitTimeSeconds,
+                avgAgentsPerCall: cur.avgAgentsPerCall,
+                prevTotalCalls: prev.totalCalls,
+                prevAnsweredCalls: prev.answeredCalls,
+                prevMissedCalls: prev.missedCalls,
+                prevVoicemailCalls: prev.voicemailCalls,
+                prevBusyCalls: prev.busyCalls,
+                prevAvgDurationSeconds: prev.avgDurationSeconds,
+                prevAnswerRate: Math.round(prevAnswerRate * 10) / 10,
+                prevAvgWaitTimeSeconds: prev.avgWaitTimeSeconds,
+                prevAvgAgentsPerCall: prev.avgAgentsPerCall,
+                agentsDistribution: {
+                    oneAgent: cur.agents1,
+                    twoAgents: cur.agents2,
+                    threePlusAgents: cur.agents3Plus,
+                },
+            },
+            timelineData,
+            heatmapData: [...byCell.values()],
+        };
+    }
+    return result;
 }
 
 export async function getTimelineData(
