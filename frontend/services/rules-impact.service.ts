@@ -119,3 +119,41 @@ export async function measureRulesImpact(
 
     return { queueNumber, current: currentCounts, candidate: candidateCounts };
 }
+
+/**
+ * Impact d'UNE règle, toutes choses égales par ailleurs : on compare les
+ * réglages en cours d'édition à eux-mêmes, cette règle seule basculée sur son
+ * autre valeur. Répond à « qu'est-ce que CE choix change ? », là où la mesure
+ * globale répond à « qu'est-ce que mes modifications changent ? ».
+ *
+ * Renvoie une phrase prête à afficher — les écarts sur les quatre vignettes.
+ */
+export async function measureSingleRule(
+    serverId: ServerId,
+    queueNumber: string,
+    days: number,
+    editing: ClassificationRules,
+    alternative: ClassificationRules,
+): Promise<string> {
+    await requireActionRole(["ADMIN"]);
+
+    const end = new Date();
+    const start = new Date(end.getTime() - Math.min(days, 62) * 86_400_000);
+    const [a, b] = await Promise.all([
+        countWithRules(serverId, queueNumber, start, end, editing),
+        countWithRules(serverId, queueNumber, start, end, alternative),
+    ]);
+
+    const parts: string[] = [];
+    const diff = (label: string, x: number, y: number) => {
+        const d = x - y;
+        if (d !== 0) parts.push(`${d > 0 ? "+" : ""}${d} ${label}`);
+    };
+    diff("reçus", a.received, b.received);
+    diff("répondus", a.answered, b.answered);
+    diff("perdus", a.lost, b.lost);
+    diff("redirigés", a.overflow, b.overflow);
+
+    if (parts.length === 0) return "Ce choix ne change aucun chiffre sur cette période.";
+    return `Par rapport à l'autre option : ${parts.join(" · ")} (30 derniers jours).`;
+}

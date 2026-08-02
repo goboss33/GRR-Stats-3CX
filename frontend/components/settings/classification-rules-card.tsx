@@ -1,221 +1,174 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Loader2, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { FileText, Loader2, Printer, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { QueueSelector } from "@/components/stats/queue-selector";
+import { RuleCard } from "@/components/settings/rule-card";
+import {
+    GLOSSARY, RULE_SPECS, SECTIONS, buildSummary,
+    type RuleSpec, type SectionId,
+} from "@/components/settings/rules-config";
 import { getScopedQueueOptions } from "@/services/queues.service";
-import { measureRulesImpact, type RulesImpact } from "@/services/rules-impact.service";
+import { measureRulesImpact, measureSingleRule, type RulesImpact } from "@/services/rules-impact.service";
 import { getSelectedServer } from "@/lib/selected-server";
 import type { QueueInfo } from "@/types/queues.types";
 import type { ClassificationRules } from "@/services/domain/call-classification";
 
 /**
- * Réglage du classement des appels.
+ * Écran « Règles métier » — la gouvernance des statistiques.
  *
- * L'écran précédent décrivait des mécanismes : « appel repassant plusieurs fois
- * dans la même file », suivi d'une liste déroulante. On pouvait le lire sans
- * savoir ce qu'on décidait. Chaque règle expose désormais un exemple d'appel
- * concret et, pour chaque option, la conséquence sur les chiffres — et un
- * bouton mesure l'effet réel sur une file de son choix.
+ * L'écran raconte la vie d'un appel en cinq questions (cf. rules-config), là
+ * où il exposait auparavant une liste de mécanismes regroupés par couche
+ * technique. Trois partis pris :
+ *
+ * 1. Un RÉSUMÉ EXÉCUTIF en tête, en français, qui se réécrit à chaque choix :
+ *    c'est le document à présenter et à imprimer.
+ * 2. Chaque règle est une QUESTION, avec une seule ligne de conséquence ; le
+ *    détail se replie. On lit l'écran en survol, on l'approfondit au besoin.
+ * 3. Chaque règle peut se trancher sur un CAS RÉEL tiré de la base — décider
+ *    sur pièce plutôt que sur doctrine.
  */
-
-type RuleKey = keyof ClassificationRules;
-
-interface RuleOption {
-    value: string;
-    label: string;
-    effect: string;
-}
-
-interface RuleSpec {
-    key: RuleKey;
-    title: string;
-    example: string;
-    options: RuleOption[];
-}
-
-/** Règles gouvernant le point de vue d'une file d'attente. */
-const QUEUE_RULES: RuleSpec[] = [
-    {
-        key: "multiPassage",
-        title: "Un même appel traverse la file plusieurs fois",
-        example: "L'appel entre dans la file, personne ne décroche dans le délai ; il bascule vers une autre file, qui le renvoie. De retour, un agent le prend. Un seul appel, deux passages — le « ping-pong » que mesure déjà l'écran de statistiques.",
-        options: [
-            { value: "best", label: "Le meilleur résultat l'emporte", effect: "L'appel compte une fois, comme Répondu. La file est jugée sur le service finalement rendu." },
-            { value: "last", label: "Le dernier passage fait foi", effect: "L'appel compte une fois, selon le sort de son dernier essai. Un appel répondu puis rappelé et abandonné devient Perdu." },
-            { value: "each", label: "Chaque passage compte séparément", effect: "L'appel apparaît deux fois : un perdu et un répondu. Le total dépasse alors le nombre d'appels et ne correspond plus aux logs." },
-        ],
-    },
-    {
-        key: "overflow",
-        title: "L'appel repart vers une autre file",
-        example: "Personne ne décroche à Pully ; l'appel bascule vers Neuchâtel, qui le traite.",
-        options: [
-            { value: "neutral", label: "Redirigé — ni répondu, ni perdu", effect: "Une catégorie à part. Pully n'est ni créditée ni pénalisée pour un appel traité ailleurs." },
-            { value: "lost", label: "Perdu pour la file d'origine", effect: "Compté dans les Perdus de Pully : la file n'a pas su répondre dans son délai. Vision exigeante, utile pour piloter les effectifs." },
-            { value: "answered", label: "Répondu", effect: "Compté dans les Répondus de Pully. Gonfle son taux de service pour un travail fait par une autre équipe." },
-        ],
-    },
-    {
-        key: "directAndQueue",
-        title: "L'appel est à la fois direct et passé en file",
-        example: "Un client appelle un agent sur sa ligne directe ; l'agent ne répond pas et l'appel bascule dans la file de son équipe.",
-        options: [
-            { value: "firstContact", label: "Le premier contact prime", effect: "Classé en Direct, car c'est ainsi qu'il est entré dans l'équipe. Total juste, lecture par canal d'entrée." },
-            { value: "queueWins", label: "La file prime", effect: "Classé en File. Total juste également, mais le volume des lignes directes est sous-estimé." },
-            { value: "both", label: "Compter dans les deux blocs", effect: "Mesure la charge réelle des agents, mais le total dépasse le nombre d'appels et ne pourra jamais correspondre aux logs." },
-        ],
-    },
-    {
-        key: "answeredThenTransferred",
-        title: "L'appel est répondu puis transféré hors du groupe",
-        example: "La réception décroche, puis transfère à une autre équipe (ou un numéro externe) qui décroche à son tour. Le client a finalement été servi ailleurs.",
-        options: [
-            { value: "overflow", label: "Transféré (dans les Redirigés)", effect: "L'appel n'est « Répondu » que chez l'équipe qui a servi le client en dernier — les chiffres des équipes deviennent additifs. Un transfert qui échoue (personne ne décroche ailleurs) laisse l'appel Répondu ici." },
-            { value: "answered", label: "Répondu", effect: "Le groupe est jugé sur son décroché, quelle que soit la suite. Un même client peut alors être « Répondu » chez deux équipes." },
-        ],
-    },
-    {
-        key: "handedOffInPerformance",
-        title: "Le transfert accompli dans le taux de prise en charge",
-        example: "Le métier d'une réception est de router les appels : décrocher puis transférer à la bonne personne EST son travail. Sans cette règle, Pully affichait 23 % de performance pour un travail fait à 88 %.",
-        options: [
-            { value: "success", label: "Compte comme une prise en charge", effect: "Prise en charge = (répondus + transferts accomplis) / reçus. Le débordement SANS décroché reste un échec. Même formule pour toutes les équipes, réceptions comprises." },
-            { value: "neutral", label: "Ne compte pas", effect: "Prise en charge = répondus / reçus. Les équipes qui transfèrent beaucoup (réceptions) verront leur taux chuter mécaniquement." },
-        ],
-    },
-    {
-        key: "agentCredit",
-        title: "Un appel décroché par plusieurs agents : qui a le crédit ?",
-        example: "Sarah décroche puis transfère à Noémie qui reprend le client. Une conversation, deux décrochés — dans quelle ligne du tableau par agent l'appel compte-t-il ?",
-        options: [
-            { value: "lastAnswer", label: "Le dernier décrocheur", effect: "L'appel est crédité à un seul agent (celui qui a servi le client en dernier) : la somme du tableau égale la vignette Répondus. Règle historique de la file, étendue aux appels directs." },
-            { value: "each", label: "Chaque agent décrocheur", effect: "L'appel compte chez Sarah ET chez Noémie : on lit l'activité de chacun, mais la somme du tableau dépasse le total d'appels." },
-        ],
-    },
-    {
-        key: "voicemail",
-        title: "L'appel se termine sur la messagerie",
-        example: "Hors des heures d'ouverture, ou lorsqu'un agent renvoie l'appel d'un bouton.",
-        options: [
-            { value: "excluded", label: "Ne pas compter l'appel", effect: "Ni reçu, ni perdu : l'appel sort des statistiques du groupe. C'est la convention des rapports Excel historiques, où la messagerie ne figurait pas dans « appels reçus »." },
-            { value: "separate", label: "Catégorie interne à part", effect: "Comptée dans les reçus et distinguée dans le calcul, mais affichée dans Perdus comme les autres." },
-            { value: "lost", label: "Compter comme perdu", effect: "Fondue dans les abandons dès le calcul. Une catégorie de moins à maintenir." },
-            { value: "answered", label: "Compter comme répondu", effect: "Déplace ces appels dans les Répondus. Déconseillé : chez vous l'appelant ne peut pas laisser de message, l'appel se termine simplement." },
-        ],
-    },
-];
-
-/** Règles gouvernant le point de vue de l'entreprise. */
-const COMPANY_RULES: RuleSpec[] = [
-    {
-        key: "callGrain",
-        title: "Qu'est-ce qu'un appel ? (transferts)",
-        example: "Un client appelle, la réception décroche puis le transfère à un collègue. 3CX enregistre le transfert comme un DEUXIÈME appel, relié au premier.",
-        options: [
-            { value: "merged", label: "Un client, un appel (fusion des transferts)", effect: "Les jambes de transfert sont fusionnées dans l'appel principal. C'est le grain des rapports 3CX et de l'Excel historique ; le déroulement complet reste visible dans la modale, jambe par jambe." },
-            { value: "leg", label: "Chaque jambe compte séparément", effect: "Comportement technique brut : un client transféré une fois devient deux appels dans les totaux (~2 % de plus à l'échelle de l'entreprise, mesuré sur juin 2026)." },
-        ],
-    },
-    {
-        key: "outOfScopeFinalStatus",
-        title: "L'appel a été traité par une file hors du périmètre du lecteur",
-        example: "Un manager de Pully consulte ses appels perdus ; l'un d'eux a été récupéré par Neuchâtel, dont il n'a pas la charge.",
-        options: [
-            { value: "name", label: "Nommer la file", effect: "Affiche « Répondu par 910 – Neuchâtel ». Le plus informatif, mais révèle l'existence de files hors de son périmètre." },
-            { value: "anonymize", label: "Indiquer sans nommer", effect: "Affiche « Répondu (hors périmètre) ». Le manager sait que le client a été servi, sans voir l'organisation des autres régions." },
-            { value: "hide", label: "Ne rien afficher", effect: "Cloisonnement strict. Le manager croira ses appels définitivement perdus." },
-        ],
-    },
-];
 
 interface Props {
     rules: ClassificationRules;
     onChange: (rules: ClassificationRules) => void;
-    /** Seuil du bruit de routage — décide de la POPULATION, pas du statut. */
-    minSignificantDurationSec: number;
-    onMinSignificantDurationChange: (value: number) => void;
+    /** Réglages enregistrés, pour signaler ce qui a été modifié. */
+    saved: ClassificationRules;
 }
 
-export function ClassificationRulesCard({
-    rules,
-    onChange,
-    minSignificantDurationSec,
-    onMinSignificantDurationChange,
-}: Props) {
+/** Valeur d'une règle, quelle que soit sa forme — pour comparer à l'enregistré. */
+function ruleValue(spec: RuleSpec, rules: ClassificationRules): unknown {
+    if (spec.kind === "number") return rules[spec.key];
+    if (spec.kind === "shortAbandon") return `${rules.shortAbandonThresholdSeconds}|${rules.shortAbandonDisposition}`;
+    return rules[spec.key];
+}
+
+/** Réglages où CETTE règle bascule sur son autre valeur (pour l'impact ciblé). */
+function withAlternative(spec: RuleSpec, rules: ClassificationRules): ClassificationRules | null {
+    if (spec.kind === "number") return null;
+    const current = spec.kind === "shortAbandon" ? rules.shortAbandonDisposition : rules[spec.key];
+    const other = spec.options.find((o) => o.value !== current);
+    if (!other) return null;
+    if (spec.kind === "shortAbandon") {
+        return { ...rules, shortAbandonDisposition: other.value as ClassificationRules["shortAbandonDisposition"] };
+    }
+    return { ...rules, [spec.key]: other.value } as ClassificationRules;
+}
+
+export function ClassificationRulesCard({ rules, onChange, saved }: Props) {
     const [queues, setQueues] = useState<QueueInfo[]>([]);
-    const [simQueue, setSimQueue] = useState<string | null>(null);
-    const [simDays, setSimDays] = useState(30);
-    const [measuring, setMeasuring] = useState(false);
-    const [impact, setImpact] = useState<RulesImpact | null>(null);
+    const [queue, setQueue] = useState<string | null>(null);
+    const [activeSection, setActiveSection] = useState<SectionId>(1);
+
+    // Mesure ciblée (par règle) et mesure globale (toutes modifications).
+    const [measuringKey, setMeasuringKey] = useState<string | null>(null);
+    const [measures, setMeasures] = useState<Record<string, string>>({});
+    const [globalBusy, setGlobalBusy] = useState(false);
+    const [globalImpact, setGlobalImpact] = useState<RulesImpact | null>(null);
 
     useEffect(() => {
         getScopedQueueOptions(getSelectedServer())
             .then((options) => {
                 setQueues(options.queues);
-                setSimQueue((current) => current ?? options.queues[0]?.queueNumber ?? null);
+                setQueue((current) => current ?? options.queues[0]?.queueNumber ?? null);
             })
             .catch(() => undefined);
     }, []);
 
-    const runSimulation = async () => {
-        if (!simQueue) return;
-        setMeasuring(true);
-        setImpact(null);
+    // Surlignage de la section visible pendant le défilement.
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            (entries) => {
+                for (const entry of entries) {
+                    if (entry.isIntersecting) {
+                        const id = Number(entry.target.getAttribute("data-section")) as SectionId;
+                        if (id) setActiveSection(id);
+                    }
+                }
+            },
+            { rootMargin: "-15% 0px -70% 0px" },
+        );
+        document.querySelectorAll("[data-section]").forEach((el) => observer.observe(el));
+        return () => observer.disconnect();
+    }, []);
+
+    const summary = useMemo(() => buildSummary(rules), [rules]);
+    const bySection = useMemo(() => {
+        const map = new Map<SectionId | "advanced", RuleSpec[]>();
+        for (const spec of RULE_SPECS) {
+            const list = map.get(spec.section) ?? [];
+            list.push(spec);
+            map.set(spec.section, list);
+        }
+        return map;
+    }, []);
+
+    const measureRule = async (spec: RuleSpec) => {
+        if (!queue) { toast.error("Choisissez d'abord un groupe à observer."); return; }
+        const alternative = withAlternative(spec, rules);
+        if (!alternative) return;
+        const key = spec.key;
+        setMeasuringKey(key);
         try {
-            const end = new Date();
-            const start = new Date(end.getTime() - simDays * 86_400_000);
-            setImpact(await measureRulesImpact(getSelectedServer(), simQueue, start, end, rules));
+            const phrase = await measureSingleRule(getSelectedServer(), queue, 30, rules, alternative);
+            setMeasures((m) => ({ ...m, [key]: phrase }));
         } catch (error) {
             toast.error(error instanceof Error ? error.message : "Mesure impossible");
         } finally {
-            setMeasuring(false);
+            setMeasuringKey(null);
         }
     };
 
-    const renderRule = (spec: RuleSpec) => (
-        <div key={spec.key} className="space-y-2">
-            <div>
-                <h4 className="text-sm font-semibold text-slate-900">{spec.title}</h4>
-                <p className="mt-0.5 text-xs italic text-slate-500">{spec.example}</p>
-            </div>
-            <div className="space-y-1.5">
-                {spec.options.map((opt) => {
-                    const selected = rules[spec.key] === opt.value;
-                    return (
-                        <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => onChange({ ...rules, [spec.key]: opt.value })}
-                            className={`w-full rounded-lg border p-2.5 text-left transition-colors ${
-                                selected
-                                    ? "border-blue-400 bg-blue-50/60"
-                                    : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                            }`}
-                        >
-                            <div className="flex items-start gap-2">
-                                <div className={`mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
-                                    selected ? "border-blue-500 bg-blue-500" : "border-slate-300"
-                                }`} />
-                                <div>
-                                    <div className={`text-sm ${selected ? "font-medium text-slate-900" : "text-slate-700"}`}>
-                                        {opt.label}
-                                    </div>
-                                    <div className="mt-0.5 text-xs text-slate-500">{opt.effect}</div>
-                                </div>
-                            </div>
-                        </button>
-                    );
-                })}
-            </div>
-        </div>
-    );
+    const measureGlobal = async () => {
+        if (!queue) return;
+        setGlobalBusy(true); setGlobalImpact(null);
+        try {
+            const end = new Date();
+            const start = new Date(end.getTime() - 30 * 86_400_000);
+            setGlobalImpact(await measureRulesImpact(getSelectedServer(), queue, start, end, rules));
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Mesure impossible");
+        } finally {
+            setGlobalBusy(false);
+        }
+    };
+
+    const renderSection = (id: SectionId) => {
+        const section = SECTIONS.find((s) => s.id === id)!;
+        const specs = bySection.get(id) ?? [];
+        return (
+            <section key={id} id={`regles-section-${id}`} data-section={id} className="scroll-mt-4 space-y-3">
+                <div className="flex items-baseline gap-3">
+                    <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-bold tabular-nums text-blue-700">
+                        {id}
+                    </span>
+                    <div>
+                        <h3 className="text-lg font-semibold tracking-tight text-slate-900">{section.title}</h3>
+                        <p className="text-[13px] text-slate-500">{section.subtitle}</p>
+                    </div>
+                </div>
+                {specs.map((spec) => (
+                    <RuleCard
+                        key={spec.key}
+                        spec={spec}
+                        rules={rules}
+                        onChange={onChange}
+                        dirty={ruleValue(spec, rules) !== ruleValue(spec, saved)}
+                        queues={queues}
+                        selectedQueue={queue}
+                        onMeasure={spec.kind === "number" ? undefined : measureRule}
+                        measuring={measuringKey === spec.key}
+                        measureResult={measures[spec.key] ?? null}
+                    />
+                ))}
+            </section>
+        );
+    };
 
     const delta = (before: number, after: number) => {
         const d = after - before;
@@ -224,260 +177,160 @@ export function ClassificationRulesCard({
     };
 
     return (
-        <div className="space-y-6">
-            {/* D'abord quels appels entrent dans les chiffres, ensuite comment on
-                les juge. Sans cette séparation, ce seuil-ci et la « durée minimale
-                d'une conversation » se ressemblaient au point d'être confondus,
-                alors qu'ils décident de choses différentes. */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Quels appels comptent</CardTitle>
-                    <CardDescription>
-                        Avant de juger un appel, l&apos;application décide s&apos;il doit figurer dans
-                        les statistiques. Ce réglage écarte les artefacts de routage, qui ne sont
-                        pas de vraies tentatives d&apos;appel.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                    <Label className="text-sm font-semibold text-slate-900">
-                        Sollicitations directes trop brèves
-                    </Label>
-                    <p className="text-xs italic text-slate-500">
-                        Un appel de 9 millisecondes vers le poste d&apos;un agent qui avait un renvoi
-                        actif : l&apos;appel a filé vers la file sans jamais sonner chez lui.
-                    </p>
-                    <p className="text-xs text-slate-500">
-                        En dessous de cette durée, une sollicitation directe <strong>non répondue</strong>
-                        {" "}est traitée comme du bruit et n&apos;entre pas dans les statistiques. Ce seuil
-                        décide de la présence de l&apos;appel, pas de son statut.
-                    </p>
-                    <div className="flex items-center gap-2 pt-1">
-                        <Input
-                            type="number"
-                            min={0}
-                            max={60}
-                            className="w-32"
-                            value={minSignificantDurationSec}
-                            onChange={(e) => onMinSignificantDurationChange(
-                                Math.max(0, Math.min(60, parseInt(e.target.value) || 0)),
-                            )}
-                        />
-                        <span className="text-sm text-slate-500">seconde(s)</span>
-                    </div>
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>Statuts vus depuis une file d&apos;attente</CardTitle>
-                    <CardDescription>
-                        Comment une file juge les appels qu&apos;elle reçoit. Ces règles pilotent les
-                        vignettes de l&apos;écran de statistiques et la colonne « Statut groupe » des
-                        journaux — les deux restent donc toujours cohérents entre eux.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[210px_minmax(0,1fr)]">
+            {/* Sommaire — les cinq questions, dans l'ordre de la vie d'un appel. */}
+            <nav className="hidden lg:block">
+                <div className="sticky top-4 space-y-1">
+                    {SECTIONS.map((s) => (
+                        <a
+                            key={s.id}
+                            href={`#regles-section-${s.id}`}
+                            className={`flex items-baseline gap-2 rounded-lg border px-3 py-2 text-[13px] transition-colors ${
+                                activeSection === s.id
+                                    ? "border-slate-200 bg-white font-semibold text-slate-900"
+                                    : "border-transparent text-slate-500 hover:bg-white"
+                            }`}
+                        >
+                            <span className={`w-3 text-[11px] tabular-nums ${activeSection === s.id ? "text-blue-600" : "text-slate-400"}`}>
+                                {s.id}
+                            </span>
+                            {s.title}
+                        </a>
+                    ))}
+                    <p className="px-3 pt-3 text-[11px] leading-relaxed text-slate-400">
                         Ces règles s&apos;appliquent au calcul, pas au stockage : les modifier change
-                        rétroactivement les chiffres des périodes déjà écoulées. Un rapport édité le
-                        mois dernier ne donnera plus le même résultat.
-                    </div>
+                        rétroactivement les chiffres des périodes passées.
+                    </p>
+                </div>
+            </nav>
 
-                    {/* Mesure d'impact — commune à toutes les règles de la section. */}
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
-                        <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                            <TrendingUp className="h-4 w-4 text-blue-600" />
-                            Mesurer l&apos;impact des réglages ci-dessous
-                        </div>
-                        <div className="flex flex-wrap items-end gap-3">
-                            <div className="min-w-[260px] flex-1">
-                                <Label className="mb-1 block text-xs text-slate-600">Groupe</Label>
-                                <QueueSelector
-                                    queues={queues}
-                                    selectedQueueNumber={simQueue}
-                                    onSelect={(queueNumber) => setSimQueue(queueNumber)}
-                                    placeholder="Choisir un groupe…"
-                                />
-                            </div>
-                            <div>
-                                <Label className="mb-1 block text-xs text-slate-600">Sur les derniers…</Label>
-                                <select
-                                    className="h-10 rounded-md border border-slate-200 bg-white px-2 text-sm"
-                                    value={simDays}
-                                    onChange={(e) => setSimDays(Number(e.target.value))}
-                                >
-                                    <option value={7}>7 jours</option>
-                                    <option value={30}>30 jours</option>
-                                    <option value={60}>60 jours</option>
-                                </select>
-                            </div>
-                            <Button variant="outline" onClick={runSimulation} disabled={!simQueue || measuring}>
-                                {measuring && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                Mesurer
+            <div className="min-w-0 space-y-8">
+                {/* Résumé exécutif — le document de référence. */}
+                <Card className="border-slate-200">
+                    <CardHeader className="pb-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <CardTitle className="flex items-center gap-2 text-base">
+                                <FileText className="h-4 w-4 text-blue-600" />
+                                Comment compte-t-on aujourd&apos;hui ?
+                            </CardTitle>
+                            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()}>
+                                <Printer className="h-3.5 w-3.5" />
+                                Imprimer
                             </Button>
                         </div>
-                        <p className="text-xs text-slate-500">
-                            La mesure interroge les données d&apos;appels réelles : elle prend quelques
-                            secondes, et la période est volontairement limitée.
-                        </p>
+                        <CardDescription>
+                            Une phrase par règle active — ce résumé se met à jour à chaque choix.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-1.5 pt-0">
+                        {summary.map((phrase, i) => (
+                            <p key={i} className="flex gap-2 text-[13.5px] text-slate-600">
+                                <span className="font-bold text-blue-600">·</span>
+                                {phrase}
+                            </p>
+                        ))}
+                    </CardContent>
+                </Card>
 
-                        {impact && (
-                            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                                <table className="w-full text-sm">
-                                    <thead>
-                                        <tr className="border-b border-slate-100 text-xs text-slate-500">
-                                            <th className="px-3 py-2 text-left font-medium">File {impact.queueNumber}</th>
-                                            <th className="px-3 py-2 text-right font-medium">Règles enregistrées</th>
-                                            <th className="px-3 py-2 text-right font-medium">Réglages en cours</th>
-                                            <th className="px-3 py-2 text-right font-medium">Écart</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {([
-                                            ["Total reçus", "received"],
-                                            ["Répondus", "answered"],
-                                            ["Perdus", "lost"],
-                                            ["Redirigés", "overflow"],
-                                        ] as const).map(([label, key]) => (
-                                            <tr key={key} className="border-b border-slate-50 last:border-0">
-                                                <td className="px-3 py-1.5 text-slate-700">{label}</td>
-                                                <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{impact.current[key]}</td>
-                                                <td className="px-3 py-1.5 text-right font-medium tabular-nums">{impact.candidate[key]}</td>
-                                                <td className="px-3 py-1.5 text-right tabular-nums">{delta(impact.current[key], impact.candidate[key])}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                                <p className="border-t border-slate-100 px-3 py-2 text-xs text-slate-500">
-                                    {impact.current.multiPassageCalls} appel(s) repassent plusieurs fois dans cette
-                                    file sur la période — c&apos;est le volume que la première règle arbitre.
-                                </p>
-                            </div>
-                        )}
-                    </div>
+                {/* Glossaire des statuts — le vocabulaire commun. */}
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <span className="mr-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                        Vocabulaire
+                    </span>
+                    {GLOSSARY.map((g) => (
+                        <span
+                            key={g.label}
+                            title={g.title}
+                            className={`cursor-help rounded-full border px-2.5 py-1 text-xs font-semibold ${g.className}`}
+                        >
+                            {g.label}
+                        </span>
+                    ))}
+                </div>
 
-                    {QUEUE_RULES.map(renderRule)}
-
-                    <div className="space-y-2 border-t border-slate-100 pt-4">
-                        <Label className="text-sm font-semibold text-slate-900">Abandons très courts</Label>
-                        <p className="text-xs italic text-slate-500">
-                            Un appelant compose un mauvais numéro et raccroche après trois secondes.
-                        </p>
-                        <p className="text-xs text-slate-500">
-                            En dessous de ce seuil, l&apos;abandon est distingué dans le calcul.
-                            Laisser vide pour désactiver la distinction.
-                        </p>
-                        <Input
-                            type="number"
-                            min={0}
-                            max={300}
-                            className="w-32"
-                            value={rules.shortAbandonThresholdSeconds ?? ""}
-                            placeholder="désactivé"
-                            onChange={(e) => onChange({
-                                ...rules,
-                                shortAbandonThresholdSeconds: e.target.value === "" ? null : Number(e.target.value),
-                            })}
-                        />
-                        <p className="pt-1 text-xs text-slate-500">
-                            Et que fait-on de ces abandons très courts ?
-                        </p>
-                        <div className="space-y-1.5">
-                            {([
-                                { value: "lost", label: "Comptés dans « Perdus »", effect: "L'appel reste un reçu : un client qui a réellement appelé, même trois secondes, compte. Seule la ventilation interne distingue l'abandon court." },
-                                { value: "excluded", label: "Exclus des reçus", effect: "L'appel sort complètement des statistiques (ni reçu, ni perdu) — même mécanique que la messagerie exclue. Le taux de prise en charge remonte mécaniquement." },
-                            ] as const).map((opt) => {
-                                const selected = rules.shortAbandonDisposition === opt.value;
-                                return (
-                                    <button
-                                        key={opt.value}
-                                        type="button"
-                                        onClick={() => onChange({ ...rules, shortAbandonDisposition: opt.value })}
-                                        className={`w-full rounded-lg border p-2.5 text-left transition-colors ${
-                                            selected
-                                                ? "border-blue-400 bg-blue-50/60"
-                                                : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                                        }`}
-                                    >
-                                        <div className="flex items-start gap-2">
-                                            <div className={`mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
-                                                selected ? "border-blue-500 bg-blue-500" : "border-slate-300"
-                                            }`} />
-                                            <div>
-                                                <div className={`text-sm ${selected ? "font-medium text-slate-900" : "text-slate-700"}`}>
-                                                    {opt.label}
-                                                </div>
-                                                <div className="mt-0.5 text-xs text-slate-500">{opt.effect}</div>
-                                            </div>
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>Statuts vus depuis l&apos;entreprise</CardTitle>
-                    <CardDescription>
-                        Le sort final d&apos;un appel, indépendamment des files traversées. Ces règles
-                        pilotent la colonne « Statut final » des journaux et les chiffres du tableau
-                        de bord.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                    {/* Ces deux règles sont volontairement figées : leur exposer un
-                        réglage rouvrirait la porte aux vocabulaires multiples que
-                        l'on vient d'unifier. Les énoncer reste nécessaire — sans
-                        cela, « Perdu » est un verdict sans critère visible. */}
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                        <p className="font-medium text-slate-700">Comment le statut final est déterminé</p>
-                        <ol className="mt-1.5 list-inside list-decimal space-y-1">
-                            <li>
-                                <strong>Répondu</strong> — le <strong>dernier</strong> décroché par un
-                                humain a duré plus que la durée minimale ci-dessous. Si la réception
-                                parle au client puis transfère à un collègue absent, l&apos;appel est
-                                donc <strong>Perdu</strong> : on juge l&apos;aboutissement, pas l&apos;effort.
-                            </li>
-                            <li>
-                                <strong>Perdu</strong> — tout le reste : personne n&apos;a décroché, ligne
-                                occupée, ou appel terminé sur la messagerie. Ces trois cas restent
-                                distingués dans le parcours de l&apos;appel et par l&apos;icône du badge,
-                                mais portent le même nom pour ne pas multiplier le vocabulaire.
-                            </li>
-                        </ol>
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <Label className="text-sm font-semibold text-slate-900">
-                            Durée minimale d&apos;une conversation
+                {/* Groupe observé : sert aux cas réels ET aux mesures d'impact. */}
+                <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="min-w-[260px] flex-1">
+                        <Label className="mb-1 block text-xs text-slate-600">
+                            Groupe observé — pour les cas réels et les mesures d&apos;impact
                         </Label>
-                        <p className="text-xs italic text-slate-500">
-                            Un agent décroche et raccroche aussitôt, ou un transfert échoue au moment
-                            de l&apos;aboutissement.
-                        </p>
-                        <p className="text-xs text-slate-500">
-                            En dessous de cette durée, le décroché n&apos;est pas considéré comme une
-                            réponse. Mettre 0 pour compter tout décroché.
-                        </p>
-                        <div className="flex items-center gap-2">
-                            <Input
-                                type="number"
-                                min={0}
-                                max={60}
-                                className="w-32"
-                                value={rules.minAnswerSeconds}
-                                onChange={(e) => onChange({ ...rules, minAnswerSeconds: Number(e.target.value) })}
+                        <QueueSelector
+                            queues={queues}
+                            selectedQueueNumber={queue}
+                            onSelect={(q) => setQueue(q)}
+                            placeholder="Choisir un groupe…"
+                        />
+                    </div>
+                    <Button variant="outline" onClick={measureGlobal} disabled={!queue || globalBusy} className="gap-2">
+                        {globalBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
+                        Mesurer toutes mes modifications
+                    </Button>
+                </div>
+
+                {globalImpact && (
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-slate-100 text-xs text-slate-500">
+                                    <th className="px-3 py-2 text-left font-medium">Groupe {globalImpact.queueNumber} · 30 derniers jours</th>
+                                    <th className="px-3 py-2 text-right font-medium">Enregistré</th>
+                                    <th className="px-3 py-2 text-right font-medium">En cours</th>
+                                    <th className="px-3 py-2 text-right font-medium">Écart</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {([["Total reçus", "received"], ["Répondus", "answered"], ["Perdus", "lost"], ["Redirigés", "overflow"]] as const).map(
+                                    ([label, key]) => (
+                                        <tr key={key} className="border-b border-slate-50 last:border-0">
+                                            <td className="px-3 py-1.5 text-slate-700">{label}</td>
+                                            <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{globalImpact.current[key]}</td>
+                                            <td className="px-3 py-1.5 text-right font-medium tabular-nums">{globalImpact.candidate[key]}</td>
+                                            <td className="px-3 py-1.5 text-right tabular-nums">{delta(globalImpact.current[key], globalImpact.candidate[key])}</td>
+                                        </tr>
+                                    ),
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {SECTIONS.map((s) => renderSection(s.id))}
+
+                {/* Avancé — réglages rarement touchés, repliés. */}
+                <details className="rounded-xl border border-slate-200 bg-white px-5">
+                    <summary className="cursor-pointer py-4 text-sm font-semibold text-slate-600">
+                        Avancé — réglages techniques (rarement modifiés)
+                    </summary>
+                    <div className="space-y-3 pb-5">
+                        {(bySection.get("advanced") ?? []).map((spec) => (
+                            <RuleCard
+                                key={spec.key}
+                                spec={spec}
+                                rules={rules}
+                                onChange={onChange}
+                                dirty={ruleValue(spec, rules) !== ruleValue(spec, saved)}
+                                queues={queues}
+                                selectedQueue={queue}
                             />
-                            <span className="text-sm text-slate-500">seconde(s)</span>
+                        ))}
+                        <div className="rounded-xl border border-slate-200 p-4">
+                            <p className="mb-2 text-[13px] text-slate-600">
+                                Types de destinations « système » — jamais comptés comme une réponse humaine :
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                                {["queue", "ring_group", "ring_group_ring_all", "ivr", "process", "parking", "script"].map((t) => (
+                                    <code key={t} className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-600">
+                                        {t}
+                                    </code>
+                                ))}
+                            </div>
+                            <p className="mt-3 text-xs text-slate-400">
+                                Ces valeurs sont définies dans le code source ; contactez l&apos;administrateur technique pour les modifier.
+                            </p>
                         </div>
                     </div>
-
-                    {COMPANY_RULES.map(renderRule)}
-                </CardContent>
-            </Card>
+                </details>
+            </div>
         </div>
     );
 }
