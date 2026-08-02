@@ -78,6 +78,9 @@ model AppSettings {
   /// Sort des abandons courts : "lost" (comptés dans Perdus) | "excluded"
   /// (pas comptés du tout — l'appel sort des reçus)
   ruleShortAbandonDisposition String   @default("lost")
+  /// Horloge du seuil d'abandon court : "passage" (le passage en file seul) |
+  /// "team" (cumul de la sollicitation de l'équipe : directs + file)
+  ruleShortAbandonClock       String   @default("passage")
   /// Appel direct ET en file : "firstContact" | "queueWins" | "both"
   ruleDirectAndQueue          String   @default("firstContact")
   /// Messagerie : "separate" | "lost" | "answered" | "excluded"
@@ -94,6 +97,9 @@ model AppSettings {
   ruleAgentCredit             String   @default("lastAnswer")
   /// Transfert accompli dans la performance : "success" | "neutral"
   ruleHandedOffInPerformance  String   @default("success")
+  /// Sonnerie directe non répondue partie vers la file d'une autre équipe :
+  /// "lost" (Perdu) | "overflow" (Débordé, rangé dans les Redirigés)
+  ruleUnansweredDirectOverflow String  @default("lost")
   /// Durée minimale d'une conversation pour qu'un décroché compte comme répondu.
   ruleMinAnswerSec            Int      @default(1)
   createdAt                   DateTime @default(now())

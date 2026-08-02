@@ -69,6 +69,7 @@ interface ApiQueueResponse {
     directReceived: number;
     directAnswered: number;
     directHandedOff: number;
+    directOverflow: number;
     directLost: number;
     classificationRules?: { handedOffInPerformance?: "success" | "neutral" };
     overflowDestinations: Array<{ destination: string; destinationName: string; count: number }>;
@@ -176,6 +177,7 @@ async function computeQueueKPIs(
         teamDirectReceived,
         teamDirectAnswered,
         directHandedOff: apiData.directHandedOff,
+        directOverflow: apiData.directOverflow,
         directLost: apiData.directLost,
         handedOffInPerformance: apiData.classificationRules?.handedOffInPerformance ?? "success",
         overflowDestinations,

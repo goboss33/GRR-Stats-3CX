@@ -52,9 +52,12 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
     // peuvent pas diverger.
     const totalLost = sumBucket(kpis.outcomeCounts, "lost") + kpis.directLost;
     // Redirigés = transférés (décrochés ici, servis ailleurs) + débordés
-    // (partis sans décroché), file et directs confondus.
+    // (partis sans décroché), file et directs confondus — un direct non
+    // répondu reparti vers une autre file est un débordé comme un autre
+    // (règle unansweredDirectOverflow).
     const totalHandedOff = kpis.callsHandedOff + kpis.directHandedOff;
-    const totalOverflow = kpis.callsOverflow + totalHandedOff;
+    const totalOverflowed = kpis.callsOverflow + kpis.directOverflow;
+    const totalOverflow = totalOverflowed + totalHandedOff;
     // Taux de prise en charge : un transfert accompli est un travail fait —
     // décisif pour les réceptions, dont le métier EST de transférer (règle
     // handedOffInPerformance, configurable).
@@ -290,7 +293,7 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                 </div>
                                 <div className="text-2xl font-bold text-amber-700">{totalOverflow}</div>
                                 <div className="text-[10px] text-slate-500 mt-0.5">
-                                    Transférés: {totalHandedOff} · Débordés: {kpis.callsOverflow}
+                                    Transférés: {totalHandedOff} · Débordés: {totalOverflowed}
                                 </div>
                             </Link>
 

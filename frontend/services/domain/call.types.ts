@@ -323,6 +323,8 @@ export interface QueueKPIs {
     teamDirectAnswered: number;
     /** Transferts accomplis (directs) : décrochés ici puis servis ailleurs. */
     directHandedOff: number;
+    /** Directs non répondus repartis vers la file d'une autre équipe (Débordés). */
+    directOverflow: number;
     directLost: number;
     /** Le transfert accompli compte-t-il dans le taux de prise en charge ? */
     handedOffInPerformance: "success" | "neutral";

@@ -189,6 +189,90 @@ function buildFinderSQL(kind: CaseKind, rules: ClassificationRules): string {
             ORDER BY MIN(started_at) DESC
             LIMIT ${LIMIT}`;
 
+        case "team_clock":
+            // Abandon court au sens « passage » (raccroché vite en file) MAIS
+            // longue sollicitation d'équipe avant (sonnerie directe sur un
+            // agent du groupe) : l'appel dont le sort dépend de l'horloge.
+            return `WITH ${agentsCTE(cdr)},
+            short_passages AS (
+                SELECT c.call_history_id, c.destination_dn_number AS queue_number,
+                       MIN(c.cdr_started_at) AS started_at
+                FROM ${cdr} c
+                WHERE c.destination_dn_type = 'queue'
+                  AND ($1::text IS NULL OR c.destination_dn_number = $1)
+                  AND c.cdr_started_at >= $2 AND c.cdr_started_at <= $3
+                  AND EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) < COALESCE(${rules.shortAbandonThresholdSeconds ?? 10}, 10)
+                  AND NOT EXISTS (
+                        SELECT 1 FROM ${cdr} p
+                        WHERE p.originating_cdr_id = c.cdr_id
+                          AND p.creation_forward_reason = 'polling'
+                          AND p.cdr_answered_at IS NOT NULL)
+                  AND NOT EXISTS (
+                        SELECT 1 FROM ${cdr} o
+                        WHERE o.call_history_id = c.call_history_id
+                          AND o.destination_dn_type = 'queue'
+                          AND o.destination_dn_number <> c.destination_dn_number
+                          AND o.cdr_started_at > c.cdr_started_at)
+                  AND NOT EXISTS (
+                        SELECT 1 FROM ${cdr} v
+                        WHERE v.call_history_id = c.call_history_id
+                          AND COALESCE(v.destination_entity_type, '') = 'voicemail')
+                GROUP BY 1, 2
+            )
+            SELECT sp.call_history_id, sp.started_at, sp.queue_number
+            FROM short_passages sp
+            WHERE EXISTS (
+                    SELECT 1 FROM ${cdr} d
+                    JOIN agents a ON a.queue_number = sp.queue_number
+                               AND a.extension = d.destination_dn_number
+                    WHERE d.call_history_id = sp.call_history_id
+                      AND d.destination_dn_type = 'extension'
+                      AND NOT (d.creation_method = 'route_to' AND d.creation_forward_reason = 'polling')
+                      AND d.cdr_answered_at IS NULL
+                      AND EXTRACT(EPOCH FROM (d.cdr_ended_at - d.cdr_started_at)) >= COALESCE(${rules.shortAbandonThresholdSeconds ?? 10}, 10))
+            ORDER BY sp.started_at DESC
+            LIMIT ${LIMIT}`;
+
+        case "direct_overflow":
+            // Sonnerie directe non répondue chez un agent, aucun passage dans
+            // la file de SON équipe, mais un passage ultérieur dans une autre
+            // file : le cas Perdu-ou-Débordé.
+            return `WITH ${agentsCTE(cdr)},
+            direct_rings AS (
+                SELECT d.call_history_id, a.queue_number,
+                       MIN(d.cdr_started_at) AS started_at,
+                       bool_or(d.cdr_answered_at IS NOT NULL) AS any_answered
+                FROM ${cdr} d
+                JOIN agents a ON a.extension = d.destination_dn_number
+                WHERE d.destination_dn_type = 'extension'
+                  AND NOT (d.creation_method = 'route_to' AND d.creation_forward_reason = 'polling')
+                  AND ($1::text IS NULL OR a.queue_number = $1)
+                  AND d.cdr_started_at >= $2 AND d.cdr_started_at <= $3
+                  AND EXTRACT(EPOCH FROM (d.cdr_ended_at - d.cdr_started_at)) >= 1
+                GROUP BY 1, 2
+            )
+            SELECT dr.call_history_id, dr.started_at, dr.queue_number
+            FROM direct_rings dr
+            WHERE NOT dr.any_answered
+              AND NOT EXISTS (
+                    SELECT 1 FROM ${cdr} p
+                    WHERE p.call_history_id = dr.call_history_id
+                      AND p.destination_dn_type = 'queue'
+                      AND p.destination_dn_number = dr.queue_number
+                      AND p.cdr_started_at >= $2 AND p.cdr_started_at <= $3)
+              AND EXISTS (
+                    SELECT 1 FROM ${cdr} p2
+                    WHERE p2.call_history_id = dr.call_history_id
+                      AND p2.destination_dn_type = 'queue'
+                      AND p2.destination_dn_number <> dr.queue_number
+                      AND p2.cdr_started_at >= dr.started_at)
+              AND NOT EXISTS (
+                    SELECT 1 FROM ${cdr} v
+                    WHERE v.call_history_id = dr.call_history_id
+                      AND COALESCE(v.destination_entity_type, '') = 'voicemail')
+            ORDER BY dr.started_at DESC
+            LIMIT ${LIMIT}`;
+
         case "short_abandon":
             // Passage en file très court, sans décroché ni débordement ni
             // messagerie : l'abandon express dont le comptage se discute.

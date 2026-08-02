@@ -39,6 +39,8 @@ function toRules(data: Record<string, unknown>, current: ClassificationRules): C
         handedOffInPerformance: pick(data.ruleHandedOffInPerformance, current.handedOffInPerformance),
         minSignificantDurationSeconds: pick(data.minSignificantDurationSec, current.minSignificantDurationSeconds),
         shortAbandonDisposition: pick(data.ruleShortAbandonDisposition, current.shortAbandonDisposition),
+        shortAbandonClock: pick(data.ruleShortAbandonClock, current.shortAbandonClock),
+        unansweredDirectOverflow: pick(data.ruleUnansweredDirectOverflow, current.unansweredDirectOverflow),
     };
 }
 
@@ -93,6 +95,8 @@ export function BusinessRulesTab() {
                     ruleAgentCredit: rules.agentCredit,
                     ruleHandedOffInPerformance: rules.handedOffInPerformance,
                     ruleShortAbandonDisposition: rules.shortAbandonDisposition,
+                    ruleShortAbandonClock: rules.shortAbandonClock,
+                    ruleUnansweredDirectOverflow: rules.unansweredDirectOverflow,
                 }),
             });
             const data = await res.json();

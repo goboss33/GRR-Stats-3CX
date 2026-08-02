@@ -16,6 +16,8 @@ const RULE_FIELDS = {
     ruleAgentCredit: ["lastAnswer", "each"],
     ruleHandedOffInPerformance: ["success", "neutral"],
     ruleShortAbandonDisposition: ["lost", "excluded"],
+    ruleShortAbandonClock: ["passage", "team"],
+    ruleUnansweredDirectOverflow: ["lost", "overflow"],
 } as const;
 
 type RuleField = keyof typeof RULE_FIELDS;
@@ -37,6 +39,8 @@ function projectSettings(settings: Record<string, unknown>) {
         ruleAgentCredit: settings.ruleAgentCredit,
         ruleHandedOffInPerformance: settings.ruleHandedOffInPerformance,
         ruleShortAbandonDisposition: settings.ruleShortAbandonDisposition,
+        ruleShortAbandonClock: settings.ruleShortAbandonClock,
+        ruleUnansweredDirectOverflow: settings.ruleUnansweredDirectOverflow,
     };
 }
 

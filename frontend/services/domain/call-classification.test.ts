@@ -30,14 +30,14 @@ const facts = (over: Partial<PassageFacts> = {}): PassageFacts => ({
     answeredHere: false,
     overflowed: false,
     toVoicemail: false,
-    waitSeconds: 60,
+    clockSeconds: 60,
     servedInTeam: true,
     ...over,
 });
 
 describe("classifyPassage — préséance", () => {
     it("« répondu » l'emporte sur tout le reste", () => {
-        const f = facts({ answeredHere: true, overflowed: true, toVoicemail: true, waitSeconds: 1 });
+        const f = facts({ answeredHere: true, overflowed: true, toVoicemail: true, clockSeconds: 1 });
         expect(classifyPassage(f, rules())).toBe("answered");
     });
 
@@ -49,23 +49,23 @@ describe("classifyPassage — préséance", () => {
     });
 
     it("un abandon court n'est pas un abandon", () => {
-        expect(classifyPassage(facts({ waitSeconds: 4 }), rules())).toBe("short_abandon");
-        expect(classifyPassage(facts({ waitSeconds: 40 }), rules())).toBe("abandoned");
+        expect(classifyPassage(facts({ clockSeconds: 4 }), rules())).toBe("short_abandon");
+        expect(classifyPassage(facts({ clockSeconds: 40 }), rules())).toBe("abandoned");
     });
 
     it("le seuil d'abandon court est exclusif", () => {
         const r = rules({ shortAbandonThresholdSeconds: 10 });
-        expect(classifyPassage(facts({ waitSeconds: 9.9 }), r)).toBe("short_abandon");
-        expect(classifyPassage(facts({ waitSeconds: 10 }), r)).toBe("abandoned");
+        expect(classifyPassage(facts({ clockSeconds: 9.9 }), r)).toBe("short_abandon");
+        expect(classifyPassage(facts({ clockSeconds: 10 }), r)).toBe("abandoned");
     });
 
     it("seuil désactivé : tout abandon compte", () => {
         const r = rules({ shortAbandonThresholdSeconds: null });
-        expect(classifyPassage(facts({ waitSeconds: 1 }), r)).toBe("abandoned");
+        expect(classifyPassage(facts({ clockSeconds: 1 }), r)).toBe("abandoned");
     });
 
     it("une durée inconnue ne peut pas être un abandon court", () => {
-        expect(classifyPassage(facts({ waitSeconds: null }), rules())).toBe("abandoned");
+        expect(classifyPassage(facts({ clockSeconds: null }), rules())).toBe("abandoned");
     });
 });
 
@@ -232,7 +232,7 @@ describe("cohérence TypeScript / SQL", () => {
     // décrire la même chose, sinon on recrée exactement le bug qu'on corrige.
     it("le SQL couvre les mêmes branches que la fonction, dans le même ordre", () => {
         const sql = buildPassageOutcomeSQL(rules());
-        const ordre = ["answered_here", "overflowed", "to_voicemail", "wait_seconds"];
+        const ordre = ["answered_here", "overflowed", "to_voicemail", "clock_seconds"];
         const positions = ordre.map((k) => sql.indexOf(k));
         expect(positions.every((p) => p >= 0)).toBe(true);
         expect([...positions]).toEqual([...positions].sort((a, b) => a - b));
@@ -254,7 +254,7 @@ describe("cohérence TypeScript / SQL", () => {
 
     it("le seuil est injecté comme un nombre, jamais interpolé depuis une chaîne", () => {
         const sql = buildPassageOutcomeSQL(rules({ shortAbandonThresholdSeconds: 15 }));
-        expect(sql).toContain("wait_seconds < 15");
+        expect(sql).toContain("clock_seconds < 15");
     });
 });
 
@@ -375,6 +375,65 @@ describe("seuil de bruit et abandons courts exclus", () => {
 
     it("« lost » (défaut) : les abandons courts restent comptés", () => {
         expect(buildTeamCTEChain(rules(), P)).not.toContain("cqo.outcome <> 'short_abandon'");
+    });
+});
+
+describe("horloge de l'abandon court (shortAbandonClock)", () => {
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
+
+    it("« passage » (défaut) : la durée du passage seul, sans CTE d'horloge", () => {
+        const sql = buildTeamCTEChain(rules(), P);
+        expect(sql).not.toContain("team_direct_secs");
+        expect(sql).toContain("EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) AS clock_seconds");
+    });
+
+    it("« team » : cumul des passages de la file + sonneries directes", () => {
+        const sql = buildTeamCTEChain(rules({ shortAbandonClock: "team" }), P);
+        // Le cumul des directs est agrégé une fois par appel puis JOINT — pas
+        // de sous-requête corrélée par ligne (piège mesuré : >15 s).
+        expect(sql).toContain("team_direct_secs AS (");
+        expect(sql).toContain("LEFT JOIN team_direct_secs tds");
+        expect(sql).toContain("OVER (PARTITION BY c.call_history_id, c.destination_dn_number)");
+        // team_direct_segments doit précéder les passages pour être lisible.
+        expect(sql.indexOf("team_direct_segments AS")).toBeLessThan(sql.indexOf("queue_passage_facts AS"));
+    });
+
+    it("le classement TS ne connaît que l'horloge, jamais la règle", () => {
+        // Le choix de la mesure se fait au calcul du FAIT clockSeconds ; à
+        // seuil égal, classifyPassage rend le même verdict quelle que soit la
+        // règle d'horloge.
+        for (const shortAbandonClock of ["passage", "team"] as const) {
+            expect(classifyPassage(facts({ clockSeconds: 4 }), rules({ shortAbandonClock }))).toBe("short_abandon");
+            expect(classifyPassage(facts({ clockSeconds: 33 }), rules({ shortAbandonClock }))).toBe("abandoned");
+        }
+    });
+});
+
+describe("sonnerie directe non répondue partie ailleurs (unansweredDirectOverflow)", () => {
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
+
+    it("« overflow » : le bloc directs gagne le sort « Débordé »", () => {
+        const sql = buildTeamCTEChain(rules({ unansweredDirectOverflow: "overflow" }), P);
+        expect(sql).toContain("THEN 'overflow' ELSE 'abandoned'");
+        // Le débordement vise la file d'une AUTRE équipe, après le premier
+        // segment direct.
+        expect(sql).toContain("oq.destination_dn_number <> $1");
+        expect(sql).toContain("oq.cdr_started_at >= direct_grouped.started_at");
+    });
+
+    it("« lost » (défaut) : un direct non répondu reste 'abandoned'", () => {
+        const sql = buildTeamCTEChain(rules(), P);
+        expect(sql).not.toContain("THEN 'overflow' ELSE 'abandoned'");
+    });
+
+    it("la règle se combine avec answeredThenTransferred", () => {
+        // Les deux règles actives : quatre sorts pour un direct.
+        const sql = buildDirectCallsCTE(
+            rules({ answeredThenTransferred: "overflow", unansweredDirectOverflow: "overflow" }),
+            "team_direct_segments", "call_queue_outcomes", "", "served_cond", "overflow_cond",
+        );
+        expect(sql).toContain("WHEN NOT answered THEN CASE WHEN overflow_cond THEN 'overflow' ELSE 'abandoned' END");
+        expect(sql).toContain("ELSE 'handed_off'");
     });
 });
 

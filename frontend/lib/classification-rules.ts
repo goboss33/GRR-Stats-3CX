@@ -51,6 +51,8 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
                 ruleHandedOffInPerformance: true,
                 minSignificantDurationSec: true,
                 ruleShortAbandonDisposition: true,
+                ruleShortAbandonClock: true,
+                ruleUnansweredDirectOverflow: true,
             },
         });
 
@@ -70,6 +72,8 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
                 handedOffInPerformance: pick(row.ruleHandedOffInPerformance, ["success", "neutral"] as const, "success"),
                 minSignificantDurationSeconds: typeof row.minSignificantDurationSec === "number" ? row.minSignificantDurationSec : 1,
                 shortAbandonDisposition: pick(row.ruleShortAbandonDisposition, ["lost", "excluded"] as const, "lost"),
+                shortAbandonClock: pick(row.ruleShortAbandonClock, ["passage", "team"] as const, "passage"),
+                unansweredDirectOverflow: pick(row.ruleUnansweredDirectOverflow, ["lost", "overflow"] as const, "lost"),
             };
         }
     } catch {

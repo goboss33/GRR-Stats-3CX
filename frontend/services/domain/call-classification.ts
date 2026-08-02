@@ -226,6 +226,37 @@ export interface ClassificationRules {
     shortAbandonDisposition: "lost" | "excluded";
 
     /**
+     * Sur quelle durée le seuil d'abandon court est-il jugé ?
+     *
+     * - "passage" : le seul passage en file (comportement historique). Angle
+     *   mort : l'appelant qui a déjà sonné ~30 s sur la ligne directe d'un
+     *   agent puis raccroche en 2 s de file est traité comme un fantôme — le
+     *   motif DOMINANT des abandons courts (mesuré : ~45 % en juillet 2026).
+     * - "team" : toute la sollicitation de l'équipe — cumul des passages dans
+     *   SA file et des sonneries directes significatives sur SES agents.
+     *   Chaque équipe a sa propre horloge : le même appel peut être Perdu chez
+     *   l'équipe qui l'a laissé filer 30 s, et rester un abandon court (donc
+     *   invisible) chez celle qui ne l'a vu que 2 s en débordement.
+     */
+    shortAbandonClock: "passage" | "team";
+
+    /**
+     * Sonnerie directe NON RÉPONDUE dont l'appel repart vers la file d'une
+     * AUTRE équipe (renvoi sans réponse configuré vers une réception, une file
+     * sœur…). Ne concerne que le bloc « directs » : si l'appel passe par la
+     * file du groupe, le débordement de file s'applique déjà.
+     *
+     * - "lost"     : Perdu pour l'équipe de l'agent (comportement historique)
+     * - "overflow" : Débordé — la même case que le débordement de file :
+     *                « l'appel nous a échappé ». Symétrique de la règle
+     *                answeredThenTransferred (décroché puis parti = Transféré ;
+     *                pas décroché puis parti = Débordé). Ne change ni les
+     *                reçus ni la prise en charge, seulement la ventilation
+     *                Perdus → Redirigés.
+     */
+    unansweredDirectOverflow: "lost" | "overflow";
+
+    /**
      * Un transfert accompli (handed_off) compte-t-il dans la PERFORMANCE de
      * l'équipe (taux de prise en charge) ?
      *
@@ -300,6 +331,11 @@ export const DEFAULT_CLASSIFICATION_RULES: ClassificationRules = {
     handedOffInPerformance: "success",
     minSignificantDurationSeconds: 1,
     shortAbandonDisposition: "lost",
+    // Défauts conservateurs : le comportement historique. Les valeurs "team"
+    // et "overflow" ont été arbitrées avec le métier en août 2026 (scénarios
+    // Jean/file 500 et Marie/files 950-951) et s'activent par les réglages.
+    shortAbandonClock: "passage",
+    unansweredDirectOverflow: "lost",
 };
 
 // ============================================
@@ -311,7 +347,13 @@ export interface PassageFacts {
     answeredHere: boolean;
     overflowed: boolean;
     toVoicemail: boolean;
-    waitSeconds: number | null;
+    /**
+     * Durée jugée par le seuil d'abandon court. Ce que cette horloge mesure
+     * dépend de la règle `shortAbandonClock` : le seul passage en file, ou le
+     * cumul de sollicitation de l'équipe (directs + file). Le choix est fait
+     * EN AMONT, au calcul du fait — le classement, lui, ne compare qu'au seuil.
+     */
+    clockSeconds: number | null;
     /**
      * Le DERNIER décroché humain de l'appel appartient au groupe. Faux quand
      * l'appel, répondu ici, a fini par être servi ailleurs (règle
@@ -355,7 +397,7 @@ export function classifyPassage(facts: PassageFacts, rules: ClassificationRules)
     }
 
     const threshold = rules.shortAbandonThresholdSeconds;
-    if (threshold !== null && facts.waitSeconds !== null && facts.waitSeconds < threshold) {
+    if (threshold !== null && facts.clockSeconds !== null && facts.clockSeconds < threshold) {
         return "short_abandon";
     }
 
@@ -414,7 +456,7 @@ export function buildPassageOutcomeSQL(rules: ClassificationRules): string {
 
     const shortAbandonBranch =
         rules.shortAbandonThresholdSeconds !== null
-            ? `WHEN wait_seconds IS NOT NULL AND wait_seconds < ${rules.shortAbandonThresholdSeconds} THEN 'short_abandon'`
+            ? `WHEN clock_seconds IS NOT NULL AND clock_seconds < ${rules.shortAbandonThresholdSeconds} THEN 'short_abandon'`
             : "";
 
     return `CASE
@@ -514,6 +556,23 @@ export function buildQueuePassagesCTE(rules: ClassificationRules, params: Passag
     // messagerie) couvrent l'appel principal ET ses jambes : c'est le but.
     const cdr = cdrTable(rules);
 
+    // Horloge de l'abandon court (règle shortAbandonClock) :
+    // - "passage" : la durée du passage lui-même.
+    // - "team"    : cumul des passages du même appel dans la MÊME file (fenêtre
+    //   de partition) + sonneries directes significatives sur les agents du
+    //   groupe (CTE team_direct_secs, fournie par buildTeamCTEChain — qui
+    //   déclare team_direct_segments AVANT ce CTE précisément pour cela).
+    const teamClock = rules.shortAbandonClock === "team";
+    const clockSecondsExpr = teamClock
+        ? `SUM(EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)))
+                OVER (PARTITION BY c.call_history_id, c.destination_dn_number)
+                + COALESCE(tds.direct_seconds, 0)`
+        : `EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at))`;
+    const teamClockJoin = teamClock
+        ? `
+        LEFT JOIN team_direct_secs tds ON tds.call_history_id = c.call_history_id`
+        : "";
+
     return `
     queue_passage_facts AS (
         SELECT
@@ -550,10 +609,12 @@ export function buildQueuePassagesCTE(rules: ClassificationRules, params: Passag
             -- délai entre le début de l'appel et l'entrée en file, ce qui n'est
             -- pas une attente.
             EXTRACT(EPOCH FROM (c.cdr_ended_at - c.cdr_started_at)) AS wait_seconds,
+            -- Durée jugée par le seuil d'abandon court (règle shortAbandonClock).
+            ${clockSecondsExpr} AS clock_seconds,
             -- Le dernier décroché humain de l'appel est-il un agent du groupe ?
             -- (règle answeredThenTransferred ; "TRUE" constant quand inactive)
             ${buildServedInTeamSQL(rules, "c.call_history_id", params)} AS served_in_team
-        FROM ${cdr} c
+        FROM ${cdr} c${teamClockJoin}
         LEFT JOIN LATERAL (
             SELECT
                 bool_or(p.cdr_answered_at IS NOT NULL) AS answered_here,
@@ -692,6 +753,12 @@ export function buildDirectCallsCTE(
      * (règle answeredThenTransferred). Vide = règle inactive, sorts binaires.
      */
     servedInTeamCondition: string = "",
+    /**
+     * Condition « l'appel est reparti vers la file d'une autre équipe » sur
+     * `direct_grouped` (règle unansweredDirectOverflow). Vide = règle inactive,
+     * un direct non répondu reste 'abandoned'.
+     */
+    overflowCondition: string = "",
 ): string {
     const wrapperConditions: string[] = [];
 
@@ -717,17 +784,25 @@ export function buildDirectCallsCTE(
         WHERE ${wrapperConditions.join("\n          AND ")}`
         : "";
 
-    // Statut du bloc directs — trois sorts possibles depuis la règle
-    // `answeredThenTransferred` : répondu, transféré (répondu ici mais servi
-    // ailleurs), ou abandonné. Le CASE est l'unique définition, consommée par
-    // les vignettes, les graphiques et le filtre du clic vers les logs.
+    // Sort d'un direct non répondu : abandonné, ou « Débordé » si l'appel est
+    // reparti vers la file d'une autre équipe (règle unansweredDirectOverflow —
+    // le symétrique, côté non-décroché, du transfert accompli).
+    const lostOutcome = overflowCondition
+        ? `CASE WHEN ${overflowCondition} THEN 'overflow' ELSE 'abandoned' END`
+        : `'abandoned'`;
+
+    // Statut du bloc directs — jusqu'à quatre sorts depuis les règles
+    // `answeredThenTransferred` et `unansweredDirectOverflow` : répondu,
+    // transféré (répondu ici mais servi ailleurs), débordé (non répondu, parti
+    // vers une autre file), ou abandonné. Le CASE est l'unique définition,
+    // consommée par les vignettes, les graphiques et le filtre du clic.
     const directOutcome = servedInTeamCondition
         ? `CASE
-                WHEN NOT answered THEN 'abandoned'
+                WHEN NOT answered THEN ${lostOutcome}
                 WHEN ${servedInTeamCondition} THEN 'answered'
                 ELSE 'handed_off'
            END`
-        : `CASE WHEN answered THEN 'answered' ELSE 'abandoned' END`;
+        : `CASE WHEN answered THEN 'answered' ELSE ${lostOutcome} END`;
 
     return `
     direct_calls AS (
@@ -783,9 +858,35 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
         ? buildServedInTeamSQL(rules, "direct_grouped.call_history_id", params)
         : "";
 
-    // ⚠️ queue_agents est déclarée EN PREMIER : le fait served_in_team des
-    // passages la référence, et une CTE non récursive ne peut lire que les CTE
-    // qui la précèdent.
+    // Fait « reparti vers la file d'une autre équipe » pour le bloc directs
+    // (règle unansweredDirectOverflow). La borne temporelle part du PREMIER
+    // segment direct : un passage de file antérieur n'est pas un débordement.
+    const directOverflowCond = rules.unansweredDirectOverflow === "overflow"
+        ? `EXISTS (
+                SELECT 1 FROM ${cdr} oq
+                WHERE oq.call_history_id = direct_grouped.call_history_id
+                  AND oq.destination_dn_type = 'queue'
+                  AND oq.destination_dn_number <> ${params.queueExpr}
+                  AND oq.cdr_started_at >= direct_grouped.started_at
+                  AND oq.cdr_started_at <= ${params.endExpr}
+           )`
+        : "";
+
+    // Horloge d'équipe des abandons courts : le cumul des sonneries directes,
+    // agrégé une fois par appel pour être joint (hashable) aux passages.
+    const teamDirectSecsCTE = rules.shortAbandonClock === "team"
+        ? `
+    team_direct_secs AS (
+        SELECT call_history_id,
+               SUM(EXTRACT(EPOCH FROM (cdr_ended_at - cdr_started_at))) AS direct_seconds
+        FROM team_direct_segments
+        GROUP BY call_history_id
+    ),`
+        : "";
+
+    // ⚠️ L'ordre des CTE est contraint : queue_agents d'abord (served_in_team
+    // la référence), puis team_direct_segments AVANT les passages — l'horloge
+    // d'équipe (clock_seconds) lit team_direct_secs, qui en dérive.
     return `
     queue_agents AS (
         SELECT DISTINCT child.destination_dn_number AS extension
@@ -798,8 +899,6 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
           AND child.cdr_started_at >= ${params.startExpr}
           AND child.cdr_started_at <= ${params.endExpr}
     ),
-    ${buildQueuePassagesCTE(rules, params)},
-    ${buildCallQueueOutcomesCTE(rules)},
     team_direct_segments AS (
         SELECT
             c.call_history_id,
@@ -814,7 +913,9 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
           AND c.destination_dn_number IN (SELECT extension FROM queue_agents)
           AND c.cdr_started_at >= ${params.startExpr}
           AND c.cdr_started_at <= ${params.endExpr}
-    ),
+    ),${teamDirectSecsCTE}
+    ${buildQueuePassagesCTE(rules, params)},
+    ${buildCallQueueOutcomesCTE(rules)},
     queue_calls AS (
         SELECT cqo.*
         FROM call_queue_outcomes cqo
@@ -828,7 +929,7 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
             // `shortAbandonDisposition: "excluded"` les sort des reçus.
             rules.shortAbandonDisposition === "excluded" ? "\n          AND cqo.outcome <> 'short_abandon'" : ""}${queueOriginCond}
     ),
-    ${buildDirectCallsCTE(rules, "team_direct_segments", "call_queue_outcomes", directOriginCond, directServedCond)}`;
+    ${buildDirectCallsCTE(rules, "team_direct_segments", "call_queue_outcomes", directOriginCond, directServedCond, directOverflowCond)}`;
 }
 
 /**
@@ -972,9 +1073,10 @@ export function buildQueueOutcomeSubquery(
     // Les cartes du bilan d'équipe additionnent file ET appels directs ; le
     // filtre doit donc couvrir la même union, sans quoi le clic sur « Total
     // reçus » ne ramènerait que la part « file ».
-    // Côté directs, trois sorts existent : répondu, transféré (règle
-    // answeredThenTransferred), ou perdu.
-    const DIRECT_OUTCOMES: PassageOutcome[] = ["answered", "handed_off", "abandoned"];
+    // Côté directs, quatre sorts existent : répondu, transféré (règle
+    // answeredThenTransferred), débordé (règle unansweredDirectOverflow), ou
+    // perdu.
+    const DIRECT_OUTCOMES: PassageOutcome[] = ["answered", "handed_off", "overflow", "abandoned"];
     const directMapped: string[] = [];
     if (params.includeTeamDirect) {
         // Si aucun statut de file n'est demandé, c'est qu'on veut les directs

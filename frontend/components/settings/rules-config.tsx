@@ -29,13 +29,16 @@ export const SECTIONS: SectionSpec[] = [
     { id: 5, title: "Qui voit quoi ?", subtitle: "Périmètres et confidentialité — sans effet sur les chiffres." },
 ];
 
-export type CaseKind = "handoff" | "voicemail" | "grain" | "pingpong" | "short_abandon";
+export type CaseKind =
+    | "handoff" | "voicemail" | "grain" | "pingpong" | "short_abandon"
+    | "team_clock" | "direct_overflow";
 
 /** Clés de ClassificationRules dont la valeur est un choix parmi des chaînes. */
 export type ChoiceRuleKey =
     | "callGrain" | "voicemail" | "shortAbandonDisposition" | "answeredThenTransferred"
     | "multiPassage" | "overflow" | "agentCredit" | "handedOffInPerformance"
-    | "outOfScopeFinalStatus" | "directAndQueue";
+    | "outOfScopeFinalStatus" | "directAndQueue"
+    | "shortAbandonClock" | "unansweredDirectOverflow";
 
 export interface ChoiceOption {
     value: string;
@@ -153,6 +156,22 @@ export const RULE_SPECS: RuleSpec[] = [
         ],
     },
 
+    {
+        kind: "choice", key: "shortAbandonClock", section: 2,
+        question: "Sur quelle durée juge-t-on cet abandon court ?",
+        caseKind: "team_clock",
+        caseQuestion: "Cet appelant a longuement sonné chez un agent avant de raccrocher vite en file : son appel doit-il compter pour {queue} ?",
+        options: [
+            { value: "passage", label: "Le passage en file seul",
+              consequence: "Seul le temps passé dans la file est jugé. Angle mort : l'appelant qui a déjà sonné ~30 s sur la ligne directe d'un agent puis raccroche en 2 s de file est traité comme un fantôme — c'est le motif dominant des abandons courts (~45 % mesuré).",
+              summary: "L'abandon court est jugé sur le seul passage en file" },
+            { value: "team", label: "Toute la sollicitation de l'équipe",
+              consequence: "On cumule sonneries directes sur les agents du groupe + passages dans sa file. L'appelant qui a sonné 30 s chez un agent avant la file compte (Perdu) ; l'équipe qui ne l'a vu que 2 s en débordement reste non pénalisée — chaque équipe a sa propre horloge.",
+              summary: "L'abandon court est jugé sur toute la sollicitation de l'équipe (sonneries directes + file)" },
+        ],
+        more: "Chaque équipe a sa propre horloge : on n'y compte que le temps passé avec ELLE (ses agents en direct + sa file). Le même appel peut donc être Perdu chez l'équipe qui l'a laissé filer 30 secondes, et rester invisible chez la réception qui ne l'a vu que 2 secondes en débordement. Mesuré en juillet 2026 : ~1 250 appels/mois redeviendraient visibles avec l'horloge d'équipe.",
+    },
+
     // ── 3. Comment juge-t-on un appel ? ────────────────────────────────────
     {
         kind: "choice", key: "answeredThenTransferred", section: 3,
@@ -168,6 +187,21 @@ export const RULE_SPECS: RuleSpec[] = [
               summary: "Un appel transféré est Répondu chez chaque équipe qui a décroché" },
         ],
         more: "Le critère est le dernier décroché humain de l'appel — y compris un numéro externe qui décroche après transfert. Si le transfert échoue (personne ne répond ailleurs), le groupe reste le dernier à avoir servi le client : l'appel reste Répondu.",
+    },
+    {
+        kind: "choice", key: "unansweredDirectOverflow", section: 3,
+        question: "Une sonnerie directe non répondue qui part vers la file d'une autre équipe, c'est… ?",
+        caseKind: "direct_overflow",
+        caseQuestion: "Cet appel a sonné chez un agent de {queue} sans réponse, puis est parti vers une autre file : Perdu ou Débordé pour {queue} ?",
+        options: [
+            { value: "lost", label: "Perdu",
+              consequence: "L'équipe de l'agent est jugée comme si l'appel était mort chez elle, même s'il a continué — et peut-être abouti — ailleurs.",
+              summary: "Une sonnerie directe non répondue partie vers une autre file compte Perdue" },
+            { value: "overflow", label: "Débordé (Redirigé)",
+              consequence: "La même case que le débordement de file : « l'appel nous a échappé ». Ne change ni les reçus ni la prise en charge — seulement la ventilation Perdus → Redirigés. Symétrique du transfert accompli, côté non-décroché.",
+              summary: "Une sonnerie directe non répondue partie vers une autre file est Débordée (Redirigée)" },
+        ],
+        more: "Le cas type : le renvoi sans réponse d'un collaborateur pointe directement vers une réception ou une file sœur, sans passer par la file de son propre groupe. Quand l'appel passe par la file du groupe, le débordement de file s'applique déjà — cette règle couvre l'autre chemin. Mesuré : ~230-310 appels/mois, concentrés sur les réceptions.",
     },
     {
         kind: "choice", key: "multiPassage", section: 3,

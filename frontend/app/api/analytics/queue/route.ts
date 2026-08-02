@@ -74,7 +74,8 @@ export async function GET(request: NextRequest) {
                 SELECT
                     COUNT(*) as direct_received,
                     COUNT(*) FILTER (WHERE outcome = 'answered') as direct_answered,
-                    COUNT(*) FILTER (WHERE outcome = 'handed_off') as direct_handed_off
+                    COUNT(*) FILTER (WHERE outcome = 'handed_off') as direct_handed_off,
+                    COUNT(*) FILTER (WHERE outcome = 'overflow') as direct_overflow
                 FROM direct_calls
             ),
             overflow_destinations AS (
@@ -114,6 +115,7 @@ export async function GET(request: NextRequest) {
                 COALESCE(dcs.direct_received, 0) as direct_received,
                 COALESCE(dcs.direct_answered, 0) as direct_answered,
                 COALESCE(dcs.direct_handed_off, 0) as direct_handed_off,
+                COALESCE(dcs.direct_overflow, 0) as direct_overflow,
                 COALESCE(
                     (SELECT json_agg(json_build_object('destination', od.destination, 'destinationName', od.destination_name, 'count', od.count))
                      FROM overflow_destinations od),
@@ -183,7 +185,11 @@ export async function GET(request: NextRequest) {
             // Un appel direct répondu ici mais servi ailleurs est « Transféré »
             // (règle answeredThenTransferred) : ni répondu, ni perdu.
             directHandedOff: Number(row.direct_handed_off),
-            directLost: Number(row.direct_received) - Number(row.direct_answered) - Number(row.direct_handed_off),
+            // Non répondu et reparti vers la file d'une autre équipe : Débordé
+            // (règle unansweredDirectOverflow) — dans les Redirigés, pas les Perdus.
+            directOverflow: Number(row.direct_overflow),
+            directLost: Number(row.direct_received) - Number(row.direct_answered)
+                - Number(row.direct_handed_off) - Number(row.direct_overflow),
             overflowDestinations: typeof row.overflow_destinations === 'string'
                 ? JSON.parse(row.overflow_destinations)
                 : row.overflow_destinations,

@@ -29,6 +29,8 @@ const ROW_COMPLETE = {
     ruleHandedOffInPerformance: "neutral",
     minSignificantDurationSec: 4,
     ruleShortAbandonDisposition: "excluded",
+    ruleShortAbandonClock: "team",
+    ruleUnansweredDirectOverflow: "overflow",
 };
 
 beforeEach(() => {
@@ -53,6 +55,8 @@ describe("lecture des réglages", () => {
             handedOffInPerformance: "neutral",
             minSignificantDurationSeconds: 4,
             shortAbandonDisposition: "excluded",
+            shortAbandonClock: "team",
+            unansweredDirectOverflow: "overflow",
         });
     });
 
