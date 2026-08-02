@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { QueueSelector } from "@/components/stats/queue-selector";
+import { QueueAgentPicker } from "@/components/queue-agent-picker";
 import { RuleCard } from "@/components/settings/rule-card";
 import {
     GLOSSARY, RULE_SPECS, SECTIONS, buildSummary,
@@ -254,11 +254,13 @@ export function ClassificationRulesCard({ rules, onChange, saved }: Props) {
                         <Label className="mb-1 block text-xs text-slate-600">
                             Groupe observé — pour les cas réels et les mesures d&apos;impact
                         </Label>
-                        <QueueSelector
+                        <QueueAgentPicker
                             queues={queues}
+                            show="queues"
                             selectedQueueNumber={queue}
-                            onSelect={(q) => setQueue(q)}
+                            onSelect={(item) => setQueue(item.queueNumber)}
                             placeholder="Choisir un groupe…"
+                            size="compact"
                         />
                     </div>
                     <Button variant="outline" onClick={measureGlobal} disabled={!queue || globalBusy} className="gap-2">

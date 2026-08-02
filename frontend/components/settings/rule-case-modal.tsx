@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { QueueSelector } from "@/components/stats/queue-selector";
+import { QueueAgentPicker } from "@/components/queue-agent-picker";
 import { getSelectedServer } from "@/lib/selected-server";
 import type { ExemplarCase } from "@/services/rule-cases.service";
 import { getCallChain } from "@/services/logs.service";
@@ -86,7 +86,10 @@ export function RuleCaseModal({
 
     return (
         <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            {/* Pas d'overflow sur le conteneur : la liste du sélecteur (en
+                absolute) doit pouvoir déborder du cadre. Seul le récit du cas
+                défile, dans son propre conteneur plus bas. */}
+            <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 text-base">
                         <Eye className="h-4 w-4 text-blue-600" />
@@ -97,11 +100,13 @@ export function RuleCaseModal({
                 <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <div className="min-w-[240px] flex-1">
                         <label className="mb-1 block text-xs text-slate-600">Groupe observé</label>
-                        <QueueSelector
+                        <QueueAgentPicker
                             queues={queues}
+                            show="queues"
                             selectedQueueNumber={queue}
-                            onSelect={(q) => setQueue(q)}
+                            onSelect={(item) => setQueue(item.queueNumber)}
                             placeholder="Choisir un groupe…"
+                            size="compact"
                         />
                     </div>
                     {cases && cases.length > 1 && (
@@ -147,7 +152,7 @@ export function RuleCaseModal({
                 )}
 
                 {!loading && active && shown.length > 0 && (
-                    <div className="space-y-4">
+                    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
                         <p className="rounded-lg border border-blue-100 bg-blue-50/70 px-4 py-2.5 text-sm text-slate-700">
                             Le{" "}
                             <strong>
