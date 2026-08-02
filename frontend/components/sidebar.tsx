@@ -146,7 +146,7 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
+                <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto [scrollbar-width:thin] [scrollbar-color:#334155_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700 hover:[&::-webkit-scrollbar-thumb]:bg-slate-600">
                     {filteredItems.map((item) => {
                         const parentActive = isParentActive(item);
                         const menuExpanded = isMenuExpanded(item.label);

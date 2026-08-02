@@ -19,19 +19,6 @@ import type { QueueInfo } from "@/types/queues.types";
  * dans sa propre zone — un périmètre d'administrateur (~85 files) ne doit pas
  * engloutir la barre latérale, et la vraie recherche vit dans le header.
  */
-/**
- * Tronque AU MILIEU : dans les noms de files, l'élément différenciateur est
- * presque toujours à la fin (« GRR GENEVE Gérance (Bureau 513) », « RC PULLY
- * Comptabilité Fournisseurs ») — une ellipse de fin rendait les lignes
- * indistinguables. On garde le début (l'entité) et la fin (le discriminant).
- */
-function middleEllipsis(name: string, max = 26): string {
-    if (name.length <= max) return name;
-    const tail = Math.ceil((max - 1) * 0.6);
-    const head = max - 1 - tail;
-    return `${name.slice(0, head)}…${name.slice(-tail)}`;
-}
-
 export function SidebarTeams() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -92,16 +79,18 @@ export function SidebarTeams() {
             <div
                 key={q.queueNumber}
                 className={cn(
-                    "group flex items-center gap-1 rounded-md pl-2 pr-1",
+                    "group flex items-center gap-1 pl-2 pr-1",
                     isActive ? "bg-slate-800 text-white" : "text-slate-400 hover:bg-slate-800 hover:text-white",
                 )}
             >
+                {/* Nom complet, sur plusieurs lignes si besoin : le
+                    discriminant est souvent en fin de nom, on ne coupe rien. */}
                 <Link
                     href={teamHref(q.queueNumber)}
-                    className="min-w-0 flex-1 whitespace-nowrap py-1.5 text-[13px]"
+                    className="min-w-0 flex-1 py-2 text-[13px] leading-snug"
                     title={`${q.queueNumber} · ${q.queueName}`}
                 >
-                    {middleEllipsis(q.queueName)}
+                    {q.queueName}
                 </Link>
                 <button
                     type="button"
@@ -124,10 +113,12 @@ export function SidebarTeams() {
     };
 
     return (
-        <div className="ml-4 mt-1 space-y-0.5 border-l border-slate-800 pl-2">
-            {pinned.map(renderTeam)}
-            {pinned.length > 0 && rest.length > 0 && <div className="mx-2 my-1 border-t border-slate-800" />}
-            <div className="max-h-[38vh] space-y-0.5 overflow-y-auto pr-0.5 [scrollbar-width:thin] [scrollbar-color:#334155_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700 hover:[&::-webkit-scrollbar-thumb]:bg-slate-600">
+        <div className="ml-4 mt-1 border-l border-slate-800 pl-2">
+            <div className="divide-y divide-slate-800/60">
+                {pinned.map(renderTeam)}
+            </div>
+            {pinned.length > 0 && rest.length > 0 && <div className="mx-1 my-1.5 border-t-2 border-slate-700/80" />}
+            <div className="divide-y divide-slate-800/60">
                 {rest.map(renderTeam)}
             </div>
         </div>
