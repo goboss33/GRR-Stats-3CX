@@ -152,6 +152,13 @@ export function withPeriod(href: string, searchParams: URLSearchParams | Readonl
     if (start && end) parts.push(`start=${start}`, `end=${end}`);
     const origin = searchParams.get("origin");
     if (origin) parts.push(`origin=${origin}`);
+    // La file consultée voyage entre les écrans qui la comprennent (stats ↔
+    // journaux : arriver aux journaux préfiltré sur l'équipe regardée), jamais
+    // vers le tableau de bord — qui est agrégé par nature.
+    const queue = searchParams.get("queue");
+    if (queue && (href.startsWith("/statistics-v2") || href.startsWith("/admin/logs"))) {
+        parts.push(`queue=${queue}`);
+    }
     if (parts.length === 0) return href;
     const separator = href.includes("?") ? "&" : "?";
     return `${href}${separator}${parts.join("&")}`;

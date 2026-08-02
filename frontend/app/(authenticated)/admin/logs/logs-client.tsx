@@ -132,6 +132,16 @@ export default function AdminLogsPage() {
     const [calleeSearch, setCalleeSearch] = useState(searchParams.get("callee") || "");
     const [handledBySearch, setHandledBySearch] = useState(searchParams.get("handledBy") || "");
     const [selectedQueueNumber, setSelectedQueueNumber] = useState<string | null>(searchParams.get("queue") || null);
+    // La vue file se reflète dans l'URL : le champ de recherche du header
+    // affiche la file consultée, et les liens vers les stats la transportent.
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if ((params.get("queue") ?? null) === (selectedQueueNumber ?? null)) return;
+        if (selectedQueueNumber) params.set("queue", selectedQueueNumber);
+        else params.delete("queue");
+        router.replace(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedQueueNumber]);
     const [idSearch, setIdSearch] = useState(searchParams.get("id") || "");
     const [segmentCountMin, setSegmentCountMin] = useState<number | undefined>(() => getInitialNumberParam("segMin"));
     const [segmentCountMax, setSegmentCountMax] = useState<number | undefined>(() => getInitialNumberParam("segMax"));

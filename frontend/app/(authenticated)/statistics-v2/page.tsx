@@ -4,6 +4,7 @@ import { getSelectedServer } from "@/lib/selected-server";
 import { logger } from "@/lib/logger";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { startOfDay, endOfDay, format } from "date-fns";
 import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
 import { useReportLoadedOrigins, useRegisterHeaderRefresh } from "@/components/header-scope";
@@ -26,10 +27,17 @@ import type { CallOrigin } from "@/services/domain/call-classification";
 const ORIGINS: CallOrigin[] = ["both", "external", "internal"];
 
 export default function StatisticsV2Page() {
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
     const [queues, setQueues] = useState<QueueInfo[]>([]);
     const [noPerimeter, setNoPerimeter] = useState(false);
-    const [selectedQueueNumber, setSelectedQueueNumber] = useState<string | null>(null);
-    const [selectedQueueName, setSelectedQueueName] = useState<string>("");
+    // La file consultée EST l'URL (?queue=…) : cartes du dashboard, recherche
+    // du header, sous-menu et liens partagés naviguent tous vers le même
+    // endroit — plus d'état local à synchroniser.
+    const selectedQueueNumber = searchParams.get("queue");
+    const selectedQueueName = queues.find((q) => q.queueNumber === selectedQueueNumber)?.queueName
+        ?? selectedQueueNumber ?? "";
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingQueues, setIsLoadingQueues] = useState(true);
     // Provenance des appels (Externe / Interne / Les deux) : contexte global,
@@ -135,10 +143,12 @@ export default function StatisticsV2Page() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [origin, fetchIntoCache, selectedQueueNumber]);
 
-    const handleQueueSelect = (queueNumber: string, queueName: string) => {
-        logger.debug("[QueueSelector] handleQueueSelect called:", { queueNumber, queueName });
-        setSelectedQueueNumber(queueNumber);
-        setSelectedQueueName(queueName);
+    // Sélectionner une équipe est une navigation (le bouton Retour ramène à
+    // l'écran précédent) ; le reste du contexte (période, provenance) voyage.
+    const handleQueueSelect = (queueNumber: string) => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("queue", queueNumber);
+        router.push(`${pathname}?${params.toString()}`, { scroll: false });
     };
 
 

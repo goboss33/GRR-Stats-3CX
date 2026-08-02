@@ -5,6 +5,7 @@ import { DateRangePicker } from "@/components/date-range-picker";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OriginToggle } from "@/components/stats-v2/origin-toggle";
+import { HeaderQueueSearch } from "@/components/header-queue-search";
 import { useHeaderScope } from "@/components/header-scope";
 import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
 
@@ -124,6 +125,7 @@ export function Header({ userName }: { userName: string }) {
             </div>
 
             <div className="flex items-center gap-4">
+                <HeaderQueueSearch />
                 <ContextControl
                     applies={originApplies(pathname)}
                     title="Sans effet sur cet écran"
