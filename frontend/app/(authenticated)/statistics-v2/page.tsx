@@ -36,8 +36,6 @@ export default function StatisticsV2Page() {
     // du header, sous-menu et liens partagés naviguent tous vers le même
     // endroit — plus d'état local à synchroniser.
     const selectedQueueNumber = searchParams.get("queue");
-    const selectedQueueName = queues.find((q) => q.queueNumber === selectedQueueNumber)?.queueName
-        ?? selectedQueueNumber ?? "";
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingQueues, setIsLoadingQueues] = useState(true);
     // Provenance des appels (Externe / Interne / Les deux) : contexte global,
