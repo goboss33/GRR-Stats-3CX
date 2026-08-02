@@ -252,7 +252,7 @@ export function ClassificationRulesCard({ rules, onChange, saved }: Props) {
                 <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <div className="min-w-[260px] flex-1">
                         <Label className="mb-1 block text-xs text-slate-600">
-                            Groupe observé — pour les cas réels et les mesures d&apos;impact
+                            Groupe observé — requis pour mesurer, optionnel pour les cas réels
                         </Label>
                         <QueueAgentPicker
                             queues={queues}

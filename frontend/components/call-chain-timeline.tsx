@@ -1,0 +1,601 @@
+"use client";
+
+import { useMemo } from "react";
+import { format } from "date-fns";
+import { fr } from "date-fns/locale";
+import {
+    Phone,
+    PhoneForwarded,
+    PhoneOff,
+    PhoneMissed,
+    ArrowRight,
+    ArrowRightLeft,
+    Globe,
+    Users,
+    Clock,
+    Shuffle,
+    Bell,
+    Voicemail,
+    Radio,
+    RotateCcw,
+    RefreshCw,
+    PhoneIncoming,
+    GitMerge
+} from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import type { CallChainSegment, SegmentCategory } from "@/types/logs.types";
+
+/**
+ * Chronologie d'un appel — le rendu partagé entre la modale des logs
+ * (CallChainModal) et l'explorateur de cas réels des réglages. Reçoit des
+ * segments déjà chargés ; le chargement reste chez l'appelant.
+ */
+
+// Category configuration with icons, labels and colors
+const categoryConfig: Record<SegmentCategory, {
+    icon: typeof Phone;
+    label: string;
+    className: string;
+    description: string;
+}> = {
+    conversation: {
+        icon: Phone,
+        label: "Répondu",
+        className: "bg-emerald-100 text-emerald-800 border-emerald-200",
+        description: "Appel en conversation"
+    },
+    ringing: {
+        icon: Bell,
+        label: "Sonnerie",
+        className: "bg-amber-100 text-amber-800 border-amber-200",
+        description: "Extension a sonné"
+    },
+    routing: {
+        icon: Shuffle,
+        label: "Routage",
+        className: "bg-slate-100 text-slate-600 border-slate-200",
+        description: "Routage système"
+    },
+    queue: {
+        icon: Users,
+        label: "File d'attente",
+        className: "bg-blue-100 text-blue-800 border-blue-200",
+        description: "Attente en file"
+    },
+    bridge: {
+        icon: Globe,
+        label: "Bridge",
+        className: "bg-purple-100 text-purple-800 border-purple-200",
+        description: "Via Bridge EDIFEA"
+    },
+    ivr: {
+        icon: Radio,
+        label: "IVR/Script",
+        className: "bg-cyan-100 text-cyan-800 border-cyan-200",
+        description: "Serveur vocal"
+    },
+    voicemail: {
+        icon: Voicemail,
+        label: "Messagerie",
+        className: "bg-indigo-100 text-indigo-800 border-indigo-200",
+        description: "Messagerie vocale"
+    },
+    transfer: {
+        icon: PhoneForwarded,
+        label: "Transfert",
+        className: "bg-teal-100 text-teal-800 border-teal-200",
+        description: "Transfert en cours"
+    },
+    abandoned: {
+        icon: PhoneOff,
+        label: "Manqué",
+        className: "bg-red-100 text-red-800 border-red-200",
+        description: "Appel non abouti"
+    },
+    rejected: {
+        icon: PhoneMissed,
+        label: "Rejeté",
+        className: "bg-rose-100 text-rose-800 border-rose-200",
+        description: "Appel rejeté"
+    },
+    busy: {
+        icon: PhoneOff,
+        label: "Occupé",
+        className: "bg-red-100 text-red-800 border-red-200",
+        description: "Correspondant occupé"
+    },
+    unknown: {
+        icon: PhoneMissed,
+        label: "Autre",
+        className: "bg-gray-100 text-gray-600 border-gray-200",
+        description: "Segment"
+    },
+};
+
+// Group segments together - queue segments absorb their polling distributions
+interface SegmentGroup {
+    type: "single" | "queue_group";
+    segments: CallChainSegment[];
+    category: SegmentCategory;
+    answeredSegment?: CallChainSegment; // The segment that was answered in this group
+    queueSegment?: CallChainSegment; // The parent queue segment (for queue_group)
+}
+
+// Check if segment is a queue distribution (route_to polling from queue)
+function isQueueDistribution(seg: CallChainSegment): boolean {
+    return seg.creationMethod === "route_to" &&
+        seg.creationForwardReason === "polling" &&
+        seg.destinationType?.toLowerCase() === "extension";
+}
+
+function groupSegments(segments: CallChainSegment[]): SegmentGroup[] {
+    const groups: SegmentGroup[] = [];
+    const processed = new Set<string>();
+
+    // Build a map of queue segment IDs to their polling children
+    // polling segments have originating_cdr_id pointing to the queue CDR
+    const queueChildrenMap = new Map<string, CallChainSegment[]>();
+    for (const seg of segments) {
+        if (isQueueDistribution(seg) && seg.originatingCdrId) {
+            const children = queueChildrenMap.get(seg.originatingCdrId) || [];
+            children.push(seg);
+            queueChildrenMap.set(seg.originatingCdrId, children);
+        }
+    }
+
+    for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+
+        // Skip if already processed
+        if (processed.has(seg.id)) continue;
+
+        // Check if this is a queue segment that has polling children
+        if (seg.category === "queue" && queueChildrenMap.has(seg.id)) {
+            const pollingChildren = queueChildrenMap.get(seg.id)!;
+            let answeredSeg: CallChainSegment | undefined;
+
+            // Mark queue segment and all its children as processed
+            processed.add(seg.id);
+            for (const child of pollingChildren) {
+                processed.add(child.id);
+                if (child.answeredAt) {
+                    answeredSeg = child;
+                }
+            }
+
+            // Create a unified queue_group
+            groups.push({
+                type: "queue_group",
+                segments: pollingChildren,
+                category: "queue",
+                queueSegment: seg,
+                answeredSegment: answeredSeg
+            });
+
+            // If someone answered, add a separate conversation group
+            if (answeredSeg) {
+                groups.push({
+                    type: "single",
+                    segments: [answeredSeg],
+                    category: "conversation"
+                });
+            }
+            continue;
+        }
+
+        // Skip polling segments that were already absorbed by a queue_group
+        if (isQueueDistribution(seg) && seg.originatingCdrId && queueChildrenMap.has(seg.originatingCdrId)) {
+            processed.add(seg.id);
+            continue;
+        }
+
+        // Regular segment - just add as single
+        processed.add(seg.id);
+        groups.push({
+            type: "single",
+            segments: [seg],
+            category: seg.category
+        });
+    }
+
+    return groups;
+}
+
+export function CallChainTimeline({ segments }: { segments: CallChainSegment[] }) {
+    // Group all segments chronologically (combine ringing)
+    const groupedSegments = useMemo(() => groupSegments(segments), [segments]);
+
+    // Jambes fusionnées (grain « appel client ») : nombre de jambes distinctes,
+    // et pour chaque groupe la jambe qui le porte — la frontière entre deux
+    // jambes est marquée d'un séparateur discret dans la chronologie.
+    const legCount = useMemo(() => {
+        const legs = new Set(segments.map((s) => s.legCallHistoryId).filter(Boolean));
+        return legs.size;
+    }, [segments]);
+
+    const groupLegIds = useMemo(
+        () => groupedSegments.map((g) => (g.queueSegment ?? g.segments[0])?.legCallHistoryId ?? null),
+        [groupedSegments],
+    );
+
+    // For each queue group, find the next conversation segment to identify who answered
+    const getNextAnsweringAgent = (groupIndex: number): string | null => {
+        // Look for the next conversation group after this queue group
+        for (let i = groupIndex + 1; i < groupedSegments.length; i++) {
+            const nextGroup = groupedSegments[i];
+            if (nextGroup.category === 'conversation' && nextGroup.segments[0]?.answeredAt) {
+                return nextGroup.segments[0].destinationNumber;
+            }
+            // If we hit another queue group, stop searching
+            if (nextGroup.type === 'queue_group') {
+                break;
+            }
+        }
+        return null;
+    };
+
+    // Build a map of destinations that were already called before each segment (for fallback detection)
+    // Key: segment id, Value: Set of destination numbers called before this segment
+    const previouslyCalledMap = useMemo(() => {
+        const map = new Map<string, Set<string>>();
+        const calledDestinations = new Set<string>();
+
+        // Sort segments chronologically
+        const sortedSegments = [...segments].sort((a, b) =>
+            new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
+        );
+
+        for (const seg of sortedSegments) {
+            // Store the current set of previously called destinations for this segment
+            map.set(seg.id, new Set(calledDestinations));
+            // Add this destination to the set for future segments
+            if (seg.destinationType?.toLowerCase() === 'extension') {
+                calledDestinations.add(seg.destinationNumber);
+            }
+        }
+        return map;
+    }, [segments]);
+
+    // Detect if a segment is a "fallback" (automatic redirect to a previously called destination)
+    const isFallbackSegment = (seg: CallChainSegment): boolean => {
+        // Fallback conditions:
+        // 1. Creation method is 'divert' (automatic system redirect, NOT 'transfer' which is agent-initiated)
+        // 2. Forward reason indicates automatic behavior (no_answer, no_destinations, etc.)
+        // 3. Destination was already called earlier in the call
+        // 4. It's an extension (not queue, script, etc.)
+        const previouslyCalled = previouslyCalledMap.get(seg.id);
+        const isAutoForward = ['no_answer', 'no_destinations', 'busy', 'timeout'].includes(seg.creationForwardReason?.toLowerCase() || '');
+        return (
+            seg.creationMethod === 'divert' &&
+            isAutoForward &&
+            seg.destinationType?.toLowerCase() === 'extension' &&
+            previouslyCalled?.has(seg.destinationNumber) === true
+        );
+    };
+
+    // Detect if a segment is an agent-initiated "transfer"
+    const isTransferSegment = (seg: CallChainSegment): boolean => {
+        // Transfer conditions:
+        // 1. Creation method is 'transfer'
+        // 2. Forward reason is 'none' (agent chose to transfer, not automatic)
+        return (
+            seg.creationMethod === 'transfer' &&
+            (seg.creationForwardReason === 'none' || seg.creationForwardReason === '')
+        );
+    };
+
+    // Detect if a segment is a "retry" (busy rejection followed by another attempt to same agent)
+    // Returns the retry count (0 = not a retry, 1 = first retry, 2 = second retry, etc.)
+    const retryCountMap = useMemo(() => {
+        const map = new Map<string, number>();
+        const busyAttempts = new Map<string, number>(); // destinationNumber -> count of busy attempts
+
+        // Sort segments chronologically
+        const sortedSegments = [...segments].sort((a, b) =>
+            new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
+        );
+
+        for (const seg of sortedSegments) {
+            if (seg.destinationType?.toLowerCase() !== 'extension') continue;
+
+            const destNum = seg.destinationNumber;
+            const currentCount = busyAttempts.get(destNum) || 0;
+
+            // If this segment ended with 'busy', increment the counter
+            if (seg.terminationReasonDetails === 'busy' || seg.terminationReason === 'rejected') {
+                busyAttempts.set(destNum, currentCount + 1);
+                // If it's not the first attempt, mark as retry
+                if (currentCount > 0) {
+                    map.set(seg.id, currentCount);
+                }
+            } else if (seg.answeredAt) {
+                // If answered, check if there were previous busy attempts
+                if (currentCount > 0) {
+                    map.set(seg.id, currentCount); // Mark as "finally answered after retries"
+                }
+                // Reset the counter
+                busyAttempts.set(destNum, 0);
+            }
+        }
+        return map;
+    }, [segments]);
+
+    const formatTime = (iso: string) => {
+        if (!iso) return "-";
+        return format(new Date(iso), "HH:mm:ss", { locale: fr });
+    };
+
+    const renderSegment = (seg: CallChainSegment, isCompact: boolean = false, categoryOverride?: SegmentCategory) => {
+        const effectiveCategory = categoryOverride || seg.category;
+        const config = categoryConfig[effectiveCategory];
+        const Icon = config.icon;
+
+        if (isCompact) {
+            return (
+                <div key={seg.id} className="flex items-center gap-2 text-xs py-1 px-2 bg-slate-50 rounded">
+                    <Icon className="h-3 w-3 text-slate-400" />
+                    <span className="text-slate-500">{formatTime(seg.startedAt)}</span>
+                    <span className="text-slate-600">{seg.destinationName || seg.destinationNumber}</span>
+                    <span className="text-slate-400">({seg.durationSeconds}s)</span>
+                    <span className="text-slate-400">{seg.terminationReasonDetails || seg.terminationReason}</span>
+                </div>
+            );
+        }
+
+        // Calculate talk duration for conversation segments (from answer to end)
+        let displayDuration = seg.durationFormatted;
+        let durationLabel = "Durée";
+        if (effectiveCategory === "conversation" && seg.answeredAt) {
+            const answerTime = new Date(seg.answeredAt).getTime();
+            const startTime = new Date(seg.startedAt).getTime();
+            const talkSeconds = seg.durationSeconds - Math.round((answerTime - startTime) / 1000);
+            const minutes = Math.floor(talkSeconds / 60);
+            const seconds = talkSeconds % 60;
+            displayDuration = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            durationLabel = "Conversation";
+        }
+
+        // Check for special indicators
+        const isFallback = isFallbackSegment(seg);
+        const isTransfer = isTransferSegment(seg);
+        const isPickup = seg.creationMethod === "pickup"; // Call interception via BLF
+        const retryCount = retryCountMap.get(seg.id) || 0;
+
+        return (
+            <div className="flex-1 bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-slate-900">
+                        {formatTime(seg.startedAt)}
+                    </span>
+                    <div className="flex items-center gap-1">
+                        {isTransfer && (
+                            <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300" title="Transfert - Appel transféré par un agent">
+                                <ArrowRightLeft className="h-3 w-3 mr-1" />
+                                Transfert
+                            </Badge>
+                        )}
+                        {isFallback && (
+                            <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-300" title="Fallback - Redirection automatique vers une destination déjà appelée">
+                                <RotateCcw className="h-3 w-3 mr-1" />
+                                Fallback
+                            </Badge>
+                        )}
+                        {retryCount > 0 && (
+                            <Badge variant="outline" className="bg-violet-100 text-violet-700 border-violet-300" title={`Tentative #${retryCount + 1} - Agent était occupé précédemment`}>
+                                <RefreshCw className="h-3 w-3 mr-1" />
+                                Retry #{retryCount + 1}
+                            </Badge>
+                        )}
+                        {isPickup && (
+                            <Badge variant="outline" className="bg-cyan-100 text-cyan-700 border-cyan-300" title="Interception - Appel capturé via BLF/pickup">
+                                <PhoneIncoming className="h-3 w-3 mr-1" />
+                                Interception
+                            </Badge>
+                        )}
+                        <Badge variant="outline" className={config.className}>
+                            {config.label}
+                        </Badge>
+                    </div>
+                </div>
+
+                {/* Source → Destination */}
+                <div className="flex items-center gap-2 text-sm">
+                    <div className="flex-1">
+                        <div className="font-mono font-medium">{seg.sourceNumber}</div>
+                        {seg.sourceName && (
+                            <div className="text-xs text-slate-500">{seg.sourceName}</div>
+                        )}
+                        <div className="text-xs text-slate-400">{seg.sourceType}</div>
+                    </div>
+
+                    <ArrowRight className="h-4 w-4 text-slate-400 flex-shrink-0" />
+
+                    <div className="flex-1 text-right">
+                        <div className="font-mono font-medium">{seg.destinationNumber}</div>
+                        {seg.destinationName && (
+                            <div className="text-xs text-slate-500">{seg.destinationName}</div>
+                        )}
+                        <div className="text-xs text-slate-400">{seg.destinationType}</div>
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100 text-xs text-slate-500">
+                    <span>{durationLabel}: {displayDuration}</span>
+                    <span className="text-slate-400">
+                        {seg.terminationReasonDetails || seg.terminationReason}
+                    </span>
+                </div>
+            </div>
+        );
+    };
+
+    const renderQueueGroup = (group: SegmentGroup, groupIndex: number) => {
+        const config = categoryConfig.queue;
+        const answered = group.answeredSegment;
+        const queueSeg = group.queueSegment!;
+        const ringDuration = Math.max(...group.segments.filter(s => !s.answeredAt).map(s => s.durationSeconds));
+
+        // Find who answered right after this queue group
+        const nextAnsweringAgent = getNextAnsweringAgent(groupIndex);
+
+        return (
+            <div className={`flex-1 bg-white rounded-lg p-4 border shadow-sm ${answered ? 'border-green-300' : 'border-blue-200'}`}>
+                <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-slate-900">
+                        {formatTime(queueSeg.startedAt)}
+                    </span>
+                    <div className="flex items-center gap-2">
+                        <Badge variant="outline" className={config.className}>
+                            File d&apos;attente
+                        </Badge>
+                        {answered && (
+                            <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300">
+                                <Phone className="h-3 w-3 mr-1" />
+                                Répondu
+                            </Badge>
+                        )}
+                    </div>
+                </div>
+
+                {/* Queue name + number */}
+                <div className="flex items-center gap-2 text-sm mb-2">
+                    <div className="flex-1">
+                        <div className="font-mono font-medium">{queueSeg.destinationNumber}</div>
+                        {queueSeg.destinationName && (
+                            <div className="text-xs text-slate-500">{queueSeg.destinationName}</div>
+                        )}
+                    </div>
+                    <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200">
+                        <Bell className="h-3 w-3 mr-1" />
+                        {group.segments.length} agent{group.segments.length > 1 ? "s" : ""}
+                    </Badge>
+                </div>
+
+                {/* Agent badges */}
+                <div className="flex flex-wrap gap-1 mb-2">
+                    {group.segments.map(seg => {
+                        const isAnsweredHere = seg.answeredAt !== null;
+                        // Check if this agent answered right after this queue group
+                        const answeredNext = !isAnsweredHere && nextAnsweringAgent === seg.destinationNumber;
+                        const showAsSuccess = isAnsweredHere || answeredNext;
+                        // Check if this is a retry (agent was busy before)
+                        const retryCount = retryCountMap.get(seg.id) || 0;
+                        const isBusy = seg.terminationReasonDetails === 'busy';
+
+                        // Determine styling: green for success, violet for busy/retry, amber for others
+                        let badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
+                        if (showAsSuccess) {
+                            badgeClass = 'bg-green-50 text-green-700 border-green-300 font-medium';
+                        } else if (isBusy || retryCount > 0) {
+                            badgeClass = 'bg-violet-50 text-violet-700 border-violet-300';
+                        }
+
+                        return (
+                            <span
+                                key={seg.id}
+                                className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${badgeClass}`}
+                                title={
+                                    answeredNext ? 'A répondu juste après' :
+                                        isBusy ? 'Agent occupé - sera retenté' :
+                                            retryCount > 0 ? `Tentative #${retryCount + 1}` :
+                                                undefined
+                                }
+                            >
+                                {isBusy && <RefreshCw className="h-3 w-3 mr-1" />}
+                                {seg.destinationName || seg.destinationNumber}
+                                {isAnsweredHere && <span className="ml-1">✓</span>}
+                                {answeredNext && <span className="ml-1">↩</span>}
+                                {isBusy && <span className="ml-1 text-violet-500">(occupé)</span>}
+                                {!showAsSuccess && !isBusy && seg.terminationReasonDetails === "completed_elsewhere" && (
+                                    <span className="ml-1 text-slate-400">(ailleurs)</span>
+                                )}
+                            </span>
+                        );
+                    })}
+                </div>
+
+                {/* Footer: queue duration + ring duration + termination */}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
+                    <div className="flex items-center gap-3">
+                        <span>Durée: {queueSeg.durationFormatted}</span>
+                        <span className="text-slate-300">|</span>
+                        <span>Sonnerie: ~{ringDuration || 11}s</span>
+                    </div>
+                    <span className="text-slate-400">
+                        {queueSeg.terminationReasonDetails || queueSeg.terminationReason}
+                    </span>
+                </div>
+            </div>
+        );
+    };
+
+    return (
+        <div className="space-y-4 py-4">
+            {/* Summary bar */}
+            <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded">
+                <Clock className="h-4 w-4" />
+                <span>{segments.length} segment{segments.length > 1 ? "s" : ""}</span>
+                {legCount > 1 && (
+                    <span
+                        className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700"
+                        title="Cet appel regroupe l'appel principal et ses jambes de transfert 3CX (réglage « Un client, un appel »). Chaque frontière de jambe est marquée dans la chronologie."
+                    >
+                        <GitMerge className="h-3 w-3" />
+                        Appel fusionné · {legCount} jambes
+                    </span>
+                )}
+            </div>
+
+            {/* Main Timeline */}
+            <div className="relative">
+                {groupedSegments.map((group, idx) => {
+                    const config = categoryConfig[group.category];
+                    const Icon = config.icon;
+                    const isLast = idx === groupedSegments.length - 1;
+                    // Frontière de jambe : le groupe appartient à une
+                    // autre jambe 3CX que le précédent (appel fusionné).
+                    const legBoundary = idx > 0
+                        && groupLegIds[idx] !== null
+                        && groupLegIds[idx] !== groupLegIds[idx - 1];
+
+                    return (
+                        <div key={idx}>
+                            {legBoundary && (
+                                <div
+                                    className="relative z-10 mb-4 flex items-center gap-2 pl-1"
+                                    title="À partir d'ici, les segments proviennent d'une jambe de transfert 3CX distincte, fusionnée dans cet appel."
+                                >
+                                    <GitMerge className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                                    <span className="rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">
+                                        Jambe de transfert
+                                    </span>
+                                    <div className="flex-1 border-t border-dashed border-purple-200" />
+                                </div>
+                            )}
+                            <div className="relative flex gap-4 pb-4">
+                                {/* Timeline line */}
+                                {!isLast && (
+                                    <div className="absolute left-[19px] top-10 w-0.5 h-full bg-slate-200" />
+                                )}
+
+                                {/* Icon */}
+                                <div className={`relative z-10 flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center border ${config.className}`}>
+                                    <Icon className="h-5 w-5" />
+                                </div>
+
+                                {/* Content */}
+                                {group.type === "queue_group" ? (
+                                    renderQueueGroup(group, idx)
+                                ) : (
+                                    renderSegment(group.segments[0], false, group.category)
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
