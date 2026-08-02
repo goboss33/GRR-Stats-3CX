@@ -22,7 +22,6 @@ import {
     getTimelineData,
     getHeatmapData,
 } from "@/services/dashboard.service";
-import type { DashboardDirection } from "@/services/domain/call-aggregation";
 import type { CallOrigin } from "@/services/domain/call-classification";
 
 import type {
@@ -51,12 +50,12 @@ export default function DashboardClient() {
     const [metrics, setMetrics] = useState<GlobalMetrics | null>(null);
     const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([]);
     const [heatmapData, setHeatmapData] = useState<HeatmapDataPoint[]>([]);
-    // Direction (flux reçu / flux émis) et provenance (collègue / client).
-    // En mode Sortant, la provenance n'a pas de sens : le toggle se grise et
-    // les libellés changent (« Aboutis » : c'est l'interlocuteur qui décroche).
-    const [direction, setDirection] = useState<DashboardDirection>("inbound");
+    // Provenance (collègue / client). Le tableau de bord ne montre QUE le flux
+    // entrant — décision d'août 2026 : les sortants polluaient les « manqués »
+    // (3 270 sur juin), et qui veut leurs chiffres passe par les journaux, où
+    // le filtre de direction existe. Le socle SQL sait toujours les filtrer
+    // (API analytics/global : paramètre direction).
     const [origin, setOrigin] = useState<CallOrigin>("both");
-    const isOutbound = direction === "outbound";
 
     // « Perdus » = manqués et occupés. La messagerie garde sa case : elle
     // décrit autre chose qu'un abandon, et l'exploitation s'en sert.
@@ -70,13 +69,11 @@ export default function DashboardClient() {
         p.set("end", format(dateRange.endDate, "yyyy-MM-dd"));
         if (statuts?.length) p.set("statuses", statuts.join(","));
         // La population listée doit être celle du chiffre cliqué : la
-        // direction et la provenance du tableau de bord voyagent avec le lien
-        // (le filtre « directions » des journaux parle en directions fines).
-        const directions = isOutbound
-            ? ["outbound"]
-            : origin === "internal" ? ["internal"]
-                : origin === "external" ? ["inbound", "bridge"]
-                    : ["inbound", "internal", "bridge"];
+        // provenance du tableau de bord voyage avec le lien (le filtre
+        // « directions » des journaux parle en directions fines).
+        const directions = origin === "internal" ? ["internal"]
+            : origin === "external" ? ["inbound", "bridge"]
+                : ["inbound", "internal", "bridge"];
         p.set("directions", directions.join(","));
         return `/admin/logs?${p.toString()}`;
     };
@@ -91,9 +88,9 @@ export default function DashboardClient() {
         try {
             const serverId = getSelectedServer();
             const [metricsData, timeline, heatmap] = await Promise.all([
-                getGlobalMetrics(serverId, dateRange.startDate, dateRange.endDate, direction, origin),
-                getTimelineData(serverId, dateRange.startDate, dateRange.endDate, direction, origin),
-                getHeatmapData(serverId, dateRange.startDate, dateRange.endDate, direction, origin),
+                getGlobalMetrics(serverId, dateRange.startDate, dateRange.endDate, "inbound", origin),
+                getTimelineData(serverId, dateRange.startDate, dateRange.endDate, "inbound", origin),
+                getHeatmapData(serverId, dateRange.startDate, dateRange.endDate, "inbound", origin),
             ]);
 
             setMetrics(metricsData);
@@ -106,7 +103,7 @@ export default function DashboardClient() {
         } finally {
             setIsLoading(false);
         }
-    }, [dateRange.startDate, dateRange.endDate, direction, origin]);
+    }, [dateRange.startDate, dateRange.endDate, origin]);
 
     useEffect(() => {
         fetchData();
@@ -128,36 +125,9 @@ export default function DashboardClient() {
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                    {/* Direction : flux reçu ou flux émis. Pas d'option cumulée —
-                        les statuts n'ont pas le même sens dans les deux sens. */}
-                    <div
-                        role="group"
-                        aria-label="Direction des appels"
-                        className="inline-flex items-center rounded-full bg-slate-200/70 p-1"
-                    >
-                        {([
-                            { value: "inbound", label: "Entrants", title: "Appels reçus par l'entreprise" },
-                            { value: "outbound", label: "Sortants", title: "Appels émis vers l'extérieur" },
-                        ] as const).map((opt) => (
-                            <button
-                                key={opt.value}
-                                type="button"
-                                title={opt.title}
-                                aria-pressed={direction === opt.value}
-                                onClick={() => setDirection(opt.value)}
-                                className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                                    direction === opt.value
-                                        ? "bg-blue-600 text-white shadow-sm"
-                                        : "text-slate-600 hover:text-slate-900"
-                                }`}
-                            >
-                                {opt.label}
-                            </button>
-                        ))}
-                    </div>
-                    {/* Provenance : grisée côté Sortant (un sortant est par
-                        nature émis par l'interne vers l'externe). */}
-                    <OriginToggle value={origin} onChange={setOrigin} disabled={isOutbound} />
+                    {/* Provenance du flux entrant : même sémantique que sur les
+                        statistiques de groupe. */}
+                    <OriginToggle value={origin} onChange={setOrigin} />
                     <Button
                         variant="outline"
                         size="icon"
@@ -174,7 +144,7 @@ export default function DashboardClient() {
                 plus recopié, donc plus de divergences de mise en forme. */}
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
                 <KpiCard
-                    label={isOutbound ? "Appels émis" : "Appels reçus"}
+                    label="Appels reçus"
                     href={lienLogs()}
                     value={(metrics?.totalCalls ?? 0).toLocaleString("fr-CH")}
                     icon={Phone}
@@ -183,28 +153,26 @@ export default function DashboardClient() {
                     isLoading={isLoading}
                 />
                 <KpiCard
-                    label={isOutbound ? "Aboutis" : "Répondus"}
+                    label="Répondus"
                     href={lienLogs(finalStatusesForBucket('answered'))}
                     value={(metrics?.answeredCalls ?? 0).toLocaleString("fr-CH")}
                     icon={TrendingUp}
                     tone="positive"
-                    subtitle={isOutbound
-                        ? `${answerRate} % décrochés en face`
-                        : `${answerRate} % de taux global`}
+                    subtitle={`${answerRate} % de taux global`}
                     trend={{ current: metrics?.answeredCalls ?? 0, previous: metrics?.prevAnsweredCalls ?? 0 }}
                     isLoading={isLoading}
                 />
                 <KpiCard
-                    label={isOutbound ? "Sans réponse" : "Perdus"}
+                    label="Perdus"
                     href={lienLogs(finalStatusesForBucket('lost'))}
                     value={lostCalls.toLocaleString("fr-CH")}
                     icon={PhoneOff}
                     tone="negative"
-                    subtitle={isOutbound ? "L'interlocuteur n'a pas décroché" : "Appels non aboutis"}
+                    subtitle="Appels non aboutis"
                     trend={{ current: lostCalls, previous: prevLostCalls, lowerIsBetter: true }}
                     isLoading={isLoading}
                 />
-                {!isOutbound && <KpiCard
+                <KpiCard
                     label="Messagerie"
                     href={lienLogs(finalStatusesForBucket('voicemail'))}
                     value={(metrics?.voicemailCalls ?? 0).toLocaleString("fr-CH")}
@@ -213,7 +181,7 @@ export default function DashboardClient() {
                     subtitle="Hors heures ou renvoi"
                     trend={{ current: metrics?.voicemailCalls ?? 0, previous: metrics?.prevVoicemailCalls ?? 0, lowerIsBetter: true }}
                     isLoading={isLoading}
-                />}
+                />
                 <KpiCard
                     label="Discussion"
                     value={formatDuration(metrics?.avgDurationSeconds ?? 0)}
@@ -226,7 +194,7 @@ export default function DashboardClient() {
                     label="Attente moy."
                     value={formatDuration(metrics?.avgWaitTimeSeconds ?? 0)}
                     icon={Hourglass}
-                    subtitle={isOutbound ? "Avant le décroché en face" : "Avant ou entre transferts"}
+                    subtitle="Avant ou entre transferts"
                     trend={{ current: metrics?.avgWaitTimeSeconds ?? 0, previous: metrics?.prevAvgWaitTimeSeconds ?? 0, lowerIsBetter: true }}
                     isLoading={isLoading}
                 />
