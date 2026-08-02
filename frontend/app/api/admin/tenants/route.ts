@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getServers, ServerId } from "@/lib/prisma-cdr";
 import { getAvailableServers } from "@/lib/servers";
 import { prismaAuth } from "@/lib/prisma-auth";
+import { invalidateStatsExclusions } from "@/lib/stats-exclusions";
 import { requireApiRole } from "@/lib/auth-guard";
 
 export async function GET() {
@@ -24,6 +25,7 @@ export async function GET() {
             name: servers[id].name,
             timezone: settingsMap.get(id)?.timezone || servers[id].timezone,
             licenceThreshold: settingsMap.get(id)?.licenceThreshold ?? servers[id].licenceThreshold,
+            excludedExtensions: settingsMap.get(id)?.excludedExtensions ?? "",
             trunkThreshold: settingsMap.get(id)?.trunkThreshold ?? servers[id].trunkThreshold,
         }));
 
@@ -45,7 +47,7 @@ export async function POST(request: Request) {
     if (!guard.ok) return guard.response;
 
     try {
-        const { serverId, timezone, licenceThreshold, trunkThreshold } = await request.json();
+        const { serverId, timezone, licenceThreshold, trunkThreshold, excludedExtensions } = await request.json();
         
         if (!serverId || typeof serverId !== "string") {
             return NextResponse.json(
@@ -60,6 +62,19 @@ export async function POST(request: Request) {
                 { error: "Server not available" },
                 { status: 400 }
             );
+        }
+
+        if (excludedExtensions !== undefined) {
+            if (typeof excludedExtensions !== "string" || excludedExtensions.length > 2000) {
+                return NextResponse.json({ error: "excludedExtensions doit être une chaîne (max 2000 caractères)" }, { status: 400 });
+            }
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: { excludedExtensions },
+                create: { serverId, excludedExtensions },
+            });
+            invalidateStatsExclusions();
+            return NextResponse.json({ success: true, serverId, excludedExtensions });
         }
 
         if (timezone && typeof timezone === "string") {

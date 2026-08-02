@@ -227,7 +227,10 @@ export async function listRegistryQueues(serverId: ServerId) {
  */
 export async function updateRegistryQueue(
     id: string,
-    data: { entity?: string | null; region?: string | null; service?: string | null; status?: "ACTIVE" | "ARCHIVED" },
+    data: {
+        entity?: string | null; region?: string | null; service?: string | null;
+        status?: "ACTIVE" | "ARCHIVED"; excludedFromStats?: boolean;
+    },
 ) {
     return prismaAuth.queueRegistry.update({
         where: { id },

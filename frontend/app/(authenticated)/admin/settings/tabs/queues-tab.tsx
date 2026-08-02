@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, AlertTriangle, Tag, Search, Users, CheckCircle2, Archive, Eye } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Loader2, RefreshCw, AlertTriangle, Tag, Search, Users, CheckCircle2, Archive, Eye, EyeOff } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,7 @@ interface RegistryQueue {
     region: string | null;
     service: string | null;
     status: QueueStatus;
+    excludedFromStats: boolean;
     agentCount: number;
     isNew: boolean;
     lastCallAt: string | null;
@@ -61,6 +62,10 @@ export function QueuesTab() {
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [detailQueueId, setDetailQueueId] = useState<string | null>(null);
     const [bulkBusy, setBulkBusy] = useState(false);
+    // Postes exclus à la main (plages), pour les postes clients membres
+    // d'aucune file — complément des files cochées « Exclue des stats ».
+    const [excludedExtensions, setExcludedExtensions] = useState("");
+    const [extSaving, setExtSaving] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -78,6 +83,35 @@ export function QueuesTab() {
     useEffect(() => {
         load();
     }, [load]);
+
+    useEffect(() => {
+        fetch("/api/admin/tenants")
+            .then((r) => r.json())
+            .then((data) => {
+                const current = (data.availableServers ?? []).find(
+                    (t: { id: string }) => t.id === getSelectedServer(),
+                );
+                if (current) setExcludedExtensions(current.excludedExtensions ?? "");
+            })
+            .catch(() => undefined);
+    }, []);
+
+    const saveExcludedExtensions = async () => {
+        setExtSaving(true);
+        try {
+            const res = await fetch("/api/admin/tenants", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ serverId: getSelectedServer(), excludedExtensions }),
+            });
+            if (!res.ok) throw new Error((await res.json()).error || "Enregistrement impossible");
+            toast.success("Postes exclus enregistrés — effet sous une minute sur les statistiques");
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Enregistrement impossible");
+        } finally {
+            setExtSaving(false);
+        }
+    };
 
     const runDiscovery = async () => {
         setIsDiscovering(true);
@@ -145,7 +179,7 @@ export function QueuesTab() {
     };
 
     /** Applique la même modification à toutes les files sélectionnées. */
-    const patchSelection = async (patch: Partial<Pick<RegistryQueue, "region" | "entity" | "status">>) => {
+    const patchSelection = async (patch: Partial<Pick<RegistryQueue, "region" | "entity" | "status" | "excludedFromStats">>) => {
         const ids = [...selected];
         setBulkBusy(true);
         try {
@@ -345,6 +379,27 @@ export function QueuesTab() {
                         variant="outline"
                         className="bg-white"
                         disabled={bulkBusy}
+                        title="Les appels de ces files et de leurs agents exclusifs sortent de TOUTES les statistiques (clients hébergés : Barnes, BCR…). Le monitoring de licence les garde."
+                        onClick={() => patchSelection({ excludedFromStats: true })}
+                    >
+                        <EyeOff className="mr-1.5 h-3.5 w-3.5 text-red-500" />
+                        Exclure des stats
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className="bg-white"
+                        disabled={bulkBusy}
+                        onClick={() => patchSelection({ excludedFromStats: false })}
+                    >
+                        <Eye className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
+                        Réintégrer
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className="bg-white"
+                        disabled={bulkBusy}
                         onClick={() => markReviewed([...selected])}
                     >
                         <Eye className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
@@ -416,6 +471,15 @@ export function QueuesTab() {
                                                 {q.isNew && (
                                                     <Badge variant="outline" className="ml-2 border-blue-200 bg-blue-50 text-[10px] text-blue-700">
                                                         Nouvelle
+                                                    </Badge>
+                                                )}
+                                                {q.excludedFromStats && (
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="ml-2 border-red-200 bg-red-50 text-[10px] text-red-700"
+                                                        title="Ses appels et ceux de ses agents exclusifs ne comptent dans aucune statistique"
+                                                    >
+                                                        Exclue des stats
                                                     </Badge>
                                                 )}
                                                 {q.previousNames.length > 0 && (
@@ -507,6 +571,32 @@ export function QueuesTab() {
                     </CardContent>
                 </Card>
             )}
+
+            {/* Postes exclus à la main : les agents des clients hébergés qui
+                n'appartiennent à AUCUNE file sont indétectables par la
+                dérivation automatique — on les déclare ici, par plages. */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base">Postes exclus des statistiques</CardTitle>
+                    <CardDescription>
+                        En plus des files « Exclue des stats » (dont les agents exclusifs sont déjà écartés
+                        automatiquement) : déclarez ici les postes clients membres d&apos;aucune file.
+                        Numéros et plages séparés par des virgules — ex. <code className="rounded bg-slate-100 px-1">260-299, 803</code>.
+                        Sans effet sur le monitoring de licence.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-wrap items-center gap-3">
+                    <Input
+                        className="min-w-[280px] flex-1 font-mono text-sm"
+                        placeholder="ex. 260-299, 803, 850"
+                        value={excludedExtensions}
+                        onChange={(e) => setExcludedExtensions(e.target.value)}
+                    />
+                    <Button onClick={saveExcludedExtensions} disabled={extSaving}>
+                        {extSaving ? "Enregistrement…" : "Enregistrer"}
+                    </Button>
+                </CardContent>
+            </Card>
 
             {queues.length > 0 && (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">

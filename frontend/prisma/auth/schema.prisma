@@ -134,6 +134,11 @@ model QueueRegistry {
   region      String?
   service     String?
   status      QueueStatus @default(ACTIVE)
+  /// File exclue des statistiques (clients hébergés sur le tenant : Barnes,
+  /// BCR…) : ses appels et ceux de ses agents exclusifs sortent de TOUTES les
+  /// statistiques (dashboard, journaux, sélecteurs) — mais PAS du monitoring
+  /// de licence, qui mesure l'occupation réelle des lignes. Rétroactif.
+  excludedFromStats Boolean @default(false)
   /// null = jamais examinée par un ADMIN -> signalée comme « nouvelle ».
   /// Remplace l'ancien statut « à classer », qui empêchait d'utiliser une file
   /// sans rien protéger : la sécurité vient du périmètre, pas du statut.
@@ -228,6 +233,11 @@ model TenantSettings {
   timezone           String   @default("Europe/Zurich")
   licenceThreshold   Int?
   trunkThreshold     Int?
+  /// Postes exclus des statistiques, en plus des agents dérivés des files
+  /// exclues — pour les postes clients membres d'AUCUNE file (indétectables
+  /// autrement). Format : numéros et plages séparés par des virgules,
+  /// ex. "260-299, 803, 850".
+  excludedExtensions String   @default("")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }

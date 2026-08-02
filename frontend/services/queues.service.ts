@@ -4,6 +4,7 @@ import { ServerId } from "@/lib/prisma-cdr";
 import { getQueueMembersRaw } from "@/services/repositories/cdr.repository";
 import type { QueueInfo, QueueMember } from "@/services/domain/call.types";
 import { resolveAccessScope } from "@/lib/access-scope";
+import { getStatsExclusions } from "@/lib/stats-exclusions";
 
 /**
  * Queues Service — Queue Members
@@ -60,7 +61,12 @@ export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> 
         queue.memberCount = uniqueMembers.length;
     });
 
-    const queues = Array.from(queuesMap.values());
+    // Les files exclues des statistiques (clients hébergés : Barnes, BCR…)
+    // disparaissent des sélecteurs — et leurs agents avec, la liste étant
+    // groupée par file.
+    const exclusions = await getStatsExclusions(serverId);
+    const excludedQueues = new Set(exclusions.queueNumbers);
+    const queues = Array.from(queuesMap.values()).filter((q) => !excludedQueues.has(q.queueNumber));
 
     // Le sélecteur de files ne doit proposer que le périmètre de l'utilisateur.
     if (scope.unrestricted) return queues;
