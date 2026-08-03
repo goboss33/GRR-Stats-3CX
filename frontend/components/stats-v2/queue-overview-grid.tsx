@@ -61,15 +61,21 @@ export function QueueOverviewGrid({ queues, startDate, endDate, origin, onSelect
         [queues],
     );
 
-    // Qui s'affiche ? Tout le monde sous le seuil ; sinon les favorites (ou
-    // les douze premières à défaut), le reste derrière le déplioir.
+    // Qui s'affiche ? Toujours les favorites en tête, complétées par les
+    // suivantes jusqu'à DOUZE cartes minimum (3 favoris → 3 + 9 autres ;
+    // 15 favoris → les 12 premières) ; le reste derrière le déplioir. L'ordre
+    // favorites-d'abord vaut aussi déplié : déplier ne remélange pas la grille.
     const { shown, hiddenCount } = useMemo(() => {
-        if (expanded || sorted.length <= COLLAPSE_THRESHOLD) {
-            return { shown: sorted, hiddenCount: 0 };
-        }
         const pinned = sorted.filter((q) => favorites.has(q.queueNumber));
-        const visible = pinned.length > 0 ? pinned : sorted.slice(0, COLLAPSE_THRESHOLD);
-        return { shown: visible, hiddenCount: sorted.length - visible.length };
+        const rest = sorted.filter((q) => !favorites.has(q.queueNumber));
+        const ordered = [...pinned, ...rest];
+        if (expanded || ordered.length <= COLLAPSE_THRESHOLD) {
+            return { shown: ordered, hiddenCount: 0 };
+        }
+        return {
+            shown: ordered.slice(0, COLLAPSE_THRESHOLD),
+            hiddenCount: ordered.length - COLLAPSE_THRESHOLD,
+        };
     }, [sorted, favorites, expanded]);
 
     // Charge les cartes VISIBLES qui ne le sont pas encore — déplier étend le
