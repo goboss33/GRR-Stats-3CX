@@ -14,6 +14,26 @@ import { prismaAuth } from "@/lib/prisma-auth";
  */
 export async function runStartupMigrations(): Promise<void> {
     await renameLegacyRoles();
+    await replaceCompanyWideWithCanViewLogs();
+}
+
+/**
+ * Août 2026 : « Voir les chiffres de l'entreprise » disparaît (le tableau de
+ * bord est TOUJOURS filtré par périmètre), remplacé par « Voir les logs
+ * d'appels » — ouvert par défaut : personne ne perd l'accès au déploiement,
+ * un ADMIN retire le droit au cas par cas.
+ *
+ * ADD seulement, PAS de DROP de canViewCompanyWide : la base auth est partagée
+ * entre instances (dev local + prod), et cette migration tourne au démarrage de
+ * n'importe laquelle — supprimer la colonne casserait toute instance encore
+ * sur l'ancien code, qui la SELECTionne. La colonne, ignorée par le nouveau
+ * code ET par Prisma, sera supprimée dans une release ultérieure, une fois
+ * qu'aucune ancienne instance ne tourne.
+ */
+async function replaceCompanyWideWithCanViewLogs(): Promise<void> {
+    await prismaAuth.$executeRawUnsafe(
+        `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "canViewLogs" BOOLEAN NOT NULL DEFAULT true`,
+    );
 }
 
 /**

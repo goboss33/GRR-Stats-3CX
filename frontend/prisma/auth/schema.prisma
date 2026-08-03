@@ -33,9 +33,13 @@ model User {
   /// rend lastLoginAt trop grossier pour lire « qui utilise l'app ».
   lastSeenAt     DateTime?
 
-  /// Permissions individuelles (cf. PRD droits d'accès §4.3) — toutes restrictives
-  /// par défaut : on n'accorde que ce qui est explicitement coché par un ADMIN.
-  canViewCompanyWide      Boolean @default(false)
+  /// Permissions individuelles (cf. PRD droits d'accès §4.3) — restrictives par
+  /// défaut : on n'accorde que ce qui est explicitement coché par un ADMIN.
+  /// Exception : canViewLogs, ouvert par défaut — les logs sont le détail
+  /// derrière chaque KPI, on RETIRE ce droit plutôt qu'on ne l'accorde.
+  /// (canViewCompanyWide a disparu en août 2026 : le tableau de bord est
+  /// toujours filtré par périmètre — cf. lib/startup-migrations.)
+  canViewLogs             Boolean @default(true)
   canViewFullPhoneNumbers Boolean @default(false)
   canCreateApiKeys        Boolean @default(false)
 

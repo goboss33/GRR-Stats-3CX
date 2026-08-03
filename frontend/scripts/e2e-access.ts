@@ -42,7 +42,7 @@ async function main() {
         tenants: [TENANT],
         queueIds: pully.map((q) => q.id),
         extensionOverrides: [{ tenantId: TENANT, extensionNumber: "9999", mode: "INCLUDE" }],
-        canViewCompanyWide: false,
+        canViewLogs: true,
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
     });
@@ -58,12 +58,12 @@ async function main() {
         tenants: [TENANT],
         queueIds: pully.slice(0, 2).map((q) => q.id),
         extensionOverrides: [],
-        canViewCompanyWide: true,
+        canViewLogs: true,
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
     });
     const scope2 = await describeUserScope(user.id);
-    console.log(`   ${scope2.queues.length} files (attendu 2) · vue entreprise : ${scope2.canViewCompanyWide}`);
+    console.log(`   ${scope2.queues.length} files (attendu 2) · logs : ${scope2.canViewLogs}`);
     if (scope2.queues.length !== 2) throw new Error("Remplacement du périmètre incorrect");
     if (scope2.extensions.includes("9999")) throw new Error("Ancienne surcharge non supprimée");
 

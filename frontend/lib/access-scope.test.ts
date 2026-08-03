@@ -47,7 +47,7 @@ function setup(options: {
     authMock.mockResolvedValue(options.session === undefined ? { user: { id: "u1" } } : options.session);
     db.user.findUnique.mockResolvedValue(
         options.user === undefined
-            ? { role: "MANAGER", canViewCompanyWide: false, canViewFullPhoneNumbers: false, tenantAccess: [{ tenantId: TENANT }] }
+            ? { role: "MANAGER", canViewLogs: true, canViewFullPhoneNumbers: false, tenantAccess: [{ tenantId: TENANT }] }
             : options.user,
     );
     db.userQueuePerimeter.findMany.mockResolvedValue(
@@ -66,7 +66,7 @@ beforeEach(() => {
 
 describe("interrupteur global", () => {
     it("filtrage désactivé : personne n'est restreint", async () => {
-        setup({ enforcement: false, user: { role: "AGENT", canViewCompanyWide: false, canViewFullPhoneNumbers: false, tenantAccess: [] } });
+        setup({ enforcement: false, user: { role: "AGENT", canViewLogs: true, canViewFullPhoneNumbers: false, tenantAccess: [] } });
         const scope = await resolveAccessScope(TENANT);
         expect(scope.unrestricted).toBe(true);
         expect(scope.empty).toBe(false);
@@ -100,22 +100,35 @@ describe("interrupteur global", () => {
 
 describe("portée selon le rôle", () => {
     it("ADMIN : accès complet, sans exiger d'accès au tenant", async () => {
-        setup({ user: { role: "ADMIN", canViewCompanyWide: false, canViewFullPhoneNumbers: true, tenantAccess: [] } });
+        setup({ user: { role: "ADMIN", canViewLogs: true, canViewFullPhoneNumbers: true, tenantAccess: [] } });
         const scope = await resolveAccessScope(TENANT);
         expect(scope.unrestricted).toBe(true);
-        expect(scope.canViewCompanyWide).toBe(true);
+        expect(scope.canViewLogs).toBe(true);
+    });
+
+    it("le droit « Voir les logs » est individuel, quel que soit le rôle", async () => {
+        // Comme le masquage des numéros : la permission suit l'utilisateur,
+        // pas son rôle — un ADMIN peut se voir retirer les logs.
+        setup({ user: { role: "ADMIN", canViewLogs: false, canViewFullPhoneNumbers: true, tenantAccess: [] } });
+        expect((await resolveAccessScope(TENANT)).canViewLogs).toBe(false);
+
+        setup({
+            user: { role: "MANAGER", canViewLogs: false, canViewFullPhoneNumbers: false, tenantAccess: [{ tenantId: TENANT }] },
+            perimeter: ["900"],
+        });
+        expect((await resolveAccessScope(TENANT)).canViewLogs).toBe(false);
     });
 
     it("MODERATOR : accès complet, mais seulement sur un tenant autorisé", async () => {
-        setup({ user: { role: "MODERATOR", canViewCompanyWide: false, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: TENANT }] } });
+        setup({ user: { role: "MODERATOR", canViewLogs: true, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: TENANT }] } });
         expect((await resolveAccessScope(TENANT)).unrestricted).toBe(true);
 
-        setup({ user: { role: "MODERATOR", canViewCompanyWide: false, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: "edifea" }] } });
+        setup({ user: { role: "MODERATOR", canViewLogs: true, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: "edifea" }] } });
         expect((await resolveAccessScope(TENANT)).empty).toBe(true);
     });
 
     it("AGENT : aucun accès pour l'instant", async () => {
-        setup({ user: { role: "AGENT", canViewCompanyWide: true, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: TENANT }] } });
+        setup({ user: { role: "AGENT", canViewLogs: true, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: TENANT }] } });
         const scope = await resolveAccessScope(TENANT);
         expect(scope.empty).toBe(true);
         expect(scope.unrestricted).toBe(false);
@@ -128,7 +141,7 @@ describe("portée selon le rôle", () => {
 
     it("un tenant non autorisé ferme l'accès, même avec un périmètre", async () => {
         setup({
-            user: { role: "MANAGER", canViewCompanyWide: false, canViewFullPhoneNumbers: false, tenantAccess: [{ tenantId: "edifea" }] },
+            user: { role: "MANAGER", canViewLogs: true, canViewFullPhoneNumbers: false, tenantAccess: [{ tenantId: "edifea" }] },
             perimeter: ["900", "910"],
         });
         expect((await resolveAccessScope(TENANT)).empty).toBe(true);
@@ -173,7 +186,7 @@ describe("périmètre d'un manager", () => {
         expect((await resolveAccessScope(TENANT)).maskPhoneNumbers).toBe(true);
 
         setup({
-            user: { role: "MANAGER", canViewCompanyWide: false, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: TENANT }] },
+            user: { role: "MANAGER", canViewLogs: true, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: TENANT }] },
             perimeter: ["900"],
         });
         expect((await resolveAccessScope(TENANT)).maskPhoneNumbers).toBe(false);

@@ -51,12 +51,13 @@ interface ApiGlobalResponse {
 }
 
 /**
- * Portée applicable au dashboard : filtrée par périmètre, sauf pour les
- * utilisateurs autorisés à voir les chiffres de l'entreprise (option C du PRD).
+ * Portée applicable au dashboard : TOUJOURS filtrée par périmètre.
+ * L'option « Voir les chiffres de l'entreprise » a disparu en août 2026 —
+ * chacun voit les chiffres de son périmètre, sans exception (ADMIN/MODERATOR
+ * gardent leur portée globale par leur rôle, pas par une permission à part).
  */
 async function resolveDashboardScope(serverId: ServerId): Promise<AccessScope> {
-    const scope = await resolveAccessScope(serverId);
-    return scope.canViewCompanyWide ? unrestrictedScope() : scope;
+    return resolveAccessScope(serverId);
 }
 
 export async function getGlobalMetrics(

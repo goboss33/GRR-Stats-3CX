@@ -19,7 +19,8 @@ interface ExtensionDetailPanelProps {
     serverId: ServerId;
     dateRange: { startDate: Date; endDate: Date };
     options?: ExtensionStatsOptions;
-    logsLinkParams: { start: string; end: string };
+    /** null = pas de droit sur les logs : les boutons vers les journaux disparaissent. */
+    logsLinkParams: { start: string; end: string } | null;
     onClose: () => void;
 }
 
@@ -82,8 +83,12 @@ export function ExtensionDetailPanel({
     }, [entry.input, entry.kind, serverId, dateRange.startDate, dateRange.endDate, options]);
 
     const searchValue = entry.kind === "ddi" ? `*${entry.input.replace(/\D/g, "")}` : entry.input;
-    const inboundLink = `/admin/logs?start=${logsLinkParams.start}&end=${logsLinkParams.end}&callee=${encodeURIComponent(searchValue)}`;
-    const outboundLink = `/admin/logs?start=${logsLinkParams.start}&end=${logsLinkParams.end}&caller=${encodeURIComponent(searchValue)}`;
+    const inboundLink = logsLinkParams
+        ? `/admin/logs?start=${logsLinkParams.start}&end=${logsLinkParams.end}&callee=${encodeURIComponent(searchValue)}`
+        : null;
+    const outboundLink = logsLinkParams
+        ? `/admin/logs?start=${logsLinkParams.start}&end=${logsLinkParams.end}&caller=${encodeURIComponent(searchValue)}`
+        : null;
 
     return (
         <Card className="border-blue-200 shadow-sm">
@@ -106,18 +111,22 @@ export function ExtensionDetailPanel({
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" asChild>
-                            <a href={inboundLink} target="_blank" rel="noopener noreferrer">
-                                <PhoneIncoming className="h-4 w-4 mr-1.5" />
-                                Logs entrants
-                            </a>
-                        </Button>
-                        <Button variant="outline" size="sm" asChild>
-                            <a href={outboundLink} target="_blank" rel="noopener noreferrer">
-                                <PhoneOutgoing className="h-4 w-4 mr-1.5" />
-                                Logs sortants
-                            </a>
-                        </Button>
+                        {inboundLink && (
+                            <Button variant="outline" size="sm" asChild>
+                                <a href={inboundLink} target="_blank" rel="noopener noreferrer">
+                                    <PhoneIncoming className="h-4 w-4 mr-1.5" />
+                                    Logs entrants
+                                </a>
+                            </Button>
+                        )}
+                        {outboundLink && (
+                            <Button variant="outline" size="sm" asChild>
+                                <a href={outboundLink} target="_blank" rel="noopener noreferrer">
+                                    <PhoneOutgoing className="h-4 w-4 mr-1.5" />
+                                    Logs sortants
+                                </a>
+                            </Button>
+                        )}
                         <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
                             <X className="h-4 w-4" />
                         </Button>

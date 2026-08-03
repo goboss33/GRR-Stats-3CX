@@ -71,7 +71,7 @@ export function UserAccessDialog({
     const [selectedQueues, setSelectedQueues] = useState<Set<string>>(new Set());
     const [overrides, setOverrides] = useState<ExtensionOverride[]>([]);
     const [permissions, setPermissions] = useState({
-        canViewCompanyWide: false,
+        canViewLogs: true,
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
     });
@@ -106,7 +106,7 @@ export function UserAccessDialog({
             setSelectedQueues(new Set(accessData.access.queueIds));
             setOverrides(accessData.access.extensionOverrides || []);
             setPermissions({
-                canViewCompanyWide: accessData.access.canViewCompanyWide,
+                canViewLogs: accessData.access.canViewLogs,
                 canViewFullPhoneNumbers: accessData.access.canViewFullPhoneNumbers,
                 canCreateApiKeys: accessData.access.canCreateApiKeys,
             });
@@ -397,9 +397,9 @@ export function UserAccessDialog({
                             <Label className="text-base font-medium">Permissions</Label>
                             {[
                                 {
-                                    key: "canViewCompanyWide" as const,
-                                    label: "Voir les chiffres de l'entreprise",
-                                    hint: "Dashboard non filtré, au-delà de son périmètre",
+                                    key: "canViewLogs" as const,
+                                    label: "Voir les logs d'appels",
+                                    hint: "Sinon l'écran des logs est fermé et les chiffres cliquables ne mènent plus au détail des appels",
                                 },
                                 {
                                     key: "canViewFullPhoneNumbers" as const,

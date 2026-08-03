@@ -1267,6 +1267,11 @@ export async function getAggregatedCallLogs(
     // ⚠️ La portée est résolue ICI, jamais reçue en paramètre : ce module est
     // "use server", donc ses arguments sont contrôlables par le client.
     const scope = await resolveAccessScope(serverId);
+    // Le droit aux logs se vérifie côté serveur : masquer les liens dans
+    // l'interface n'est pas un contrôle d'accès.
+    if (!scope.canViewLogs) {
+        throw new Error("L'accès aux logs d'appels ne vous est pas autorisé");
+    }
     const rules = await getClassificationRules();
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause, params,
         queueViewCTE, queueViewJoin, queueViewSelect, viewQueue } =
@@ -1320,6 +1325,7 @@ export async function getCallChain(serverId: ServerId, callHistoryId: string): P
         // CHOISI : au grain fusionné, une jambe dans le périmètre ouvre le
         // parcours entier — comme dans les listes qui y mènent.
         const scope = await resolveAccessScope(serverId);
+        if (!scope.canViewLogs) return [];
         if (!scope.unrestricted) {
             if (scope.empty) return [];
             const scopeParams: unknown[] = [callHistoryId];

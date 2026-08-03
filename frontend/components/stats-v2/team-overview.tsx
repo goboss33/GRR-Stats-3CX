@@ -16,6 +16,8 @@ interface TeamOverviewProps {
     kpis: QueueKPIs;
     /** KPI de la période N-1 pour les pastilles de tendance des vignettes. */
     previousKpis: QueueKPIs | "loading" | "unavailable";
+    /** Droit « Voir les logs » : sans lui, les vignettes perdent leurs liens. */
+    logsEnabled: boolean;
     queueName: string;
     queueNumber: string;
     startDate: string;
@@ -43,7 +45,7 @@ const COLORS = {
     overflow: "#f59e0b",
 };
 
-export function TeamOverview({ kpis, previousKpis, queueName, queueNumber, startDate, endDate, origin }: TeamOverviewProps) {
+export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queueNumber, startDate, endDate, origin }: TeamOverviewProps) {
     // Les totaux des vignettes viennent du helper PARTAGÉ avec les cartes de
     // l'aperçu des groupes (services/domain/team-totals) : les deux écrans ne
     // peuvent pas diverger. Le détail fin (regroupements, liens) reste ici.
@@ -107,6 +109,25 @@ export function TeamOverview({ kpis, previousKpis, queueName, queueNumber, start
     const gapAngle = 12;
     const availableAngle = 360 - 2 * gapAngle;
     const gapValue = innerTotal > 0 ? (gapAngle / 360) * innerTotal : 0;
+
+    // Vignette KPI : lien vers les journaux quand l'utilisateur y a droit,
+    // simple carte sinon — même contenu, sans affordance de clic mensongère.
+    const TileShell = ({ href, hoverClass, children }: {
+        href: string;
+        hoverClass: string;
+        children: React.ReactNode;
+    }) => (logsEnabled ? (
+        <Link
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:shadow-md transition-all cursor-pointer ${hoverClass}`}
+        >
+            {children}
+        </Link>
+    ) : (
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">{children}</div>
+    ));
 
     const innerData = [
         { name: "Directs (répondus)", value: kpis.teamDirectAnswered, color: COLORS.direct, hatched: false },
@@ -212,89 +233,81 @@ export function TeamOverview({ kpis, previousKpis, queueName, queueNumber, start
                         {/* KPI Cards Grid */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             {/* Total Reçus */}
-                            <Link
+                            <TileShell
                                 href={outcomeLink(outcomesForBucket("received"))}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer"
+                                hoverClass="hover:border-blue-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <PhoneIncoming className="h-4 w-4 text-blue-600" />
                                         <span className="text-xs font-medium text-slate-600">Total reçus</span>
                                     </div>
-                                    <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                                    {logsEnabled && <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-blue-600 transition-colors" />}
                                 </div>
                                 <div className="text-2xl font-bold text-slate-900">{totalReceived}</div>
                                 <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
                                     <span>File: {kpis.callsReceived} · Directs: {kpis.teamDirectReceived}</span>
                                     <TrendPill current={totalReceived} previous={prevOf((t) => t.totalReceived)} sense="neutral" />
                                 </div>
-                            </Link>
+                            </TileShell>
 
                             {/* Répondus */}
-                            <Link
+                            <TileShell
                                 href={outcomeLink(outcomesForBucket("answered"))}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer"
+                                hoverClass="hover:border-emerald-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <Phone className="h-4 w-4 text-emerald-600" />
                                         <span className="text-xs font-medium text-slate-600">Répondus</span>
                                     </div>
-                                    <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-emerald-600 transition-colors" />
+                                    {logsEnabled && <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-emerald-600 transition-colors" />}
                                 </div>
                                 <div className="text-2xl font-bold text-emerald-700">{totalAnswered}</div>
                                 <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
                                     <span>File: {kpis.callsAnswered} · Directs: {kpis.teamDirectAnswered}</span>
                                     <TrendPill current={totalAnswered} previous={prevOf((t) => t.totalAnswered)} sense="higher-better" />
                                 </div>
-                            </Link>
+                            </TileShell>
 
                             {/* Perdus */}
-                            <Link
+                            <TileShell
                                 href={outcomeLink(outcomesForBucket("lost"))}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-red-300 hover:shadow-md transition-all cursor-pointer"
+                                hoverClass="hover:border-red-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <PhoneMissed className="h-4 w-4 text-red-600" />
                                         <span className="text-xs font-medium text-slate-600">Perdus</span>
                                     </div>
-                                    <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-red-600 transition-colors" />
+                                    {logsEnabled && <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-red-600 transition-colors" />}
                                 </div>
                                 <div className="text-2xl font-bold text-red-700">{totalLost}</div>
                                 <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
                                     <span>File: {sumBucket(kpis.outcomeCounts, "lost")} · Directs: {kpis.directLost}</span>
                                     <TrendPill current={totalLost} previous={prevOf((t) => t.totalLost)} sense="lower-better" />
                                 </div>
-                            </Link>
+                            </TileShell>
 
                             {/* Redirigés — file + directs : le lien inclut les
                                 directs (team) pour lister la même population. */}
-                            <Link
+                            <TileShell
                                 href={outcomeLink(outcomesForBucket("overflow"))}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-amber-300 hover:shadow-md transition-all cursor-pointer"
+                                hoverClass="hover:border-amber-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <ArrowRightLeft className="h-4 w-4 text-amber-600" />
                                         <span className="text-xs font-medium text-slate-600">Redirigés</span>
                                     </div>
-                                    <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-amber-600 transition-colors" />
+                                    {logsEnabled && <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-amber-600 transition-colors" />}
                                 </div>
                                 <div className="text-2xl font-bold text-amber-700">{totalOverflow}</div>
                                 <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
                                     <span>Transférés: {totalHandedOff} · Débordés: {totalOverflowed}</span>
                                     <TrendPill current={totalOverflow} previous={prevOf((t) => t.totalRedirected)} sense="neutral" />
                                 </div>
-                            </Link>
+                            </TileShell>
 
                         </div>
 

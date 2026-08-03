@@ -54,7 +54,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             tenants,
             queueIds,
             extensionOverrides,
-            canViewCompanyWide: Boolean(body.canViewCompanyWide),
+            canViewLogs: Boolean(body.canViewLogs),
             canViewFullPhoneNumbers: Boolean(body.canViewFullPhoneNumbers),
             canCreateApiKeys: Boolean(body.canCreateApiKeys),
         };

@@ -40,7 +40,8 @@ interface ExtensionResultsTableProps {
     selectedInput?: string | null;
     onSelectEntry?: (entry: ExtensionStats) => void;
     /** Date range used to build pre-filtered links to the logs page */
-    logsLinkParams: { start: string; end: string };
+    /** null = pas de droit sur les logs : les boutons vers les journaux disparaissent. */
+    logsLinkParams: { start: string; end: string } | null;
 }
 
 type SortField = "extension" | "name" | "totalCalls" | "inbound" | "outbound" | "answered" | "missed" | "answerRate" | "duration";
@@ -189,8 +190,8 @@ export function ExtensionResultsTable({ extensions, selectedInput, onSelectEntry
 
     const buildLogsLink = (ext: ExtensionStats, direction: "inbound" | "outbound") => {
         const params = new URLSearchParams();
-        params.set("start", logsLinkParams.start);
-        params.set("end", logsLinkParams.end);
+        params.set("start", logsLinkParams?.start ?? "");
+        params.set("end", logsLinkParams?.end ?? "");
         const searchValue = ext.kind === "ddi"
             ? `*${ext.input.replace(/\D/g, "")}`
             : ext.input;
@@ -372,7 +373,7 @@ export function ExtensionResultsTable({ extensions, selectedInput, onSelectEntry
                                 <TableCell className="text-right">{ext.duration.totalFormatted}</TableCell>
                                 <TableCell className="text-right text-slate-600">{ext.duration.averageFormatted}</TableCell>
                                 <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                                    <div className="flex items-center justify-center gap-1">
+                                    {logsLinkParams && <div className="flex items-center justify-center gap-1">
                                         <Tip content="Voir les appels entrants dans les logs">
                                             <Button
                                                 variant="ghost"
@@ -397,7 +398,7 @@ export function ExtensionResultsTable({ extensions, selectedInput, onSelectEntry
                                                 </a>
                                             </Button>
                                         </Tip>
-                                    </div>
+                                    </div>}
                                 </TableCell>
                             </TableRow>
                         );

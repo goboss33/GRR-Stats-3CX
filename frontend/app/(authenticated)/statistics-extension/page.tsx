@@ -28,6 +28,7 @@ import { ExtensionDetailPanel } from "@/components/stats-extension/extension-det
 import { AdvancedFilters, DEFAULT_ADVANCED_FILTERS, type AdvancedFiltersValue } from "@/components/stats-extension/advanced-filters";
 import { PresetMenu } from "@/components/stats-extension/preset-menu";
 import { getExtensionStatisticsChunk, getExtensionDirectory } from "@/services/extension-statistics.service";
+import { getViewerPermissions } from "@/services/queues.service";
 import { generateExtensionStatsPDF, generateExtensionStatsCSV } from "@/services/extension-pdf-export";
 import { computeTotals, mergeTrends } from "@/services/domain/extension-search";
 import { formatDuration } from "@/services/domain/call-aggregation";
@@ -88,6 +89,9 @@ function StatisticsExtensionPageInner() {
     const [advancedFilters, setAdvancedFilters] = useState<AdvancedFiltersValue>(DEFAULT_ADVANCED_FILTERS);
 
     const [directory, setDirectory] = useState<ExtensionDirectory>({ extensions: [], ddis: [] });
+    // Droit « Voir les logs » : sans lui, les boutons vers les journaux
+    // disparaissent (décision serveur, le service des logs revérifie).
+    const [canViewLogs, setCanViewLogs] = useState(true);
     const [results, setResults] = useState<ExtensionStats[] | null>(null);
     const [partialWarning, setPartialWarning] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -100,6 +104,9 @@ function StatisticsExtensionPageInner() {
     useEffect(() => {
         const serverId = getSelectedServer();
         getExtensionDirectory(serverId).then(setDirectory);
+        getViewerPermissions(serverId)
+            .then((p) => setCanViewLogs(p.canViewLogs))
+            .catch(() => undefined);
     }, []);
 
     // Persist search state in the URL (shareable / survives refresh)
@@ -197,10 +204,13 @@ function StatisticsExtensionPageInner() {
         };
     }, [results, totals, dateRange.startDate, dateRange.endDate]);
 
-    const logsLinkParams = {
-        start: format(dateRange.startDate, "yyyy-MM-dd"),
-        end: format(dateRange.endDate, "yyyy-MM-dd"),
-    };
+    // null = pas de droit sur les logs : les tableaux masquent leurs boutons.
+    const logsLinkParams = canViewLogs
+        ? {
+            start: format(dateRange.startDate, "yyyy-MM-dd"),
+            end: format(dateRange.endDate, "yyyy-MM-dd"),
+        }
+        : null;
 
     return (
         <div className="p-6 space-y-6">

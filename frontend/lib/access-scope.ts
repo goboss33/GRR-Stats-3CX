@@ -21,8 +21,12 @@ export interface AccessScope {
     extensionNumbers: string[] | null;
     /** Masquer les numéros des appelants (nLPD/RGPD) */
     maskPhoneNumbers: boolean;
-    /** Autorisé à voir les chiffres de l'entreprise au-delà de son périmètre */
-    canViewCompanyWide: boolean;
+    /**
+     * Autorisé à consulter les logs d'appels (écran + liens des KPI).
+     * Distinct de `empty` : c'est un droit d'accès à la FONCTION, pas une
+     * étendue de données — un manager sans ce droit garde ses statistiques.
+     */
+    canViewLogs: boolean;
     /** true quand l'utilisateur n'a aucun périmètre : il ne doit rien voir. */
     empty: boolean;
 }
@@ -47,19 +51,23 @@ export function unrestrictedScope(): AccessScope {
         queueNumbers: null,
         extensionNumbers: null,
         maskPhoneNumbers: false,
-        canViewCompanyWide: true,
+        canViewLogs: true,
         empty: false,
     };
 }
 
-/** Portée vide — l'utilisateur ne voit rien (aucun périmètre attribué). */
+/**
+ * Portée vide — l'utilisateur ne voit rien (aucun périmètre attribué).
+ * `canViewLogs` reste vrai : une portée vide bloque déjà toutes les DONNÉES ;
+ * fermer aussi la fonction transformerait « liste vide » en erreur d'accès.
+ */
 export function emptyScope(maskPhoneNumbers = true): AccessScope {
     return {
         unrestricted: false,
         queueNumbers: [],
         extensionNumbers: [],
         maskPhoneNumbers,
-        canViewCompanyWide: false,
+        canViewLogs: true,
         empty: true,
     };
 }
@@ -93,7 +101,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
         where: { id: userId },
         select: {
             role: true,
-            canViewCompanyWide: true,
+            canViewLogs: true,
             canViewFullPhoneNumbers: true,
             tenantAccess: { select: { tenantId: true } },
         },
@@ -108,14 +116,16 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
         return emptyScope(maskPhoneNumbers);
     }
 
-    // ADMIN / MODERATOR : accès global aux données du tenant.
+    // ADMIN / MODERATOR : accès global aux données du tenant. Le droit aux
+    // logs reste individuel — comme le masquage des numéros, il s'applique
+    // quel que soit le rôle.
     if (user.role === "ADMIN" || user.role === "MODERATOR") {
         return {
             unrestricted: true,
             queueNumbers: null,
             extensionNumbers: null,
             maskPhoneNumbers,
-            canViewCompanyWide: true,
+            canViewLogs: user.canViewLogs,
             empty: false,
         };
     }
@@ -139,7 +149,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
             queueNumbers: [],
             extensionNumbers: onlyOverrides,
             maskPhoneNumbers,
-            canViewCompanyWide: user.canViewCompanyWide,
+            canViewLogs: user.canViewLogs,
             empty: false,
         };
     }
@@ -151,7 +161,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
         queueNumbers,
         extensionNumbers,
         maskPhoneNumbers,
-        canViewCompanyWide: user.canViewCompanyWide,
+        canViewLogs: user.canViewLogs,
         empty: false,
     };
 }

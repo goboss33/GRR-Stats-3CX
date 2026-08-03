@@ -79,23 +79,37 @@ export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> 
  * Files accessibles à l'utilisateur courant, et ce qu'il a le droit d'en faire.
  *
  * La liste des files est déjà bornée à son périmètre par `getQueueMembers`.
- * `canViewCompanyWide` décide si la vue entreprise lui est proposée : sans ce
- * droit, la vue file devient obligatoire et il ne voit jamais l'ensemble des
- * appels. La décision est prise ICI, côté serveur — le client ne fait
- * qu'afficher ce qu'on lui autorise.
+ * `canViewCompanyWide` décide si la vue entreprise des logs lui est proposée :
+ * réservée aux portées globales (ADMIN/MODERATOR) — l'ancienne permission du
+ * même nom a disparu. `canViewLogs` dit si les logs lui sont accessibles tout
+ * court : sans ce droit, les écrans éteignent chaque lien vers les logs. Les
+ * décisions sont prises ICI, côté serveur — le client ne fait qu'afficher ce
+ * qu'on lui autorise (le service des logs revérifie de toute façon).
  */
 export async function getScopedQueueOptions(serverId: ServerId): Promise<{
     queues: QueueInfo[];
     canViewCompanyWide: boolean;
+    canViewLogs: boolean;
     noPerimeter: boolean;
 }> {
     const scope = await resolveAccessScope(serverId);
     const queues = await getQueueMembers(serverId);
     return {
         queues,
-        canViewCompanyWide: scope.unrestricted || scope.canViewCompanyWide,
+        canViewCompanyWide: scope.unrestricted,
+        canViewLogs: scope.canViewLogs,
         // Distingue « aucun droit » de « aucune file dans ce tenant » : les deux
         // donnent une liste vide, mais appellent des messages opposés.
         noPerimeter: scope.empty,
     };
+}
+
+/**
+ * Permissions du consultant utiles aux écrans qui n'ont pas besoin de la liste
+ * des files (Extension/DDI) : évite de payer getQueueMembers juste pour savoir
+ * si les liens vers les logs doivent exister.
+ */
+export async function getViewerPermissions(serverId: ServerId): Promise<{ canViewLogs: boolean }> {
+    const scope = await resolveAccessScope(serverId);
+    return { canViewLogs: scope.canViewLogs };
 }

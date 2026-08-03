@@ -80,11 +80,18 @@ export default function StatisticsV2Page() {
     const previousOffsetMs = dateRange.startDate.getTime()
         - weekAlignedPreviousPeriod(dateRange.startDate, dateRange.endDate).startDate.getTime();
 
+    // Droit « Voir les logs » : sans lui, les vignettes du bilan perdent leurs
+    // liens vers les journaux (décision serveur, l'interface ne fait qu'obéir).
+    const [canViewLogs, setCanViewLogs] = useState(true);
+
     // Seul le signal « aucun périmètre » est encore utile ici : la liste des
     // files vit désormais sur le tableau de bord (aperçu) et dans le header.
     useEffect(() => {
         getScopedQueueOptions(getSelectedServer())
-            .then((options) => setNoPerimeter(options.noPerimeter))
+            .then((options) => {
+                setNoPerimeter(options.noPerimeter);
+                setCanViewLogs(options.canViewLogs);
+            })
             .finally(() => setIsLoadingQueues(false));
     }, []);
 
@@ -234,6 +241,7 @@ export default function StatisticsV2Page() {
                         previousKpis={prevStatsCache[origin] === undefined ? "loading"
                             : prevStatsCache[origin] === "failed" ? "unavailable"
                                 : (prevStatsCache[origin] as PreviousStats).kpis}
+                        logsEnabled={canViewLogs}
                         queueName={statistics.queueName}
                         queueNumber={statistics.queueNumber}
                         startDate={format(dateRange.startDate, "yyyy-MM-dd")}

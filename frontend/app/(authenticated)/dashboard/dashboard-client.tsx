@@ -73,6 +73,9 @@ export default function DashboardClient() {
     const searchParams = useSearchParams();
     // Les équipes du périmètre, pour la grille de cartes sous les graphiques.
     const [teamQueues, setTeamQueues] = useState<QueueInfo[]>([]);
+    // Droit « Voir les logs » : sans lui, les vignettes KPI perdent leur lien
+    // vers les journaux (décision serveur, relayée par getScopedQueueOptions).
+    const [canViewLogs, setCanViewLogs] = useState(true);
     const [dataCache, setDataCache] = useState<Partial<Record<CallOrigin, DashboardData>>>({});
     // Le jeton de contexte écarte les réponses devenues obsolètes (changement
     // de période — ou « Rafraîchir » — pendant un préchargement en vol).
@@ -104,8 +107,10 @@ export default function DashboardClient() {
     const lostCalls = (metrics?.missedCalls || 0) + (metrics?.busyCalls || 0);
     // Chaque vignette de statut ouvre les journaux sur la meme population, avec
     // la periode courante — la liste des statuts vient de la table de
-    // regroupement, donc elle suivra un changement de vocabulaire.
+    // regroupement, donc elle suivra un changement de vocabulaire. Sans le
+    // droit « Voir les logs », pas de lien : la vignette redevient un chiffre.
     const lienLogs = (statuts?: string[]) => {
+        if (!canViewLogs) return undefined;
         const p = new URLSearchParams();
         p.set("start", format(dateRange.startDate, "yyyy-MM-dd"));
         p.set("end", format(dateRange.endDate, "yyyy-MM-dd"));
@@ -174,7 +179,10 @@ export default function DashboardClient() {
 
     useEffect(() => {
         getScopedQueueOptions(getSelectedServer())
-            .then((options) => setTeamQueues(options.queues))
+            .then((options) => {
+                setTeamQueues(options.queues);
+                setCanViewLogs(options.canViewLogs);
+            })
             .catch(() => undefined);
     }, []);
 
