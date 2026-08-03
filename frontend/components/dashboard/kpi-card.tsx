@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ExternalLink, type LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tip } from "@/components/ui/tooltip";
 
 /**
  * Vignette de chiffre-clé du tableau de bord.
@@ -61,14 +62,15 @@ function Trend({ current, previous, lowerIsBetter = false }: KpiTrend) {
     const percent = Math.abs((diff / previous) * 100).toFixed(1);
 
     return (
-        <span
-            className={`shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
-                good ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-            }`}
-            title={`Période précédente : ${previous.toLocaleString("fr-CH")}`}
-        >
-            {rising ? "↑" : "↓"} {percent} %
-        </span>
+        <Tip content={`Période précédente : ${previous.toLocaleString("fr-CH")}`}>
+            <span
+                className={`shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+                    good ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+                }`}
+            >
+                {rising ? "↑" : "↓"} {percent} %
+            </span>
+        </Tip>
     );
 }
 

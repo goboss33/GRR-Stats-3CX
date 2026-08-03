@@ -6,6 +6,7 @@ import { Filter, Plus, X, Settings2, Phone, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Tip } from "@/components/ui/tooltip";
 import {
     Popover,
     PopoverContent,
@@ -525,21 +526,22 @@ export function ColumnFilterJourney({
                         </SelectContent>
                     </Select>
 
-                    <button
-                        type="button"
-                        onClick={() => toggleAdvanced(groupIndex, conditionIndex)}
-                        className={cn(
-                            "h-7 w-7 flex items-center justify-center rounded transition-colors",
-                            isExpanded
-                                ? "text-blue-600 bg-blue-50"
-                                : "text-slate-400 hover:text-slate-600 hover:bg-slate-50",
-                            (condition.negate || condition.firstSegment || condition.lastSegment || condition.queueAgentNumber || condition.overflowQueueNumber) &&
-                            !isExpanded && "text-blue-500"
-                        )}
-                        title="Options avancées"
-                    >
-                        <Settings2 className="h-3.5 w-3.5" />
-                    </button>
+                    <Tip content="Options avancées">
+                        <button
+                            type="button"
+                            onClick={() => toggleAdvanced(groupIndex, conditionIndex)}
+                            className={cn(
+                                "h-7 w-7 flex items-center justify-center rounded transition-colors",
+                                isExpanded
+                                    ? "text-blue-600 bg-blue-50"
+                                    : "text-slate-400 hover:text-slate-600 hover:bg-slate-50",
+                                (condition.negate || condition.firstSegment || condition.lastSegment || condition.queueAgentNumber || condition.overflowQueueNumber) &&
+                                !isExpanded && "text-blue-500"
+                            )}
+                        >
+                            <Settings2 className="h-3.5 w-3.5" />
+                        </button>
+                    </Tip>
 
                     <button
                         type="button"
@@ -721,14 +723,15 @@ export function ColumnFilterJourney({
                                     <React.Fragment key={`group-${groupIndex}`}>
                                         <div className="rounded-lg border-2 border-slate-300 bg-slate-50/50 p-2">
                                             <div className="flex justify-end mb-1">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleRemoveGroup(groupIndex)}
-                                                    className="text-slate-400 hover:text-red-500 transition-colors"
-                                                    title="Supprimer ce groupe"
-                                                >
-                                                    <X className="h-3.5 w-3.5" />
-                                                </button>
+                                                <Tip content="Supprimer ce groupe">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveGroup(groupIndex)}
+                                                        className="text-slate-400 hover:text-red-500 transition-colors"
+                                                    >
+                                                        <X className="h-3.5 w-3.5" />
+                                                    </button>
+                                                </Tip>
                                             </div>
 
                                             <div className="space-y-2">

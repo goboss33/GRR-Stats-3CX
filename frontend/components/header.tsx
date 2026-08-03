@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tip } from "@/components/ui/tooltip";
 import { OriginToggle } from "@/components/stats-v2/origin-toggle";
 import { HeaderQueueSearch } from "@/components/header-queue-search";
 import { useHeaderScope } from "@/components/header-scope";
@@ -47,15 +48,23 @@ function periodApplies(pathname: string): boolean {
     return originApplies(pathname) || pathname.startsWith("/statistics-extension");
 }
 
-/** Grise un contrôle de contexte inapplicable, sans le cacher. */
+/**
+ * Grise un contrôle de contexte inapplicable, sans le cacher.
+ *
+ * Le pointer-events-none vit sur un conteneur INTÉRIEUR : le wrapper survolé
+ * reste sensible à la souris, condition pour que l'infobulle s'ouvre (l'ancien
+ * title sur l'élément insensible ne pouvait jamais s'afficher).
+ */
 function ContextControl({ applies, title, children }: {
     applies: boolean; title: string; children: React.ReactNode;
 }) {
     if (applies) return <>{children}</>;
     return (
-        <div className="pointer-events-none opacity-40" title={title} aria-disabled="true">
-            {children}
-        </div>
+        <Tip content={title}>
+            <div className="opacity-40" aria-disabled="true">
+                <div className="pointer-events-none">{children}</div>
+            </div>
+        </Tip>
     );
 }
 
@@ -96,16 +105,21 @@ function HeaderOriginToggle() {
 function HeaderRefreshButton() {
     const { refresh, refreshing } = useHeaderScope();
     return (
-        <Button
-            variant="outline"
-            size="icon"
-            onClick={() => refresh?.()}
-            disabled={!refresh || refreshing}
-            title={refresh ? "Actualiser les données" : "Sans effet sur cet écran"}
-            className="bg-white shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-40"
-        >
-            <RefreshCw className={`h-4 w-4 text-slate-600 ${refreshing ? "animate-spin" : ""}`} />
-        </Button>
+        // Le span intermédiaire garde l'infobulle vivante quand le bouton est
+        // désactivé (un élément disabled n'émet pas d'événements de survol).
+        <Tip content={refresh ? "Actualiser les données" : "Sans effet sur cet écran"}>
+            <span className="inline-flex">
+                <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => refresh?.()}
+                    disabled={!refresh || refreshing}
+                    className="bg-white shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-40"
+                >
+                    <RefreshCw className={`h-4 w-4 text-slate-600 ${refreshing ? "animate-spin" : ""}`} />
+                </Button>
+            </span>
+        </Tip>
     );
 }
 

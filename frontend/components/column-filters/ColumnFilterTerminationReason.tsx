@@ -78,7 +78,7 @@ interface ColumnFilterTerminationReasonProps {
 // Tooltip component showing all reasons
 export function TerminationReasonTooltip() {
     return (
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider delayDuration={0}>
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Info className="h-3.5 w-3.5 text-slate-400 hover:text-slate-600 cursor-help" />

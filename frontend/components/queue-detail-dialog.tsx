@@ -10,6 +10,7 @@ import { ShieldCheck, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -233,7 +234,9 @@ export function QueueDetailDialog({
                                     return (
                                         <div key={a.extension} className="flex items-center justify-between gap-3 p-3 hover:bg-slate-50">
                                             <div className="flex min-w-0 items-center gap-3">
-                                                <span className={cn("h-2 w-2 flex-shrink-0 rounded-full", st.dot)} title={st.label} />
+                                                <Tip content={st.label}>
+                                                    <span className={cn("h-2 w-2 flex-shrink-0 rounded-full", st.dot)} />
+                                                </Tip>
                                                 <div className="min-w-0">
                                                     <p className="truncate text-sm font-medium text-slate-900">{a.name}</p>
                                                     <p className="font-mono text-xs text-slate-500">
@@ -276,14 +279,15 @@ export function QueueDetailDialog({
                                         className="gap-1 border-slate-200 bg-slate-50 py-1 pl-2 pr-1 font-normal"
                                     >
                                         {userLabel(u)}
-                                        <button
-                                            type="button"
-                                            onClick={() => changeAccess(u, false)}
-                                            className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-                                            title="Retirer l'accès"
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </button>
+                                        <Tip content="Retirer l'accès">
+                                            <button
+                                                type="button"
+                                                onClick={() => changeAccess(u, false)}
+                                                className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </button>
+                                        </Tip>
                                     </Badge>
                                 ))}
 

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { getSelectedServer } from "@/lib/selected-server";
 import { KNOWN_REGIONS } from "@/services/domain/queue-naming";
@@ -374,17 +375,18 @@ export function QueuesTab() {
                         <Archive className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
                         Archiver
                     </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        className="bg-white"
-                        disabled={bulkBusy}
-                        title="Les appels de ces files et de leurs agents exclusifs sortent de TOUTES les statistiques (clients hébergés : Barnes, BCR…). Le monitoring de licence les garde."
-                        onClick={() => patchSelection({ excludedFromStats: true })}
-                    >
-                        <EyeOff className="mr-1.5 h-3.5 w-3.5 text-red-500" />
-                        Exclure des stats
-                    </Button>
+                    <Tip content="Les appels de ces files et de leurs agents exclusifs sortent de TOUTES les statistiques (clients hébergés : Barnes, BCR…). Le monitoring de licence les garde.">
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="bg-white"
+                            disabled={bulkBusy}
+                            onClick={() => patchSelection({ excludedFromStats: true })}
+                        >
+                            <EyeOff className="mr-1.5 h-3.5 w-3.5 text-red-500" />
+                            Exclure des stats
+                        </Button>
+                    </Tip>
                     <Button
                         size="sm"
                         variant="outline"
@@ -427,8 +429,10 @@ export function QueuesTab() {
                                                 }
                                             />
                                         </th>
-                                        <th className="w-12 px-2 py-3 text-center font-medium text-slate-600" title="État de la file">
-                                            État
+                                        <th className="w-12 px-2 py-3 text-center font-medium text-slate-600">
+                                            <Tip content="État de la file">
+                                                <span>État</span>
+                                            </Tip>
                                         </th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">N°</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Nom actuel</th>
@@ -457,13 +461,14 @@ export function QueuesTab() {
                                                 <Checkbox checked={selected.has(q.id)} onCheckedChange={() => toggle(q.id)} />
                                             </td>
                                             <td className="px-2 py-2 text-center">
-                                                <span
-                                                    className={cn(
-                                                        "inline-block h-2.5 w-2.5 rounded-full",
-                                                        healthStyles[health.get(q.id)?.level ?? "ok"].dot,
-                                                    )}
-                                                    title={`${healthStyles[health.get(q.id)?.level ?? "ok"].label} — ${(health.get(q.id)?.reasons ?? []).join(" · ")}`}
-                                                />
+                                                <Tip content={`${healthStyles[health.get(q.id)?.level ?? "ok"].label} — ${(health.get(q.id)?.reasons ?? []).join(" · ")}`}>
+                                                    <span
+                                                        className={cn(
+                                                            "inline-block h-2.5 w-2.5 rounded-full",
+                                                            healthStyles[health.get(q.id)?.level ?? "ok"].dot,
+                                                        )}
+                                                    />
+                                                </Tip>
                                             </td>
                                             <td className="px-4 py-2 font-mono text-xs text-slate-600">{q.queueNumber}</td>
                                             <td className="px-4 py-2">
@@ -474,18 +479,21 @@ export function QueuesTab() {
                                                     </Badge>
                                                 )}
                                                 {q.excludedFromStats && (
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="ml-2 border-red-200 bg-red-50 text-[10px] text-red-700"
-                                                        title="Ses appels et ceux de ses agents exclusifs ne comptent dans aucune statistique"
-                                                    >
-                                                        Exclue des stats
-                                                    </Badge>
+                                                    <Tip content="Ses appels et ceux de ses agents exclusifs ne comptent dans aucune statistique">
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="ml-2 border-red-200 bg-red-50 text-[10px] text-red-700"
+                                                        >
+                                                            Exclue des stats
+                                                        </Badge>
+                                                    </Tip>
                                                 )}
                                                 {q.previousNames.length > 0 && (
-                                                    <span className="ml-2 text-xs text-blue-600" title={`Ancien(s) nom(s) : ${q.previousNames.join(", ")}`}>
-                                                        (renommée)
-                                                    </span>
+                                                    <Tip content={`Ancien(s) nom(s) : ${q.previousNames.join(", ")}`}>
+                                                        <span className="ml-2 text-xs text-blue-600">
+                                                            (renommée)
+                                                        </span>
+                                                    </Tip>
                                                 )}
                                                 {/* Explique pourquoi la file remonte lors d'une recherche par agent */}
                                                 {matchedAgents(q).length > 0 && (
@@ -528,16 +536,15 @@ export function QueuesTab() {
                                                 />
                                             </td>
                                             <td className="px-4 py-2">
-                                                <span
-                                                    className="inline-flex items-center gap-1 text-xs text-slate-600"
-                                                    title={`${health.get(q.id)?.activeAgents ?? 0} actif(s) · ${health.get(q.id)?.staleAgents ?? 0} inactif(s) > 30j`}
-                                                >
-                                                    <Users className="h-3 w-3 text-slate-400" />
-                                                    {q.agentCount}
-                                                    {(health.get(q.id)?.activeAgents ?? 0) > 0 && (
-                                                        <span className="text-emerald-600">({health.get(q.id)?.activeAgents})</span>
-                                                    )}
-                                                </span>
+                                                <Tip content={`${health.get(q.id)?.activeAgents ?? 0} actif(s) · ${health.get(q.id)?.staleAgents ?? 0} inactif(s) > 30j`}>
+                                                    <span className="inline-flex items-center gap-1 text-xs text-slate-600">
+                                                        <Users className="h-3 w-3 text-slate-400" />
+                                                        {q.agentCount}
+                                                        {(health.get(q.id)?.activeAgents ?? 0) > 0 && (
+                                                            <span className="text-emerald-600">({health.get(q.id)?.activeAgents})</span>
+                                                        )}
+                                                    </span>
+                                                </Tip>
                                             </td>
                                             <td className="px-4 py-2 text-xs text-slate-500">
                                                 {q.lastCallAt

@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Tip } from "@/components/ui/tooltip";
 
 export interface AdvancedFiltersValue {
     /** ISO days of week kept (1 = Monday … 7 = Sunday). All selected by default. */
@@ -87,7 +88,9 @@ export function AdvancedFilters({ value, onChange, disabled }: AdvancedFiltersPr
                     <SlidersHorizontal className="h-4 w-4" />
                     Filtres avancés
                     {isActive && (
-                        <span className="inline-flex h-2 w-2 rounded-full bg-blue-600" title="Filtres actifs" />
+                        <Tip content="Filtres actifs">
+                            <span className="inline-flex h-2 w-2 rounded-full bg-blue-600" />
+                        </Tip>
                     )}
                 </span>
                 {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}

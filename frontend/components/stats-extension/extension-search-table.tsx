@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Tip } from "@/components/ui/tooltip";
 import {
     Dialog,
     DialogContent,
@@ -49,15 +50,16 @@ const MAX_SUGGESTIONS = 8;
 function KindBadge({ kind, onToggle }: { kind: SearchEntryKind; onToggle?: () => void }) {
     if (kind === "ddi") {
         return (
-            <Badge
-                variant="outline"
-                className={`text-[10px] px-1.5 py-0 border-sky-300 text-sky-700 bg-sky-50 ${onToggle ? "cursor-pointer hover:bg-sky-100" : ""}`}
-                onClick={onToggle}
-                title={onToggle ? "Cliquer pour traiter comme une extension" : undefined}
-            >
-                <Globe className="h-3 w-3 mr-1" />
-                DDI
-            </Badge>
+            <Tip content={onToggle ? "Cliquer pour traiter comme une extension" : undefined}>
+                <Badge
+                    variant="outline"
+                    className={`text-[10px] px-1.5 py-0 border-sky-300 text-sky-700 bg-sky-50 ${onToggle ? "cursor-pointer hover:bg-sky-100" : ""}`}
+                    onClick={onToggle}
+                >
+                    <Globe className="h-3 w-3 mr-1" />
+                    DDI
+                </Badge>
+            </Tip>
         );
     }
     if (kind === "pattern") {
@@ -69,15 +71,16 @@ function KindBadge({ kind, onToggle }: { kind: SearchEntryKind; onToggle?: () =>
         );
     }
     return (
-        <Badge
-            variant="outline"
-            className={`text-[10px] px-1.5 py-0 border-emerald-300 text-emerald-700 bg-emerald-50 ${onToggle ? "cursor-pointer hover:bg-emerald-100" : ""}`}
-            onClick={onToggle}
-            title={onToggle ? "Cliquer pour traiter comme une DDI" : undefined}
-        >
-            <Phone className="h-3 w-3 mr-1" />
-            Ext.
-        </Badge>
+        <Tip content={onToggle ? "Cliquer pour traiter comme une DDI" : undefined}>
+            <Badge
+                variant="outline"
+                className={`text-[10px] px-1.5 py-0 border-emerald-300 text-emerald-700 bg-emerald-50 ${onToggle ? "cursor-pointer hover:bg-emerald-100" : ""}`}
+                onClick={onToggle}
+            >
+                <Phone className="h-3 w-3 mr-1" />
+                Ext.
+            </Badge>
+        </Tip>
     );
 }
 
@@ -223,25 +226,31 @@ export function ExtensionSearchTable({ entries, onEntriesChange, directory, disa
                         </div>
                     )}
                 </div>
-                <Button
-                    onClick={() => addRawInput(inputValue)}
-                    disabled={!inputValue.trim() || disabled}
-                    size="icon"
-                    className="h-10 w-10 flex-shrink-0"
-                    title="Ajouter"
-                >
-                    <Plus className="h-4 w-4" />
-                </Button>
-                <Button
-                    variant="outline"
-                    onClick={() => setBulkOpen(true)}
-                    disabled={disabled}
-                    className="h-10 flex-shrink-0"
-                    title="Importer une liste (copier-coller)"
-                >
-                    <ClipboardPaste className="h-4 w-4 mr-2" />
-                    Import en masse
-                </Button>
+                <Tip content="Ajouter">
+                    <span className="inline-flex flex-shrink-0">
+                        <Button
+                            onClick={() => addRawInput(inputValue)}
+                            disabled={!inputValue.trim() || disabled}
+                            size="icon"
+                            className="h-10 w-10"
+                        >
+                            <Plus className="h-4 w-4" />
+                        </Button>
+                    </span>
+                </Tip>
+                <Tip content="Importer une liste (copier-coller)">
+                    <span className="inline-flex flex-shrink-0">
+                        <Button
+                            variant="outline"
+                            onClick={() => setBulkOpen(true)}
+                            disabled={disabled}
+                            className="h-10"
+                        >
+                            <ClipboardPaste className="h-4 w-4 mr-2" />
+                            Import en masse
+                        </Button>
+                    </span>
+                </Tip>
             </div>
 
             {entries.length > 0 ? (

@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Tip } from "@/components/ui/tooltip";
 import type { CallChainSegment, SegmentCategory } from "@/types/logs.types";
 
 /**
@@ -370,28 +371,36 @@ export function CallChainTimeline({ segments }: { segments: CallChainSegment[] }
                     </span>
                     <div className="flex items-center gap-1">
                         {isTransfer && (
-                            <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300" title="Transfert - Appel transféré par un agent">
-                                <ArrowRightLeft className="h-3 w-3 mr-1" />
-                                Transfert
-                            </Badge>
+                            <Tip content="Transfert - Appel transféré par un agent">
+                                <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300">
+                                    <ArrowRightLeft className="h-3 w-3 mr-1" />
+                                    Transfert
+                                </Badge>
+                            </Tip>
                         )}
                         {isFallback && (
-                            <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-300" title="Fallback - Redirection automatique vers une destination déjà appelée">
-                                <RotateCcw className="h-3 w-3 mr-1" />
-                                Fallback
-                            </Badge>
+                            <Tip content="Fallback - Redirection automatique vers une destination déjà appelée">
+                                <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-300">
+                                    <RotateCcw className="h-3 w-3 mr-1" />
+                                    Fallback
+                                </Badge>
+                            </Tip>
                         )}
                         {retryCount > 0 && (
-                            <Badge variant="outline" className="bg-violet-100 text-violet-700 border-violet-300" title={`Tentative #${retryCount + 1} - Agent était occupé précédemment`}>
-                                <RefreshCw className="h-3 w-3 mr-1" />
-                                Retry #{retryCount + 1}
-                            </Badge>
+                            <Tip content={`Tentative #${retryCount + 1} - Agent était occupé précédemment`}>
+                                <Badge variant="outline" className="bg-violet-100 text-violet-700 border-violet-300">
+                                    <RefreshCw className="h-3 w-3 mr-1" />
+                                    Retry #{retryCount + 1}
+                                </Badge>
+                            </Tip>
                         )}
                         {isPickup && (
-                            <Badge variant="outline" className="bg-cyan-100 text-cyan-700 border-cyan-300" title="Interception - Appel capturé via BLF/pickup">
-                                <PhoneIncoming className="h-3 w-3 mr-1" />
-                                Interception
-                            </Badge>
+                            <Tip content="Interception - Appel capturé via BLF/pickup">
+                                <Badge variant="outline" className="bg-cyan-100 text-cyan-700 border-cyan-300">
+                                    <PhoneIncoming className="h-3 w-3 mr-1" />
+                                    Interception
+                                </Badge>
+                            </Tip>
                         )}
                         <Badge variant="outline" className={config.className}>
                             {config.label}
@@ -493,25 +502,26 @@ export function CallChainTimeline({ segments }: { segments: CallChainSegment[] }
                         }
 
                         return (
-                            <span
+                            <Tip
                                 key={seg.id}
-                                className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${badgeClass}`}
-                                title={
+                                content={
                                     answeredNext ? 'A répondu juste après' :
                                         isBusy ? 'Agent occupé - sera retenté' :
                                             retryCount > 0 ? `Tentative #${retryCount + 1}` :
                                                 undefined
                                 }
                             >
-                                {isBusy && <RefreshCw className="h-3 w-3 mr-1" />}
-                                {seg.destinationName || seg.destinationNumber}
-                                {isAnsweredHere && <span className="ml-1">✓</span>}
-                                {answeredNext && <span className="ml-1">↩</span>}
-                                {isBusy && <span className="ml-1 text-violet-500">(occupé)</span>}
-                                {!showAsSuccess && !isBusy && seg.terminationReasonDetails === "completed_elsewhere" && (
-                                    <span className="ml-1 text-slate-400">(ailleurs)</span>
-                                )}
-                            </span>
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${badgeClass}`}>
+                                    {isBusy && <RefreshCw className="h-3 w-3 mr-1" />}
+                                    {seg.destinationName || seg.destinationNumber}
+                                    {isAnsweredHere && <span className="ml-1">✓</span>}
+                                    {answeredNext && <span className="ml-1">↩</span>}
+                                    {isBusy && <span className="ml-1 text-violet-500">(occupé)</span>}
+                                    {!showAsSuccess && !isBusy && seg.terminationReasonDetails === "completed_elsewhere" && (
+                                        <span className="ml-1 text-slate-400">(ailleurs)</span>
+                                    )}
+                                </span>
+                            </Tip>
                         );
                     })}
                 </div>
@@ -538,13 +548,12 @@ export function CallChainTimeline({ segments }: { segments: CallChainSegment[] }
                 <Clock className="h-4 w-4" />
                 <span>{segments.length} segment{segments.length > 1 ? "s" : ""}</span>
                 {legCount > 1 && (
-                    <span
-                        className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700"
-                        title="Cet appel regroupe l'appel principal et ses jambes de transfert 3CX (réglage « Un client, un appel »). Chaque frontière de jambe est marquée dans la chronologie."
-                    >
-                        <GitMerge className="h-3 w-3" />
-                        Appel fusionné · {legCount} jambes
-                    </span>
+                    <Tip content="Cet appel regroupe l'appel principal et ses jambes de transfert 3CX (réglage « Un client, un appel »). Chaque frontière de jambe est marquée dans la chronologie.">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">
+                            <GitMerge className="h-3 w-3" />
+                            Appel fusionné · {legCount} jambes
+                        </span>
+                    </Tip>
                 )}
             </div>
 
@@ -563,14 +572,13 @@ export function CallChainTimeline({ segments }: { segments: CallChainSegment[] }
                     return (
                         <div key={idx}>
                             {legBoundary && (
-                                <div
-                                    className="relative z-10 mb-4 flex items-center gap-2 pl-1"
-                                    title="À partir d'ici, les segments proviennent d'une jambe de transfert 3CX distincte, fusionnée dans cet appel."
-                                >
+                                <div className="relative z-10 mb-4 flex items-center gap-2 pl-1">
                                     <GitMerge className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                                    <span className="rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">
-                                        Jambe de transfert
-                                    </span>
+                                    <Tip content="À partir d'ici, les segments proviennent d'une jambe de transfert 3CX distincte, fusionnée dans cet appel.">
+                                        <span className="rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">
+                                            Jambe de transfert
+                                        </span>
+                                    </Tip>
                                     <div className="flex-1 border-t border-dashed border-purple-200" />
                                 </div>
                             )}

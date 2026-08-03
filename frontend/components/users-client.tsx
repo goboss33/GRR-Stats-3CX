@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tip } from "@/components/ui/tooltip";
 import {
     Table,
     TableBody,
@@ -194,28 +195,34 @@ export function UsersClient({ users, currentUserId }: UsersClientProps) {
                                     </TableCell>
                                     <TableCell className="text-right">
                                         <div className="flex justify-end gap-1">
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() => handleEdit(user)}
-                                                title="Modifier"
-                                            >
-                                                <Pencil className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() => setDeleteTarget(user)}
-                                                disabled={isSelf}
-                                                title={
-                                                    isSelf
-                                                        ? "Vous ne pouvez pas supprimer votre propre compte"
-                                                        : "Supprimer"
-                                                }
-                                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
+                                            <Tip content="Modifier">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => handleEdit(user)}
+                                                >
+                                                    <Pencil className="h-4 w-4" />
+                                                </Button>
+                                            </Tip>
+                                            {/* Span intermédiaire : le bouton est désactivé pour son
+                                                propre compte, et c'est LÀ que l'explication compte. */}
+                                            <Tip content={
+                                                isSelf
+                                                    ? "Vous ne pouvez pas supprimer votre propre compte"
+                                                    : "Supprimer"
+                                            }>
+                                                <span className="inline-flex">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() => setDeleteTarget(user)}
+                                                        disabled={isSelf}
+                                                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </span>
+                                            </Tip>
                                         </div>
                                     </TableCell>
                                 </TableRow>

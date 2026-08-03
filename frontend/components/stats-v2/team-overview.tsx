@@ -4,6 +4,7 @@ import { formatDurationHuman as formatDuration } from "@/services/domain/call-ag
 
 import { QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tip } from "@/components/ui/tooltip";
 import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, ExternalLink, TrendingUp } from "lucide-react";
 import { outcomesForBucket, sumBucket, type CallOrigin } from "@/services/domain/call-classification";
 import { computeTeamTotals } from "@/services/domain/team-totals";
@@ -286,14 +287,14 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
                                     <TrendingUp className="h-4 w-4 text-slate-500" />
-                                    <span
-                                        className="text-sm font-medium text-slate-600"
-                                        title={handedOffCounts
-                                            ? "Prise en charge = répondus + transferts accomplis (décrochés ici puis servis ailleurs), rapportés aux reçus"
-                                            : "Répondus rapportés aux reçus"}
+                                    <Tip content={handedOffCounts
+                                        ? "Prise en charge = répondus + transferts accomplis (décrochés ici puis servis ailleurs), rapportés aux reçus"
+                                        : "Répondus rapportés aux reçus"}
                                     >
-                                        Prise en charge
-                                    </span>
+                                        <span className="text-sm font-medium text-slate-600">
+                                            Prise en charge
+                                        </span>
+                                    </Tip>
                                     <span className={`text-sm font-bold ${performanceRate >= 80 ? 'text-emerald-700' : performanceRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}>
                                         {performanceRate}%
                                     </span>
@@ -337,12 +338,11 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                         <div className="text-[10px] text-blue-600">Transférés</div>
                                     </div>
                                     <div className="text-center">
-                                        <div
-                                            className={`font-bold ${directRate >= 80 ? 'text-emerald-700' : directRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}
-                                            title="Prise en charge du bloc : (répondus + transférés) / reçus"
-                                        >
-                                            {directRate}%
-                                        </div>
+                                        <Tip content="Prise en charge du bloc : (répondus + transférés) / reçus">
+                                            <div className={`font-bold ${directRate >= 80 ? 'text-emerald-700' : directRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}>
+                                                {directRate}%
+                                            </div>
+                                        </Tip>
                                         <div className="text-[10px] text-blue-600">Taux</div>
                                     </div>
                                 </div>
@@ -371,12 +371,11 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                         <div className="text-[10px] text-violet-600">Transférés</div>
                                     </div>
                                     <div className="text-center">
-                                        <div
-                                            className={`font-bold ${queueRate >= 80 ? 'text-emerald-700' : queueRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}
-                                            title="Prise en charge du bloc : (répondus + transférés) / reçus"
-                                        >
-                                            {queueRate}%
-                                        </div>
+                                        <Tip content="Prise en charge du bloc : (répondus + transférés) / reçus">
+                                            <div className={`font-bold ${queueRate >= 80 ? 'text-emerald-700' : queueRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}>
+                                                {queueRate}%
+                                            </div>
+                                        </Tip>
                                         <div className="text-[10px] text-violet-600">Taux</div>
                                     </div>
                                 </div>

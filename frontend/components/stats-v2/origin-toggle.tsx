@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
+import { Tip } from "@/components/ui/tooltip";
 import type { CallOrigin } from "@/services/domain/call-classification";
 
 /**
@@ -43,25 +44,30 @@ export function OriginToggle({ value, onChange, loadedOrigins, disabled = false 
                 // La variante affichée est réputée chargée : c'est elle qu'on regarde.
                 const loaded = selected || !loadedOrigins || loadedOrigins.includes(opt.value);
                 return (
-                    <button
-                        key={opt.value}
-                        type="button"
-                        title={loaded ? opt.title : "Chargement en arrière-plan…"}
-                        aria-pressed={selected}
-                        aria-busy={!loaded}
-                        disabled={disabled || !loaded}
-                        onClick={() => onChange(opt.value)}
-                        className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                            selected
-                                ? "bg-blue-600 text-white shadow-sm"
-                                : loaded
-                                    ? "text-slate-600 hover:text-slate-900"
-                                    : "cursor-not-allowed text-slate-400"
-                        }`}
-                    >
-                        {opt.label}
-                        {!loaded && <Loader2 className="h-3 w-3 animate-spin" />}
-                    </button>
+                    // Span intermédiaire : une variante en préchargement est
+                    // désactivée, et un bouton disabled n'émet pas de survol —
+                    // sans lui, l'infobulle « Chargement… » ne s'ouvrirait pas.
+                    <Tip key={opt.value} content={loaded ? opt.title : "Chargement en arrière-plan…"}>
+                        <span className="inline-flex">
+                            <button
+                                type="button"
+                                aria-pressed={selected}
+                                aria-busy={!loaded}
+                                disabled={disabled || !loaded}
+                                onClick={() => onChange(opt.value)}
+                                className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                                    selected
+                                        ? "bg-blue-600 text-white shadow-sm"
+                                        : loaded
+                                            ? "text-slate-600 hover:text-slate-900"
+                                            : "cursor-not-allowed text-slate-400"
+                                }`}
+                            >
+                                {opt.label}
+                                {!loaded && <Loader2 className="h-3 w-3 animate-spin" />}
+                            </button>
+                        </span>
+                    </Tip>
                 );
             })}
         </div>

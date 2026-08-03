@@ -26,6 +26,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+    Tip,
     Tooltip,
     TooltipContent,
     TooltipProvider,
@@ -76,32 +77,35 @@ function DeltaBadge({ current, previous }: { current: number; previous: number |
 
     if (previous === 0) {
         return (
-            <span className="inline-flex items-center text-[10px] font-medium text-emerald-600" title="Période précédente : 0 appel">
-                <TrendingUp className="h-3 w-3 mr-0.5" />
-                new
-            </span>
+            <Tip content="Période précédente : 0 appel">
+                <span className="inline-flex items-center text-[10px] font-medium text-emerald-600">
+                    <TrendingUp className="h-3 w-3 mr-0.5" />
+                    new
+                </span>
+            </Tip>
         );
     }
 
     const delta = Math.round(((current - previous) / previous) * 100);
     if (delta === 0) {
         return (
-            <span className="inline-flex items-center text-[10px] font-medium text-slate-400" title={`Période précédente : ${previous}`}>
-                <Minus className="h-3 w-3 mr-0.5" />
-                0%
-            </span>
+            <Tip content={`Période précédente : ${previous}`}>
+                <span className="inline-flex items-center text-[10px] font-medium text-slate-400">
+                    <Minus className="h-3 w-3 mr-0.5" />
+                    0%
+                </span>
+            </Tip>
         );
     }
 
     const isUp = delta > 0;
     return (
-        <span
-            className={`inline-flex items-center text-[10px] font-medium ${isUp ? "text-emerald-600" : "text-red-500"}`}
-            title={`Période précédente : ${previous}`}
-        >
-            {isUp ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
-            {isUp ? "+" : ""}{delta}%
-        </span>
+        <Tip content={`Période précédente : ${previous}`}>
+            <span className={`inline-flex items-center text-[10px] font-medium ${isUp ? "text-emerald-600" : "text-red-500"}`}>
+                {isUp ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
+                {isUp ? "+" : ""}{delta}%
+            </span>
+        </Tip>
     );
 }
 
@@ -308,7 +312,7 @@ export function ExtensionResultsTable({ extensions, selectedInput, onSelectEntry
                                 </TableCell>
                                 <TableCell>
                                     {ext.associatedExtension ? (
-                                        <TooltipProvider>
+                                        <TooltipProvider delayDuration={0}>
                                             <Tooltip>
                                                 <TooltipTrigger asChild>
                                                     <span className="inline-flex items-center gap-1 text-sm">
@@ -344,7 +348,7 @@ export function ExtensionResultsTable({ extensions, selectedInput, onSelectEntry
                                     <span className="inline-flex items-center justify-end gap-1">
                                         {ext.inbound.missed}
                                         {ext.totalCalls === 0 && (
-                                            <TooltipProvider>
+                                            <TooltipProvider delayDuration={0}>
                                                 <Tooltip>
                                                     <TooltipTrigger asChild>
                                                         <Info className="h-3.5 w-3.5 text-slate-300" />
@@ -369,28 +373,30 @@ export function ExtensionResultsTable({ extensions, selectedInput, onSelectEntry
                                 <TableCell className="text-right text-slate-600">{ext.duration.averageFormatted}</TableCell>
                                 <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                                     <div className="flex items-center justify-center gap-1">
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7 text-slate-400 hover:text-blue-600"
-                                            title="Voir les appels entrants dans les logs"
-                                            asChild
-                                        >
-                                            <a href={buildLogsLink(ext, "inbound")} target="_blank" rel="noopener noreferrer">
-                                                <PhoneIncoming className="h-4 w-4" />
-                                            </a>
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7 text-slate-400 hover:text-blue-600"
-                                            title="Voir les appels sortants dans les logs"
-                                            asChild
-                                        >
-                                            <a href={buildLogsLink(ext, "outbound")} target="_blank" rel="noopener noreferrer">
-                                                <PhoneOutgoing className="h-4 w-4" />
-                                            </a>
-                                        </Button>
+                                        <Tip content="Voir les appels entrants dans les logs">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-7 w-7 text-slate-400 hover:text-blue-600"
+                                                asChild
+                                            >
+                                                <a href={buildLogsLink(ext, "inbound")} target="_blank" rel="noopener noreferrer">
+                                                    <PhoneIncoming className="h-4 w-4" />
+                                                </a>
+                                            </Button>
+                                        </Tip>
+                                        <Tip content="Voir les appels sortants dans les logs">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-7 w-7 text-slate-400 hover:text-blue-600"
+                                                asChild
+                                            >
+                                                <a href={buildLogsLink(ext, "outbound")} target="_blank" rel="noopener noreferrer">
+                                                    <PhoneOutgoing className="h-4 w-4" />
+                                                </a>
+                                            </Button>
+                                        </Tip>
                                     </div>
                                 </TableCell>
                             </TableRow>

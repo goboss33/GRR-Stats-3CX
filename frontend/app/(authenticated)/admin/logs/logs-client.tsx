@@ -10,6 +10,7 @@ import { useUrlPeriod, useUrlOrigin, applyPeriodToParams } from "@/lib/url-state
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Tip } from "@/components/ui/tooltip";
 import { LogsTable } from "@/components/logs-table";
 import { Pagination } from "@/components/pagination";
 import { CallChainModal } from "@/components/call-chain-modal";
@@ -803,15 +804,20 @@ export default function AdminLogsPage() {
                 <span className="text-sm font-medium text-slate-600">Vue</span>
 
                 <div className="flex items-center gap-1.5">
-                    <Button
-                        variant={queueView ? "outline" : "default"}
-                        size="sm"
-                        disabled={!canViewCompanyWide}
-                        onClick={() => changeQueueView(null)}
-                        title={canViewCompanyWide ? undefined : "Votre périmètre ne donne pas accès à la vue entreprise"}
-                    >
-                        Entreprise
-                    </Button>
+                    {/* Span intermédiaire : le bouton est désactivé précisément
+                        quand l'explication doit pouvoir s'afficher. */}
+                    <Tip content={canViewCompanyWide ? undefined : "Votre périmètre ne donne pas accès à la vue entreprise"}>
+                        <span className="inline-flex">
+                            <Button
+                                variant={queueView ? "outline" : "default"}
+                                size="sm"
+                                disabled={!canViewCompanyWide}
+                                onClick={() => changeQueueView(null)}
+                            >
+                                Entreprise
+                            </Button>
+                        </span>
+                    </Tip>
 
                     <QueueSelector
                         queues={queues}

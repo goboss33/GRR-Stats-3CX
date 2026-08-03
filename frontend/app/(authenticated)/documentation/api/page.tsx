@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tip } from "@/components/ui/tooltip";
 import {
     BookOpen,
     Key,
@@ -307,13 +308,14 @@ function CodeBlock({ code, language = "bash" }: { code: string; language?: strin
             <pre className="bg-slate-900 text-slate-100 rounded-lg p-4 text-xs overflow-x-auto font-mono leading-relaxed">
                 <code>{code}</code>
             </pre>
-            <button
-                onClick={handleCopy}
-                className="absolute top-2 right-2 p-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Copier"
-            >
-                {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-            </button>
+            <Tip content="Copier">
+                <button
+                    onClick={handleCopy}
+                    className="absolute top-2 right-2 p-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                    {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                </button>
+            </Tip>
         </div>
     );
 }

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tip } from "@/components/ui/tooltip";
 import { QueueInfo } from "@/types/queues.types";
 import { getQueueMembers } from "@/services/queues.service";
 import { QueueSearchCombobox } from "@/components/queue-search-combobox";
@@ -166,7 +167,9 @@ export default function QueuesPage() {
                                         return (
                                             <div key={member.agentExtension} className="p-3 hover:bg-slate-50 transition-colors flex items-center justify-between group">
                                                 <div className="flex items-center gap-3">
-                                                    <div className={`w-2 h-2 rounded-full ${status.color} flex-shrink-0`} title={status.label} />
+                                                    <Tip content={status.label}>
+                                                        <div className={`w-2 h-2 rounded-full ${status.color} flex-shrink-0`} />
+                                                    </Tip>
                                                     <div className="min-w-0">
                                                         <p className="text-sm font-medium text-slate-900 group-hover:text-blue-700 transition-colors truncate">
                                                             {member.agentName}
@@ -174,9 +177,11 @@ export default function QueuesPage() {
                                                         <p className="text-xs text-slate-500 font-mono flex items-center gap-2">
                                                             <span>Ext. {member.agentExtension}</span>
                                                             <span className="text-slate-300">•</span>
-                                                            <span title="Dernière activité">
-                                                                Vu {formatDistanceToNow(new Date(member.lastSeenAt), { addSuffix: true, locale: fr })}
-                                                            </span>
+                                                            <Tip content="Dernière activité">
+                                                                <span>
+                                                                    Vu {formatDistanceToNow(new Date(member.lastSeenAt), { addSuffix: true, locale: fr })}
+                                                                </span>
+                                                            </Tip>
                                                         </p>
                                                     </div>
                                                 </div>

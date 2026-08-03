@@ -7,6 +7,7 @@ import { Star } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { Tip } from "@/components/ui/tooltip";
 import { getSelectedServer } from "@/lib/selected-server";
 import { getScopedQueueOptions } from "@/services/queues.service";
 import { getQueueFavorites, toggleQueueFavorite } from "@/services/queue-favorites.service";
@@ -92,10 +93,10 @@ export function SidebarTeams() {
                 >
                     {q.queueName}
                 </Link>
+                <Tip content={isFavorite ? "Retirer des favoris" : "Épingler en favori"} side="right">
                 <button
                     type="button"
                     onClick={(e) => { e.preventDefault(); onToggleFavorite(q.queueNumber); }}
-                    title={isFavorite ? "Retirer des favoris" : "Épingler en favori"}
                     className={cn(
                         "shrink-0 rounded p-1 transition-opacity",
                         isFavorite ? "opacity-100" : "opacity-0 group-hover:opacity-100",
@@ -108,6 +109,7 @@ export function SidebarTeams() {
                         )}
                     />
                 </button>
+                </Tip>
             </div>
         );
     };

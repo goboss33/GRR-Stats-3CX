@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Tip } from "@/components/ui/tooltip";
 import { QueueAgentPicker } from "@/components/queue-agent-picker";
 import { RuleCard } from "@/components/settings/rule-card";
 import {
@@ -238,13 +239,11 @@ export function ClassificationRulesCard({ rules, onChange, saved }: Props) {
                         Vocabulaire
                     </span>
                     {GLOSSARY.map((g) => (
-                        <span
-                            key={g.label}
-                            title={g.title}
-                            className={`cursor-help rounded-full border px-2.5 py-1 text-xs font-semibold ${g.className}`}
-                        >
-                            {g.label}
-                        </span>
+                        <Tip key={g.label} content={g.title}>
+                            <span className={`cursor-help rounded-full border px-2.5 py-1 text-xs font-semibold ${g.className}`}>
+                                {g.label}
+                            </span>
+                        </Tip>
                     ))}
                 </div>
 

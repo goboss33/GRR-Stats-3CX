@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -228,31 +229,35 @@ export function UsersTab() {
                                                 )}
                                             </td>
                                             <td className="py-3 px-4 text-slate-500">{new Date(user.createdAt).toLocaleDateString("fr-FR")}</td>
-                                            <td className="py-3 px-4 text-slate-500"
-                                                title={user.lastLoginAt
+                                            <td className="py-3 px-4 text-slate-500">
+                                                <Tip content={user.lastLoginAt
                                                     ? `Dernière authentification : ${new Date(user.lastLoginAt).toLocaleString("fr-CH")}`
                                                     : undefined}>
-                                                {(user.lastSeenAt ?? user.lastLoginAt)
-                                                    ? new Date((user.lastSeenAt ?? user.lastLoginAt)!).toLocaleString("fr-CH", {
-                                                        day: "2-digit", month: "2-digit", year: "numeric",
-                                                        hour: "2-digit", minute: "2-digit",
-                                                    })
-                                                    : <span className="text-slate-300">Jamais</span>}
+                                                    <span>
+                                                        {(user.lastSeenAt ?? user.lastLoginAt)
+                                                            ? new Date((user.lastSeenAt ?? user.lastLoginAt)!).toLocaleString("fr-CH", {
+                                                                day: "2-digit", month: "2-digit", year: "numeric",
+                                                                hour: "2-digit", minute: "2-digit",
+                                                            })
+                                                            : <span className="text-slate-300">Jamais</span>}
+                                                    </span>
+                                                </Tip>
                                             </td>
                                             <td className="py-3 px-4">
                                                 <div className="flex items-center justify-end gap-2">
                                                     {isSelf && (
                                                         <span className="text-xs text-slate-400 italic">Vous</span>
                                                     )}
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-8 w-8"
-                                                        title="Gérer les accès (tenants, périmètre, permissions)"
-                                                        onClick={() => setAccessUser(user)}
-                                                    >
-                                                        <ShieldCheck className="h-4 w-4" />
-                                                    </Button>
+                                                    <Tip content="Gérer les accès (tenants, périmètre, permissions)">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8"
+                                                            onClick={() => setAccessUser(user)}
+                                                        >
+                                                            <ShieldCheck className="h-4 w-4" />
+                                                        </Button>
+                                                    </Tip>
                                                     {!isSelf && canEdit && (
                                                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(user)}>
                                                             <Pencil className="h-4 w-4" />

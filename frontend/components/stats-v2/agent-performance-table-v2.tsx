@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, ArrowUpDown, Info } from "lucide-react";
 import { useState, useMemo } from "react";
 import {
+    Tip,
     Tooltip,
     TooltipContent,
     TooltipProvider,
@@ -160,21 +161,15 @@ export function AgentPerformanceTableV2({
             <div className="mt-1.5 flex items-center gap-2">
                 <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden" style={{ maxWidth: "120px" }}>
                     <div className="h-full flex" style={{ width: `${barWidth}%` }}>
-                        <div
-                            className="h-full bg-violet-500 transition-all"
-                            style={{ width: `${queuePct}%` }}
-                            title={`File: ${agent.answered}`}
-                        />
-                        <div
-                            className="h-full bg-blue-500 transition-all"
-                            style={{ width: `${directPct}%` }}
-                            title={`Direct: ${agent.directAnswered}`}
-                        />
-                        <div
-                            className="h-full bg-violet-300 transition-all"
-                            style={{ width: `${transferredPct}%` }}
-                            title={`Transférés: ${transferred}`}
-                        />
+                        <Tip content={`File : ${agent.answered}`}>
+                            <div className="h-full bg-violet-500 transition-all" style={{ width: `${queuePct}%` }} />
+                        </Tip>
+                        <Tip content={`Direct : ${agent.directAnswered}`}>
+                            <div className="h-full bg-blue-500 transition-all" style={{ width: `${directPct}%` }} />
+                        </Tip>
+                        <Tip content={`Transférés : ${transferred}`}>
+                            <div className="h-full bg-violet-300 transition-all" style={{ width: `${transferredPct}%` }} />
+                        </Tip>
                     </div>
                 </div>
                 <span className="text-[10px] text-slate-400 whitespace-nowrap">{totalCalls} appels</span>
@@ -221,7 +216,7 @@ export function AgentPerformanceTableV2({
     }
 
     return (
-        <TooltipProvider>
+        <TooltipProvider delayDuration={0}>
             <Card>
                 <CardHeader>
                     <div className="flex items-center justify-between">
