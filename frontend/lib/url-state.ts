@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useRouter, useSearchParams, usePathname, type ReadonlyURLSearchParams } from "next/navigation";
-import { startOfMonth, endOfMonth, startOfDay, endOfDay, parseISO, format, isValid } from "date-fns";
+import { startOfMonth, endOfMonth, startOfDay, endOfDay, parseISO, format, isValid, subMonths } from "date-fns";
 
 /**
  * L'URL EST l'état de consultation.
@@ -33,10 +33,15 @@ export interface Period {
     endDate: Date;
 }
 
-/** Mois en cours — ce que consulte un manager neuf fois sur dix. */
+/**
+ * Mois PASSÉ — le dernier mois calendaire complet (le 3 août comme le 31 août,
+ * on arrive sur le 1ᵉʳ-31 juillet). Arbitrage d'août 2026 : un mois entamé
+ * montre des chiffres partiels que chaque flèche N-1 comparerait à un mois
+ * plein — le dernier mois complet, lui, est définitif et comparable.
+ */
 function defaultPeriod(): Period {
-    const now = new Date();
-    return { startDate: startOfMonth(now), endDate: endOfMonth(now) };
+    const lastMonth = subMonths(new Date(), 1);
+    return { startDate: startOfMonth(lastMonth), endDate: endOfMonth(lastMonth) };
 }
 
 /**
@@ -142,8 +147,8 @@ export function useUrlOrigin(): { origin: CallOrigin; setOrigin: (origin: CallOr
  * lien de navigation.
  *
  * Sans cela, passer des statistiques aux journaux par la barre latérale
- * repartirait sur le mois en cours : le contexte se perdrait au moment même où
- * l'on en a le plus besoin.
+ * repartirait sur la période par défaut : le contexte se perdrait au moment
+ * même où l'on en a le plus besoin.
  */
 export function withPeriod(href: string, searchParams: URLSearchParams | ReadonlyURLSearchParams): string {
     const parts: string[] = [];

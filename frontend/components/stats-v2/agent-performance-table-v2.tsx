@@ -8,7 +8,6 @@ import { TrendPill } from "@/components/stats-v2/trend-arrow";
 import { Users, ArrowUpDown, Info } from "lucide-react";
 import { useState, useMemo } from "react";
 import {
-    Tip,
     Tooltip,
     TooltipContent,
     TooltipProvider,
@@ -34,7 +33,7 @@ type SortField = "name" | "queueAnswered" | "directAnswered" | "transferred" | "
 type SortDirection = "asc" | "desc";
 
 const columnTooltips: Record<string, string> = {
-    name: "Nom de l'agent, extension, jauge de charge (violet = file, bleu = directs) et pastille d'évolution de la charge vs période précédente",
+    name: "Nom de l'agent, extension, et pastille d'évolution de sa charge (répondus + transferts) vs période précédente",
     queueAnswered: "Appels résolus via la file d'attente (résolveur final = dernier à décrocher) / appels où l'agent a été sollicité",
     directAnswered: "Appels directs répondus / appels directs reçus",
     transferred: "Transferts accomplis crédités à l'agent : il a décroché, puis l'appel a été servi ailleurs (autre équipe ou numéro externe). File + directs.",
@@ -155,13 +154,6 @@ export function AgentPerformanceTableV2({
         return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
     };
 
-    // Max total calls across all agents (for relative bar width) — la charge
-    // inclut les transferts accomplis : c'est du travail fait.
-    const maxTotalCalls = Math.max(
-        ...agents.map(a => a.answered + a.directAnswered + a.queueTransferred + a.directTransferred),
-        1
-    );
-
     // Compute totals
     // Note: direct totals use team-level deduplicated counts from props, not per-agent sums
     // This avoids double-counting calls transferred between agents
@@ -177,36 +169,6 @@ export function AgentPerformanceTableV2({
     const totalAvgHandling = (totals.answered + totalDirectCallsAnswered) > 0
         ? Math.round((totals.totalHandlingTimeSeconds) / (totals.answered + totalDirectCallsAnswered))
         : 0;
-
-    // Workload bar component — répondus en teinte pleine, transferts accomplis
-    // en teinte claire (même grammaire que le donut du bilan).
-    const WorkloadBar = ({ agent }: { agent: AgentStats }) => {
-        const transferred = agent.queueTransferred + agent.directTransferred;
-        const totalCalls = agent.answered + agent.directAnswered + transferred;
-        const barWidth = maxTotalCalls > 0 ? (totalCalls / maxTotalCalls) * 100 : 0;
-        const queuePct = totalCalls > 0 ? (agent.answered / totalCalls) * 100 : 0;
-        const directPct = totalCalls > 0 ? (agent.directAnswered / totalCalls) * 100 : 0;
-        const transferredPct = totalCalls > 0 ? (transferred / totalCalls) * 100 : 0;
-
-        return (
-            <div className="mt-1.5 flex items-center gap-2">
-                <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden" style={{ maxWidth: "120px" }}>
-                    <div className="h-full flex" style={{ width: `${barWidth}%` }}>
-                        <Tip content={`File : ${agent.answered}`}>
-                            <div className="h-full bg-violet-500 transition-all" style={{ width: `${queuePct}%` }} />
-                        </Tip>
-                        <Tip content={`Direct : ${agent.directAnswered}`}>
-                            <div className="h-full bg-blue-500 transition-all" style={{ width: `${directPct}%` }} />
-                        </Tip>
-                        <Tip content={`Transférés : ${transferred}`}>
-                            <div className="h-full bg-violet-300 transition-all" style={{ width: `${transferredPct}%` }} />
-                        </Tip>
-                    </div>
-                </div>
-                <span className="text-[10px] text-slate-400 whitespace-nowrap">{totalCalls} appels</span>
-            </div>
-        );
-    };
 
     const SortHeader = ({ field, label }: { field: SortField; label: string }) => (
         <th
@@ -258,21 +220,6 @@ export function AgentPerformanceTableV2({
                                 ({agents.length} agent{agents.length > 1 ? "s" : ""})
                             </span>
                         </CardTitle>
-                        {/* Légende de la jauge */}
-                        <div className="flex items-center gap-3 text-xs text-slate-500">
-                            <div className="flex items-center gap-1">
-                                <div className="w-3 h-2.5 rounded-sm bg-violet-500" />
-                                File
-                            </div>
-                            <div className="flex items-center gap-1">
-                                <div className="w-3 h-2.5 rounded-sm bg-blue-500" />
-                                Directs
-                            </div>
-                            <div className="flex items-center gap-1">
-                                <div className="w-3 h-2.5 rounded-sm bg-violet-300" />
-                                Transférés
-                            </div>
-                        </div>
                     </div>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -308,7 +255,6 @@ export function AgentPerformanceTableV2({
                                                     />
                                                 </p>
                                                 <p className="text-xs text-slate-500">Ext. {agent.extension}</p>
-                                                <WorkloadBar agent={agent} />
                                             </div>
                                         </td>
                                         <td className="px-3 py-3">

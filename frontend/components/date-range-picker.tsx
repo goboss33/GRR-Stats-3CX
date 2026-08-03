@@ -73,7 +73,10 @@ export interface DateRangePickerProps {
 // CONSTANTS
 // ============================================
 
+// « Mois passé » en tête : c'est la période par défaut de l'application
+// (cf. defaultPeriod dans lib/url-state) — le dernier mois calendaire complet.
 const PRESETS = [
+    { label: "Mois passé", days: "last-month" },
     { label: "Aujourd'hui", days: 0 },
     { label: "7 jours", days: 7 },
     { label: "30 jours", days: 30 },
@@ -115,7 +118,16 @@ export function DateRangePicker({
     };
 
     // Handle preset click
-    const handlePreset = (days: number) => {
+    const handlePreset = (days: number | "last-month") => {
+        if (days === "last-month") {
+            const lastMonth = subMonths(new Date(), 1);
+            onDateRangeChange({
+                startDate: startOfMonth(lastMonth),
+                endDate: endOfDay(endOfMonth(lastMonth)),
+            });
+            setOpen(false);
+            return;
+        }
         const end = endOfDay(new Date());
         const start = days === 0 ? startOfDay(new Date()) : startOfDay(subDays(new Date(), days));
         onDateRangeChange({ startDate: start, endDate: end });
@@ -298,7 +310,7 @@ export function DateRangePicker({
                             <p className="text-xs font-medium text-slate-600 mb-2">Raccourcis</p>
                             {PRESETS.map((preset) => (
                                 <Button
-                                    key={preset.days}
+                                    key={preset.label}
                                     variant="ghost"
                                     size="sm"
                                     className="w-full justify-start text-xs h-7"
