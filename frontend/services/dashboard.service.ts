@@ -316,8 +316,9 @@ export async function getDashboardAllOrigins(
 
 /**
  * Courbes N-1 du tableau de bord, pour la superposition du graphique — les
- * trois provenances d'un coup, comme le chargement principal, mais chargées
- * SEULEMENT à l'activation du toggle (la plupart des sessions ne l'ouvrent pas).
+ * trois provenances d'un coup, préchargées en tâche de fond à côté du
+ * chargement principal : le toggle « Période précédente » s'active à leur
+ * arrivée, sans jamais faire attendre l'activation.
  *
  * Période précédente ALIGNÉE SEMAINE (cf. period-comparison) : le trafic est
  * hebdomadaire, la superposition doit faire tomber les lundis sur des lundis —

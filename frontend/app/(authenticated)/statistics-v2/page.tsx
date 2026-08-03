@@ -60,37 +60,14 @@ export default function StatisticsV2Page() {
     // La période vient de l'URL (cf. lib/url-state).
     const dateRange = useUrlPeriod();
 
-    // Superposition N-1 du graphique : préférence personnelle (localStorage),
-    // courbe chargée à l'activation du toggle puis mise en cache par
-    // provenance pour le contexte courant (groupe + période). Un échec relâche
-    // le marqueur : la prochaine activation retentera.
+    // Superposition N-1 du graphique : préférence personnelle (localStorage).
+    // La courbe N-1 de chaque provenance se précharge en tâche de fond avec
+    // ses statistiques (cf. fetchIntoCache) — le toggle reste grisé avec un
+    // spinner tant qu'elle n'est pas là, puis l'activation est instantanée.
+    // « failed » ne prive que la superposition, jamais l'écran.
     const [compareEnabled, setCompareEnabled] = usePeriodComparisonPreference();
     const [prevTimelineCache, setPrevTimelineCache] =
-        useState<Partial<Record<CallOrigin, TimelineDataPoint[]>>>({});
-    const prevTimelineKeyRef = useRef<string>("");
-    const requestedPrevRef = useRef<Set<string>>(new Set());
-    useEffect(() => {
-        if (!compareEnabled || !selectedQueueNumber) return;
-        const key = `${getSelectedServer()}|${selectedQueueNumber}|${dateRange.startDate.toISOString()}|${dateRange.endDate.toISOString()}`;
-        if (prevTimelineKeyRef.current !== key) {
-            prevTimelineKeyRef.current = key;
-            requestedPrevRef.current = new Set();
-            setPrevTimelineCache({});
-        }
-        const requestKey = `${key}|${origin}`;
-        if (requestedPrevRef.current.has(requestKey)) return;
-        requestedPrevRef.current.add(requestKey);
-        getQueuePreviousTimeline(getSelectedServer(), selectedQueueNumber, dateRange.startDate, dateRange.endDate, origin)
-            .then((data) => {
-                if (prevTimelineKeyRef.current === key) {
-                    setPrevTimelineCache((cache) => ({ ...cache, [origin]: data }));
-                }
-            })
-            .catch((error) => {
-                logger.error("[StatisticsV2] timeline N-1 en échec :", { origin, error });
-                requestedPrevRef.current.delete(requestKey);
-            });
-    }, [compareEnabled, selectedQueueNumber, dateRange.startDate, dateRange.endDate, origin]);
+        useState<Partial<Record<CallOrigin, TimelineDataPoint[] | "failed">>>({});
     // L'alignement des points N-1 se fait par DATE décalée dans CallsChart.
     const previousOffsetMs = dateRange.startDate.getTime()
         - weekAlignedPreviousPeriod(dateRange.startDate, dateRange.endDate).startDate.getTime();
@@ -112,8 +89,23 @@ export default function StatisticsV2Page() {
     const fetchIntoCache = useCallback(async (ctxKey: string, o: CallOrigin, withSpinner: boolean) => {
         if (!selectedQueueNumber) return;
         if (withSpinner) setIsLoading(true);
+        const serverId = getSelectedServer();
+
+        // Courbe N-1 en tâche de fond, à côté du chargement principal : le
+        // toggle « Période précédente » s'active dès qu'elle arrive.
+        getQueuePreviousTimeline(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate, o)
+            .then((data) => {
+                if (contextKeyRef.current !== ctxKey) return;
+                setPrevTimelineCache((cache) => ({ ...cache, [o]: data }));
+            })
+            .catch((error) => {
+                logger.error("[StatisticsV2] timeline N-1 en échec :", { origin: o, error });
+                if (contextKeyRef.current === ctxKey) {
+                    setPrevTimelineCache((cache) => ({ ...cache, [o]: "failed" }));
+                }
+            });
+
         try {
-            const serverId = getSelectedServer();
             const data = await getQueueStatistics(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate, o);
             if (contextKeyRef.current !== ctxKey) return;
             setStatsCache((cache) => ({ ...cache, [o]: data }));
@@ -137,6 +129,7 @@ export default function StatisticsV2Page() {
         const ctxKey = `${getSelectedServer()}|${selectedQueueNumber}|${dateRange.startDate.toISOString()}|${dateRange.endDate.toISOString()}|${Date.now()}`;
         contextKeyRef.current = ctxKey;
         setStatsCache({});
+        setPrevTimelineCache({});
         void (async () => {
             await fetchIntoCache(ctxKey, primary, true);
             for (const o of ORIGINS) {
@@ -240,11 +233,18 @@ export default function StatisticsV2Page() {
                             <div className="bg-white rounded-xl border border-slate-200 p-6">
                                 <div className="mb-4 flex items-center justify-between gap-4">
                                     <h3 className="text-lg font-semibold text-slate-900">Évolution du Volume</h3>
-                                    <PeriodComparisonToggle checked={compareEnabled} onCheckedChange={setCompareEnabled} />
+                                    <PeriodComparisonToggle
+                                        checked={compareEnabled}
+                                        onCheckedChange={setCompareEnabled}
+                                        loading={prevTimelineCache[origin] === undefined}
+                                        unavailable={prevTimelineCache[origin] === "failed"}
+                                    />
                                 </div>
                                 <CallsChart
                                     data={statistics.timelineData}
-                                    previousData={compareEnabled ? prevTimelineCache[origin] ?? null : null}
+                                    previousData={compareEnabled && Array.isArray(prevTimelineCache[origin])
+                                        ? (prevTimelineCache[origin] as TimelineDataPoint[])
+                                        : null}
                                     previousOffsetMs={previousOffsetMs}
                                 />
                             </div>

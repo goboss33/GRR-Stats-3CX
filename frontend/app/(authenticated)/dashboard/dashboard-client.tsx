@@ -87,30 +87,14 @@ export default function DashboardClient() {
     const timelineData = current?.timelineData ?? [];
     const heatmapData = current?.heatmapData ?? [];
 
-    // Superposition N-1 du graphique : préférence personnelle (localStorage),
-    // courbes chargées à la PREMIÈRE activation seulement puis conservées pour
-    // le contexte (serveur + période). Le passé ne bouge pas : pas
-    // d'invalidation au « Rafraîchir ».
+    // Superposition N-1 du graphique : préférence personnelle (localStorage).
+    // Les courbes N-1 se préchargent en tâche de fond avec l'écran (cf.
+    // reloadAll) — le toggle reste grisé avec un spinner tant qu'elles ne sont
+    // pas là, puis l'activation est instantanée.
     const [compareEnabled, setCompareEnabled] = usePeriodComparisonPreference();
     const [prevTimelineCache, setPrevTimelineCache] =
         useState<Partial<Record<CallOrigin, TimelineDataPoint[]>> | null>(null);
-    const prevTimelineKeyRef = useRef<string>("");
-    useEffect(() => {
-        if (!compareEnabled) return;
-        const key = `${getSelectedServer()}|${dateRange.startDate.toISOString()}|${dateRange.endDate.toISOString()}`;
-        if (prevTimelineKeyRef.current === key) return;
-        prevTimelineKeyRef.current = key;
-        setPrevTimelineCache(null);
-        getPrevTimelineAllOrigins(getSelectedServer(), dateRange.startDate, dateRange.endDate)
-            .then((all) => {
-                if (prevTimelineKeyRef.current === key) setPrevTimelineCache(all);
-            })
-            .catch((error) => {
-                console.error("Error fetching previous timeline:", error);
-                // Clé relâchée : une prochaine activation retentera.
-                if (prevTimelineKeyRef.current === key) prevTimelineKeyRef.current = "";
-            });
-    }, [compareEnabled, dateRange.startDate, dateRange.endDate]);
+    const [prevTimelineFailed, setPrevTimelineFailed] = useState(false);
     // L'alignement des points N-1 se fait par DATE décalée dans CallsChart.
     const previousOffsetMs = dateRange.startDate.getTime()
         - weekAlignedPreviousPeriod(dateRange.startDate, dateRange.endDate).startDate.getTime();
@@ -167,6 +151,20 @@ export default function DashboardClient() {
             })
             .finally(() => {
                 if (contextKeyRef.current === ctxKey) setIsLoading(false);
+            });
+
+        // Courbes N-1 en tâche de fond, sans retenir l'écran : le toggle
+        // « Période précédente » s'active à leur arrivée. Un échec ne prive
+        // que la superposition — « Actualiser » relance tout, donc réessaie.
+        setPrevTimelineCache(null);
+        setPrevTimelineFailed(false);
+        getPrevTimelineAllOrigins(getSelectedServer(), dateRange.startDate, dateRange.endDate)
+            .then((all) => {
+                if (contextKeyRef.current === ctxKey) setPrevTimelineCache(all);
+            })
+            .catch((error) => {
+                console.error("Error fetching previous timeline:", error);
+                if (contextKeyRef.current === ctxKey) setPrevTimelineFailed(true);
             });
     }, [dateRange.startDate, dateRange.endDate]);
 
@@ -276,7 +274,12 @@ export default function DashboardClient() {
                     <CardHeader>
                         <div className="flex items-center justify-between gap-4">
                             <CardTitle className="text-lg font-bold text-slate-900">Évolution du Volume</CardTitle>
-                            <PeriodComparisonToggle checked={compareEnabled} onCheckedChange={setCompareEnabled} />
+                            <PeriodComparisonToggle
+                                checked={compareEnabled}
+                                onCheckedChange={setCompareEnabled}
+                                loading={!prevTimelineCache && !prevTimelineFailed}
+                                unavailable={prevTimelineFailed}
+                            />
                         </div>
                     </CardHeader>
                     <CardContent>

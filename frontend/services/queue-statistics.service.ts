@@ -160,7 +160,8 @@ export async function getQueueOverviewKpis(
 
 /**
  * Courbe N-1 d'une file, pour la superposition du graphique d'évolution —
- * chargée seulement à l'activation du toggle « Période précédente ».
+ * préchargée en tâche de fond avec les statistiques de la provenance : le
+ * toggle « Période précédente » s'active à son arrivée.
  *
  * Période ALIGNÉE SEMAINE (cf. period-comparison), PAS la définition des
  * flèches des cartes : superposer un lundi sur un samedi rendrait la courbe

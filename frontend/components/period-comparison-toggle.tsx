@@ -1,12 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 
 import { Switch } from "@/components/ui/switch";
+import { Tip } from "@/components/ui/tooltip";
 
 /**
  * Toggle « Période précédente » du graphique d'évolution — active la
  * superposition des courbes N-1 en pointillés estompés.
+ *
+ * Les courbes N-1 se préchargent en tâche de fond avec l'écran (même
+ * grammaire que le toggle de provenance du header) : tant qu'elles ne sont
+ * pas arrivées, le switch est grisé avec un petit spinner — l'activation est
+ * ensuite instantanée, jamais suivie d'un chargement.
  *
  * La préférence est PERSONNELLE et transverse aux écrans : elle vit en
  * localStorage, pas dans l'URL — un lien partagé ne doit pas imposer la
@@ -42,17 +49,35 @@ export function usePeriodComparisonPreference(): [boolean, (value: boolean) => v
 interface Props {
     checked: boolean;
     onCheckedChange: (value: boolean) => void;
+    /** Courbes N-1 pas encore arrivées : switch grisé + spinner. */
+    loading?: boolean;
+    /** Chargement N-1 en échec : switch grisé, sans spinner. */
+    unavailable?: boolean;
 }
 
-export function PeriodComparisonToggle({ checked, onCheckedChange }: Props) {
+export function PeriodComparisonToggle({ checked, onCheckedChange, loading = false, unavailable = false }: Props) {
+    const disabled = loading || unavailable;
     return (
-        <label className="flex shrink-0 cursor-pointer select-none items-center gap-2 text-sm font-medium text-slate-500">
-            Période précédente
-            <Switch
-                checked={checked}
-                onCheckedChange={onCheckedChange}
-                className="data-[state=checked]:bg-blue-600"
-            />
-        </label>
+        <Tip content={loading ? "Chargement en arrière-plan…"
+            : unavailable ? "Comparaison indisponible — actualisez pour réessayer"
+                : undefined}
+        >
+            <label className={`flex shrink-0 select-none items-center gap-2 text-sm font-medium ${
+                disabled ? "text-slate-400" : "cursor-pointer text-slate-500"
+            }`}>
+                Période précédente
+                {loading && <Loader2 className="h-3 w-3 animate-spin text-slate-400" />}
+                {/* Span relais : un switch désactivé n'émet pas de survol,
+                    l'infobulle vit sur le label qui l'entoure. */}
+                <span className="inline-flex">
+                    <Switch
+                        checked={checked}
+                        onCheckedChange={onCheckedChange}
+                        disabled={disabled}
+                        className="data-[state=checked]:bg-blue-600"
+                    />
+                </span>
+            </label>
+        </Tip>
     );
 }
