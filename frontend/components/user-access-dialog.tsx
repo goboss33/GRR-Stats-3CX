@@ -72,6 +72,7 @@ export function UserAccessDialog({
     const [overrides, setOverrides] = useState<ExtensionOverride[]>([]);
     const [permissions, setPermissions] = useState({
         canViewLogs: true,
+        canViewExtensionStats: true,
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
     });
@@ -107,6 +108,7 @@ export function UserAccessDialog({
             setOverrides(accessData.access.extensionOverrides || []);
             setPermissions({
                 canViewLogs: accessData.access.canViewLogs,
+                canViewExtensionStats: accessData.access.canViewExtensionStats,
                 canViewFullPhoneNumbers: accessData.access.canViewFullPhoneNumbers,
                 canCreateApiKeys: accessData.access.canCreateApiKeys,
             });
@@ -400,6 +402,11 @@ export function UserAccessDialog({
                                     key: "canViewLogs" as const,
                                     label: "Voir les logs d'appels",
                                     hint: "Sinon l'écran des logs est fermé et les chiffres cliquables ne mènent plus au détail des appels",
+                                },
+                                {
+                                    key: "canViewExtensionStats" as const,
+                                    label: "Voir les statistiques Extension / DDI",
+                                    hint: "Sinon l'écran Extension / DDI disparaît de la navigation",
                                 },
                                 {
                                     key: "canViewFullPhoneNumbers" as const,

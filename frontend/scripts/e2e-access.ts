@@ -43,6 +43,7 @@ async function main() {
         queueIds: pully.map((q) => q.id),
         extensionOverrides: [{ tenantId: TENANT, extensionNumber: "9999", mode: "INCLUDE" }],
         canViewLogs: true,
+        canViewExtensionStats: true,
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
     });
@@ -59,6 +60,7 @@ async function main() {
         queueIds: pully.slice(0, 2).map((q) => q.id),
         extensionOverrides: [],
         canViewLogs: true,
+        canViewExtensionStats: true,
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
     });

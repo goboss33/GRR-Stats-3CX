@@ -34,6 +34,10 @@ async function replaceCompanyWideWithCanViewLogs(): Promise<void> {
     await prismaAuth.$executeRawUnsafe(
         `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "canViewLogs" BOOLEAN NOT NULL DEFAULT true`,
     );
+    // Même logique pour l'écran Extension / DDI : droit ouvert par défaut.
+    await prismaAuth.$executeRawUnsafe(
+        `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "canViewExtensionStats" BOOLEAN NOT NULL DEFAULT true`,
+    );
 }
 
 /**

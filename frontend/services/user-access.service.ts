@@ -24,6 +24,7 @@ export interface UserAccessPayload {
     queueIds: string[];
     extensionOverrides: ExtensionOverride[];
     canViewLogs: boolean;
+    canViewExtensionStats: boolean;
     canViewFullPhoneNumbers: boolean;
     canCreateApiKeys: boolean;
 }
@@ -33,7 +34,7 @@ export async function getUserAccess(userId: string): Promise<UserAccessPayload> 
     const [user, tenants, perimeter, overrides] = await Promise.all([
         prismaAuth.user.findUnique({
             where: { id: userId },
-            select: { canViewLogs: true, canViewFullPhoneNumbers: true, canCreateApiKeys: true },
+            select: { canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, canCreateApiKeys: true },
         }),
         prismaAuth.userTenantAccess.findMany({ where: { userId }, select: { tenantId: true } }),
         prismaAuth.userQueuePerimeter.findMany({ where: { userId }, select: { queueId: true } }),
@@ -54,6 +55,7 @@ export async function getUserAccess(userId: string): Promise<UserAccessPayload> 
             mode: o.mode as OverrideMode,
         })),
         canViewLogs: user.canViewLogs,
+        canViewExtensionStats: user.canViewExtensionStats,
         canViewFullPhoneNumbers: user.canViewFullPhoneNumbers,
         canCreateApiKeys: user.canCreateApiKeys,
     };
@@ -70,6 +72,7 @@ export async function setUserAccess(userId: string, payload: UserAccessPayload):
             where: { id: userId },
             data: {
                 canViewLogs: payload.canViewLogs,
+                canViewExtensionStats: payload.canViewExtensionStats,
                 canViewFullPhoneNumbers: payload.canViewFullPhoneNumbers,
                 canCreateApiKeys: payload.canCreateApiKeys,
             },
@@ -184,6 +187,7 @@ export interface UserScopeDescription {
     includedByOverride: string[];
     excludedByOverride: string[];
     canViewLogs: boolean;
+    canViewExtensionStats: boolean;
     canViewFullPhoneNumbers: boolean;
     canCreateApiKeys: boolean;
 }
@@ -198,6 +202,7 @@ export async function describeUserScope(userId: string): Promise<UserScopeDescri
         select: {
             role: true,
             canViewLogs: true,
+            canViewExtensionStats: true,
             canViewFullPhoneNumbers: true,
             canCreateApiKeys: true,
         },
@@ -260,6 +265,7 @@ export async function describeUserScope(userId: string): Promise<UserScopeDescri
         includedByOverride,
         excludedByOverride,
         canViewLogs: user.canViewLogs,
+        canViewExtensionStats: user.canViewExtensionStats,
         canViewFullPhoneNumbers: user.canViewFullPhoneNumbers,
         canCreateApiKeys: user.canCreateApiKeys,
     };

@@ -29,6 +29,8 @@ interface SidebarProps {
     userRole: string;
     /** Droit « Voir les logs d'appels » : sans lui, l'entrée disparaît. */
     canViewLogs: boolean;
+    /** Droit « Extension / DDI » : même principe. */
+    canViewExtensionStats: boolean;
     user: {
         firstName: string | null | undefined;
         lastName: string | null | undefined;
@@ -85,7 +87,7 @@ const navItems: NavItem[] = [
     },
 ];
 
-export function Sidebar({ userRole, canViewLogs, user, authProvider, profilePicture, signOutAction }: SidebarProps) {
+export function Sidebar({ userRole, canViewLogs, canViewExtensionStats, user, authProvider, profilePicture, signOutAction }: SidebarProps) {
     const pathname = usePathname();
     // La période voyage dans l'URL : les liens de navigation la transportent,
     // sans quoi passer des statistiques aux journaux repartirait sur le mois en
@@ -109,6 +111,7 @@ export function Sidebar({ userRole, canViewLogs, user, authProvider, profilePict
     const filteredItems = navItems.filter((item) =>
         item.roles.includes(userRole)
         && (item.href !== "/admin/logs" || canViewLogs)
+        && (item.href !== "/statistics-extension" || canViewExtensionStats)
     );
 
     const toggleMenu = (label: string) => {

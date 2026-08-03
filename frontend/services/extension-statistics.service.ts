@@ -50,6 +50,8 @@ export async function getExtensionDirectory(serverId: ServerId): Promise<Extensi
     try {
         const directory = await getDirectory(serverId);
         const scope = await resolveAccessScope(serverId);
+        // Droit d'accès à la FONCTION Extension/DDI — distinct du périmètre.
+        if (!scope.canViewExtensionStats) return { extensions: [], ddis: [] };
         if (scope.unrestricted) return directory;
         if (scope.empty || !scope.extensionNumbers) return { extensions: [], ddis: [] };
 
@@ -192,6 +194,8 @@ export async function getExtensionStatisticsChunk(
     // Filtrage en amont : une extension hors périmètre ne doit produire aucune
     // statistique, même si son numéro est saisi directement.
     const scope = await resolveAccessScope(serverId);
+    // Droit d'accès à la FONCTION Extension/DDI — distinct du périmètre.
+    if (!scope.canViewExtensionStats) return [];
     if (!scope.unrestricted) {
         if (scope.empty || !scope.extensionNumbers) return [];
         const allowed = new Set(scope.extensionNumbers);
@@ -341,6 +345,10 @@ export async function getExtensionEntryHeatmap(
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return [];
 
     try {
+        // Droit d'accès à la FONCTION Extension/DDI — distinct du périmètre.
+        const scope = await resolveAccessScope(serverId);
+        if (!scope.canViewExtensionStats) return [];
+
         const timezone = await getServerTimezone(serverId);
         const directory = await getDirectory(serverId);
         const matcher = buildMatcher(entry, directory);

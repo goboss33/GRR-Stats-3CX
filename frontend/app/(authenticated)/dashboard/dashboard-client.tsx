@@ -75,7 +75,9 @@ export default function DashboardClient() {
     const [teamQueues, setTeamQueues] = useState<QueueInfo[]>([]);
     // Droit « Voir les logs » : sans lui, les vignettes KPI perdent leur lien
     // vers les journaux (décision serveur, relayée par getScopedQueueOptions).
-    const [canViewLogs, setCanViewLogs] = useState(true);
+    // null = pas encore su : les vignettes NAISSENT sans lien, qui apparaît à
+    // la confirmation — l'inverse (lien actif puis retiré) faisait scintiller.
+    const [canViewLogs, setCanViewLogs] = useState<boolean | null>(null);
     const [dataCache, setDataCache] = useState<Partial<Record<CallOrigin, DashboardData>>>({});
     // Le jeton de contexte écarte les réponses devenues obsolètes (changement
     // de période — ou « Rafraîchir » — pendant un préchargement en vol).

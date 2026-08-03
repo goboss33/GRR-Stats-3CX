@@ -27,6 +27,8 @@ export interface AccessScope {
      * étendue de données — un manager sans ce droit garde ses statistiques.
      */
     canViewLogs: boolean;
+    /** Autorisé à consulter l'écran Extension / DDI — même logique que les logs. */
+    canViewExtensionStats: boolean;
     /** true quand l'utilisateur n'a aucun périmètre : il ne doit rien voir. */
     empty: boolean;
 }
@@ -52,6 +54,7 @@ export function unrestrictedScope(): AccessScope {
         extensionNumbers: null,
         maskPhoneNumbers: false,
         canViewLogs: true,
+        canViewExtensionStats: true,
         empty: false,
     };
 }
@@ -68,6 +71,7 @@ export function emptyScope(maskPhoneNumbers = true): AccessScope {
         extensionNumbers: [],
         maskPhoneNumbers,
         canViewLogs: true,
+        canViewExtensionStats: true,
         empty: true,
     };
 }
@@ -102,6 +106,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
         select: {
             role: true,
             canViewLogs: true,
+            canViewExtensionStats: true,
             canViewFullPhoneNumbers: true,
             tenantAccess: { select: { tenantId: true } },
         },
@@ -126,6 +131,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
             extensionNumbers: null,
             maskPhoneNumbers,
             canViewLogs: user.canViewLogs,
+            canViewExtensionStats: user.canViewExtensionStats,
             empty: false,
         };
     }
@@ -150,6 +156,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
             extensionNumbers: onlyOverrides,
             maskPhoneNumbers,
             canViewLogs: user.canViewLogs,
+            canViewExtensionStats: user.canViewExtensionStats,
             empty: false,
         };
     }
@@ -162,6 +169,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
         extensionNumbers,
         maskPhoneNumbers,
         canViewLogs: user.canViewLogs,
+        canViewExtensionStats: user.canViewExtensionStats,
         empty: false,
     };
 }

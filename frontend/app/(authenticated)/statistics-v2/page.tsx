@@ -82,7 +82,9 @@ export default function StatisticsV2Page() {
 
     // Droit « Voir les logs » : sans lui, les vignettes du bilan perdent leurs
     // liens vers les journaux (décision serveur, l'interface ne fait qu'obéir).
-    const [canViewLogs, setCanViewLogs] = useState(true);
+    // null = pas encore su : les vignettes naissent sans lien (pas de
+    // scintillement lien actif → retiré pour les utilisateurs restreints).
+    const [canViewLogs, setCanViewLogs] = useState<boolean | null>(null);
 
     // Seul le signal « aucun périmètre » est encore utile ici : la liste des
     // files vit désormais sur le tableau de bord (aperçu) et dans le header.
@@ -241,7 +243,7 @@ export default function StatisticsV2Page() {
                         previousKpis={prevStatsCache[origin] === undefined ? "loading"
                             : prevStatsCache[origin] === "failed" ? "unavailable"
                                 : (prevStatsCache[origin] as PreviousStats).kpis}
-                        logsEnabled={canViewLogs}
+                        logsEnabled={canViewLogs === true}
                         queueName={statistics.queueName}
                         queueNumber={statistics.queueNumber}
                         startDate={format(dateRange.startDate, "yyyy-MM-dd")}

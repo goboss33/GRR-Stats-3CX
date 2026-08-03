@@ -31,18 +31,21 @@ export default async function AuthenticatedLayout({
 
     const dbUser = await prismaAuth.user.findUnique({
         where: { id: session.user.id },
-        select: { profilePicture: true, canViewLogs: true }
+        select: { profilePicture: true, canViewLogs: true, canViewExtensionStats: true }
     });
     const profilePicture = dbUser?.profilePicture || null;
-    // Sans le droit « Voir les logs », l'entrée disparaît de la navigation —
-    // la page et le service refusent de toute façon (contrôle côté serveur).
+    // Sans les droits « Voir les logs » / « Extension/DDI », les entrées
+    // disparaissent de la navigation — les pages et services refusent de
+    // toute façon (contrôle côté serveur).
     const canViewLogs = dbUser?.canViewLogs ?? true;
+    const canViewExtensionStats = dbUser?.canViewExtensionStats ?? true;
 
     return (
         <div className="flex h-screen bg-slate-50">
             <Sidebar
                 userRole={userRole}
                 canViewLogs={canViewLogs}
+                canViewExtensionStats={canViewExtensionStats}
                 user={{
                     firstName: userFirstName,
                     lastName: userLastName,

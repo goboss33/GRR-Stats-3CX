@@ -55,6 +55,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             queueIds,
             extensionOverrides,
             canViewLogs: Boolean(body.canViewLogs),
+            canViewExtensionStats: Boolean(body.canViewExtensionStats),
             canViewFullPhoneNumbers: Boolean(body.canViewFullPhoneNumbers),
             canCreateApiKeys: Boolean(body.canCreateApiKeys),
         };
