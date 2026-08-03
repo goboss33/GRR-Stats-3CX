@@ -67,7 +67,7 @@ const navItems: NavItem[] = [
     },
     // Les statistiques au premier niveau : « Mes équipes » est l'écran
     // d'atterrissage du manager (aperçu des groupes), un sous-menu le cachait.
-    // Intitulé de section, pas un lien : la navigation se fait par les équipes
+    // Intitulé PLIABLE, pas un lien : la navigation se fait par les équipes
     // elles-mêmes (sous-menu) — /statistics-v2 sans file redirige au dashboard.
     {
         label: "Mes équipes",
@@ -90,6 +90,10 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
     // cours — au moment même où l'on veut garder le contexte.
     const searchParams = useSearchParams();
     const [collapsed, setCollapsed] = useState(false);
+    // « Mes équipes » se plie/déplie comme un menu, déplié par défaut. L'état
+    // survit au repli de la barre : le sous-menu reste MONTÉ (masqué en CSS),
+    // sa liste ne se recharge pas à chaque réouverture.
+    const [teamsOpen, setTeamsOpen] = useState(true);
     const [expandedMenus, setExpandedMenus] = useState<string[]>(() => {
         const initial: string[] = [];
         navItems.forEach((item) => {
@@ -245,8 +249,9 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
                             );
                         }
 
-                        // Intitulé de section « Mes équipes » : pas un lien —
-                        // replié, l'icône rouvre simplement la barre.
+                        // Intitulé pliable « Mes équipes » : pas un lien — le
+                        // bouton plie/déplie la liste ; barre repliée, l'icône
+                        // rouvre la barre ET déplie les équipes.
                         if (item.teamsSubmenu) {
                             return (
                                 <div key={item.label} className="flex min-h-0 flex-col">
@@ -254,7 +259,10 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
                                         <Tooltip>
                                             <TooltipTrigger asChild>
                                                 <button
-                                                    onClick={() => setCollapsed(false)}
+                                                    onClick={() => {
+                                                        setCollapsed(false);
+                                                        setTeamsOpen(true);
+                                                    }}
                                                     className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 transition-all duration-200 hover:bg-slate-800 hover:text-white"
                                                 >
                                                     <item.icon className="h-5 w-5 flex-shrink-0" />
@@ -265,14 +273,26 @@ export function Sidebar({ userRole, user, authProvider, profilePicture, signOutA
                                             </TooltipContent>
                                         </Tooltip>
                                     ) : (
-                                        <>
-                                            <div className="flex items-center gap-3 px-3 py-2.5 text-slate-400">
-                                                <item.icon className="h-5 w-5 flex-shrink-0" />
-                                                <span className="text-sm font-medium">{item.label}</span>
-                                            </div>
-                                            <SidebarTeams />
-                                        </>
+                                        <button
+                                            onClick={() => setTeamsOpen((open) => !open)}
+                                            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-slate-400 transition-all duration-200 hover:bg-slate-800 hover:text-white"
+                                        >
+                                            <item.icon className="h-5 w-5 flex-shrink-0" />
+                                            <span className="flex-1 text-sm font-medium">{item.label}</span>
+                                            <ChevronDown
+                                                className={cn(
+                                                    "h-4 w-4 transition-transform duration-200",
+                                                    teamsOpen && "rotate-180"
+                                                )}
+                                            />
+                                        </button>
                                     )}
+                                    {/* Monté en permanence, simplement masqué : la
+                                        liste (chargement, défilement) survit au pli
+                                        du menu comme au repli de la barre. */}
+                                    <div className={cn("flex min-h-0 flex-col", (collapsed || !teamsOpen) && "hidden")}>
+                                        <SidebarTeams />
+                                    </div>
                                 </div>
                             );
                         }
