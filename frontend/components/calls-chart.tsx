@@ -2,7 +2,6 @@
 
 import {
     ComposedChart,
-    Area,
     Line,
     XAxis,
     YAxis,
@@ -15,6 +14,25 @@ import { TimelineDataPoint } from "@/types/stats.types";
 
 interface CallsChartProps {
     data: TimelineDataPoint[];
+    /**
+     * Courbe de la période précédente, superposée en pointillés estompés
+     * (null / absente = superposition inactive). Période ALIGNÉE SEMAINE
+     * (cf. period-comparison) : un lundi se superpose à un lundi.
+     */
+    previousData?: TimelineDataPoint[] | null;
+    /**
+     * Décalage (ms) entre la période courante et la précédente : les points
+     * N-1 s'alignent par DATE décalée, pas par rang — un jour sans appel
+     * manquant dans une des deux séries ne désynchronise pas le reste.
+     */
+    previousOffsetMs?: number;
+}
+
+/** Point du graphique : la journée N, enrichie de son vis-à-vis N-1. */
+interface ChartPoint extends TimelineDataPoint {
+    answeredPrev?: number;
+    missedPrev?: number;
+    prevLabel?: string;
 }
 
 // Custom tooltip component
@@ -24,18 +42,21 @@ const CustomTooltip = ({
     label,
 }: {
     active?: boolean;
-    payload?: Array<{ value: number; dataKey: string; color: string }>;
+    payload?: Array<{ value: number; dataKey: string; color: string; payload?: ChartPoint }>;
     label?: string;
 }) => {
     if (active && payload && payload.length) {
         const answered = payload.find((p) => p.dataKey === "answered")?.value || 0;
         const missed = payload.find((p) => p.dataKey === "missed")?.value || 0;
         const overflow = payload.find((p) => p.dataKey === "overflow")?.value || 0;
-        const total = payload.find((p) => p.dataKey === "total")?.value ?? (answered + missed + overflow);
+        const total = answered + missed + overflow;
         // La série n'existe que sur le bilan d'équipe ; le tableau de bord
         // global ne raisonne pas par file.
         const hasOverflow = payload.some((p) => p.dataKey === "overflow");
         const rate = total > 0 ? Math.round((answered / total) * 100) : 0;
+        const point = payload[0]?.payload;
+        const hasPrev = point !== undefined
+            && (point.answeredPrev !== undefined || point.missedPrev !== undefined);
 
         return (
             <div className="bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl shadow-xl p-4 transition-all">
@@ -68,6 +89,23 @@ const CustomTooltip = ({
                             <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">{rate}%</span>
                         </div>
                     </div>
+                    {hasPrev && (
+                        <div className="border-t border-slate-100 pt-2 mt-2 space-y-1.5">
+                            <p className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                                Période préc.{point.prevLabel ? ` (${point.prevLabel})` : ""}
+                            </p>
+                            <div className="flex items-center gap-3">
+                                <span className="w-3 h-3 rounded-full bg-emerald-500 opacity-40"></span>
+                                <span className="text-slate-500 flex-1">Répondus:</span>
+                                <span className="font-semibold text-slate-600">{point.answeredPrev ?? 0}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="w-3 h-3 rounded-full bg-rose-500 opacity-40"></span>
+                                <span className="text-slate-500 flex-1">Perdus:</span>
+                                <span className="font-semibold text-slate-600">{point.missedPrev ?? 0}</span>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         );
@@ -75,14 +113,28 @@ const CustomTooltip = ({
     return null;
 };
 
-export function CallsChart({ data }: CallsChartProps) {
-    // Le volume total est derive plutot que transmis : il vaut par construction
-    // la somme des trois series, et le calculer ici garantit que l'enveloppe
-    // grise ne peut pas contredire les courbes qu'elle contient.
-    const points = (data ?? []).map((d) => ({
-        ...d,
-        total: d.answered + d.missed + (d.overflow ?? 0),
-    }));
+export function CallsChart({ data, previousData, previousOffsetMs = 0 }: CallsChartProps) {
+    // Alignement N-1 par date décalée : chaque point N cherche son vis-à-vis
+    // exactement previousOffsetMs plus tôt. Un jour absent d'une série (SQL ne
+    // produit pas de ligne sans appel) laisse simplement un trou dans la
+    // courbe pointillée, sans décaler les jours suivants.
+    const prevByTime = new Map<number, TimelineDataPoint>();
+    if (previousData && previousOffsetMs > 0) {
+        for (const p of previousData) {
+            prevByTime.set(new Date(p.date).getTime() + previousOffsetMs, p);
+        }
+    }
+    const showPrevious = prevByTime.size > 0;
+
+    const points: ChartPoint[] = (data ?? []).map((d) => {
+        const prev = prevByTime.get(new Date(d.date).getTime());
+        return {
+            ...d,
+            answeredPrev: prev?.answered,
+            missedPrev: prev?.missed,
+            prevLabel: prev?.label,
+        };
+    });
 
     // Le tableau de bord global ne raisonne pas par file : ni courbe ni entrée
     // de légende pour une série qui n'existe pas.
@@ -104,18 +156,13 @@ export function CallsChart({ data }: CallsChartProps) {
                     L'empilement rendait le graphique illisible : le bord d'une
                     bande valant la somme cumulee, une serie de 8 appels se
                     lisait entre 20 et 40 sur l'axe. Chaque courbe se lit
-                    desormais directement contre l'axe, et l'enveloppe grise
-                    porte le volume total — ce que le titre annonce. */}
+                    desormais directement contre l'axe. Le total recu vit dans
+                    l'infobulle : l'enveloppe grise qui le portait ecrasait
+                    l'echelle sans rien apprendre de plus. */}
                 <ComposedChart
                     data={points}
                     margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                 >
-                    <defs>
-                        <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#94a3b8" stopOpacity={0.28}/>
-                            <stop offset="95%" stopColor="#94a3b8" stopOpacity={0}/>
-                        </linearGradient>
-                    </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis
                         dataKey="label"
@@ -139,23 +186,43 @@ export function CallsChart({ data }: CallsChartProps) {
                             <span className="text-slate-600 font-medium ml-1">
                                 {value === "answered" ? "Répondus"
                                     : value === "overflow" ? "Redirigés"
-                                    : value === "total" ? "Total reçus"
                                     : "Perdus"}
                             </span>
                         )}
                     />
-                    {/* Enveloppe du volume : sert de toile de fond, sans trait
-                        marque, pour ne pas concurrencer les trois courbes. */}
-                    <Area
-                        type="monotone"
-                        dataKey="total"
-                        stroke="#cbd5e1"
-                        strokeWidth={1}
-                        fillOpacity={1}
-                        fill="url(#colorTotal)"
-                        activeDot={false}
-                        name="total"
-                    />
+                    {/* Superposition N-1 : pointillés estompés, seulement les
+                        deux séries de tête — doubler aussi Redirigés noierait
+                        le graphique. Hors légende : le toggle « Période
+                        précédente » les nomme déjà, et leurs pastilles y
+                        seraient identiques aux courbes N. */}
+                    {showPrevious && (
+                        <Line
+                            type="monotone"
+                            dataKey="answeredPrev"
+                            stroke="#10b981"
+                            strokeWidth={2}
+                            strokeOpacity={0.35}
+                            strokeDasharray="6 4"
+                            dot={false}
+                            activeDot={false}
+                            legendType="none"
+                            name="answeredPrev"
+                        />
+                    )}
+                    {showPrevious && (
+                        <Line
+                            type="monotone"
+                            dataKey="missedPrev"
+                            stroke="#f43f5e"
+                            strokeWidth={2}
+                            strokeOpacity={0.35}
+                            strokeDasharray="6 4"
+                            dot={false}
+                            activeDot={false}
+                            legendType="none"
+                            name="missedPrev"
+                        />
+                    )}
                     <Line
                         type="monotone"
                         dataKey="answered"

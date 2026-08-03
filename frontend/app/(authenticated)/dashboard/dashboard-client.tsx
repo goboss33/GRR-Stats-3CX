@@ -16,8 +16,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
+import { PeriodComparisonToggle, usePeriodComparisonPreference } from "@/components/period-comparison-toggle";
+import { weekAlignedPreviousPeriod } from "@/services/domain/period-comparison";
 
-import { getDashboardAllOrigins } from "@/services/dashboard.service";
+import { getDashboardAllOrigins, getPrevTimelineAllOrigins } from "@/services/dashboard.service";
 import { getScopedQueueOptions } from "@/services/queues.service";
 import { QueueOverviewGrid } from "@/components/stats-v2/queue-overview-grid";
 import type { QueueInfo } from "@/types/queues.types";
@@ -84,6 +86,34 @@ export default function DashboardClient() {
     const metrics = current?.metrics ?? null;
     const timelineData = current?.timelineData ?? [];
     const heatmapData = current?.heatmapData ?? [];
+
+    // Superposition N-1 du graphique : préférence personnelle (localStorage),
+    // courbes chargées à la PREMIÈRE activation seulement puis conservées pour
+    // le contexte (serveur + période). Le passé ne bouge pas : pas
+    // d'invalidation au « Rafraîchir ».
+    const [compareEnabled, setCompareEnabled] = usePeriodComparisonPreference();
+    const [prevTimelineCache, setPrevTimelineCache] =
+        useState<Partial<Record<CallOrigin, TimelineDataPoint[]>> | null>(null);
+    const prevTimelineKeyRef = useRef<string>("");
+    useEffect(() => {
+        if (!compareEnabled) return;
+        const key = `${getSelectedServer()}|${dateRange.startDate.toISOString()}|${dateRange.endDate.toISOString()}`;
+        if (prevTimelineKeyRef.current === key) return;
+        prevTimelineKeyRef.current = key;
+        setPrevTimelineCache(null);
+        getPrevTimelineAllOrigins(getSelectedServer(), dateRange.startDate, dateRange.endDate)
+            .then((all) => {
+                if (prevTimelineKeyRef.current === key) setPrevTimelineCache(all);
+            })
+            .catch((error) => {
+                console.error("Error fetching previous timeline:", error);
+                // Clé relâchée : une prochaine activation retentera.
+                if (prevTimelineKeyRef.current === key) prevTimelineKeyRef.current = "";
+            });
+    }, [compareEnabled, dateRange.startDate, dateRange.endDate]);
+    // L'alignement des points N-1 se fait par DATE décalée dans CallsChart.
+    const previousOffsetMs = dateRange.startDate.getTime()
+        - weekAlignedPreviousPeriod(dateRange.startDate, dateRange.endDate).startDate.getTime();
 
     // « Perdus » = manqués et occupés. La messagerie garde sa case : elle
     // décrit autre chose qu'un abandon, et l'exploitation s'en sert.
@@ -244,7 +274,10 @@ export default function DashboardClient() {
                 {/* Chart main */}
                 <Card className="border-none shadow-md xl:col-span-2 bg-gradient-to-b from-white to-slate-50/50">
                     <CardHeader>
-                        <CardTitle className="text-lg font-bold text-slate-900">Évolution du Volume</CardTitle>
+                        <div className="flex items-center justify-between gap-4">
+                            <CardTitle className="text-lg font-bold text-slate-900">Évolution du Volume</CardTitle>
+                            <PeriodComparisonToggle checked={compareEnabled} onCheckedChange={setCompareEnabled} />
+                        </div>
                     </CardHeader>
                     <CardContent>
                         {isLoading && !isInitialLoad ? (
@@ -260,7 +293,11 @@ export default function DashboardClient() {
                                 </div>
                             </div>
                         ) : (
-                            <CallsChart data={timelineData} />
+                            <CallsChart
+                                data={timelineData}
+                                previousData={compareEnabled ? prevTimelineCache?.[origin] ?? null : null}
+                                previousOffsetMs={previousOffsetMs}
+                            />
                         )}
                     </CardContent>
                 </Card>

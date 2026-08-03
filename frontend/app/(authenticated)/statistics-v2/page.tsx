@@ -8,14 +8,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
 import { useReportLoadedOrigins, useRegisterHeaderRefresh } from "@/components/header-scope";
-import { getQueueStatistics } from "@/services/queue-statistics.service";
+import { getQueueStatistics, getQueuePreviousTimeline } from "@/services/queue-statistics.service";
 import { getScopedQueueOptions } from "@/services/queues.service";
 import { NoPerimeterNotice } from "@/components/no-perimeter-notice";
 import { TeamOverview } from "@/components/stats-v2/team-overview";
 import { AgentPerformanceTableV2 } from "@/components/stats-v2/agent-performance-table-v2";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
+import { PeriodComparisonToggle, usePeriodComparisonPreference } from "@/components/period-comparison-toggle";
+import { weekAlignedPreviousPeriod } from "@/services/domain/period-comparison";
 import type { QueueStatistics } from "@/types/statistics.types";
+import type { TimelineDataPoint } from "@/types/stats.types";
 import type { CallOrigin } from "@/services/domain/call-classification";
 
 
@@ -56,6 +59,41 @@ export default function StatisticsV2Page() {
     // Default to current month
     // La période vient de l'URL (cf. lib/url-state).
     const dateRange = useUrlPeriod();
+
+    // Superposition N-1 du graphique : préférence personnelle (localStorage),
+    // courbe chargée à l'activation du toggle puis mise en cache par
+    // provenance pour le contexte courant (groupe + période). Un échec relâche
+    // le marqueur : la prochaine activation retentera.
+    const [compareEnabled, setCompareEnabled] = usePeriodComparisonPreference();
+    const [prevTimelineCache, setPrevTimelineCache] =
+        useState<Partial<Record<CallOrigin, TimelineDataPoint[]>>>({});
+    const prevTimelineKeyRef = useRef<string>("");
+    const requestedPrevRef = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        if (!compareEnabled || !selectedQueueNumber) return;
+        const key = `${getSelectedServer()}|${selectedQueueNumber}|${dateRange.startDate.toISOString()}|${dateRange.endDate.toISOString()}`;
+        if (prevTimelineKeyRef.current !== key) {
+            prevTimelineKeyRef.current = key;
+            requestedPrevRef.current = new Set();
+            setPrevTimelineCache({});
+        }
+        const requestKey = `${key}|${origin}`;
+        if (requestedPrevRef.current.has(requestKey)) return;
+        requestedPrevRef.current.add(requestKey);
+        getQueuePreviousTimeline(getSelectedServer(), selectedQueueNumber, dateRange.startDate, dateRange.endDate, origin)
+            .then((data) => {
+                if (prevTimelineKeyRef.current === key) {
+                    setPrevTimelineCache((cache) => ({ ...cache, [origin]: data }));
+                }
+            })
+            .catch((error) => {
+                logger.error("[StatisticsV2] timeline N-1 en échec :", { origin, error });
+                requestedPrevRef.current.delete(requestKey);
+            });
+    }, [compareEnabled, selectedQueueNumber, dateRange.startDate, dateRange.endDate, origin]);
+    // L'alignement des points N-1 se fait par DATE décalée dans CallsChart.
+    const previousOffsetMs = dateRange.startDate.getTime()
+        - weekAlignedPreviousPeriod(dateRange.startDate, dateRange.endDate).startDate.getTime();
 
     // Seul le signal « aucun périmètre » est encore utile ici : la liste des
     // files vit désormais sur le tableau de bord (aperçu) et dans le header.
@@ -200,8 +238,15 @@ export default function StatisticsV2Page() {
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div className="lg:col-span-2">
                             <div className="bg-white rounded-xl border border-slate-200 p-6">
-                                <h3 className="text-lg font-semibold text-slate-900 mb-4">Évolution du Volume</h3>
-                                <CallsChart data={statistics.timelineData} />
+                                <div className="mb-4 flex items-center justify-between gap-4">
+                                    <h3 className="text-lg font-semibold text-slate-900">Évolution du Volume</h3>
+                                    <PeriodComparisonToggle checked={compareEnabled} onCheckedChange={setCompareEnabled} />
+                                </div>
+                                <CallsChart
+                                    data={statistics.timelineData}
+                                    previousData={compareEnabled ? prevTimelineCache[origin] ?? null : null}
+                                    previousOffsetMs={previousOffsetMs}
+                                />
                             </div>
                         </div>
                         <div className="lg:col-span-1">

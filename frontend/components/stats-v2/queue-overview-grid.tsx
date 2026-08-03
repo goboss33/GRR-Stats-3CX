@@ -7,6 +7,7 @@ import { QueueOverviewCard } from "@/components/stats-v2/queue-overview-card";
 import { getQueueOverviewKpis } from "@/services/queue-statistics.service";
 import { getQueueFavorites } from "@/services/queue-favorites.service";
 import { getSelectedServer } from "@/lib/selected-server";
+import { previousPeriod } from "@/services/domain/period-comparison";
 import { logger } from "@/lib/logger";
 import type { QueueInfo } from "@/types/queues.types";
 import type { QueueKPIs } from "@/types/statistics.types";
@@ -26,6 +27,11 @@ import type { CallOrigin } from "@/services/domain/call-classification";
  * que l'écran détail, pour que l'aperçu et le détail affichent les mêmes
  * chiffres par construction). Tri stable par numéro ; les groupes sans appel
  * sur la période se replient sous la grille.
+ *
+ * Les flèches de comparaison N-1 sont une SECONDE vague dans le même pool :
+ * la file d'attente contient d'abord tous les chiffres N, puis les N-1 — les
+ * cartes se remplissent aussi vite qu'avant, les flèches suivent. Un N-1 en
+ * échec prive la carte de ses flèches, jamais de ses chiffres.
  */
 
 const CONCURRENCY = 5;
@@ -42,6 +48,9 @@ interface Props {
 
 export function QueueOverviewGrid({ queues, startDate, endDate, origin, onSelect }: Props) {
     const [kpisByQueue, setKpisByQueue] = useState<Record<string, QueueKPIs>>({});
+    // Comparaison N-1 par file : absente = en chargement (squelette de
+    // flèche), « unavailable » = échec ou groupe vide, pas de flèche.
+    const [prevKpisByQueue, setPrevKpisByQueue] = useState<Record<string, QueueKPIs | "unavailable">>({});
     // Files dont la requête a échoué : retirées de la grille plutôt que de
     // laisser un squelette éternel.
     const [failed, setFailed] = useState<Set<string>>(new Set());
@@ -49,6 +58,9 @@ export function QueueOverviewGrid({ queues, startDate, endDate, origin, onSelect
     const [expanded, setExpanded] = useState(false);
     const contextKeyRef = useRef("");
     const inflightRef = useRef<Set<string>>(new Set());
+    // Réponses N déjà arrivées, lisibles par les workers (l'état React serait
+    // périmé dans leur fermeture) : évite de charger le N-1 d'un groupe vide.
+    const mainKpisRef = useRef<Record<string, QueueKPIs>>({});
 
     useEffect(() => {
         getQueueFavorites(getSelectedServer())
@@ -87,28 +99,58 @@ export function QueueOverviewGrid({ queues, startDate, endDate, origin, onSelect
         if (contextKeyRef.current !== ctxKey) {
             contextKeyRef.current = ctxKey;
             setKpisByQueue({});
+            setPrevKpisByQueue({});
             setFailed(new Set());
             inflightRef.current = new Set();
+            mainKpisRef.current = {};
         }
 
         const serverId = getSelectedServer();
-        const pending = shown
-            .map((q) => q.queueNumber)
-            .filter((n) => !inflightRef.current.has(n));
-        pending.forEach((n) => inflightRef.current.add(n));
+        // Flèches N-1 : période de même durée juste avant — la convention des
+        // KPI globaux du tableau de bord (cf. period-comparison).
+        const prev = previousPeriod(startDate, endDate);
+        // Deux vagues dans le même pool : TOUS les chiffres N d'abord, les
+        // comparaisons N-1 ensuite — les cartes se remplissent aussi vite
+        // qu'avant l'arrivée des flèches.
+        const pending = [
+            ...shown.map((q) => ({ queueNumber: q.queueNumber, period: "current" as const })),
+            ...shown.map((q) => ({ queueNumber: q.queueNumber, period: "previous" as const })),
+        ].filter((job) => !inflightRef.current.has(`${job.period}|${job.queueNumber}`));
+        pending.forEach((job) => inflightRef.current.add(`${job.period}|${job.queueNumber}`));
 
         const worker = async () => {
             for (;;) {
-                const queueNumber = pending.shift();
-                if (!queueNumber || contextKeyRef.current !== ctxKey) return;
+                const job = pending.shift();
+                if (!job || contextKeyRef.current !== ctxKey) return;
+                const { queueNumber } = job;
+                if (job.period === "current") {
+                    try {
+                        const kpis = await getQueueOverviewKpis(serverId, queueNumber, startDate, endDate, origin);
+                        if (contextKeyRef.current !== ctxKey) return;
+                        mainKpisRef.current[queueNumber] = kpis;
+                        setKpisByQueue((current) => ({ ...current, [queueNumber]: kpis }));
+                    } catch (error) {
+                        logger.error("[QueueOverview] KPI en échec :", { queue: queueNumber, error });
+                        if (contextKeyRef.current !== ctxKey) return;
+                        setFailed((current) => new Set(current).add(queueNumber));
+                    }
+                    continue;
+                }
+                // Un groupe déjà connu vide sur la période N est replié : sa
+                // comparaison ne s'affichera nulle part, autant ne pas la payer.
+                const main = mainKpisRef.current[queueNumber];
+                if (main && main.callsReceived + main.teamDirectReceived === 0) {
+                    setPrevKpisByQueue((current) => ({ ...current, [queueNumber]: "unavailable" }));
+                    continue;
+                }
                 try {
-                    const kpis = await getQueueOverviewKpis(serverId, queueNumber, startDate, endDate, origin);
+                    const kpis = await getQueueOverviewKpis(serverId, queueNumber, prev.startDate, prev.endDate, origin);
                     if (contextKeyRef.current !== ctxKey) return;
-                    setKpisByQueue((current) => ({ ...current, [queueNumber]: kpis }));
+                    setPrevKpisByQueue((current) => ({ ...current, [queueNumber]: kpis }));
                 } catch (error) {
-                    logger.error("[QueueOverview] KPI en échec :", { queue: queueNumber, error });
+                    logger.error("[QueueOverview] KPI N-1 en échec :", { queue: queueNumber, error });
                     if (contextKeyRef.current !== ctxKey) return;
-                    setFailed((current) => new Set(current).add(queueNumber));
+                    setPrevKpisByQueue((current) => ({ ...current, [queueNumber]: "unavailable" }));
                 }
             }
         };
@@ -136,6 +178,7 @@ export function QueueOverviewGrid({ queues, startDate, endDate, origin, onSelect
                         queueNumber={q.queueNumber}
                         queueName={q.queueName}
                         kpis={kpisByQueue[q.queueNumber] ?? null}
+                        previousKpis={prevKpisByQueue[q.queueNumber] ?? "loading"}
                         onSelect={onSelect}
                     />
                 ))}

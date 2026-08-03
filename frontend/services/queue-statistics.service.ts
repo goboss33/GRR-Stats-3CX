@@ -23,6 +23,8 @@ import type {
 } from "@/services/domain/call.types";
 import type { CallOrigin, PassageOutcome } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
+import { weekAlignedPreviousPeriod } from "@/services/domain/period-comparison";
+import type { TimelineDataPoint } from "@/services/domain/call.types";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:3000";
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
@@ -154,6 +156,29 @@ export async function getQueueOverviewKpis(
         throw new Error("Cette file d'attente n'est pas dans votre périmètre");
     }
     return computeQueueKPIs(serverId, queueNumber, startDate, endDate, origin);
+}
+
+/**
+ * Courbe N-1 d'une file, pour la superposition du graphique d'évolution —
+ * chargée seulement à l'activation du toggle « Période précédente ».
+ *
+ * Période ALIGNÉE SEMAINE (cf. period-comparison), PAS la définition des
+ * flèches des cartes : superposer un lundi sur un samedi rendrait la courbe
+ * pointillée illisible, le trafic étant hebdomadaire.
+ */
+export async function getQueuePreviousTimeline(
+    serverId: ServerId,
+    queueNumber: string,
+    startDate: Date,
+    endDate: Date,
+    origin: CallOrigin = "both"
+): Promise<TimelineDataPoint[]> {
+    const scope = await resolveAccessScope(serverId);
+    if (!isQueueInScope(scope, queueNumber)) {
+        throw new Error("Cette file d'attente n'est pas dans votre périmètre");
+    }
+    const prev = weekAlignedPreviousPeriod(startDate, endDate);
+    return getQueueTimelineData(serverId, queueNumber, prev.startDate, prev.endDate, origin);
 }
 
 async function computeQueueKPIs(

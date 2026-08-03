@@ -12,8 +12,10 @@ import {
     getTimelineByOriginRaw,
     getHeatmapByOriginRaw,
     type GlobalMetricsByOriginRow,
+    type TimelineByOriginRow,
 } from "@/services/repositories/cdr.repository";
 import { resolveAccessScope, unrestrictedScope, type AccessScope } from "@/lib/access-scope";
+import { weekAlignedPreviousPeriod } from "@/services/domain/period-comparison";
 import type { CallOrigin } from "@/services/domain/call-classification";
 import type { DashboardDirection } from "@/services/domain/call-aggregation";
 import type {
@@ -199,6 +201,32 @@ function timelineLabel(date: Date, interval: "hour" | "day"): string {
     return `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Courbe d'une variante : sommes par point de date, sur les classes retenues. */
+function composeTimeline(
+    rows: TimelineByOriginRow[],
+    classes: string[],
+    interval: "hour" | "day"
+): TimelineDataPoint[] {
+    const byDate = new Map<number, { date: Date; answered: number; missed: number }>();
+    for (const row of rows) {
+        if (!classes.includes(row.direction_class)) continue;
+        const date = new Date(row.date_group);
+        const key = date.getTime();
+        const entry = byDate.get(key) ?? { date, answered: 0, missed: 0 };
+        entry.answered += Number(row.answered);
+        entry.missed += Number(row.missed);
+        byDate.set(key, entry);
+    }
+    return [...byDate.values()]
+        .sort((a, b) => a.date.getTime() - b.date.getTime())
+        .map((e) => ({
+            date: e.date.toISOString(),
+            label: timelineLabel(e.date, interval),
+            answered: e.answered,
+            missed: e.missed,
+        }));
+}
+
 /**
  * Les trois variantes de provenance du tableau de bord en UN chargement.
  *
@@ -238,24 +266,7 @@ export async function getDashboardAllOrigins(
         const prev = composeMetrics(prevMetricsRows, classes);
 
         // Courbe : sommes par point de date, sur les classes de la variante.
-        const byDate = new Map<number, { date: Date; answered: number; missed: number }>();
-        for (const row of timelineRows) {
-            if (!classes.includes(row.direction_class)) continue;
-            const date = new Date(row.date_group);
-            const key = date.getTime();
-            const entry = byDate.get(key) ?? { date, answered: 0, missed: 0 };
-            entry.answered += Number(row.answered);
-            entry.missed += Number(row.missed);
-            byDate.set(key, entry);
-        }
-        const timelineData: TimelineDataPoint[] = [...byDate.values()]
-            .sort((a, b) => a.date.getTime() - b.date.getTime())
-            .map((e) => ({
-                date: e.date.toISOString(),
-                label: timelineLabel(e.date, interval),
-                answered: e.answered,
-                missed: e.missed,
-            }));
+        const timelineData = composeTimeline(timelineRows, classes, interval);
 
         // Heatmap : mêmes sommes, par case (jour × heure).
         const byCell = new Map<string, HeatmapDataPoint>();
@@ -299,6 +310,36 @@ export async function getDashboardAllOrigins(
             timelineData,
             heatmapData: [...byCell.values()],
         };
+    }
+    return result;
+}
+
+/**
+ * Courbes N-1 du tableau de bord, pour la superposition du graphique — les
+ * trois provenances d'un coup, comme le chargement principal, mais chargées
+ * SEULEMENT à l'activation du toggle (la plupart des sessions ne l'ouvrent pas).
+ *
+ * Période précédente ALIGNÉE SEMAINE (cf. period-comparison) : le trafic est
+ * hebdomadaire, la superposition doit faire tomber les lundis sur des lundis —
+ * ce n'est PAS la définition des flèches N-1 des vignettes, et c'est voulu.
+ */
+export async function getPrevTimelineAllOrigins(
+    serverId: ServerId,
+    startDate: Date,
+    endDate: Date
+): Promise<Record<CallOrigin, TimelineDataPoint[]>> {
+    const scope = await resolveDashboardScope(serverId);
+    const timezone = await getServerTimezone(serverId);
+    const prev = weekAlignedPreviousPeriod(startDate, endDate);
+
+    // Même granularité que la courbe N (durées identiques par construction).
+    const diffDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+    const interval: "hour" | "day" = diffDays <= 2 ? "hour" : "day";
+
+    const rows = await getTimelineByOriginRaw(serverId, prev.startDate, prev.endDate, timezone, scope);
+    const result = {} as Record<CallOrigin, TimelineDataPoint[]>;
+    for (const origin of ALL_ORIGINS) {
+        result[origin] = composeTimeline(rows, ORIGIN_CLASSES[origin], interval);
     }
     return result;
 }
