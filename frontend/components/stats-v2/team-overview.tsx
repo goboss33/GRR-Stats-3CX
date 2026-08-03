@@ -5,14 +5,17 @@ import { formatDurationHuman as formatDuration } from "@/services/domain/call-ag
 import { QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tip } from "@/components/ui/tooltip";
+import { TrendPill } from "@/components/stats-v2/trend-arrow";
 import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, ExternalLink, TrendingUp } from "lucide-react";
 import { outcomesForBucket, sumBucket, type CallOrigin } from "@/services/domain/call-classification";
-import { computeTeamTotals } from "@/services/domain/team-totals";
+import { computeTeamTotals, type TeamTotals } from "@/services/domain/team-totals";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import Link from "next/link";
 
 interface TeamOverviewProps {
     kpis: QueueKPIs;
+    /** KPI de la période N-1 pour les pastilles de tendance des vignettes. */
+    previousKpis: QueueKPIs | "loading" | "unavailable";
     queueName: string;
     queueNumber: string;
     startDate: string;
@@ -40,7 +43,7 @@ const COLORS = {
     overflow: "#f59e0b",
 };
 
-export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate, origin }: TeamOverviewProps) {
+export function TeamOverview({ kpis, previousKpis, queueName, queueNumber, startDate, endDate, origin }: TeamOverviewProps) {
     // Les totaux des vignettes viennent du helper PARTAGÉ avec les cartes de
     // l'aperçu des groupes (services/domain/team-totals) : les deux écrans ne
     // peuvent pas diverger. Le détail fin (regroupements, liens) reste ici.
@@ -49,6 +52,16 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
         totalOverflowed, totalRedirected: totalOverflow, performanceRate,
     } = computeTeamTotals(kpis);
     const handedOffCounts = kpis.handedOffInPerformance === "success";
+
+    // Pastilles N-1 : mêmes formules et mêmes règles que les cartes de
+    // l'aperçu — une période précédente sans aucun appel ne compare rien.
+    const prevTotals = typeof previousKpis === "object" ? computeTeamTotals(previousKpis) : null;
+    const prevState: TeamTotals | "loading" | "unavailable" =
+        previousKpis === "loading" ? "loading"
+            : prevTotals && prevTotals.totalReceived > 0 ? prevTotals
+                : "unavailable";
+    const prevOf = (pick: (t: TeamTotals) => number) =>
+        typeof prevState === "object" ? pick(prevState) : prevState;
 
     // Taux de prise en charge PAR BLOC — même définition que la barre globale :
     // répondu ou transféré, c'est pris en charge.
@@ -213,8 +226,9 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                     <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-blue-600 transition-colors" />
                                 </div>
                                 <div className="text-2xl font-bold text-slate-900">{totalReceived}</div>
-                                <div className="text-[10px] text-slate-500 mt-0.5">
-                                    File: {kpis.callsReceived} · Directs: {kpis.teamDirectReceived}
+                                <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
+                                    <span>File: {kpis.callsReceived} · Directs: {kpis.teamDirectReceived}</span>
+                                    <TrendPill current={totalReceived} previous={prevOf((t) => t.totalReceived)} sense="neutral" />
                                 </div>
                             </Link>
 
@@ -233,8 +247,9 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                     <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-emerald-600 transition-colors" />
                                 </div>
                                 <div className="text-2xl font-bold text-emerald-700">{totalAnswered}</div>
-                                <div className="text-[10px] text-slate-500 mt-0.5">
-                                    File: {kpis.callsAnswered} · Directs: {kpis.teamDirectAnswered}
+                                <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
+                                    <span>File: {kpis.callsAnswered} · Directs: {kpis.teamDirectAnswered}</span>
+                                    <TrendPill current={totalAnswered} previous={prevOf((t) => t.totalAnswered)} sense="higher-better" />
                                 </div>
                             </Link>
 
@@ -253,8 +268,9 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                     <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-red-600 transition-colors" />
                                 </div>
                                 <div className="text-2xl font-bold text-red-700">{totalLost}</div>
-                                <div className="text-[10px] text-slate-500 mt-0.5">
-                                    File: {sumBucket(kpis.outcomeCounts, "lost")} · Directs: {kpis.directLost}
+                                <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
+                                    <span>File: {sumBucket(kpis.outcomeCounts, "lost")} · Directs: {kpis.directLost}</span>
+                                    <TrendPill current={totalLost} previous={prevOf((t) => t.totalLost)} sense="lower-better" />
                                 </div>
                             </Link>
 
@@ -274,8 +290,9 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                     <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-amber-600 transition-colors" />
                                 </div>
                                 <div className="text-2xl font-bold text-amber-700">{totalOverflow}</div>
-                                <div className="text-[10px] text-slate-500 mt-0.5">
-                                    Transférés: {totalHandedOff} · Débordés: {totalOverflowed}
+                                <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
+                                    <span>Transférés: {totalHandedOff} · Débordés: {totalOverflowed}</span>
+                                    <TrendPill current={totalOverflow} previous={prevOf((t) => t.totalRedirected)} sense="neutral" />
                                 </div>
                             </Link>
 
@@ -298,6 +315,7 @@ export function TeamOverview({ kpis, queueName, queueNumber, startDate, endDate,
                                     <span className={`text-sm font-bold ${performanceRate >= 80 ? 'text-emerald-700' : performanceRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}>
                                         {performanceRate}%
                                     </span>
+                                    <TrendPill current={performanceRate} previous={prevOf((t) => t.performanceRate)} sense="higher-better" unit="points" />
                                 </div>
                                 <div className="text-xs text-slate-500">
                                     {handedOffCounts && totalHandedOff > 0

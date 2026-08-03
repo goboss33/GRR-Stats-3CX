@@ -8,7 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
 import { useReportLoadedOrigins, useRegisterHeaderRefresh } from "@/components/header-scope";
-import { getQueueStatistics, getQueuePreviousTimeline } from "@/services/queue-statistics.service";
+import { getQueueStatistics, getQueuePreviousTimeline, getQueuePreviousStats } from "@/services/queue-statistics.service";
 import { getScopedQueueOptions } from "@/services/queues.service";
 import { NoPerimeterNotice } from "@/components/no-perimeter-notice";
 import { TeamOverview } from "@/components/stats-v2/team-overview";
@@ -17,9 +17,12 @@ import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
 import { PeriodComparisonToggle, usePeriodComparisonPreference } from "@/components/period-comparison-toggle";
 import { weekAlignedPreviousPeriod } from "@/services/domain/period-comparison";
-import type { QueueStatistics } from "@/types/statistics.types";
+import type { QueueStatistics, QueueKPIs, AgentStats } from "@/types/statistics.types";
 import type { TimelineDataPoint } from "@/types/stats.types";
 import type { CallOrigin } from "@/services/domain/call-classification";
+
+/** Volet N-1 du bilan : KPI + agents, chargés en un aller-retour. */
+type PreviousStats = { kpis: QueueKPIs; agents: AgentStats[] };
 
 
 const ORIGINS: CallOrigin[] = ["both", "external", "internal"];
@@ -68,6 +71,11 @@ export default function StatisticsV2Page() {
     const [compareEnabled, setCompareEnabled] = usePeriodComparisonPreference();
     const [prevTimelineCache, setPrevTimelineCache] =
         useState<Partial<Record<CallOrigin, TimelineDataPoint[] | "failed">>>({});
+    // Stats N-1 (KPI + agents) pour les flèches de tendance du bilan — même
+    // préchargement en tâche de fond, même règle : un échec prive des
+    // flèches, jamais des chiffres.
+    const [prevStatsCache, setPrevStatsCache] =
+        useState<Partial<Record<CallOrigin, PreviousStats | "failed">>>({});
     // L'alignement des points N-1 se fait par DATE décalée dans CallsChart.
     const previousOffsetMs = dateRange.startDate.getTime()
         - weekAlignedPreviousPeriod(dateRange.startDate, dateRange.endDate).startDate.getTime();
@@ -105,6 +113,19 @@ export default function StatisticsV2Page() {
                 }
             });
 
+        // Stats N-1 (KPI + agents) pour les flèches du bilan, même principe.
+        getQueuePreviousStats(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate, o)
+            .then((data) => {
+                if (contextKeyRef.current !== ctxKey) return;
+                setPrevStatsCache((cache) => ({ ...cache, [o]: data }));
+            })
+            .catch((error) => {
+                logger.error("[StatisticsV2] stats N-1 en échec :", { origin: o, error });
+                if (contextKeyRef.current === ctxKey) {
+                    setPrevStatsCache((cache) => ({ ...cache, [o]: "failed" }));
+                }
+            });
+
         try {
             const data = await getQueueStatistics(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate, o);
             if (contextKeyRef.current !== ctxKey) return;
@@ -130,6 +151,7 @@ export default function StatisticsV2Page() {
         contextKeyRef.current = ctxKey;
         setStatsCache({});
         setPrevTimelineCache({});
+        setPrevStatsCache({});
         void (async () => {
             await fetchIntoCache(ctxKey, primary, true);
             for (const o of ORIGINS) {
@@ -209,6 +231,9 @@ export default function StatisticsV2Page() {
                     {/* Team Overview - KPIs + Répartition fusionnés */}
                     <TeamOverview
                         kpis={statistics.kpis}
+                        previousKpis={prevStatsCache[origin] === undefined ? "loading"
+                            : prevStatsCache[origin] === "failed" ? "unavailable"
+                                : (prevStatsCache[origin] as PreviousStats).kpis}
                         queueName={statistics.queueName}
                         queueNumber={statistics.queueNumber}
                         startDate={format(dateRange.startDate, "yyyy-MM-dd")}
@@ -220,6 +245,9 @@ export default function StatisticsV2Page() {
                     {/* Agent Performance Table V2 - Avec Total + Score + % */}
                     <AgentPerformanceTableV2
                         agents={statistics.agents}
+                        previousStats={prevStatsCache[origin] === undefined ? "loading"
+                            : prevStatsCache[origin] === "failed" ? "unavailable"
+                                : (prevStatsCache[origin] as PreviousStats)}
                         totalQueueCallsAnswered={statistics.kpis.callsAnswered}
                         totalQueueCallsReceived={statistics.kpis.callsReceived}
                         totalDirectCallsAnswered={statistics.kpis.teamDirectAnswered}

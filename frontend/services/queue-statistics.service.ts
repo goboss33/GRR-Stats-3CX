@@ -23,7 +23,7 @@ import type {
 } from "@/services/domain/call.types";
 import type { CallOrigin, PassageOutcome } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
-import { weekAlignedPreviousPeriod } from "@/services/domain/period-comparison";
+import { previousPeriod, weekAlignedPreviousPeriod } from "@/services/domain/period-comparison";
 import type { TimelineDataPoint } from "@/services/domain/call.types";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:3000";
@@ -156,6 +156,34 @@ export async function getQueueOverviewKpis(
         throw new Error("Cette file d'attente n'est pas dans votre périmètre");
     }
     return computeQueueKPIs(serverId, queueNumber, startDate, endDate, origin);
+}
+
+/**
+ * KPI et stats agents de la période N-1 — pour les flèches de tendance du
+ * bilan d'équipe (vignettes, prise en charge, % de participation du tableau).
+ *
+ * Période de MÊME DURÉE juste avant (previousPeriod) : la même définition que
+ * les flèches des cartes d'aperçu — la carte et le bilan qu'elle ouvre
+ * racontent la même histoire. Un seul aller-retour pour les deux volets,
+ * préchargé en tâche de fond par l'écran (cf. fetchIntoCache).
+ */
+export async function getQueuePreviousStats(
+    serverId: ServerId,
+    queueNumber: string,
+    startDate: Date,
+    endDate: Date,
+    origin: CallOrigin = "both"
+): Promise<{ kpis: QueueKPIs; agents: AgentStats[] }> {
+    const scope = await resolveAccessScope(serverId);
+    if (!isQueueInScope(scope, queueNumber)) {
+        throw new Error("Cette file d'attente n'est pas dans votre périmètre");
+    }
+    const prev = previousPeriod(startDate, endDate);
+    const [kpis, agents] = await Promise.all([
+        computeQueueKPIs(serverId, queueNumber, prev.startDate, prev.endDate, origin),
+        computeAgentStats(serverId, queueNumber, prev.startDate, prev.endDate, origin),
+    ]);
+    return { kpis, agents };
 }
 
 /**

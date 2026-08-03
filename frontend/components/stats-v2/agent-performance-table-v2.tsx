@@ -2,8 +2,9 @@
 
 import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
 
-import { AgentStats } from "@/types/statistics.types";
+import { AgentStats, QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TrendPill } from "@/components/stats-v2/trend-arrow";
 import { Users, ArrowUpDown, Info } from "lucide-react";
 import { useState, useMemo } from "react";
 import {
@@ -16,6 +17,11 @@ import {
 
 interface AgentPerformanceTableV2Props {
     agents: AgentStats[];
+    /**
+     * Stats N-1 (KPI + agents) pour la pastille d'évolution à côté du nom —
+     * « loading » = squelettes, « unavailable » = pas de pastille du tout.
+     */
+    previousStats: { kpis: QueueKPIs; agents: AgentStats[] } | "loading" | "unavailable";
     totalQueueCallsAnswered: number;
     totalQueueCallsReceived: number;
     totalDirectCallsAnswered: number;
@@ -28,7 +34,7 @@ type SortField = "name" | "queueAnswered" | "directAnswered" | "transferred" | "
 type SortDirection = "asc" | "desc";
 
 const columnTooltips: Record<string, string> = {
-    name: "Nom de l'agent, extension, et jauge de charge visuelle (vert = file, bleu = directs)",
+    name: "Nom de l'agent, extension, jauge de charge (violet = file, bleu = directs) et pastille d'évolution de la charge vs période précédente",
     queueAnswered: "Appels résolus via la file d'attente (résolveur final = dernier à décrocher) / appels où l'agent a été sollicité",
     directAnswered: "Appels directs répondus / appels directs reçus",
     transferred: "Transferts accomplis crédités à l'agent : il a décroché, puis l'appel a été servi ailleurs (autre équipe ou numéro externe). File + directs.",
@@ -46,6 +52,7 @@ function getParticipationColor(rate: number): string {
 
 export function AgentPerformanceTableV2({
     agents,
+    previousStats,
     totalQueueCallsAnswered,
     totalQueueCallsReceived,
     totalDirectCallsAnswered,
@@ -87,6 +94,30 @@ export function AgentPerformanceTableV2({
             };
         });
     }, [agents, totalTeamAnswered, totalTeamTransferred, handedOffCounts]);
+
+    // Évolution N-1 par agent : la pastille à côté du nom compare LE chiffre
+    // affiché juste dessous (« N appels » de la jauge = répondus + directs +
+    // transferts accomplis). Appariement par extension — un agent absent de la
+    // période N-1 (nouveau collaborateur) n'a pas de pastille ; une période
+    // N-1 sans aucune prise en charge d'équipe ne compare rien.
+    const prevAgentMap = useMemo(() => {
+        const map = new Map<string, { calls: number; participation: number }>();
+        if (typeof previousStats !== "object") return map;
+        const { kpis: prevKpis, agents: prevAgents } = previousStats;
+        const prevTeamTransferred = prevAgents.reduce(
+            (acc, a) => acc + a.queueTransferred + a.directTransferred, 0,
+        );
+        const prevTeamHandled = prevKpis.callsAnswered + prevKpis.teamDirectAnswered + prevTeamTransferred;
+        if (prevTeamHandled <= 0) return map;
+        for (const a of prevAgents) {
+            const calls = a.answered + a.directAnswered + a.queueTransferred + a.directTransferred;
+            map.set(a.extension, {
+                calls,
+                participation: Math.round((calls / prevTeamHandled) * 100),
+            });
+        }
+        return map;
+    }, [previousStats]);
 
     const handleSort = (field: SortField) => {
         if (sortField === field) {
@@ -264,7 +295,18 @@ export function AgentPerformanceTableV2({
                                     <tr key={`${agent.extension}-${agent.name}-${index}`} className="hover:bg-slate-50 transition-colors">
                                         <td className="px-3 py-3">
                                             <div>
-                                                <p className="font-medium text-slate-900">{agent.name}</p>
+                                                <p className="flex items-center gap-1.5 font-medium text-slate-900">
+                                                    {agent.name}
+                                                    <TrendPill
+                                                        current={agent.answered + agent.directAnswered + agent.transferred}
+                                                        previous={previousStats === "loading" ? "loading"
+                                                            : prevAgentMap.get(agent.extension)?.calls ?? "unavailable"}
+                                                        sense="higher-better"
+                                                        detail={prevAgentMap.has(agent.extension)
+                                                            ? `— participation : ${prevAgentMap.get(agent.extension)!.participation} % → ${agent.participationRate} %`
+                                                            : undefined}
+                                                    />
+                                                </p>
                                                 <p className="text-xs text-slate-500">Ext. {agent.extension}</p>
                                                 <WorkloadBar agent={agent} />
                                             </div>
