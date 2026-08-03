@@ -349,6 +349,18 @@ export async function getExtensionEntryHeatmap(
         const scope = await resolveAccessScope(serverId);
         if (!scope.canViewExtensionStats) return [];
 
+        // Même filtrage amont que getExtensionStatisticsChunk : une extension
+        // hors périmètre ne doit pas produire de heatmap, même si son numéro
+        // arrive en forgeant l'appel (server action, arguments contrôlables
+        // par le client). Les DDI passent : ce sont des lignes d'entrée, pas
+        // des agents — la règle de l'annuaire et des statistiques.
+        if (!scope.unrestricted) {
+            if (scope.empty || !scope.extensionNumbers) return [];
+            if (entry.kind === "extension" && !scope.extensionNumbers.includes(normalizeDigits(entry.input))) {
+                return [];
+            }
+        }
+
         const timezone = await getServerTimezone(serverId);
         const directory = await getDirectory(serverId);
         const matcher = buildMatcher(entry, directory);
