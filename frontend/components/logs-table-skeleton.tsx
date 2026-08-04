@@ -28,7 +28,8 @@ export function LogsTableSkeleton({ columnVisibility }: { columnVisibility: Colu
                             {columnVisibility.handledBy && <TableHead>Traité par</TableHead>}
                             {columnVisibility.queues && <TableHead>Queue(s)</TableHead>}
                             {columnVisibility.journey && <TableHead>Parcours</TableHead>}
-                            {columnVisibility.direction && <TableHead>Direction</TableHead>}
+                            {columnVisibility.provenance && <TableHead>Provenance</TableHead>}
+                            {columnVisibility.sens && <TableHead>Sens</TableHead>}
                             {columnVisibility.status && <TableHead>Statut</TableHead>}
                             {columnVisibility.duration && <TableHead>Durée</TableHead>}
                             {columnVisibility.waitTime && <TableHead>Attente</TableHead>}
@@ -79,7 +80,10 @@ export function LogsTableSkeleton({ columnVisibility }: { columnVisibility: Colu
                                         </div>
                                     </TableCell>
                                 )}
-                                {columnVisibility.direction && (
+                                {columnVisibility.provenance && (
+                                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                                )}
+                                {columnVisibility.sens && (
                                     <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
                                 )}
                                 {columnVisibility.status && (

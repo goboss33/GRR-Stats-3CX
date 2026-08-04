@@ -16,6 +16,9 @@ import {
 } from "@/services/repositories/cdr.repository";
 import { resolveAccessScope, unrestrictedScope, type AccessScope } from "@/lib/access-scope";
 import { weekAlignedPreviousPeriod } from "@/services/domain/period-comparison";
+// Le toggle Externe/Interne se traduit en SENS d'appels (ORIGIN_SENS) : la
+// même constante alimente les requêtes groupées ET les liens KPI → journaux.
+import { ORIGIN_SENS } from "@/services/domain/call-aggregation";
 import type { CallOrigin } from "@/services/domain/call-classification";
 import type { DashboardDirection } from "@/services/domain/call-aggregation";
 import type {
@@ -159,21 +162,10 @@ export interface DashboardOriginBundle {
     heatmapData: HeatmapDataPoint[];
 }
 
-/**
- * Quelles classes de direction alimentent chaque position du toggle. Le pont
- * EDIFEA est rangé côté externe (un appelant d'une autre entité) ; les
- * sortants n'apparaissent jamais sur le tableau de bord.
- */
-const ORIGIN_CLASSES: Record<CallOrigin, string[]> = {
-    external: ["inbound", "bridge"],
-    internal: ["internal"],
-    both: ["inbound", "bridge", "internal"],
-};
-
 const ALL_ORIGINS: CallOrigin[] = ["external", "internal", "both"];
 
 /** Compteurs d'une variante, composés depuis les lignes par classe. */
-function composeMetrics(rows: GlobalMetricsByOriginRow[], classes: string[]) {
+function composeMetrics(rows: GlobalMetricsByOriginRow[], classes: readonly string[]) {
     const picked = rows.filter((r) => classes.includes(r.direction_class));
     const sum = (f: (r: GlobalMetricsByOriginRow) => number) => picked.reduce((a, r) => a + f(r), 0);
     const totalCalls = sum((r) => Number(r.total_calls));
@@ -205,7 +197,7 @@ function timelineLabel(date: Date, interval: "hour" | "day"): string {
 /** Courbe d'une variante : sommes par point de date, sur les classes retenues. */
 function composeTimeline(
     rows: TimelineByOriginRow[],
-    classes: string[],
+    classes: readonly string[],
     interval: "hour" | "day"
 ): TimelineDataPoint[] {
     const byDate = new Map<number, { date: Date; answered: number; missed: number }>();
@@ -262,7 +254,7 @@ export async function getDashboardAllOrigins(
 
     const result = {} as Record<CallOrigin, DashboardOriginBundle>;
     for (const origin of ALL_ORIGINS) {
-        const classes = ORIGIN_CLASSES[origin];
+        const classes: readonly string[] = ORIGIN_SENS[origin];
         const cur = composeMetrics(metricsRows, classes);
         const prev = composeMetrics(prevMetricsRows, classes);
 
@@ -341,7 +333,7 @@ export async function getPrevTimelineAllOrigins(
     const rows = await getTimelineByOriginRaw(serverId, prev.startDate, prev.endDate, timezone, scope);
     const result = {} as Record<CallOrigin, TimelineDataPoint[]>;
     for (const origin of ALL_ORIGINS) {
-        result[origin] = composeTimeline(rows, ORIGIN_CLASSES[origin], interval);
+        result[origin] = composeTimeline(rows, ORIGIN_SENS[origin], interval);
     }
     return result;
 }

@@ -8,13 +8,14 @@ import { fr } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-import type { CallDirection, CallStatus, JourneyConditionNode, JourneyFilter, LogsFilters } from "@/types/logs.types";
+import type { CallSens, CallStatus, JourneyConditionNode, JourneyFilter, LogsFilters } from "@/types/logs.types";
+import { queueOutcomeConfig } from "@/components/logs-table-helpers";
 
 interface ActiveFiltersProps {
     dateRange: { startDate: Date; endDate: Date };
     filters: LogsFilters;
     onRemoveDateRange?: () => void;
-    onRemoveDirection: (direction: CallDirection) => void;
+    onRemoveSens: (sens: CallSens) => void;
     onRemoveStatus: (status: CallStatus) => void;
     onRemoveCallerSearch: () => void;
     onRemoveCalleeSearch: () => void;
@@ -28,14 +29,17 @@ interface ActiveFiltersProps {
     onRemoveTimeSlots?: () => void;
     /** Provenance (toggle Externe / Interne), posée par les liens des statistiques. */
     onRemoveCallOrigin?: () => void;
+    /** Absent quand la vue entreprise n'est pas accessible : pastille non retirable. */
+    onRemoveQueueView?: () => void;
+    onRemoveQueueOutcome?: () => void;
+    onRemoveQueueOrigin?: () => void;
     onResetAll: () => void;
 }
 
-const directionLabels: Record<CallDirection, string> = {
+const sensLabels: Record<CallSens, string> = {
     inbound: "Entrant",
     outbound: "Sortant",
-    internal: "Interne",
-    bridge: "Bridge",
+    intra: "Intra",
 };
 
 // Même vocabulaire que le tableau : Répondu, Perdu, Messagerie. « Occupé »
@@ -65,7 +69,7 @@ function formatConditionLabel(
 export function ActiveFilters({
     dateRange,
     filters,
-    onRemoveDirection,
+    onRemoveSens,
     onRemoveStatus,
     onRemoveCallerSearch,
     onRemoveCalleeSearch,
@@ -78,6 +82,9 @@ export function ActiveFilters({
     onRemoveJourneyConditions,
     onRemoveTimeSlots,
     onRemoveCallOrigin,
+    onRemoveQueueView,
+    onRemoveQueueOutcome,
+    onRemoveQueueOrigin,
     onResetAll,
 }: ActiveFiltersProps) {
     const activeFilters: React.ReactNode[] = [];
@@ -105,17 +112,17 @@ export function ActiveFilters({
         </Badge>
     );
 
-    // Direction filters (only show if not all 4 selected)
-    if (filters.directions && filters.directions.length > 0 && filters.directions.length < 4) {
-        filters.directions.forEach((dir) => {
+    // Sens (Entrant / Sortant / Intra) — rien si tout est sélectionné.
+    if (filters.sens && filters.sens.length > 0 && filters.sens.length < 3) {
+        filters.sens.forEach((v) => {
             activeFilters.push(
                 <Badge
-                    key={`dir-${dir}`}
+                    key={`sens-${v}`}
                     variant="secondary"
                     className="bg-blue-100 text-blue-700 gap-1 px-2 py-1 cursor-pointer hover:bg-blue-200 transition-colors"
-                    onClick={() => onRemoveDirection(dir)}
+                    onClick={() => onRemoveSens(v)}
                 >
-                    {directionLabels[dir]}
+                    {sensLabels[v]}
                     <X className="h-3 w-3" />
                 </Badge>
             );

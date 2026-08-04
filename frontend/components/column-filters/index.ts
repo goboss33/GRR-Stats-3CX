@@ -1,6 +1,6 @@
 export { ColumnFilterInput } from "./ColumnFilterInput";
 export { ColumnFilterDateRange } from "./ColumnFilterDateRange";
-export { ColumnFilterDirection } from "./ColumnFilterDirection";
+export { ColumnFilterSens } from "./ColumnFilterSens";
 export { ColumnFilterStatus } from "./ColumnFilterStatus";
 export { ColumnFilterQueueOutcome } from "./ColumnFilterQueueOutcome";
 export { ColumnFilterQueueOrigin } from "./ColumnFilterQueueOrigin";

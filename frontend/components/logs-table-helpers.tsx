@@ -21,14 +21,23 @@ import {
     Users,
     HelpCircle,
 } from "lucide-react";
-import type { CallDirection, CallStatus, SortField, LogsSort, JourneyStep } from "@/types/logs.types";
+import type { CallProvenance, CallSens, CallStatus, SortField, LogsSort, JourneyStep } from "@/types/logs.types";
 import type { PassageOutcome } from "@/services/domain/call-classification";
 
-export const directionConfig: Record<CallDirection, { icon: typeof ArrowDownLeft; label: string; className: string }> = {
+// Provenance : le vocabulaire du toggle du header, mot pour mot — un
+// utilisateur qui filtre « Externe » voit des lignes badgées « Externe ».
+export const provenanceConfig: Record<CallProvenance, { label: string; className: string }> = {
+    external: { label: "Externe", className: "bg-indigo-100 text-indigo-700" },
+    internal: { label: "Interne", className: "bg-slate-100 text-slate-700" },
+};
+
+// Sens de circulation. « Intra » (poste → poste ou système interne) plutôt
+// qu'« Interne », déjà pris par la provenance. Le pont n'est pas un sens :
+// c'est la pastille viaBridge, affichée à côté de la provenance.
+export const sensConfig: Record<CallSens, { icon: typeof ArrowDownLeft; label: string; className: string }> = {
     inbound: { icon: ArrowDownLeft, label: "Entrant", className: "bg-emerald-100 text-emerald-700" },
     outbound: { icon: ArrowUpRight, label: "Sortant", className: "bg-blue-100 text-blue-700" },
-    internal: { icon: ArrowLeftRight, label: "Interne", className: "bg-slate-100 text-slate-700" },
-    bridge: { icon: Shuffle, label: "Bridge", className: "bg-purple-100 text-purple-700" },
+    intra: { icon: ArrowLeftRight, label: "Intra", className: "bg-slate-100 text-slate-700" },
 };
 
 // Trois statuts finaux : Répondu, Perdu, Messagerie. « Occupé » rejoint

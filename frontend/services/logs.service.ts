@@ -18,7 +18,6 @@ import { getClassificationRules } from "@/lib/classification-rules";
 import { getStatsExclusions, type StatsExclusions } from "@/lib/stats-exclusions";
 import type {
     AggregatedCallLog,
-    CallDirection,
     CallStatus,
     LogsFilters,
     LogsSort,
@@ -29,7 +28,11 @@ import type {
     JourneyGroupCondition,
 } from "@/services/domain/call.types";
 import {
-    determineCallDirection,
+    determineCallProvenance,
+    determineCallSens,
+    callTouchesBridge,
+    buildSensFilterSQL,
+    buildProvenanceFilterSQL,
     determineCallStatus,
     buildFinalStatusFilterSQL,
     determineSegmentStatus,
@@ -72,25 +75,6 @@ function searchCondition(field: string, mode: SearchPatternMode, placeholder: st
         : `${field} ILIKE ${placeholder}`;
 }
 
-function buildSqlDirectionFilter(directions: CallDirection[] | undefined): string {
-    if (!directions || directions.length === 0 || directions.length === 4) return '';
-    const conditions: string[] = [];
-    const internalSystemTypes = INTERNAL_SYSTEM_DEST_TYPES.map(t => `'${t}'`).join(', ');
-
-    if (directions.includes('bridge')) {
-        conditions.push("(fs.source_dn_type = 'bridge' OR fs.destination_dn_type = 'bridge' OR ls.last_dest_type = 'bridge')");
-    }
-    if (directions.includes('inbound')) {
-        conditions.push("(fs.source_dn_type != 'extension' AND fs.source_dn_type != 'bridge' AND (ls.last_dest_type != 'bridge' OR ls.last_dest_type IS NULL))");
-    }
-    if (directions.includes('outbound')) {
-        conditions.push(`(fs.source_dn_type = 'extension' AND fs.destination_dn_type NOT IN ('extension', 'bridge', ${internalSystemTypes}) AND (ls.last_dest_type != 'bridge' OR ls.last_dest_type IS NULL))`);
-    }
-    if (directions.includes('internal')) {
-        conditions.push(`(fs.source_dn_type = 'extension' AND (fs.destination_dn_type = 'extension' OR fs.destination_dn_type IN (${internalSystemTypes})))`);
-    }
-    return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '';
-}
 
 
 function buildOrderByClause(sort?: LogsSort, timezone: string = "Europe/Zurich"): string {
@@ -369,16 +353,15 @@ function buildAggregatedQueryParts(
     const dateOnlyWhereClause = `cdr_started_at >= ${startP} AND cdr_started_at <= ${endP}`;
 
     const aggregatedWhereConditions: string[] = [];
-    const directionFilter = buildSqlDirectionFilter(filters.directions);
-    if (directionFilter) aggregatedWhereConditions.push(directionFilter);
-    // Provenance (toggle Externe / Interne des statistiques de groupe) : même
-    // critère que le socle — la source du premier segment. `fs` est le premier
-    // segment, déjà joint par les requêtes de données ET de comptage.
-    if (filters.callOrigin === "internal") {
-        aggregatedWhereConditions.push(`COALESCE(fs.source_dn_type, '') = 'extension'`);
-    } else if (filters.callOrigin === "external") {
-        aggregatedWhereConditions.push(`COALESCE(fs.source_dn_type, '') <> 'extension'`);
-    }
+    // Sens et provenance : les DEUX filtres dérivent des CASE du domaine —
+    // les mêmes expressions que le tableau de bord, la correspondance
+    // KPI ↔ journaux tient par construction. `fs` est le premier segment,
+    // déjà joint par les requêtes de données ET de comptage.
+    const fsExprs = { sourceTypeExpr: "fs.source_dn_type", firstDestTypeExpr: "fs.destination_dn_type" };
+    const sensFilter = buildSensFilterSQL(filters.sens, fsExprs);
+    if (sensFilter) aggregatedWhereConditions.push(sensFilter);
+    const provenanceFilter = buildProvenanceFilterSQL(filters.callOrigin, fsExprs.sourceTypeExpr);
+    if (provenanceFilter) aggregatedWhereConditions.push(provenanceFilter);
     const statusFilter = buildFinalStatusFilterSQL(filters.statuses, rules.minAnswerSeconds);
     if (statusFilter) aggregatedWhereConditions.push(statusFilter);
 
@@ -1178,7 +1161,12 @@ function transformRow(row: any, maskNumbers = false, scope?: AccessScope, rules?
         lastHumanStartedAt: row.last_human_started_at ? new Date(row.last_human_started_at) : null,
         lastHumanEndedAt: row.last_human_ended_at ? new Date(row.last_human_ended_at) : null,
     }, rules?.minAnswerSeconds);
-    const direction = determineCallDirection({
+    const provenance = determineCallProvenance(row.source_dn_type);
+    const sens = determineCallSens({
+        sourceType: row.source_dn_type,
+        firstDestType: row.first_dest_type,
+    });
+    const viaBridge = callTouchesBridge({
         sourceType: row.source_dn_type,
         firstDestType: row.first_dest_type,
         lastDestType: row.last_dest_type,
@@ -1236,7 +1224,9 @@ function transformRow(row: any, maskNumbers = false, scope?: AccessScope, rules?
         handledByDisplay,
         totalTalkDurationSeconds: totalTalkSeconds,
         totalTalkDurationFormatted: formatDuration(totalTalkSeconds),
-        direction,
+        provenance,
+        sens,
+        viaBridge,
         finalStatus,
         wasTransferred: Number(row.segment_count) > 1,
         queues,
@@ -1502,7 +1492,7 @@ export async function exportCallLogsCSV(
         return ["call_history_id", ...response.logs.map((log) => log.callHistoryId)].join("\n");
     }
 
-    const headers = ["ID", "Date/Heure", "Appelant", "Nom Appelant", "Appelé", "Nom Appelé", "Direction", "Statut", "Durée Totale", "Temps Attente", "Segments", "Transféré"];
+    const headers = ["ID", "Date/Heure", "Appelant", "Nom Appelant", "Appelé", "Nom Appelé", "Provenance", "Sens", "Pont", "Statut", "Durée Totale", "Temps Attente", "Segments", "Transféré"];
     const rows = response.logs.map((log) => [
         log.callHistoryIdShort,
         log.startedAt,
@@ -1510,7 +1500,9 @@ export async function exportCallLogsCSV(
         log.callerName || "",
         log.calleeNumber,
         log.calleeName || "",
-        log.direction,
+        log.provenance,
+        log.sens,
+        log.viaBridge ? "oui" : "",
         log.finalStatus,
         log.totalDurationFormatted,
         log.waitTimeFormatted,

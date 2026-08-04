@@ -13,29 +13,29 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover";
 
-import type { CallDirection } from "@/types/logs.types";
+import type { CallSens } from "@/types/logs.types";
 
-interface ColumnFilterDirectionProps {
-    selected: CallDirection[];
-    onChange: (directions: CallDirection[]) => void;
+interface ColumnFilterSensProps {
+    selected: CallSens[];
+    onChange: (sens: CallSens[]) => void;
     className?: string;
 }
 
-const directionOptions: { value: CallDirection; label: string }[] = [
+// Le pont n'est pas un sens (c'est la pastille viaBridge) : trois valeurs.
+const sensOptions: { value: CallSens; label: string }[] = [
     { value: "inbound", label: "Entrant" },
     { value: "outbound", label: "Sortant" },
-    { value: "internal", label: "Interne" },
-    { value: "bridge", label: "Bridge" },
+    { value: "intra", label: "Intra" },
 ];
 
-export function ColumnFilterDirection({
+export function ColumnFilterSens({
     selected,
     onChange,
     className,
-}: ColumnFilterDirectionProps) {
+}: ColumnFilterSensProps) {
     const [open, setOpen] = React.useState(false);
     // Local state to track selections while popover is open
-    const [localSelected, setLocalSelected] = React.useState<CallDirection[]>(selected);
+    const [localSelected, setLocalSelected] = React.useState<CallSens[]>(selected);
 
     // Sync local state when prop changes (e.g., from external reset)
     React.useEffect(() => {
@@ -62,7 +62,7 @@ export function ColumnFilterDirection({
         setOpen(isOpen);
     };
 
-    const handleToggle = (dir: CallDirection, checked: boolean) => {
+    const handleToggle = (dir: CallSens, checked: boolean) => {
         if (checked) {
             setLocalSelected([...localSelected, dir]);
         } else {
@@ -71,10 +71,10 @@ export function ColumnFilterDirection({
     };
 
     const handleSelectAll = () => {
-        if (localSelected.length === directionOptions.length || localSelected.length === 0) {
+        if (localSelected.length === sensOptions.length || localSelected.length === 0) {
             setLocalSelected([]);
         } else {
-            setLocalSelected(directionOptions.map((o) => o.value));
+            setLocalSelected(sensOptions.map((o) => o.value));
         }
     };
 
@@ -83,7 +83,7 @@ export function ColumnFilterDirection({
             return "Tout";
         }
         if (selected.length === 1) {
-            return directionOptions.find((o) => o.value === selected[0])?.label;
+            return sensOptions.find((o) => o.value === selected[0])?.label;
         }
         return `${selected.length} sél.`;
     };
@@ -99,7 +99,7 @@ export function ColumnFilterDirection({
                         size="sm"
                         className={cn(
                             "h-8 w-full justify-between text-xs font-normal bg-white/80 border-input",
-                            selected.length > 0 && selected.length < 4 && "border-blue-500 bg-blue-50/50"
+                            selected.length > 0 && selected.length < 3 && "border-blue-500 bg-blue-50/50"
                         )}
                     >
                         <span className="truncate">{getLabel()}</span>
@@ -123,15 +123,15 @@ export function ColumnFilterDirection({
                         </div>
 
                         <div className="border-t border-slate-100 pt-1">
-                            {directionOptions.map((opt) => (
+                            {sensOptions.map((opt) => (
                                 <div key={opt.value} className="flex items-center gap-2 px-1 py-1">
                                     <Checkbox
-                                        id={`col-dir-${opt.value}`}
+                                        id={`col-sens-${opt.value}`}
                                         checked={localSelected.includes(opt.value)}
                                         onCheckedChange={(checked) => handleToggle(opt.value, checked as boolean)}
                                     />
                                     <Label
-                                        htmlFor={`col-dir-${opt.value}`}
+                                        htmlFor={`col-sens-${opt.value}`}
                                         className="text-sm cursor-pointer flex-1"
                                     >
                                         {opt.label}

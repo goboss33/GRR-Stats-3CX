@@ -12,12 +12,14 @@ import {
 } from "@/services/analytics/query-builder";
 import {
     determineCallStatus,
-    determineCallDirection,
+    determineCallProvenance,
+    determineCallSens,
+    callTouchesBridge,
     formatDuration,
     getDisplayNumber,
     getDisplayName,
 } from "@/services/domain/call-aggregation";
-import type { CallDirection, CallStatus, LogsSort } from "@/services/domain/call.types";
+import type { CallStatus, LogsSort } from "@/services/domain/call.types";
 import { cdrTable } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
 
@@ -105,7 +107,12 @@ export async function GET(request: NextRequest) {
                 lastHumanEndedAt: row.last_human_ended_at ? new Date(row.last_human_ended_at) : null,
             });
 
-            const direction = determineCallDirection({
+            const provenance = determineCallProvenance(row.source_dn_type);
+            const sens = determineCallSens({
+                sourceType: row.source_dn_type,
+                firstDestType: row.first_dest_type,
+            });
+            const viaBridge = callTouchesBridge({
                 sourceType: row.source_dn_type,
                 firstDestType: row.first_dest_type,
                 lastDestType: row.last_dest_type,
@@ -156,7 +163,9 @@ export async function GET(request: NextRequest) {
                 handledByDisplay,
                 totalTalkDurationSeconds: totalTalkSeconds,
                 totalTalkDurationFormatted: formatDuration(totalTalkSeconds),
-                direction,
+                provenance,
+                sens,
+                viaBridge,
                 finalStatus,
                 wasTransferred: Number(row.segment_count) > 1,
                 queues,

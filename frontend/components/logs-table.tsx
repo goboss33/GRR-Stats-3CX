@@ -13,7 +13,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import {
     ColumnFilterInput,
     ColumnFilterDateRange,
-    ColumnFilterDirection,
+    ColumnFilterSens,
     ColumnFilterStatus,
     ColumnFilterQueueOutcome,
     ColumnFilterQueueOrigin,
@@ -28,7 +28,7 @@ import { QueueInfo } from "@/types/queues.types";
 
 import type {
     AggregatedCallLog,
-    CallDirection,
+    CallSens,
     CallStatus,
     ColumnVisibility,
     SortField,
@@ -64,8 +64,8 @@ interface LogsTableProps {
     onCallerSearchChange: (value: string) => void;
     calleeSearch: string;
     onCalleeSearchChange: (value: string) => void;
-    selectedDirections: CallDirection[];
-    onDirectionsChange: (directions: CallDirection[]) => void;
+    selectedSens: CallSens[];
+    onSensChange: (sens: CallSens[]) => void;
     selectedStatuses: CallStatus[];
     onStatusesChange: (statuses: CallStatus[]) => void;
     /** Statuts « dans la file » retenus ; vide = tous. */
@@ -118,8 +118,8 @@ export function LogsTable({
     onCallerSearchChange,
     calleeSearch,
     onCalleeSearchChange,
-    selectedDirections,
-    onDirectionsChange,
+    selectedSens,
+    onSensChange,
     selectedStatuses,
     onStatusesChange,
     queueOutcomes,
@@ -199,8 +199,11 @@ export function LogsTable({
                             {columnVisibility.journey && (
                                 <TableHead>Parcours</TableHead>
                             )}
-                            {columnVisibility.direction && (
-                                <TableHead className="w-24 text-center">Direction</TableHead>
+                            {columnVisibility.provenance && (
+                                <TableHead className="w-28 text-center">Provenance</TableHead>
+                            )}
+                            {columnVisibility.sens && (
+                                <TableHead className="w-24 text-center">Sens</TableHead>
                             )}
                             {queueView && (
                                 <TableHead className="w-20 text-center">Origine</TableHead>
@@ -306,11 +309,14 @@ export function LogsTable({
                                     />
                                 </TableHead>
                             )}
-                            {columnVisibility.direction && (
+                            {/* Provenance : filtrée par le toggle du header —
+                                pas de second filtre qui pourrait le contredire. */}
+                            {columnVisibility.provenance && <TableHead className="py-2" />}
+                            {columnVisibility.sens && (
                                 <TableHead className="py-2">
-                                    <ColumnFilterDirection
-                                        selected={selectedDirections}
-                                        onChange={onDirectionsChange}
+                                    <ColumnFilterSens
+                                        selected={selectedSens}
+                                        onChange={onSensChange}
                                     />
                                 </TableHead>
                             )}

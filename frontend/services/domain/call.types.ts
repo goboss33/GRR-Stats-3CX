@@ -11,7 +11,19 @@ import type { PassageOutcome } from "./call-classification";
 // CORE ENUMS
 // ============================================
 
-export type CallDirection = "inbound" | "outbound" | "internal" | "bridge";
+/**
+ * Provenance d'un appel — le vocabulaire exact du toggle Externe / Interne :
+ * la source du PREMIER segment décide, et rien d'autre.
+ */
+export type CallProvenance = "external" | "internal";
+
+/**
+ * Sens d'un appel : entrant (une source externe nous joint — pont compris),
+ * sortant (un poste appelle l'extérieur, y compris l'autre entité via le
+ * pont), intra (poste → poste ou système interne). Externe ⇒ entrant, par
+ * construction. Le pont n'est pas un sens : c'est l'attribut `viaBridge`.
+ */
+export type CallSens = "inbound" | "outbound" | "intra";
 export type CallStatus = "answered" | "voicemail" | "missed" | "busy";
 export type EntityType = "extension" | "external" | "queue" | "ivr" | "script" | "unknown";
 export type QueueCallOutcome = 'answered' | 'abandoned' | 'overflow';
@@ -84,7 +96,7 @@ export interface DateRange {
 }
 
 export interface LogsFilters {
-    directions: CallDirection[];
+    sens: CallSens[];
     statuses: CallStatus[];
     entityTypes: EntityType[];
     callerSearch?: string;
@@ -172,7 +184,10 @@ export interface AggregatedCallLog {
     handledByDisplay: string;
     totalTalkDurationSeconds: number;
     totalTalkDurationFormatted: string;
-    direction: CallDirection;
+    provenance: CallProvenance;
+    sens: CallSens;
+    /** L'appel traverse le pont EDIFEA (dans un sens ou dans l'autre). */
+    viaBridge: boolean;
     finalStatus: CallStatus;
     wasTransferred: boolean;
     queues: Array<{ number: string; name: string }>;
@@ -411,7 +426,8 @@ export interface ColumnVisibility {
     handledBy: boolean;
     queues: boolean;
     journey: boolean;
-    direction: boolean;
+    provenance: boolean;
+    sens: boolean;
     status: boolean;
     duration: boolean;
     waitTime: boolean;
@@ -421,35 +437,8 @@ export interface ColumnVisibility {
 // LEGACY TYPES (for backward compatibility)
 // ============================================
 
-export type CallDirectionLegacy = CallDirection;
 export type CallStatusLegacy = CallStatus;
 
-export interface CallLog {
-    id: string;
-    callHistoryId: string;
-    callHistoryIdShort: string;
-    startedAt: string;
-    sourceNumber: string;
-    sourceName: string;
-    sourceType: string;
-    destinationNumber: string;
-    destinationName: string;
-    destinationType: string;
-    direction: CallDirection;
-    status: CallStatus;
-    durationSeconds: number;
-    durationFormatted: string;
-    ringDurationSeconds: number;
-    trunkDid: string;
-    terminationReason: string;
-}
-
-export interface CallLogsResponse {
-    logs: CallLog[];
-    totalCount: number;
-    totalPages: number;
-    currentPage: number;
-}
 
 export interface SerializedDateRange {
     startDate: string;

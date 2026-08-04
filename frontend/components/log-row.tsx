@@ -1,14 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { Phone } from "lucide-react";
+import { Phone, Shuffle } from "lucide-react";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Tip, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import type { AggregatedCallLog, ColumnVisibility } from "@/types/logs.types";
 import { finalStatusLabel } from "@/services/domain/call-aggregation";
 import {
-    directionConfig,
+    provenanceConfig,
+    sensConfig,
     statusConfig,
     getSegmentBadgeColor,
     getWaitTimeColor,
@@ -29,10 +30,11 @@ interface LogRowProps {
 }
 
 export function LogRow({ log, queueViewActive, columnVisibility, onRowClick }: LogRowProps) {
-    const dirConfig = directionConfig[log.direction];
+    const provConfig = provenanceConfig[log.provenance];
+    const sensConf = sensConfig[log.sens];
     const statConfig = statusConfig[log.finalStatus];
-    const statLabel = finalStatusLabel(log.finalStatus, log.direction);
-    const DirIcon = dirConfig.icon;
+    const statLabel = finalStatusLabel(log.finalStatus, log.sens);
+    const SensIcon = sensConf.icon;
     const StatIcon = statConfig.icon;
 
     return (
@@ -202,12 +204,28 @@ export function LogRow({ log, queueViewActive, columnVisibility, onRowClick }: L
                 </TableCell>
             )}
 
-            {/* Direction */}
-            {columnVisibility.direction && (
+            {/* Provenance (le mot du toggle) + pastille pont le cas échéant */}
+            {columnVisibility.provenance && (
                 <TableCell className="text-center">
-                    <Badge variant="secondary" className={`gap-1 ${dirConfig.className}`}>
-                        <DirIcon className="h-3 w-3" />
-                        {dirConfig.label}
+                    <span className="inline-flex items-center gap-1">
+                        <Badge variant="secondary" className={provConfig.className}>
+                            {provConfig.label}
+                        </Badge>
+                        {log.viaBridge && (
+                            <Tip content="Traverse le pont EDIFEA (l'autre entité)">
+                                <Shuffle className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                            </Tip>
+                        )}
+                    </span>
+                </TableCell>
+            )}
+
+            {/* Sens de circulation */}
+            {columnVisibility.sens && (
+                <TableCell className="text-center">
+                    <Badge variant="secondary" className={`gap-1 ${sensConf.className}`}>
+                        <SensIcon className="h-3 w-3" />
+                        {sensConf.label}
                     </Badge>
                 </TableCell>
             )}

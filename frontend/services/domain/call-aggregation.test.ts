@@ -4,9 +4,16 @@ import {
     FINAL_STATUS_RULES,
     buildFinalStatusFilterSQL,
     DEFAULT_MIN_ANSWER_SECONDS,
-    determineCallDirection,
-    buildCallDirectionCaseSQL,
+    determineCallProvenance,
+    determineCallSens,
+    callTouchesBridge,
+    buildCallProvenanceCaseSQL,
+    buildCallSensCaseSQL,
+    buildBridgeTouchSQL,
+    buildSensFilterSQL,
+    buildProvenanceFilterSQL,
     buildDirectionConditionSQL,
+    ORIGIN_SENS,
     determineSegmentCategory,
     isSystemType,
     formatDuration,
@@ -94,26 +101,37 @@ describe("determineCallStatus", () => {
     });
 });
 
-describe("determineCallDirection", () => {
-    it("détecte un appel bridge", () => {
-        expect(determineCallDirection({ sourceType: "bridge", firstDestType: "extension", lastDestType: "extension" })).toBe("bridge");
-        expect(determineCallDirection({ sourceType: "extension", firstDestType: "bridge", lastDestType: null })).toBe("bridge");
+describe("provenance & sens — le modèle à deux axes", () => {
+    it("la provenance ne dépend que de la source du premier segment", () => {
+        expect(determineCallProvenance("provider")).toBe("external");
+        expect(determineCallProvenance("bridge")).toBe("external");
+        expect(determineCallProvenance(null)).toBe("external");
+        expect(determineCallProvenance("EXTENSION")).toBe("internal");
     });
 
-    it("détecte un appel interne extension -> extension", () => {
-        expect(determineCallDirection({ sourceType: "extension", firstDestType: "extension", lastDestType: "extension" })).toBe("internal");
+    it("un entrant via le pont reste externe et entrant (l'autre entité nous appelle)", () => {
+        expect(determineCallProvenance("bridge")).toBe("external");
+        expect(determineCallSens({ sourceType: "bridge", firstDestType: "extension" })).toBe("inbound");
+        expect(callTouchesBridge({ sourceType: "bridge", firstDestType: "extension", lastDestType: "extension" })).toBe(true);
     });
 
-    it("détecte un appel interne extension -> système (file)", () => {
-        expect(determineCallDirection({ sourceType: "extension", firstDestType: "queue", lastDestType: "queue" })).toBe("internal");
+    it("un poste qui appelle l'autre entité via le pont est interne et SORTANT — l'écart des 94 de juillet 2026", () => {
+        expect(determineCallProvenance("extension")).toBe("internal");
+        expect(determineCallSens({ sourceType: "extension", firstDestType: "unknown" })).toBe("outbound");
+        expect(callTouchesBridge({ sourceType: "extension", firstDestType: "unknown", lastDestType: "bridge" })).toBe(true);
     });
 
-    it("détecte un appel sortant extension -> externe", () => {
-        expect(determineCallDirection({ sourceType: "extension", firstDestType: "external", lastDestType: "external" })).toBe("outbound");
+    it("intra : poste vers poste, ou vers un système interne (file, SVI…)", () => {
+        expect(determineCallSens({ sourceType: "extension", firstDestType: "extension" })).toBe("intra");
+        expect(determineCallSens({ sourceType: "extension", firstDestType: "queue" })).toBe("intra");
     });
 
-    it("détecte un appel entrant par défaut", () => {
-        expect(determineCallDirection({ sourceType: "external", firstDestType: "queue", lastDestType: "extension" })).toBe("inbound");
+    it("externe implique entrant, par construction", () => {
+        for (const src of ["provider", "bridge", "line", null, "unknown"]) {
+            if (determineCallProvenance(src) === "external") {
+                expect(determineCallSens({ sourceType: src, firstDestType: "queue" })).toBe("inbound");
+            }
+        }
     });
 });
 
@@ -326,46 +344,71 @@ describe("formatDurationHuman", () => {
     });
 });
 
-describe("buildCallDirectionCaseSQL — miroir SQL de determineCallDirection", () => {
-    const exprs = { sourceTypeExpr: "fs.src", firstDestTypeExpr: "fs.fdst", lastDestTypeExpr: "ls.ldst" };
+describe("miroirs SQL des règles provenance / sens / pont", () => {
+    const exprs = { sourceTypeExpr: "fs.src", firstDestTypeExpr: "fs.fdst" };
 
-    it("couvre les quatre directions, dans l'ordre de la fonction TS", () => {
-        const sql = buildCallDirectionCaseSQL(exprs);
-        const ordre = ["'bridge'", "'internal'", "'outbound'", "'inbound'"];
+    it("le CASE du sens couvre les trois valeurs, dans l'ordre de la fonction TS", () => {
+        const sql = buildCallSensCaseSQL(exprs);
+        const ordre = ["'inbound'", "'intra'", "'outbound'"];
         const positions = ordre.map((k) => sql.indexOf(k));
         expect(positions.every((x) => x >= 0)).toBe(true);
         expect([...positions]).toEqual([...positions].sort((a, b) => a - b));
+        expect(sql).toContain("'queue'"); // systèmes internes inclus dans l'intra
     });
 
-    it("l'interne couvre extension → extension ET extension → système interne", () => {
-        const sql = buildCallDirectionCaseSQL(exprs);
-        expect(sql).toContain("'queue'");
-        expect(sql).toContain("'ring_group'");
+    it("le CASE de la provenance ne regarde que la source, NULL compris", () => {
+        const sql = buildCallProvenanceCaseSQL("fs.src");
+        expect(sql).toContain("COALESCE(fs.src, '')");
+        expect(sql).toContain("'internal'");
+        expect(sql).toContain("'external'");
     });
 
-    it("le pont est détecté sur les trois colonnes (source, première et dernière destination)", () => {
-        const sql = buildCallDirectionCaseSQL(exprs);
+    it("le pont est détecté sur les trois colonnes", () => {
+        const sql = buildBridgeTouchSQL({ ...exprs, lastDestTypeExpr: "ls.ldst" });
         expect(sql.split("= 'bridge'")).toHaveLength(4);
     });
 });
 
+describe("filtres dérivés des CASE partagés — jamais de prédicat parallèle", () => {
+    const exprs = { sourceTypeExpr: "fs.src", firstDestTypeExpr: "fs.fdst" };
+
+    it("le filtre de sens contient le CASE partagé", () => {
+        const sql = buildSensFilterSQL(["inbound"], exprs);
+        expect(sql).toContain(buildCallSensCaseSQL(exprs));
+        expect(sql).toContain("IN ('inbound')");
+    });
+
+    it("vide quand rien ou tout est sélectionné", () => {
+        expect(buildSensFilterSQL([], exprs)).toBe("");
+        expect(buildSensFilterSQL(["inbound", "outbound", "intra"], exprs)).toBe("");
+        expect(buildSensFilterSQL(undefined, exprs)).toBe("");
+    });
+
+    it("le filtre de provenance emploie le mot du toggle", () => {
+        expect(buildProvenanceFilterSQL("external", "fs.src")).toContain("= 'external'");
+        expect(buildProvenanceFilterSQL("internal", "fs.src")).toContain("= 'internal'");
+        expect(buildProvenanceFilterSQL("both", "fs.src")).toBe("");
+        expect(buildProvenanceFilterSQL(undefined, "fs.src")).toBe("");
+    });
+});
+
 describe("buildDirectionConditionSQL — filtres du tableau de bord", () => {
-    const exprs = { sourceTypeExpr: "fs.src", firstDestTypeExpr: "fs.fdst", lastDestTypeExpr: "ls.ldst" };
+    const exprs = { sourceTypeExpr: "fs.src", firstDestTypeExpr: "fs.fdst" };
 
     it("« Sortant » : la provenance est ignorée", () => {
         const sql = buildDirectionConditionSQL({ direction: "outbound", origin: "internal", ...exprs });
         expect(sql).toContain("= 'outbound'");
-        expect(sql).not.toContain("IN ('inbound'");
     });
 
-    it("« Entrant + Externe » : le pont EDIFEA est rangé côté externe", () => {
-        const sql = buildDirectionConditionSQL({ direction: "inbound", origin: "external", ...exprs });
-        expect(sql).toContain("IN ('inbound', 'bridge')");
+    it("« Entrant + Externe » : les entrants seulement — le sortant via pont n'y est plus", () => {
+        expect(ORIGIN_SENS.external).toEqual(["inbound"]);
+        expect(buildDirectionConditionSQL({ direction: "inbound", origin: "external", ...exprs }))
+            .toContain("= 'inbound'");
     });
 
-    it("« Entrant + Interne » : seuls les appels de collègues", () => {
+    it("« Entrant + Interne » : seuls les appels intra", () => {
         expect(buildDirectionConditionSQL({ direction: "inbound", origin: "internal", ...exprs }))
-            .toContain("= 'internal'");
+            .toContain("= 'intra'");
     });
 
     it("« Entrant + Les deux » : tout sauf le flux émis", () => {

@@ -29,7 +29,7 @@ import {
     SQL_REAL_PARTY_DEST_TYPES,
     buildFinalStatusCaseSQL,
     buildDirectionConditionSQL,
-    buildCallDirectionCaseSQL,
+    buildCallSensCaseSQL,
     SQL_SYSTEM_ENTITY_TYPES,
     type DashboardDirection,
 } from "@/services/domain/call-aggregation";
@@ -122,7 +122,9 @@ function buildScopeFilter(scope: AccessScope | undefined, table: Prisma.Sql): Pr
  * n'y a rien à exclure : coût nul. Jamais appliqué au monitoring de licence
  * (getConcurrentCallsData) : ces appels occupent réellement les lignes.
  */
-function buildExclusionFilter(
+/** Exporté pour le script d'invariance (verify-dashboard-logs) : la réplique
+ *  « journaux » doit exclure exactement ce que le tableau de bord exclut. */
+export function buildExclusionFilter(
     exclusions: StatsExclusions,
     table: Prisma.Sql,
     startDate: Date,
@@ -185,7 +187,6 @@ function buildDirectionFragments(
     cdr: Prisma.Sql,
     startDate: Date,
     endDate: Date,
-    lastDestTypeExpr: string,
 ): { firstsCTE: Prisma.Sql; firstsJoin: Prisma.Sql; condition: Prisma.Sql } {
     if (!direction) {
         return { firstsCTE: Prisma.empty, firstsJoin: Prisma.empty, condition: Prisma.empty };
@@ -208,7 +209,6 @@ function buildDirectionFragments(
             origin,
             sourceTypeExpr: "fs.first_source_type",
             firstDestTypeExpr: "fs.first_dest_type",
-            lastDestTypeExpr,
         })}`),
     };
 }
@@ -230,7 +230,7 @@ export async function getGlobalMetricsRaw(
     // Listes de types système : du SQL, pas des valeurs (cf. note sur getTimelineDataRaw).
     const realPartyTypes = Prisma.raw(SQL_REAL_PARTY_DEST_TYPES);
     const statusCase = Prisma.raw(buildFinalStatusCaseSQL());
-    const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate, "ls.last_dest_type");
+    const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate);
     const exclusionFilter = buildExclusionFilter(await getStatsExclusions(serverId), cdr, startDate, endDate);
 
     const query = Prisma.sql`
@@ -420,10 +420,13 @@ function buildOriginClassFragments(cdr: Prisma.Sql, startDate: Date, endDate: Da
               AND cdr_started_at <= ${endDate}
             ORDER BY call_history_id, cdr_started_at ASC, cdr_id ASC
         ),`,
-        directionClassExpr: Prisma.raw(buildCallDirectionCaseSQL({
+        // La classe est le SENS de l'appel (inbound / intra / outbound) : le
+        // pont n'est plus une classe — un entrant via pont est un entrant, un
+        // sortant vers le pont est un sortant (et ne compte donc plus dans les
+        // recus du tableau de bord, cf. l'ecart des 94 de juillet 2026).
+        directionClassExpr: Prisma.raw(buildCallSensCaseSQL({
             sourceTypeExpr: "fs.first_source_type",
             firstDestTypeExpr: "fs.first_dest_type",
-            lastDestTypeExpr: "ls.last_dest_type",
         })),
     };
 }
@@ -727,7 +730,7 @@ export async function getTimelineDataRaw(
     const systemEntityTypes = Prisma.raw(SQL_SYSTEM_ENTITY_TYPES);
     const rules = await getClassificationRules();
     const cdr = Prisma.raw(cdrTable(rules));
-    const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate, "ls.last_dest_type");
+    const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate);
     const exclusionFilter = buildExclusionFilter(await getStatsExclusions(serverId), cdr, startDate, endDate);
 
     const query = Prisma.sql`
@@ -867,7 +870,7 @@ export async function getHeatmapDataRaw(
         : Prisma.empty;
     // Filtre de direction : la heatmap n'a ni CTE des premiers ni des derniers
     // segments — elle reçoit les deux, en bloc, quand le filtre est demandé.
-    const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate, "ls.last_dest_type");
+    const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate);
     const exclusionFilter = buildExclusionFilter(await getStatsExclusions(serverId), cdr, startDate, endDate);
     const extraCTEs = direction
         ? Prisma.sql`,

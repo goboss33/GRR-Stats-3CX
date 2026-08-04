@@ -1,6 +1,7 @@
 // Re-export from unified domain types for backward compatibility
 export type {
-    CallDirection,
+    CallProvenance,
+    CallSens,
     CallStatus,
     EntityType,
     SortDirection,
@@ -16,12 +17,10 @@ export type {
     TimeSlot,
     JourneyStep,
     AggregatedCallLog,
-    CallLog,
     LogsFilters,
     LogsPagination,
     LogsSort,
     AggregatedCallLogsResponse,
-    CallLogsResponse,
     ColumnVisibility,
     SegmentCategory,
     CallChainSegment,

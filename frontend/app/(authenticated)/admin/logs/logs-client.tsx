@@ -39,7 +39,7 @@ import { ServerId } from "@/lib/prisma-cdr";
 import type { QueueInfo } from "@/types/queues.types";
 import type {
     AggregatedCallLog,
-    CallDirection,
+    CallSens,
     CallStatus,
     LogsFilters,
     LogsSort,
@@ -66,9 +66,11 @@ const defaultColumnVisibility: ColumnVisibility = {
     handledBy: false,
     queues: false,
     journey: true,
-    // Masquée par défaut : peu discriminante à l'usage, et la vue file ajoute
-    // déjà deux colonnes.
-    direction: false,
+    // Provenance = le mot du toggle du header ; Sens = Entrant/Sortant/Intra.
+    // Les deux visibles par défaut : c'est la matérialisation du modèle à
+    // deux axes (le pont n'est qu'une pastille sur la provenance).
+    provenance: true,
+    sens: true,
     status: true,
     duration: false,
     waitTime: false,
@@ -84,10 +86,10 @@ export default function AdminLogsPage() {
         return pageParam ? parseInt(pageParam, 10) : 1;
     };
 
-    const getInitialDirections = (): CallDirection[] => {
-        const param = searchParams.get("directions");
+    const getInitialSens = (): CallSens[] => {
+        const param = searchParams.get("sens");
         if (!param) return [];
-        return param.split(",").filter(d => ["inbound", "outbound", "internal", "bridge"].includes(d)) as CallDirection[];
+        return param.split(",").filter(d => ["inbound", "outbound", "intra"].includes(d)) as CallSens[];
     };
 
     const getInitialStatuses = (): CallStatus[] => {
@@ -127,7 +129,7 @@ export default function AdminLogsPage() {
     const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(defaultColumnVisibility);
 
     // Filter states - initialized from URL
-    const [selectedDirections, setSelectedDirections] = useState<CallDirection[]>(getInitialDirections);
+    const [selectedSens, setSelectedSens] = useState<CallSens[]>(getInitialSens);
     const [selectedStatuses, setSelectedStatuses] = useState<CallStatus[]>(getInitialStatuses);
     const [callerSearch, setCallerSearch] = useState(searchParams.get("caller") || "");
     const [calleeSearch, setCalleeSearch] = useState(searchParams.get("callee") || "");
@@ -262,7 +264,7 @@ export default function AdminLogsPage() {
     // Key fix: if actual value is empty, use it immediately (for reset case)
     // Otherwise use debounced value (for typing case)
     const effectiveFilters: LogsFilters = {
-        directions: selectedDirections,
+        sens: selectedSens,
         statuses: selectedStatuses,
         entityTypes: [],
         callerSearch: callerSearch === "" ? undefined : (debouncedCallerSearch || undefined),
@@ -298,8 +300,8 @@ export default function AdminLogsPage() {
         }
 
         // Directions (only if filtered, not all 4)
-        if (selectedDirections.length > 0 && selectedDirections.length < 4) {
-            params.set("directions", selectedDirections.join(","));
+        if (selectedSens.length > 0 && selectedSens.length < 3) {
+            params.set("sens", selectedSens.join(","));
         }
 
         // Statuses (only if filtered)
@@ -358,7 +360,7 @@ export default function AdminLogsPage() {
         router,
         dateRange,
         currentPage,
-        selectedDirections,
+        selectedSens,
         selectedStatuses,
         debouncedCallerSearch,
         debouncedCalleeSearch,
@@ -409,7 +411,7 @@ export default function AdminLogsPage() {
         debouncedIdSearch,
         // Reset counter triggers immediate refetch on reset
         resetCounter,
-        selectedDirections,
+        selectedSens,
         selectedStatuses,
         segmentCountMin,
         segmentCountMax,
@@ -526,8 +528,8 @@ export default function AdminLogsPage() {
         }
     };
 
-    const handleDirectionsChange = (directions: CallDirection[]) => {
-        setSelectedDirections(directions.length === 0 ? ["inbound", "outbound", "internal"] : directions);
+    const handleSensChange = (sens: CallSens[]) => {
+        setSelectedSens(sens);
         setCurrentPage(1);
     };
 
@@ -563,9 +565,9 @@ export default function AdminLogsPage() {
     };
 
     // Handlers for removing individual filters
-    const handleRemoveDirection = (direction: CallDirection) => {
-        const newDirections = selectedDirections.filter(d => d !== direction);
-        setSelectedDirections(newDirections.length === 0 ? ["inbound", "outbound", "internal", "bridge"] : newDirections);
+    const handleRemoveSens = (sens: CallSens) => {
+        const newSens = selectedSens.filter(d => d !== sens);
+        setSelectedSens(newSens);
         setCurrentPage(1);
     };
 
@@ -636,7 +638,7 @@ export default function AdminLogsPage() {
 
     const handleResetAllFilters = () => {
         // Reset all filter states
-        setSelectedDirections([]);
+        setSelectedSens([]);
         setSelectedStatuses([]);
         setUrlOrigin("both");
         setCallerSearch("");
@@ -691,7 +693,8 @@ export default function AdminLogsPage() {
                                     { key: "handledBy", label: "Traité par" },
                                     { key: "queues", label: "Queue(s)" },
                                     { key: "journey", label: "Parcours" },
-                                    { key: "direction", label: "Direction" },
+                                    { key: "provenance", label: "Provenance" },
+                                    { key: "sens", label: "Sens" },
                                     { key: "status", label: "Statut" },
                                     { key: "duration", label: "Durée" },
                                     { key: "waitTime", label: "Attente" },
@@ -764,7 +767,10 @@ export default function AdminLogsPage() {
             <ActiveFilters
                 dateRange={dateRange}
                 filters={effectiveFilters}
-                onRemoveDirection={handleRemoveDirection}
+                onRemoveSens={handleRemoveSens}
+                onRemoveQueueView={canViewCompanyWide ? () => changeQueueView(null) : undefined}
+                onRemoveQueueOutcome={() => { setQueueOutcomeFilter(null); setCurrentPage(1); }}
+                onRemoveQueueOrigin={() => { setQueueOrigin(null); setCurrentPage(1); }}
                 onRemoveStatus={handleRemoveStatus}
                 onRemoveCallerSearch={handleRemoveCallerSearch}
                 onRemoveCalleeSearch={handleRemoveCalleeSearch}
@@ -875,8 +881,8 @@ export default function AdminLogsPage() {
                     onCallerSearchChange={setCallerSearch}
                     calleeSearch={calleeSearch}
                     onCalleeSearchChange={setCalleeSearch}
-                    selectedDirections={selectedDirections}
-                    onDirectionsChange={handleDirectionsChange}
+                    selectedSens={selectedSens}
+                    onSensChange={handleSensChange}
                     selectedStatuses={selectedStatuses}
                     onStatusesChange={handleStatusesChange}
                     durationMin={durationMin}

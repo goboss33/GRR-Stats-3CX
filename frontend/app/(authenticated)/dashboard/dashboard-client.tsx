@@ -6,8 +6,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Phone, PhoneOff, Clock, TrendingUp, Hourglass, Voicemail } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
-import { finalStatusesForBucket } from "@/services/domain/call-aggregation";
+import { formatDurationHuman as formatDuration, finalStatusesForBucket, ORIGIN_SENS } from "@/services/domain/call-aggregation";
 import { format } from "date-fns";
 import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
 import { useReportLoadedOrigins, useRegisterHeaderRefresh } from "@/components/header-scope";
@@ -117,13 +116,11 @@ export default function DashboardClient() {
         p.set("start", format(dateRange.startDate, "yyyy-MM-dd"));
         p.set("end", format(dateRange.endDate, "yyyy-MM-dd"));
         if (statuts?.length) p.set("statuses", statuts.join(","));
-        // La population listée doit être celle du chiffre cliqué : la
-        // provenance du tableau de bord voyage avec le lien (le filtre
-        // « directions » des journaux parle en directions fines).
-        const directions = origin === "internal" ? ["internal"]
-            : origin === "external" ? ["inbound", "bridge"]
-                : ["inbound", "internal", "bridge"];
-        p.set("directions", directions.join(","));
+        // La population listée doit être exactement celle du chiffre cliqué :
+        // provenance ET sens voyagent avec le lien, tirés de la MÊME constante
+        // que les requêtes du tableau de bord (ORIGIN_SENS) — la
+        // correspondance KPI ↔ journaux tient par construction.
+        p.set("sens", ORIGIN_SENS[origin].join(","));
         // Toujours explicite : le défaut global étant « externe », un lien sans
         // origin depuis la vue « Les deux » ferait mentir la liste.
         p.set("origin", origin);

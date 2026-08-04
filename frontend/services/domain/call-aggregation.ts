@@ -10,7 +10,10 @@
  * All services MUST import from here — no duplicated logic allowed.
  */
 
-import { CallDirection, CallStatus, SegmentCategory } from './call.types';
+import { CallProvenance, CallSens, CallStatus, SegmentCategory } from './call.types';
+// Import de TYPE uniquement : call-classification importe déjà des valeurs
+// d'ici, un import de valeur créerait un cycle de modules.
+import type { CallOrigin } from './call-classification';
 
 // ============================================
 // CONSTANTS
@@ -202,10 +205,10 @@ export const FINAL_STATUS_RULES: FinalStatusRule[] = [
  * absent n'est pas un client perdu. Le statut sous-jacent est le même dans les
  * deux cas ; seul le mot s'adapte, pour rester exact.
  */
-export function finalStatusLabel(status: CallStatus, direction: CallDirection): string {
+export function finalStatusLabel(status: CallStatus, sens: CallSens): string {
     if (status === "answered") return "Répondu";
     if (status === "voicemail") return "Messagerie";
-    return direction === "outbound" ? "Non répondu" : "Perdu";
+    return sens === "outbound" ? "Non répondu" : "Perdu";
 }
 export type FinalBucket = "answered" | "lost" | "voicemail";
 
@@ -409,89 +412,137 @@ export function determineSegmentCategory(params: {
 }
 
 // ============================================
-// DIRECTION DETERMINATION — SINGLE SOURCE OF TRUTH
+// ============================================
+// PROVENANCE & SENS — le modèle à deux axes
+//
+// La PROVENANCE répond à « qui a lancé l'appel ? » : la source du PREMIER
+// segment, rien d'autre — le vocabulaire exact du toggle Externe / Interne.
+// Le SENS répond à « dans quel sens circule-t-il ? » : entrant (une source
+// externe nous joint), sortant (un poste appelle l'extérieur — y compris
+// l'autre entité via le pont), intra (poste → poste ou système interne).
+// Externe ⇒ entrant, par construction.
+//
+// Le pont EDIFEA n'est PAS un sens : c'est un attribut (viaBridge). Sa
+// promotion en « direction » faisait compter les appels SORTANTS vers
+// l'autre entité dans les reçus externes du tableau de bord (94 appels en
+// juillet 2026, tous « perdus » de surcroît) : l'écart KPI ↔ journaux venait
+// de là. Chaque règle existe en deux dialectes, TypeScript et SQL, définis
+// côte à côte : toute évolution doit toucher les deux, les tests les
+// confrontent.
 // ============================================
 
-/**
- * Determines the direction of a call based on its first and last segments.
- */
-export function determineCallDirection(params: {
+export function determineCallProvenance(sourceType: string | null): CallProvenance {
+    return sourceType?.toLowerCase() === "extension" ? "internal" : "external";
+}
+
+export function determineCallSens(params: {
+    sourceType: string | null;
+    firstDestType: string | null;
+}): CallSens {
+    if (params.sourceType?.toLowerCase() !== "extension") return "inbound";
+    const fdst = params.firstDestType?.toLowerCase() ?? "";
+    if (fdst === "extension" || INTERNAL_SYSTEM_DEST_TYPES.includes(fdst)) return "intra";
+    return "outbound";
+}
+
+/** L'appel traverse-t-il le pont EDIFEA ? (dans un sens ou dans l'autre) */
+export function callTouchesBridge(params: {
     sourceType: string | null;
     firstDestType: string | null;
     lastDestType: string | null;
-}): CallDirection {
-    const { sourceType, firstDestType, lastDestType } = params;
-
-    // Bridge calls
-    const srcIsBridge = sourceType?.toLowerCase() === 'bridge';
-    const firstDestIsBridge = firstDestType?.toLowerCase() === 'bridge';
-    const lastDestIsBridge = lastDestType?.toLowerCase() === 'bridge';
-    if (srcIsBridge || firstDestIsBridge || lastDestIsBridge) return 'bridge';
-
-    const srcIsExt = sourceType?.toLowerCase() === 'extension';
-    const destIsExt = firstDestType?.toLowerCase() === 'extension';
-
-    // Internal: extension -> extension
-    if (srcIsExt && destIsExt) return 'internal';
-
-    // Internal: extension -> internal system (queue, IVR, etc)
-    if (srcIsExt && INTERNAL_SYSTEM_DEST_TYPES.includes(firstDestType?.toLowerCase() || '')) {
-        return 'internal';
-    }
-
-    // Outbound: extension -> external
-    if (srcIsExt && !destIsExt) return 'outbound';
-
-    // Inbound: everything else
-    return 'inbound';
+}): boolean {
+    return [params.sourceType, params.firstDestType, params.lastDestType]
+        .some((t) => t?.toLowerCase() === "bridge");
 }
 
-/**
- * Expression SQL de la direction d'un appel — image fidèle de
- * `determineCallDirection`, à partir des types du premier segment (source et
- * destination) et du dernier segment (destination, pour le pont EDIFEA).
- * Les deux DOIVENT rester synchronisées, comme statut TS/SQL plus haut.
- */
-export function buildCallDirectionCaseSQL(params: {
+/** Miroir SQL de `determineCallProvenance`. */
+export function buildCallProvenanceCaseSQL(sourceTypeExpr: string): string {
+    return `CASE WHEN LOWER(COALESCE(${sourceTypeExpr}, '')) = 'extension' THEN 'internal' ELSE 'external' END`;
+}
+
+/** Miroir SQL de `determineCallSens`. */
+export function buildCallSensCaseSQL(params: {
+    sourceTypeExpr: string;
+    firstDestTypeExpr: string;
+}): string {
+    const src = `LOWER(COALESCE(${params.sourceTypeExpr}, ''))`;
+    const fdst = `LOWER(COALESCE(${params.firstDestTypeExpr}, ''))`;
+    const internalSystem = INTERNAL_SYSTEM_DEST_TYPES.map((t) => `'${t}'`).join(", ");
+    return `CASE
+        WHEN ${src} != 'extension' THEN 'inbound'
+        WHEN ${fdst} = 'extension' OR ${fdst} IN (${internalSystem}) THEN 'intra'
+        ELSE 'outbound'
+    END`;
+}
+
+/** Miroir SQL de `callTouchesBridge`. */
+export function buildBridgeTouchSQL(params: {
     sourceTypeExpr: string;
     firstDestTypeExpr: string;
     lastDestTypeExpr: string;
 }): string {
-    const src = `LOWER(COALESCE(${params.sourceTypeExpr}, ''))`;
-    const fdst = `LOWER(COALESCE(${params.firstDestTypeExpr}, ''))`;
-    const ldst = `LOWER(COALESCE(${params.lastDestTypeExpr}, ''))`;
-    const internalSystem = INTERNAL_SYSTEM_DEST_TYPES.map((t) => `'${t}'`).join(", ");
-    return `CASE
-        WHEN ${src} = 'bridge' OR ${fdst} = 'bridge' OR ${ldst} = 'bridge' THEN 'bridge'
-        WHEN ${src} = 'extension' AND (${fdst} = 'extension' OR ${fdst} IN (${internalSystem})) THEN 'internal'
-        WHEN ${src} = 'extension' THEN 'outbound'
-        ELSE 'inbound'
-    END`;
+    return `(LOWER(COALESCE(${params.sourceTypeExpr}, '')) = 'bridge'`
+        + ` OR LOWER(COALESCE(${params.firstDestTypeExpr}, '')) = 'bridge'`
+        + ` OR LOWER(COALESCE(${params.lastDestTypeExpr}, '')) = 'bridge')`;
 }
+
+/**
+ * Filtre « sens » des journaux — dérivé du CASE partagé, jamais un prédicat
+ * parallèle : c'est un prédicat réécrit à la main qui avait fait diverger
+ * journaux et tableau de bord.
+ */
+export function buildSensFilterSQL(
+    sens: CallSens[] | undefined,
+    exprs: { sourceTypeExpr: string; firstDestTypeExpr: string },
+): string {
+    if (!sens || sens.length === 0 || sens.length >= 3) return "";
+    const values = sens.map((v) => `'${v}'`).join(", ");
+    return `${buildCallSensCaseSQL(exprs)} IN (${values})`;
+}
+
+/** Filtre « provenance » (toggle Externe / Interne) : même CASE, même mot. */
+export function buildProvenanceFilterSQL(
+    origin: CallOrigin | undefined,
+    sourceTypeExpr: string,
+): string {
+    if (!origin || origin === "both") return "";
+    return `${buildCallProvenanceCaseSQL(sourceTypeExpr)} = '${origin}'`;
+}
+
+/**
+ * Sens retenus pour chaque position du toggle Externe / Interne / Les deux.
+ * Le tableau de bord ne montre QUE le flux entrant : Externe = entrants
+ * (pont compris), Interne = intra — les sortants ne vivent que dans les
+ * journaux. Les liens KPI → journaux transportent la MÊME constante : les
+ * deux écrans décrivent la même population par construction.
+ */
+export const ORIGIN_SENS: Record<CallOrigin, CallSens[]> = {
+    external: ["inbound"],
+    internal: ["intra"],
+    both: ["inbound", "intra"],
+};
 
 /** Direction retenue par le tableau de bord : le flux reçu, ou le flux émis. */
 export type DashboardDirection = "inbound" | "outbound";
 
 /**
  * Condition SQL du couple de filtres du tableau de bord (direction +
- * provenance). Côté « Entrant », la provenance ventile comme sur les
- * statistiques de groupe : « interne » = un collègue appelle, « externe » =
- * tout le reste — le pont EDIFEA (un appelant d'une autre entité) est rangé
- * côté externe. Côté « Sortant », la provenance n'a pas de sens (un sortant
- * est par nature émis par l'interne vers l'externe) : elle est ignorée.
+ * provenance). Côté « Entrant », la provenance ventile selon ORIGIN_SENS ;
+ * côté « Sortant », elle est ignorée (un sortant est par nature émis par
+ * l'interne vers l'externe).
  */
 export function buildDirectionConditionSQL(params: {
     direction: DashboardDirection;
-    origin?: "both" | "external" | "internal";
+    origin?: CallOrigin;
     sourceTypeExpr: string;
     firstDestTypeExpr: string;
-    lastDestTypeExpr: string;
 }): string {
-    const dirCase = buildCallDirectionCaseSQL(params);
-    if (params.direction === "outbound") return `${dirCase} = 'outbound'`;
-    if (params.origin === "internal") return `${dirCase} = 'internal'`;
-    if (params.origin === "external") return `${dirCase} IN ('inbound', 'bridge')`;
-    return `${dirCase} <> 'outbound'`;
+    const sensCase = buildCallSensCaseSQL(params);
+    if (params.direction === "outbound") return `${sensCase} = 'outbound'`;
+    const sens = ORIGIN_SENS[params.origin ?? "both"];
+    return sens.length === 1
+        ? `${sensCase} = '${sens[0]}'`
+        : `${sensCase} <> 'outbound'`;
 }
 
 // ============================================

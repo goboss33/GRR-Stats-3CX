@@ -12,13 +12,13 @@ import type { LogsFilters, LogsSort } from "@/services/domain/call.types";
 const START = new Date("2026-07-10T00:00:00.000Z");
 const END = new Date("2026-07-11T00:00:00.000Z");
 
-const base = (): LogsFilters => ({ directions: [], statuses: [], entityTypes: [] });
+const base = (): LogsFilters => ({ sens: [], statuses: [], entityTypes: [] });
 const byStarted: LogsSort = { field: "startedAt", direction: "desc" };
 
 const scenarios: { label: string; filters: LogsFilters; sort: LogsSort }[] = [
     { label: "plain", filters: base(), sort: byStarted },
     { label: "status=answered", filters: { ...base(), statuses: ["answered"] }, sort: byStarted },
-    { label: "direction=inbound", filters: { ...base(), directions: ["inbound"] }, sort: byStarted },
+    { label: "sens=inbound", filters: { ...base(), sens: ["inbound"] }, sort: byStarted },
     { label: "durationMin=60", filters: { ...base(), durationMin: 60 }, sort: byStarted },
     { label: "sort=duration", filters: base(), sort: { field: "duration", direction: "desc" } },
     { label: "callerSearch=*100*", filters: { ...base(), callerSearch: "*100*" }, sort: byStarted },
