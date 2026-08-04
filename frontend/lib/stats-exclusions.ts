@@ -1,4 +1,5 @@
 import { prismaAuth } from "@/lib/prisma-auth";
+import { Prisma } from "@prisma/cdr-client";
 import type { ServerId } from "@/lib/prisma-cdr";
 
 /**
@@ -106,4 +107,39 @@ export async function getStatsExclusions(serverId: ServerId): Promise<StatsExclu
 
     cache.set(serverId, { value, expiresAt: Date.now() + TTL_MS });
     return value;
+}
+
+/**
+ * Fragment SQL d'exclusion — l'inverse exact du périmètre des statistiques :
+ * tout appel ayant touché une file exclue ou un poste exclu sort de la
+ * population. Défini ICI (module serveur ordinaire) et non dans le
+ * repository : un fichier « use server » ne peut exporter que des fonctions
+ * async, et le script d'invariance (verify-dashboard-logs) doit pouvoir
+ * construire ce fragment pour exclure exactement ce que les écrans excluent.
+ */
+export function buildExclusionFilter(
+    exclusions: StatsExclusions,
+    table: Prisma.Sql,
+    startDate: Date,
+    endDate: Date,
+): Prisma.Sql {
+    const conditions: Prisma.Sql[] = [];
+    if (exclusions.queueNumbers.length > 0) {
+        conditions.push(
+            Prisma.sql`(destination_dn_type = 'queue' AND destination_dn_number IN (${Prisma.join(exclusions.queueNumbers)}))`,
+        );
+    }
+    if (exclusions.extensions.length > 0) {
+        conditions.push(
+            Prisma.sql`(destination_dn_type = 'extension' AND destination_dn_number IN (${Prisma.join(exclusions.extensions)}))`,
+            Prisma.sql`(source_dn_type = 'extension' AND source_dn_number IN (${Prisma.join(exclusions.extensions)}))`,
+        );
+    }
+    if (conditions.length === 0) return Prisma.empty;
+
+    return Prisma.sql`AND call_history_id NOT IN (
+        SELECT call_history_id FROM ${table}
+        WHERE cdr_started_at >= ${startDate} AND cdr_started_at <= ${endDate}
+          AND (${Prisma.join(conditions, " OR ")})
+    )`;
 }

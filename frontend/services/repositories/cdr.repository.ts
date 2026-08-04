@@ -23,7 +23,7 @@ import {
     type CallOrigin,
 } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
-import { getStatsExclusions, type StatsExclusions } from "@/lib/stats-exclusions";
+import { getStatsExclusions, buildExclusionFilter } from "@/lib/stats-exclusions";
 import {
     SQL_SYSTEM_DEST_TYPES,
     SQL_REAL_PARTY_DEST_TYPES,
@@ -122,35 +122,6 @@ function buildScopeFilter(scope: AccessScope | undefined, table: Prisma.Sql): Pr
  * n'y a rien à exclure : coût nul. Jamais appliqué au monitoring de licence
  * (getConcurrentCallsData) : ces appels occupent réellement les lignes.
  */
-/** Exporté pour le script d'invariance (verify-dashboard-logs) : la réplique
- *  « journaux » doit exclure exactement ce que le tableau de bord exclut. */
-export function buildExclusionFilter(
-    exclusions: StatsExclusions,
-    table: Prisma.Sql,
-    startDate: Date,
-    endDate: Date,
-): Prisma.Sql {
-    const conditions: Prisma.Sql[] = [];
-    if (exclusions.queueNumbers.length > 0) {
-        conditions.push(
-            Prisma.sql`(destination_dn_type = 'queue' AND destination_dn_number IN (${Prisma.join(exclusions.queueNumbers)}))`,
-        );
-    }
-    if (exclusions.extensions.length > 0) {
-        conditions.push(
-            Prisma.sql`(destination_dn_type = 'extension' AND destination_dn_number IN (${Prisma.join(exclusions.extensions)}))`,
-            Prisma.sql`(source_dn_type = 'extension' AND source_dn_number IN (${Prisma.join(exclusions.extensions)}))`,
-        );
-    }
-    if (conditions.length === 0) return Prisma.empty;
-
-    return Prisma.sql`AND call_history_id NOT IN (
-        SELECT call_history_id FROM ${table}
-        WHERE cdr_started_at >= ${startDate} AND cdr_started_at <= ${endDate}
-          AND (${Prisma.join(conditions, " OR ")})
-    )`;
-}
-
 // ============================================
 // MÉTRIQUES GLOBALES (KPIs du dashboard)
 // ============================================

@@ -10,8 +10,11 @@ export default defineConfig({
         include: ["services/**/*.test.ts", "lib/**/*.test.ts"],
     },
     resolve: {
-        // Miroir du path alias "@/*" du tsconfig.
+        // Miroir des path aliases du tsconfig : "@/*" et les clients Prisma
+        // générés (sortie personnalisée dans node_modules/.prisma).
         alias: {
+            "@prisma/auth-client": path.join(dir, "node_modules/.prisma/auth-client"),
+            "@prisma/cdr-client": path.join(dir, "node_modules/.prisma/cdr-client"),
             "@": dir,
         },
     },
