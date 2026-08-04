@@ -7,7 +7,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { useUrlPeriod } from "@/lib/url-state";
 import {
-    Hash,
     Search,
     TrendingUp,
     PhoneIncoming,
@@ -215,11 +214,6 @@ function StatisticsExtensionPageInner() {
 
     return (
         <div className="p-6 space-y-6">
-            <div className="flex items-center gap-3">
-                <Hash className="h-8 w-8 text-blue-600" />
-                <h1 className="text-2xl font-bold">Statistiques par Extension / DDI</h1>
-            </div>
-
             <Card>
                 <CardHeader>
                     <div className="flex items-center justify-between">

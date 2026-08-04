@@ -63,16 +63,8 @@ export default function QueuesPage() {
 
     return (
         <div className="p-8 max-w-[1600px] mx-auto space-y-8">
-            {/* Header */}
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-                        Files d'Attente
-                    </h1>
-                    <p className="text-slate-500 mt-2 text-lg">
-                        Vue d'ensemble des agents par file basée sur l'historique d'activité
-                    </p>
-                </div>
+            {/* Titre porté par le header de l'application. */}
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-end">
                 <QueueSearchCombobox
                     queues={queues}
                     value={searchTerm}

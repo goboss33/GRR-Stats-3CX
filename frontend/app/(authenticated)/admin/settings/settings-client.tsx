@@ -49,11 +49,6 @@ export default function SettingsPage({ userRole }: { userRole: string }) {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h1 className="text-2xl font-bold text-slate-900">Paramètres</h1>
-                <p className="text-slate-500">Configuration du système et gestion de votre compte</p>
-            </div>
-
             {/* Tabs */}
             <div className="border-b border-slate-200">
                 <nav className="flex gap-1 -mb-px overflow-x-auto">

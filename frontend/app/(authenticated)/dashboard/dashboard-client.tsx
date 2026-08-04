@@ -203,19 +203,9 @@ export default function DashboardClient() {
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                        Tableau de bord
-                    </h1>
-                    <p className="text-slate-500 mt-1">
-                        Vue d'ensemble et performances de l'entreprise
-                    </p>
-                </div>
-
-            </div>
-
+            {/* Pas de titre ici : le header de l'application le porte déjà
+                (cf. components/header). Le répéter volait une hauteur d'écran
+                aux chiffres, qui sont le sujet. */}
             {/* Chiffres-clés. Une seule vignette réutilisée : le balisage n'est
                 plus recopié, donc plus de divergences de mise en forme. */}
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">

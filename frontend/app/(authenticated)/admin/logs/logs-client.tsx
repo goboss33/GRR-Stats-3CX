@@ -662,16 +662,9 @@ export default function AdminLogsPage() {
 
     return (
         <div className="space-y-4">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <FileText className="h-8 w-8 text-slate-700" />
-                    <div>
-                        <h1 className="text-2xl font-bold text-slate-900">Logs d&apos;appels</h1>
-                        <p className="text-slate-500">Exploration et audit des CDR</p>
-                    </div>
-                </div>
-
+            {/* Titre porté par le header de l'application : seules les
+                actions de l'écran restent ici. */}
+            <div className="flex items-center justify-end">
                 <div className="flex items-center gap-2">
                     {/* Column visibility toggle */}
                     <Popover>
