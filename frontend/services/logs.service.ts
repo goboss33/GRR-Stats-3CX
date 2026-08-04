@@ -155,6 +155,13 @@ function buildAggregatedQueryParts(
                 const ph = scope.queueNumbers.map((q) => bind(q));
                 parts.push(`(destination_dn_type = 'queue' AND destination_dn_number IN (${ph.join(", ")}))`);
             }
+            // ⚠️ ASYMÉTRIE ASSUMÉE, jumelle de celle de buildScopeFilter
+            // (cdr.repository) : les postes ne comptent qu'en DESTINATION.
+            // Un manager voit les appels REÇUS par ses agents, pas ceux
+            // qu'ils émettent vers l'extérieur de son périmètre. Sans effet
+            // aujourd'hui puisque aucun écran ne montre les sortants ; à
+            // lever en même temps que le filtre jumeau le jour d'un tableau
+            // de bord des sortants.
             if (scope.extensionNumbers && scope.extensionNumbers.length > 0) {
                 const ph = scope.extensionNumbers.map((e) => bind(e));
                 parts.push(`(destination_dn_type = 'extension' AND destination_dn_number IN (${ph.join(", ")}))`);

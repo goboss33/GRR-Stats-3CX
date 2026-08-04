@@ -22,7 +22,15 @@ export interface AccessScope {
     unrestricted: boolean;
     /** Files autorisées. `null` = toutes. */
     queueNumbers: string[] | null;
-    /** Extensions autorisées. `null` = toutes. */
+    /**
+     * Extensions autorisées. `null` = toutes.
+     *
+     * ⚠️ Reconnues en DESTINATION uniquement par les filtres SQL : un appel
+     * reçu par un agent du périmètre est visible, un appel qu'il émet vers
+     * l'extérieur du périmètre ne l'est pas. Sans conséquence tant que les
+     * écrans ne montrent que le flux entrant ; à revoir pour un tableau de
+     * bord des sortants (cf. buildScopeFilter et le filtre des journaux).
+     */
     extensionNumbers: string[] | null;
     /** Masquer les numéros des appelants (nLPD/RGPD) */
     maskPhoneNumbers: boolean;

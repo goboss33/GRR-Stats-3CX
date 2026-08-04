@@ -101,6 +101,15 @@ function buildScopeFilter(scope: AccessScope | undefined, table: Prisma.Sql): Pr
             Prisma.sql`(destination_dn_type = 'queue' AND destination_dn_number IN (${Prisma.join(scope.queueNumbers)}))`,
         );
     }
+    // ⚠️ ASYMÉTRIE ASSUMÉE : les postes ne sont reconnus qu'en DESTINATION.
+    // Un appel REÇU par un agent du périmètre est visible ; un appel qu'il
+    // ÉMET vers un numéro hors périmètre ne l'est pas. Sans conséquence
+    // aujourd'hui — les écrans ne montrent que le flux entrant (cf.
+    // ORIGIN_SENS) — mais c'est exactement ce qu'il faudra lever le jour où
+    // l'on fera un tableau de bord des SORTANTS : il faudra alors ajouter
+    // (source_dn_type = 'extension' AND source_dn_number IN …) ici ET dans le
+    // filtre jumeau des journaux (logs.service), les deux devant rester
+    // d'accord.
     if (scope.extensionNumbers && scope.extensionNumbers.length > 0) {
         conditions.push(
             Prisma.sql`(destination_dn_type = 'extension' AND destination_dn_number IN (${Prisma.join(scope.extensionNumbers)}))`,
