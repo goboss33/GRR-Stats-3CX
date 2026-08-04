@@ -82,9 +82,10 @@ export function UserAccessDialog({
     const [regionFilter, setRegionFilter] = useState<string>("ALL");
     const [newOverrideExt, setNewOverrideExt] = useState("");
 
-    // Un ADMIN/MODERATOR n'a pas de périmètre de files : son accès est global
-    // (limité aux tenants autorisés pour le MODERATOR).
-    const isUnrestricted = user?.role === "ADMIN" || user?.role === "MODERATOR";
+    // Rôle « global » : voit aussi les postes qui n'appartiennent à aucune
+    // file. Le PÉRIMÈTRE, lui, s'applique à tout le monde depuis août 2026 —
+    // un administrateur ne voit que les files qui lui sont cochées.
+    const isGlobalRole = user?.role === "ADMIN" || user?.role === "MODERATOR";
 
     const load = useCallback(async () => {
         if (!user) return;
@@ -212,9 +213,10 @@ export function UserAccessDialog({
                     <DialogTitle>Accès de {displayName}</DialogTitle>
                     <DialogDescription>
                         Rôle : <strong>{user?.role}</strong>
-                        {isUnrestricted
-                            ? " — accès global aux données, limité aux tenants autorisés."
-                            : " — ne verra que les files cochées ci-dessous."}
+                        {" — ne verra que les files cochées ci-dessous"}
+                        {isGlobalRole
+                            ? ", plus tous les postes du tenant (y compris hors file)."
+                            : ", et les agents qui en dépendent."}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -248,8 +250,8 @@ export function UserAccessDialog({
                             </div>
                         </section>
 
-                        {/* Périmètre de files */}
-                        {!isUnrestricted && (
+                        {/* Périmètre de files — pour TOUS les rôles */}
+                        {(
                             <section className="space-y-3">
                                 <div className="flex items-center justify-between">
                                     <Label className="text-base font-medium">Périmètre de files</Label>
@@ -345,7 +347,7 @@ export function UserAccessDialog({
                         )}
 
                         {/* Surcharges d'extensions */}
-                        {!isUnrestricted && (
+                        {!isGlobalRole && (
                             <section className="space-y-2">
                                 <Label className="text-base font-medium">Surcharges d&apos;extensions</Label>
                                 <p className="text-xs text-slate-500">

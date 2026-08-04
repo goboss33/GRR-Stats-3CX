@@ -441,8 +441,11 @@ export async function getConcurrentCallsChartData(
     endDate: Date
 ): Promise<{ data: ConcurrentCallsDataPoint[]; summary: ConcurrentCallsSummary }> {
     const timezone = await getServerTimezone(serverId);
-    const scope = await resolveDashboardScope(serverId);
-    const rawData = await getConcurrentCallsData(serverId, startDate, endDate, timezone, scope);
+    // Monitoring de LICENCE : la seule vue d'INFRASTRUCTURE de l'application.
+    // Elle compte les appels simultanés de la machine — clients hébergés
+    // compris, puisque ce sont eux qui occupent les lignes 3CX facturées.
+    // La borner au périmètre sous-estimerait la consommation réelle.
+    const rawData = await getConcurrentCallsData(serverId, startDate, endDate, timezone, unrestrictedScope());
     const threshold = await getServerLicenceThreshold(serverId);
     const trunkThreshold = await getServerTrunkThreshold(serverId);
 

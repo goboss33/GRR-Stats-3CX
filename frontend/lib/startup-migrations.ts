@@ -14,6 +14,7 @@ import { prismaAuth } from "@/lib/prisma-auth";
  */
 export async function runStartupMigrations(): Promise<void> {
     await renameLegacyRoles();
+    await seedGlobalRolePerimeters();
     await replaceCompanyWideWithCanViewLogs();
 }
 
@@ -38,6 +39,80 @@ async function replaceCompanyWideWithCanViewLogs(): Promise<void> {
     await prismaAuth.$executeRawUnsafe(
         `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "canViewExtensionStats" BOOLEAN NOT NULL DEFAULT true`,
     );
+}
+
+/**
+ * Août 2026 : ADMIN et MODERATOR cessent de tout voir par leur rôle et
+ * reçoivent un PÉRIMÈTRE, comme les managers. Sans amorçage, leur premier
+ * écran après déploiement serait vide — d'où cette attribution unique.
+ *
+ * Le périmètre initial est « toutes les files actives SAUF celles cochées
+ * exclues des statistiques » : la case des clients hébergés, qu'on retire par
+ * ailleurs, sert une dernière fois à dire ce qui n'appartient pas à la maison.
+ *
+ * NE REJOUE JAMAIS (marqueur `adminPerimeterSeededAt`) : sinon chaque
+ * redémarrage réattribuerait les files qu'un administrateur vient de retirer.
+ * Les comptes ayant DÉJÀ un périmètre sont laissés tels quels — une
+ * configuration explicite prime toujours sur un amorçage.
+ */
+async function seedGlobalRolePerimeters(): Promise<void> {
+    // La colonne est créée ici plutôt que d'attendre `db push` : cette
+    // migration doit pouvoir tourner sur une base qui n'a pas encore vu le
+    // nouveau schéma (dev local pointant sur la base auth partagée).
+    await prismaAuth.$executeRawUnsafe(
+        `ALTER TABLE "AppSettings" ADD COLUMN IF NOT EXISTS "adminPerimeterSeededAt" TIMESTAMP(3)`,
+    );
+
+    const marker = await prismaAuth.$queryRawUnsafe<{ seeded: Date | null }[]>(
+        `SELECT "adminPerimeterSeededAt" AS seeded FROM "AppSettings" WHERE id = 'global'`,
+    );
+    if (marker.length > 0 && marker[0].seeded !== null) return;
+
+    const [users, queues] = await Promise.all([
+        prismaAuth.user.findMany({
+            where: { role: { in: ["ADMIN", "MODERATOR"] } },
+            select: {
+                id: true,
+                role: true,
+                tenantAccess: { select: { tenantId: true } },
+                _count: { select: { queuePerimeter: true } },
+            },
+        }),
+        prismaAuth.queueRegistry.findMany({
+            where: { status: "ACTIVE", excludedFromStats: false },
+            select: { id: true, tenantId: true },
+        }),
+    ]);
+
+    let granted = 0;
+    for (const user of users) {
+        if (user._count.queuePerimeter > 0) continue;
+
+        // Un MODERATOR reste borné aux tenants qui lui sont ouverts ; l'ADMIN
+        // administre l'ensemble, son périmètre couvre donc tous les tenants.
+        const allowed = new Set(user.tenantAccess.map((t) => t.tenantId));
+        const mine = user.role === "ADMIN" ? queues : queues.filter((q) => allowed.has(q.tenantId));
+        if (mine.length === 0) continue;
+
+        await prismaAuth.$transaction([
+            prismaAuth.userTenantAccess.createMany({
+                data: [...new Set(mine.map((q) => q.tenantId))].map((tenantId) => ({ userId: user.id, tenantId })),
+                skipDuplicates: true,
+            }),
+            prismaAuth.userQueuePerimeter.createMany({
+                data: mine.map((q) => ({ userId: user.id, queueId: q.id })),
+                skipDuplicates: true,
+            }),
+        ]);
+        granted++;
+    }
+
+    await prismaAuth.appSettings.upsert({
+        where: { id: "global" },
+        update: { adminPerimeterSeededAt: new Date() },
+        create: { id: "global", adminPerimeterSeededAt: new Date() },
+    });
+    console.info(`[migrations] Périmètres amorcés pour ${granted} compte(s) ADMIN/MODERATOR (${queues.length} files)`);
 }
 
 /**

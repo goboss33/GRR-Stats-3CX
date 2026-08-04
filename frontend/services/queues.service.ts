@@ -96,7 +96,7 @@ export async function getScopedQueueOptions(serverId: ServerId): Promise<{
     const queues = await getQueueMembers(serverId);
     return {
         queues,
-        canViewCompanyWide: scope.unrestricted,
+        canViewCompanyWide: scope.canBrowseAllQueues,
         canViewLogs: scope.canViewLogs,
         // Distingue « aucun droit » de « aucune file dans ce tenant » : les deux
         // donnent une liste vide, mais appellent des messages opposés.

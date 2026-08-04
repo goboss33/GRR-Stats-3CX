@@ -13,7 +13,12 @@ import { ServerId } from "@/lib/prisma-cdr";
 // ============================================
 
 export interface AccessScope {
-    /** true = aucune restriction de files (ADMIN/MODERATOR, ou filtrage désactivé) */
+    /**
+     * true = aucune restriction de files. Ne subsiste QUE lorsque le filtrage
+     * global est désactivé (mode observation) ou pour les vues d'infrastructure
+     * (monitoring de licence). Depuis août 2026, aucun rôle ne l'obtient : un
+     * ADMIN voit son périmètre, comme tout le monde.
+     */
     unrestricted: boolean;
     /** Files autorisées. `null` = toutes. */
     queueNumbers: string[] | null;
@@ -21,6 +26,12 @@ export interface AccessScope {
     extensionNumbers: string[] | null;
     /** Masquer les numéros des appelants (nLPD/RGPD) */
     maskPhoneNumbers: boolean;
+    /**
+     * Peut consulter les journaux sans se restreindre à une file (« vue
+     * Entreprise »). Affordance d'INTERFACE, pas une étendue de données : la
+     * population reste bornée par le périmètre dans tous les cas.
+     */
+    canBrowseAllQueues: boolean;
     /**
      * Autorisé à consulter les logs d'appels (écran + liens des KPI).
      * Distinct de `empty` : c'est un droit d'accès à la FONCTION, pas une
@@ -46,13 +57,19 @@ export function isQueueInScope(scope: AccessScope, queueNumber: string): boolean
     return scope.queueNumbers?.includes(queueNumber) ?? false;
 }
 
-/** Portée sans restriction — utilisée quand le filtrage global est désactivé. */
+/**
+ * Portée sans restriction — le filtrage global désactivé (mode observation),
+ * et les vues d'INFRASTRUCTURE qui doivent voir la machine entière : le
+ * monitoring de licence compte les appels simultanés du tenant, clients
+ * hébergés compris, puisque ce sont eux qui occupent les lignes 3CX.
+ */
 export function unrestrictedScope(): AccessScope {
     return {
         unrestricted: true,
         queueNumbers: null,
         extensionNumbers: null,
         maskPhoneNumbers: false,
+        canBrowseAllQueues: true,
         canViewLogs: true,
         canViewExtensionStats: true,
         empty: false,
@@ -70,6 +87,7 @@ export function emptyScope(maskPhoneNumbers = true): AccessScope {
         queueNumbers: [],
         extensionNumbers: [],
         maskPhoneNumbers,
+        canBrowseAllQueues: false,
         canViewLogs: true,
         canViewExtensionStats: true,
         empty: true,
@@ -121,31 +139,43 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
         return emptyScope(maskPhoneNumbers);
     }
 
-    // ADMIN / MODERATOR : accès global aux données du tenant. Le droit aux
-    // logs reste individuel — comme le masquage des numéros, il s'applique
-    // quel que soit le rôle.
-    if (user.role === "ADMIN" || user.role === "MODERATOR") {
-        return {
-            unrestricted: true,
-            queueNumbers: null,
-            extensionNumbers: null,
-            maskPhoneNumbers,
-            canViewLogs: user.canViewLogs,
-            canViewExtensionStats: user.canViewExtensionStats,
-            empty: false,
-        };
-    }
-
     // AGENT : aucun accès pour l'instant.
     if (user.role === "AGENT") return emptyScope(maskPhoneNumbers);
 
-    // MANAGER : périmètre explicite de files + extensions qui en découlent.
+    // Périmètre EXPLICITE de files — pour tous les rôles qui consultent.
+    // L'ADMIN et le MODERATOR en ont un comme les managers depuis août 2026 :
+    // le contournement par le rôle (« tout voir ») rendait impossible de
+    // sortir les clients hébergés des chiffres autrement qu'en supprimant
+    // leurs appels de TOUTES les vues, journaux compris — un mécanisme
+    // exclusif qui faisait disparaître aussi la part travaillée par nos
+    // équipes sur les appels mixtes.
     const perimeter = await prismaAuth.userQueuePerimeter.findMany({
         where: { userId, queue: { tenantId } },
         select: { queue: { select: { queueNumber: true } } },
     });
     const queueNumbers = perimeter.map((p) => p.queue.queueNumber);
 
+    // ADMIN / MODERATOR : leurs files, mais TOUS les postes du tenant — y
+    // compris ceux qui n'appartiennent à aucune file (direction, back-office :
+    // ~188 postes recensés en août 2026), que personne ne verrait autrement.
+    // Seuls les agents EXCLUSIFS des files hors périmètre restent dehors : ce
+    // sont les collaborateurs des clients hébergés.
+    const globalRole = user.role === "ADMIN" || user.role === "MODERATOR";
+    if (globalRole) {
+        if (queueNumbers.length === 0) return emptyScope(maskPhoneNumbers);
+        return {
+            unrestricted: false,
+            queueNumbers,
+            extensionNumbers: await resolveTenantWideExtensions(tenantId, queueNumbers),
+            maskPhoneNumbers,
+            canBrowseAllQueues: true,
+            canViewLogs: user.canViewLogs,
+            canViewExtensionStats: user.canViewExtensionStats,
+            empty: false,
+        };
+    }
+
+    // MANAGER : périmètre explicite de files + extensions qui en découlent.
     if (queueNumbers.length === 0) {
         // Un manager sans périmètre peut tout de même avoir des surcharges.
         const onlyOverrides = await resolveExtensions(userId, tenantId, []);
@@ -155,6 +185,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
             queueNumbers: [],
             extensionNumbers: onlyOverrides,
             maskPhoneNumbers,
+            canBrowseAllQueues: false,
             canViewLogs: user.canViewLogs,
             canViewExtensionStats: user.canViewExtensionStats,
             empty: false,
@@ -168,6 +199,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
         queueNumbers,
         extensionNumbers,
         maskPhoneNumbers,
+        canBrowseAllQueues: false,
         canViewLogs: user.canViewLogs,
         canViewExtensionStats: user.canViewExtensionStats,
         empty: false,
@@ -201,6 +233,53 @@ export async function resolveApiKeyScope(apiKeyId: string, tenantId: ServerId): 
     if (!key?.createdBy || key.createdBy === "system") return unrestrictedScope();
 
     return resolveScopeForUser(key.createdBy, tenantId);
+}
+
+/**
+ * Postes visibles par un rôle global (ADMIN / MODERATOR) : TOUS ceux du
+ * tenant, moins les agents EXCLUSIFS des files hors périmètre.
+ *
+ * « Exclusif » est la nuance qui protège les postes mixtes : un collaborateur
+ * qui sert à la fois une file du périmètre et une file d'un client hébergé
+ * reste visible — son travail pour nous ne doit pas disparaître.
+ *
+ * Les deux sources sont déjà en cache (annuaire CDR, liens file/agent), donc
+ * ce calcul est de la manipulation d'ensembles en mémoire. Imports dynamiques :
+ * ce module est chargé par des chemins d'authentification légers, il n'a pas à
+ * tirer les repositories CDR au démarrage.
+ */
+async function resolveTenantWideExtensions(tenantId: ServerId, perimeterQueues: string[]): Promise<string[]> {
+    try {
+        const [{ getQueueMembersRaw }, { getDirectory }] = await Promise.all([
+            import("@/services/repositories/cdr.repository"),
+            import("@/services/repositories/extension-stats.repository"),
+        ]);
+        const [members, directory] = await Promise.all([
+            getQueueMembersRaw(tenantId),
+            getDirectory(tenantId),
+        ]);
+
+        const inPerimeter = new Set(perimeterQueues);
+        const insiders = new Set<string>();
+        const outsiders = new Set<string>();
+        for (const row of members) {
+            (inPerimeter.has(row.queue_number) ? insiders : outsiders).add(row.agent_extension);
+        }
+
+        const visible = new Set(insiders);
+        for (const entry of directory.extensions) {
+            if (!outsiders.has(entry.number)) visible.add(entry.number);
+        }
+        return [...visible];
+    } catch {
+        // Annuaire indisponible : on se rabat sur les agents des files du
+        // périmètre — moins large, jamais plus.
+        const links = await prismaAuth.queueAgentLink.findMany({
+            where: { tenantId, queueNumber: { in: perimeterQueues } },
+            select: { extensionNumber: true },
+        });
+        return [...new Set(links.map((l) => l.extensionNumber))];
+    }
 }
 
 /** Extensions déduites des files du périmètre, surcharges appliquées. */

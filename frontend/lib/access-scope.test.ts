@@ -12,7 +12,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * logique de décision, pas Prisma.
  */
 
-const { db, authMock } = vi.hoisted(() => ({
+const { db, authMock, cdrMock, dirMock } = vi.hoisted(() => ({
+    cdrMock: { getQueueMembersRaw: vi.fn() },
+    dirMock: { getDirectory: vi.fn() },
     db: {
         appSettings: { findUnique: vi.fn() },
         user: { findUnique: vi.fn() },
@@ -26,6 +28,8 @@ const { db, authMock } = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma-auth", () => ({ prismaAuth: db }));
 vi.mock("@/lib/auth", () => ({ auth: authMock }));
+vi.mock("@/services/repositories/cdr.repository", () => cdrMock);
+vi.mock("@/services/repositories/extension-stats.repository", () => dirMock);
 
 import { resolveAccessScope, resolveApiKeyScope, isQueueInScope, emptyScope, unrestrictedScope } from "./access-scope";
 
@@ -40,7 +44,15 @@ function setup(options: {
     agentLinks?: string[];
     overrides?: Array<{ extensionNumber: string; mode: "INCLUDE" | "EXCLUDE" }>;
     apiKey?: { createdBy: string | null } | null;
+    /** Annuaire du tenant : couples file → agent, et postes connus. */
+    queueMembers?: Array<{ queue_number: string; agent_extension: string }>;
+    directory?: string[];
 } = {}) {
+    cdrMock.getQueueMembersRaw.mockResolvedValue(options.queueMembers ?? []);
+    dirMock.getDirectory.mockResolvedValue({
+        extensions: (options.directory ?? []).map((number) => ({ number, name: null })),
+        ddis: [],
+    });
     db.appSettings.findUnique.mockResolvedValue({
         perimeterEnforcementEnabled: options.enforcement ?? true,
     });
@@ -99,17 +111,47 @@ describe("interrupteur global", () => {
 });
 
 describe("portée selon le rôle", () => {
-    it("ADMIN : accès complet, sans exiger d'accès au tenant", async () => {
+    it("ADMIN : périmètre EXPLICITE de files, comme tout le monde", async () => {
+        // Le contournement par le rôle a disparu en août 2026 : sans files
+        // cochées, un administrateur ne voit rien — c'est ce qui permet de
+        // sortir les clients hébergés des chiffres sans effacer leurs appels.
         setup({ user: { role: "ADMIN", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, tenantAccess: [] } });
+        expect((await resolveAccessScope(TENANT)).empty).toBe(true);
+
+        setup({
+            user: { role: "ADMIN", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, tenantAccess: [] },
+            perimeter: ["900"],
+        });
         const scope = await resolveAccessScope(TENANT);
-        expect(scope.unrestricted).toBe(true);
-        expect(scope.canViewLogs).toBe(true);
+        expect(scope.unrestricted).toBe(false);
+        expect(scope.queueNumbers).toEqual(["900"]);
+        expect(scope.canBrowseAllQueues).toBe(true);
+    });
+
+    it("ADMIN : tous les postes du tenant, sauf les agents exclusifs des files hors périmètre", async () => {
+        setup({
+            user: { role: "ADMIN", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, tenantAccess: [] },
+            perimeter: ["900"],
+            queueMembers: [
+                { queue_number: "900", agent_extension: "110" },   // agent de la maison
+                { queue_number: "803", agent_extension: "260" },   // agent exclusif d'un client hébergé
+                { queue_number: "803", agent_extension: "110" },   // poste MIXTE : sert aussi la 900
+            ],
+            directory: ["110", "260", "444"],                       // 444 : poste hors de toute file
+        });
+        const scope = await resolveAccessScope(TENANT);
+        expect(scope.extensionNumbers).toContain("110"); // mixte : son travail chez nous compte
+        expect(scope.extensionNumbers).toContain("444"); // hors file : direction, back-office
+        expect(scope.extensionNumbers).not.toContain("260");
     });
 
     it("le droit « Voir les logs » est individuel, quel que soit le rôle", async () => {
         // Comme le masquage des numéros : la permission suit l'utilisateur,
         // pas son rôle — un ADMIN peut se voir retirer les logs.
-        setup({ user: { role: "ADMIN", canViewLogs: false, canViewExtensionStats: false, canViewFullPhoneNumbers: true, tenantAccess: [] } });
+        setup({
+            user: { role: "ADMIN", canViewLogs: false, canViewExtensionStats: false, canViewFullPhoneNumbers: true, tenantAccess: [] },
+            perimeter: ["900"],
+        });
         expect((await resolveAccessScope(TENANT)).canViewLogs).toBe(false);
 
         setup({
@@ -121,12 +163,32 @@ describe("portée selon le rôle", () => {
         expect(scope.canViewExtensionStats).toBe(false);
     });
 
-    it("MODERATOR : accès complet, mais seulement sur un tenant autorisé", async () => {
-        setup({ user: { role: "MODERATOR", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: TENANT }] } });
-        expect((await resolveAccessScope(TENANT)).unrestricted).toBe(true);
+    it("MODERATOR : périmètre aussi, et seulement sur un tenant autorisé", async () => {
+        setup({
+            user: { role: "MODERATOR", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: TENANT }] },
+            perimeter: ["900"],
+        });
+        const scope = await resolveAccessScope(TENANT);
+        expect(scope.unrestricted).toBe(false);
+        expect(scope.queueNumbers).toEqual(["900"]);
 
-        setup({ user: { role: "MODERATOR", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: "edifea" }] } });
+        setup({
+            user: { role: "MODERATOR", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: "edifea" }] },
+            perimeter: ["900"],
+        });
         expect((await resolveAccessScope(TENANT)).empty).toBe(true);
+    });
+
+    it("le manager ne voit QUE les agents de ses files — pas les postes hors file", async () => {
+        setup({
+            user: { role: "MANAGER", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: false, tenantAccess: [{ tenantId: TENANT }] },
+            perimeter: ["900"],
+            agentLinks: ["110"],
+            directory: ["110", "444"],
+        });
+        const scope = await resolveAccessScope(TENANT);
+        expect(scope.extensionNumbers).toEqual(["110"]);
+        expect(scope.canBrowseAllQueues).toBe(false);
     });
 
     it("AGENT : aucun accès pour l'instant", async () => {

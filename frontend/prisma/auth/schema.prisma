@@ -75,6 +75,10 @@ model AppSettings {
   perimeterEnforcementEnabled Boolean  @default(false)
   /// Nombre de jours sans appel avant qu'une file passe en ARCHIVED.
   queueArchiveAfterDays       Int      @default(90)
+  /// Horodate l'amorçage des périmètres ADMIN/MODERATOR (août 2026 : ces rôles
+  /// ont cessé de tout voir par défaut). Ne rejoue jamais : sans ce marqueur,
+  /// chaque démarrage réattribuerait les files qu'un administrateur a retirées.
+  adminPerimeterSeededAt      DateTime?
 
   // ---- Règles de classement des appels (cf. services/domain/call-classification.ts)
   // Les valeurs par défaut reproduisent DEFAULT_CLASSIFICATION_RULES : une base
@@ -140,10 +144,13 @@ model QueueRegistry {
   region      String?
   service     String?
   status      QueueStatus @default(ACTIVE)
-  /// File exclue des statistiques (clients hébergés sur le tenant : Barnes,
-  /// BCR…) : ses appels et ceux de ses agents exclusifs sortent de TOUTES les
-  /// statistiques (dashboard, journaux, sélecteurs) — mais PAS du monitoring
-  /// de licence, qui mesure l'occupation réelle des lignes. Rétroactif.
+  /// DÉPRÉCIÉ (août 2026) — plus lu par aucun écran. Les clients hébergés
+  /// sortent désormais des chiffres parce qu'ils ne sont dans le périmètre de
+  /// personne, et non parce qu'on efface leurs appels de toutes les vues :
+  /// l'ancien mécanisme faisait aussi disparaître la part travaillée par nos
+  /// équipes sur les appels mixtes, journaux compris.
+  /// Conservé le temps que l'amorçage des périmètres (startup-migrations) en
+  /// tire le périmètre initial des administrateurs ; supprimable ensuite.
   excludedFromStats Boolean @default(false)
   /// null = jamais examinée par un ADMIN -> signalée comme « nouvelle ».
   /// Remplace l'ancien statut « à classer », qui empêchait d'utiliser une file
@@ -253,10 +260,9 @@ model TenantSettings {
   timezone           String   @default("Europe/Zurich")
   licenceThreshold   Int?
   trunkThreshold     Int?
-  /// Postes exclus des statistiques, en plus des agents dérivés des files
-  /// exclues — pour les postes clients membres d'AUCUNE file (indétectables
-  /// autrement). Format : numéros et plages séparés par des virgules,
-  /// ex. "260-299, 803, 850".
+  /// DÉPRÉCIÉ (août 2026) — plus lu par aucun écran, voir
+  /// QueueRegistry.excludedFromStats. Les postes hors file sont désormais
+  /// visibles des seuls rôles globaux, via leur périmètre.
   excludedExtensions String   @default("")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

@@ -10,6 +10,7 @@
 // ============================================
 
 import { prismaAuth } from "@/lib/prisma-auth";
+import type { Role } from "@prisma/auth-client";
 
 export type OverrideMode = "INCLUDE" | "EXCLUDE";
 
@@ -108,12 +109,13 @@ export interface QueueAccessUser {
     role: string;
 }
 
+/** Rôles dont l'accès aux données se règle file par file — c'est-à-dire tous
+ *  ceux qui consultent : l'ADMIN et le MODERATOR ont un périmètre comme les
+ *  managers depuis août 2026. */
+const ROLES_WITH_PERIMETER: Role[] = ["ADMIN", "MODERATOR", "MANAGER"];
+
 /**
  * Qui accède à cette file, et qui pourrait y être ajouté.
- *
- * Seuls les MANAGER apparaissent : ADMIN et MODERATOR ont une portée globale et
- * ne dépendent d'aucun périmètre de files — les lister ici laisserait croire que
- * leur accès se gère file par file.
  */
 export async function listQueueAccess(
     queueId: string,
@@ -122,12 +124,12 @@ export async function listQueueAccess(
 
     const [granted, managers] = await Promise.all([
         prismaAuth.user.findMany({
-            where: { role: "MANAGER", queuePerimeter: { some: { queueId } } },
+            where: { role: { in: ROLES_WITH_PERIMETER }, queuePerimeter: { some: { queueId } } },
             select,
             orderBy: [{ lastName: "asc" }, { email: "asc" }],
         }),
         prismaAuth.user.findMany({
-            where: { role: "MANAGER", queuePerimeter: { none: { queueId } } },
+            where: { role: { in: ROLES_WITH_PERIMETER }, queuePerimeter: { none: { queueId } } },
             select,
             orderBy: [{ lastName: "asc" }, { email: "asc" }],
         }),
@@ -210,7 +212,9 @@ export async function describeUserScope(userId: string): Promise<UserScopeDescri
     if (!user) throw new Error("Utilisateur introuvable");
 
     const access = await getUserAccess(userId);
-    const unrestricted = user.role === "ADMIN" || user.role === "MODERATOR";
+    // Plus aucun rôle n'échappe au périmètre (août 2026) : l'écran des accès
+    // montre donc la liste des files pour TOUT LE MONDE, admins compris.
+    const unrestricted = false;
 
     // ADMIN/MODERATOR : portée globale (limitée aux tenants autorisés pour MODERATOR).
     // Les files archivées sont exclues : elles n'existent plus dans 3CX.
