@@ -162,9 +162,19 @@ function buildAggregatedQueryParts(
             // aujourd'hui puisque aucun écran ne montre les sortants ; à
             // lever en même temps que le filtre jumeau le jour d'un tableau
             // de bord des sortants.
-            if (scope.extensionNumbers && scope.extensionNumbers.length > 0) {
-                const ph = scope.extensionNumbers.map((e) => bind(e));
-                parts.push(`(destination_dn_type = 'extension' AND destination_dn_number IN (${ph.join(", ")}))`);
+            // `allExcept` sans exclusion = tous les postes : la condition se
+            // réduit au type, sans liste — c'est le cas d'un administrateur
+            // dont le périmètre couvre toutes les files du tenant.
+            if (scope.extensions.kind === "only") {
+                if (scope.extensions.numbers.length > 0) {
+                    const ph = scope.extensions.numbers.map((e) => bind(e));
+                    parts.push(`(destination_dn_type = 'extension' AND destination_dn_number IN (${ph.join(", ")}))`);
+                }
+            } else if (scope.extensions.numbers.length > 0) {
+                const ph = scope.extensions.numbers.map((e) => bind(e));
+                parts.push(`(destination_dn_type = 'extension' AND destination_dn_number NOT IN (${ph.join(", ")}))`);
+            } else {
+                parts.push(`(destination_dn_type = 'extension')`);
             }
             whereConditions.push(
                 parts.length > 0
@@ -1303,9 +1313,16 @@ export async function getCallChain(serverId: ServerId, callHistoryId: string): P
                 const ph = scope.queueNumbers.map(bindScope);
                 scopeParts.push(`(destination_dn_type = 'queue' AND destination_dn_number IN (${ph.join(", ")}))`);
             }
-            if (scope.extensionNumbers && scope.extensionNumbers.length > 0) {
-                const ph = scope.extensionNumbers.map(bindScope);
-                scopeParts.push(`(destination_dn_type = 'extension' AND destination_dn_number IN (${ph.join(", ")}))`);
+            if (scope.extensions.kind === "only") {
+                if (scope.extensions.numbers.length > 0) {
+                    const ph = scope.extensions.numbers.map(bindScope);
+                    scopeParts.push(`(destination_dn_type = 'extension' AND destination_dn_number IN (${ph.join(", ")}))`);
+                }
+            } else if (scope.extensions.numbers.length > 0) {
+                const ph = scope.extensions.numbers.map(bindScope);
+                scopeParts.push(`(destination_dn_type = 'extension' AND destination_dn_number NOT IN (${ph.join(", ")}))`);
+            } else {
+                scopeParts.push(`(destination_dn_type = 'extension')`);
             }
             if (scopeParts.length === 0) return [];
             const touches = await prisma.$queryRawUnsafe<{ n: bigint }[]>(

@@ -25,4 +25,13 @@ export async function register() {
     } catch (error) {
         console.error("[annuaire] préchauffage non lancé :", error);
     }
+
+    // Même chose pour l'annuaire des POSTES (balayage de douze mois) : il sert
+    // l'autocomplétion d'Extension/DDI et la résolution des noms.
+    try {
+        const { warmExtensionDirectory } = await import("@/services/repositories/extension-stats.repository");
+        void warmExtensionDirectory();
+    } catch (error) {
+        console.error("[annuaire postes] préchauffage non lancé :", error);
+    }
 }

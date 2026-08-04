@@ -12,6 +12,34 @@ import { ServerId } from "@/lib/prisma-cdr";
 // filtrage, applique dans la couche données, fait autorité.
 // ============================================
 
+/**
+ * Postes autorisés — deux formes, parce qu'il y a deux besoins.
+ *
+ * `only` : la liste EXPLICITE des agents des files du périmètre. C'est le
+ * manager : il voit ses agents, personne d'autre.
+ *
+ * `allExcept` : TOUS les postes du tenant sauf ceux listés. C'est le rôle
+ * global : ses exclus sont les agents exclusifs des files hors périmètre —
+ * les collaborateurs des clients hébergés. Exprimé en négatif à dessein :
+ *   - un poste inconnu de l'annuaire (aucun appel depuis douze mois) reste
+ *     visible, là où une liste positive l'aurait silencieusement effacé des
+ *     périodes anciennes ;
+ *   - la liste tient en quelques dizaines de valeurs au lieu de plusieurs
+ *     centaines, et se calcule sans consulter l'annuaire des postes.
+ */
+export type ExtensionScope =
+    | { kind: "only"; numbers: string[] }
+    | { kind: "allExcept"; numbers: string[] };
+
+/** Un poste donné est-il dans la portée ? Le pendant de `isQueueInScope`. */
+export function isExtensionInScope(scope: AccessScope, extensionNumber: string): boolean {
+    if (scope.unrestricted) return true;
+    if (scope.empty) return false;
+    return scope.extensions.kind === "only"
+        ? scope.extensions.numbers.includes(extensionNumber)
+        : !scope.extensions.numbers.includes(extensionNumber);
+}
+
 export interface AccessScope {
     /**
      * true = aucune restriction de files. Ne subsiste QUE lorsque le filtrage
@@ -23,15 +51,15 @@ export interface AccessScope {
     /** Files autorisées. `null` = toutes. */
     queueNumbers: string[] | null;
     /**
-     * Extensions autorisées. `null` = toutes.
+     * Postes autorisés, cf. ExtensionScope.
      *
-     * ⚠️ Reconnues en DESTINATION uniquement par les filtres SQL : un appel
+     * ⚠️ Reconnus en DESTINATION uniquement par les filtres SQL : un appel
      * reçu par un agent du périmètre est visible, un appel qu'il émet vers
      * l'extérieur du périmètre ne l'est pas. Sans conséquence tant que les
      * écrans ne montrent que le flux entrant ; à revoir pour un tableau de
      * bord des sortants (cf. buildScopeFilter et le filtre des journaux).
      */
-    extensionNumbers: string[] | null;
+    extensions: ExtensionScope;
     /** Masquer les numéros des appelants (nLPD/RGPD) */
     maskPhoneNumbers: boolean;
     /**
@@ -75,7 +103,7 @@ export function unrestrictedScope(): AccessScope {
     return {
         unrestricted: true,
         queueNumbers: null,
-        extensionNumbers: null,
+        extensions: { kind: "allExcept", numbers: [] },
         maskPhoneNumbers: false,
         canBrowseAllQueues: true,
         canViewLogs: true,
@@ -93,7 +121,7 @@ export function emptyScope(maskPhoneNumbers = true): AccessScope {
     return {
         unrestricted: false,
         queueNumbers: [],
-        extensionNumbers: [],
+        extensions: { kind: "only", numbers: [] },
         maskPhoneNumbers,
         canBrowseAllQueues: false,
         canViewLogs: true,
@@ -174,7 +202,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
         return {
             unrestricted: false,
             queueNumbers,
-            extensionNumbers: await resolveTenantWideExtensions(tenantId, queueNumbers),
+            extensions: { kind: "allExcept", numbers: await resolveForeignExtensions(tenantId, queueNumbers) },
             maskPhoneNumbers,
             canBrowseAllQueues: true,
             canViewLogs: user.canViewLogs,
@@ -191,7 +219,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
         return {
             unrestricted: false,
             queueNumbers: [],
-            extensionNumbers: onlyOverrides,
+            extensions: { kind: "only", numbers: onlyOverrides },
             maskPhoneNumbers,
             canBrowseAllQueues: false,
             canViewLogs: user.canViewLogs,
@@ -205,7 +233,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
     return {
         unrestricted: false,
         queueNumbers,
-        extensionNumbers,
+        extensions: { kind: "only", numbers: extensionNumbers },
         maskPhoneNumbers,
         canBrowseAllQueues: false,
         canViewLogs: user.canViewLogs,
@@ -244,49 +272,34 @@ export async function resolveApiKeyScope(apiKeyId: string, tenantId: ServerId): 
 }
 
 /**
- * Postes visibles par un rôle global (ADMIN / MODERATOR) : TOUS ceux du
- * tenant, moins les agents EXCLUSIFS des files hors périmètre.
+ * Postes ÉTRANGERS à un rôle global : les agents EXCLUSIFS des files hors
+ * périmètre — c'est-à-dire les collaborateurs des clients hébergés.
  *
  * « Exclusif » est la nuance qui protège les postes mixtes : un collaborateur
- * qui sert à la fois une file du périmètre et une file d'un client hébergé
- * reste visible — son travail pour nous ne doit pas disparaître.
+ * qui sert à la fois une file du périmètre et celle d'un client reste nôtre —
+ * son travail pour nous ne doit pas disparaître.
  *
- * Les deux sources sont déjà en cache (annuaire CDR, liens file/agent), donc
- * ce calcul est de la manipulation d'ensembles en mémoire. Imports dynamiques :
- * ce module est chargé par des chemins d'authentification légers, il n'a pas à
- * tirer les repositories CDR au démarrage.
+ * Ne consulte QUE les liens file/agent, déjà en cache et préchauffés au
+ * démarrage : la résolution de portée tourne à chaque requête, elle ne doit
+ * jamais déclencher de balayage de CDR.
  */
-async function resolveTenantWideExtensions(tenantId: ServerId, perimeterQueues: string[]): Promise<string[]> {
+async function resolveForeignExtensions(tenantId: ServerId, perimeterQueues: string[]): Promise<string[]> {
     try {
-        const [{ getQueueMembersRaw }, { getDirectory }] = await Promise.all([
-            import("@/services/repositories/cdr.repository"),
-            import("@/services/repositories/extension-stats.repository"),
-        ]);
-        const [members, directory] = await Promise.all([
-            getQueueMembersRaw(tenantId),
-            getDirectory(tenantId),
-        ]);
+        const { getQueueMembersRaw } = await import("@/services/repositories/cdr.repository");
+        const members = await getQueueMembersRaw(tenantId);
 
         const inPerimeter = new Set(perimeterQueues);
         const insiders = new Set<string>();
-        const outsiders = new Set<string>();
+        const foreign = new Set<string>();
         for (const row of members) {
-            (inPerimeter.has(row.queue_number) ? insiders : outsiders).add(row.agent_extension);
+            (inPerimeter.has(row.queue_number) ? insiders : foreign).add(row.agent_extension);
         }
-
-        const visible = new Set(insiders);
-        for (const entry of directory.extensions) {
-            if (!outsiders.has(entry.number)) visible.add(entry.number);
-        }
-        return [...visible];
+        for (const ext of insiders) foreign.delete(ext);
+        return [...foreign];
     } catch {
-        // Annuaire indisponible : on se rabat sur les agents des files du
-        // périmètre — moins large, jamais plus.
-        const links = await prismaAuth.queueAgentLink.findMany({
-            where: { tenantId, queueNumber: { in: perimeterQueues } },
-            select: { extensionNumber: true },
-        });
-        return [...new Set(links.map((l) => l.extensionNumber))];
+        // Annuaire indisponible : n'exclure personne plutôt que de masquer à
+        // tort — la portée reste bornée par les files du périmètre.
+        return [];
     }
 }
 

@@ -408,15 +408,64 @@ export async function getOutboundDayStats(
 // Cached in memory (10 min) to avoid rescanning 12 months on each page load.
 // --------------------------------------------
 
+// Cet annuaire coûte un balayage de DOUZE MOIS de CDR (~7 s en local, bien
+// davantage sur le serveur) et il est identique pour tous les utilisateurs.
+// Il est donc servi comme celui des files (cf. getQueueMembersRaw) : version
+// périmée rendue IMMÉDIATEMENT pendant qu'UN rafraîchissement tourne en fond,
+// démarrage à froid dédoublonné, et préchauffage au démarrage.
+//
+// L'ancienne version bloquait à chaque expiration et ne dédoublonnait rien :
+// quatre actions serveur simultanées lançaient quatre balayages (mesuré :
+// 4 × 7,4 s au lieu d'un seul). Depuis que la résolution de portée le
+// consulte, cela se voyait comme un écran de journaux qui ne charge jamais.
 const DIRECTORY_TTL_MS = 10 * 60 * 1000;
-const directoryCache = new Map<ServerId, { data: ExtensionDirectory; fetchedAt: number }>();
+interface DirectoryCacheEntry {
+    data: ExtensionDirectory;
+    fetchedAt: number;
+    refreshing: boolean;
+}
+const directoryCache = new Map<ServerId, DirectoryCacheEntry>();
+const directoryColdFetch = new Map<ServerId, Promise<ExtensionDirectory>>();
 
 export async function getDirectory(serverId: ServerId, forceRefresh = false): Promise<ExtensionDirectory> {
     const cached = directoryCache.get(serverId);
-    if (!forceRefresh && cached && Date.now() - cached.fetchedAt < DIRECTORY_TTL_MS) {
+    if (!forceRefresh && cached) {
+        if (Date.now() - cached.fetchedAt >= DIRECTORY_TTL_MS && !cached.refreshing) {
+            cached.refreshing = true;
+            void queryDirectory(serverId).catch((error) => {
+                cached.refreshing = false;
+                console.error("[annuaire postes] rafraîchissement en arrière-plan échoué :", error);
+            });
+        }
         return cached.data;
     }
+    if (forceRefresh) return queryDirectory(serverId);
 
+    // Jamais chargé (préchauffage en cours ou en échec) : une seule requête,
+    // même si plusieurs visiteurs arrivent en même temps.
+    let pending = directoryColdFetch.get(serverId);
+    if (!pending) {
+        pending = queryDirectory(serverId).finally(() => directoryColdFetch.delete(serverId));
+        directoryColdFetch.set(serverId, pending);
+    }
+    return pending;
+}
+
+/** Préchauffe l'annuaire des postes d'un tenant (cf. warmExtensionDirectory). */
+export async function warmExtensionDirectory(): Promise<void> {
+    const { getAvailableServers } = await import("@/lib/servers");
+    for (const serverId of getAvailableServers()) {
+        try {
+            const t0 = Date.now();
+            await queryDirectory(serverId);
+            console.log(`[annuaire postes] préchauffé pour ${serverId} en ${Date.now() - t0} ms`);
+        } catch (error) {
+            console.error(`[annuaire postes] préchauffage impossible pour ${serverId} :`, error);
+        }
+    }
+}
+
+async function queryDirectory(serverId: ServerId): Promise<ExtensionDirectory> {
     const prisma = getPrismaCdr(serverId);
 
     const extensionsQuery = `
@@ -473,7 +522,7 @@ export async function getDirectory(serverId: ServerId, forceRefresh = false): Pr
         ddis: ddiRows.map((r: any) => ({ number: String(r.number), name: r.name ? String(r.name) : null })),
     };
 
-    directoryCache.set(serverId, { data, fetchedAt: Date.now() });
+    directoryCache.set(serverId, { data, fetchedAt: Date.now(), refreshing: false });
     return data;
 }
 

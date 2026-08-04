@@ -12,9 +12,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * logique de décision, pas Prisma.
  */
 
-const { db, authMock, cdrMock, dirMock } = vi.hoisted(() => ({
+const { db, authMock, cdrMock } = vi.hoisted(() => ({
     cdrMock: { getQueueMembersRaw: vi.fn() },
-    dirMock: { getDirectory: vi.fn() },
     db: {
         appSettings: { findUnique: vi.fn() },
         user: { findUnique: vi.fn() },
@@ -29,9 +28,8 @@ const { db, authMock, cdrMock, dirMock } = vi.hoisted(() => ({
 vi.mock("@/lib/prisma-auth", () => ({ prismaAuth: db }));
 vi.mock("@/lib/auth", () => ({ auth: authMock }));
 vi.mock("@/services/repositories/cdr.repository", () => cdrMock);
-vi.mock("@/services/repositories/extension-stats.repository", () => dirMock);
 
-import { resolveAccessScope, resolveApiKeyScope, isQueueInScope, emptyScope, unrestrictedScope } from "./access-scope";
+import { resolveAccessScope, resolveApiKeyScope, isQueueInScope, isExtensionInScope, emptyScope, unrestrictedScope } from "./access-scope";
 
 const TENANT = "gerofinance" as const;
 
@@ -44,15 +42,10 @@ function setup(options: {
     agentLinks?: string[];
     overrides?: Array<{ extensionNumber: string; mode: "INCLUDE" | "EXCLUDE" }>;
     apiKey?: { createdBy: string | null } | null;
-    /** Annuaire du tenant : couples file → agent, et postes connus. */
+    /** Liens file → agent du tenant (annuaire des files, déjà préchauffé). */
     queueMembers?: Array<{ queue_number: string; agent_extension: string }>;
-    directory?: string[];
 } = {}) {
     cdrMock.getQueueMembersRaw.mockResolvedValue(options.queueMembers ?? []);
-    dirMock.getDirectory.mockResolvedValue({
-        extensions: (options.directory ?? []).map((number) => ({ number, name: null })),
-        ddis: [],
-    });
     db.appSettings.findUnique.mockResolvedValue({
         perimeterEnforcementEnabled: options.enforcement ?? true,
     });
@@ -137,12 +130,14 @@ describe("portée selon le rôle", () => {
                 { queue_number: "803", agent_extension: "260" },   // agent exclusif d'un client hébergé
                 { queue_number: "803", agent_extension: "110" },   // poste MIXTE : sert aussi la 900
             ],
-            directory: ["110", "260", "444"],                       // 444 : poste hors de toute file
         });
         const scope = await resolveAccessScope(TENANT);
-        expect(scope.extensionNumbers).toContain("110"); // mixte : son travail chez nous compte
-        expect(scope.extensionNumbers).toContain("444"); // hors file : direction, back-office
-        expect(scope.extensionNumbers).not.toContain("260");
+        // Portée exprimée en NÉGATIF : « tous, sauf ceux-ci ».
+        expect(scope.extensions).toEqual({ kind: "allExcept", numbers: ["260"] });
+        expect(isExtensionInScope(scope, "110")).toBe(true);  // mixte : son travail chez nous compte
+        expect(isExtensionInScope(scope, "444")).toBe(true);  // hors file : direction, back-office
+        expect(isExtensionInScope(scope, "999")).toBe(true);  // inconnu de l'annuaire : visible quand même
+        expect(isExtensionInScope(scope, "260")).toBe(false);
     });
 
     it("le droit « Voir les logs » est individuel, quel que soit le rôle", async () => {
@@ -184,10 +179,11 @@ describe("portée selon le rôle", () => {
             user: { role: "MANAGER", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: false, tenantAccess: [{ tenantId: TENANT }] },
             perimeter: ["900"],
             agentLinks: ["110"],
-            directory: ["110", "444"],
         });
         const scope = await resolveAccessScope(TENANT);
-        expect(scope.extensionNumbers).toEqual(["110"]);
+        // Liste EXPLICITE : un poste hors file n'y entre pas.
+        expect(scope.extensions).toEqual({ kind: "only", numbers: ["110"] });
+        expect(isExtensionInScope(scope, "444")).toBe(false);
         expect(scope.canBrowseAllQueues).toBe(false);
     });
 
@@ -219,7 +215,7 @@ describe("périmètre d'un manager", () => {
         expect(scope.unrestricted).toBe(false);
         expect(scope.empty).toBe(false);
         expect(scope.queueNumbers).toEqual(["900", "910"]);
-        expect(scope.extensionNumbers?.sort()).toEqual(["101", "102"]);
+        expect([...scope.extensions.numbers].sort()).toEqual(["101", "102"]);
     });
 
     it("sans périmètre ni surcharge : aucune donnée", async () => {
@@ -232,7 +228,7 @@ describe("périmètre d'un manager", () => {
         const scope = await resolveAccessScope(TENANT);
         expect(scope.empty).toBe(false);
         expect(scope.queueNumbers).toEqual([]);
-        expect(scope.extensionNumbers).toEqual(["150"]);
+        expect(scope.extensions.numbers).toEqual(["150"]);
     });
 
     it("une surcharge EXCLUDE retire une extension héritée de la file", async () => {
@@ -242,7 +238,7 @@ describe("périmètre d'un manager", () => {
             overrides: [{ extensionNumber: "102", mode: "EXCLUDE" }],
         });
         const scope = await resolveAccessScope(TENANT);
-        expect(scope.extensionNumbers).toEqual(["101"]);
+        expect(scope.extensions.numbers).toEqual(["101"]);
     });
 
     it("le masquage des numéros suit le droit de l'utilisateur", async () => {

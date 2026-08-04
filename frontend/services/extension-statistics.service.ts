@@ -2,7 +2,7 @@
 
 import { ServerId } from "@/lib/prisma-cdr";
 import { getServerTimezone } from "@/lib/servers";
-import { resolveAccessScope } from "@/lib/access-scope";
+import { resolveAccessScope, isExtensionInScope } from "@/lib/access-scope";
 import { logger } from "@/lib/logger";
 import {
     getInboundDayStats,
@@ -53,15 +53,14 @@ export async function getExtensionDirectory(serverId: ServerId): Promise<Extensi
         // Droit d'accès à la FONCTION Extension/DDI — distinct du périmètre.
         if (!scope.canViewExtensionStats) return { extensions: [], ddis: [] };
         if (scope.unrestricted) return directory;
-        if (scope.empty || !scope.extensionNumbers) return { extensions: [], ddis: [] };
+        if (scope.empty) return { extensions: [], ddis: [] };
 
         // L'annuaire ne propose que les extensions du périmètre. Les DDI sont
         // conservés : ils ne désignent pas un agent mais une ligne d'entrée, et
         // les statistiques associées restent filtrées en aval.
-        const allowed = new Set(scope.extensionNumbers);
         return {
             ...directory,
-            extensions: directory.extensions.filter((e) => allowed.has(e.number)),
+            extensions: directory.extensions.filter((e) => isExtensionInScope(scope, e.number)),
         };
     } catch (error) {
         logger.error("Error loading extension directory:", error);
@@ -197,9 +196,8 @@ export async function getExtensionStatisticsChunk(
     // Droit d'accès à la FONCTION Extension/DDI — distinct du périmètre.
     if (!scope.canViewExtensionStats) return [];
     if (!scope.unrestricted) {
-        if (scope.empty || !scope.extensionNumbers) return [];
-        const allowed = new Set(scope.extensionNumbers);
-        entries = entries.filter((e) => e.kind !== "extension" || allowed.has(normalizeDigits(e.input)));
+        if (scope.empty) return [];
+        entries = entries.filter((e) => e.kind !== "extension" || isExtensionInScope(scope, normalizeDigits(e.input)));
         if (entries.length === 0) return [];
     }
 
@@ -355,8 +353,8 @@ export async function getExtensionEntryHeatmap(
         // par le client). Les DDI passent : ce sont des lignes d'entrée, pas
         // des agents — la règle de l'annuaire et des statistiques.
         if (!scope.unrestricted) {
-            if (scope.empty || !scope.extensionNumbers) return [];
-            if (entry.kind === "extension" && !scope.extensionNumbers.includes(normalizeDigits(entry.input))) {
+            if (scope.empty) return [];
+            if (entry.kind === "extension" && !isExtensionInScope(scope, normalizeDigits(entry.input))) {
                 return [];
             }
         }

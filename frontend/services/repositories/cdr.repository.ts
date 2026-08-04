@@ -110,10 +110,19 @@ function buildScopeFilter(scope: AccessScope | undefined, table: Prisma.Sql): Pr
     // (source_dn_type = 'extension' AND source_dn_number IN …) ici ET dans le
     // filtre jumeau des journaux (logs.service), les deux devant rester
     // d'accord.
-    if (scope.extensionNumbers && scope.extensionNumbers.length > 0) {
+    if (scope.extensions.kind === "only") {
+        if (scope.extensions.numbers.length > 0) {
+            conditions.push(
+                Prisma.sql`(destination_dn_type = 'extension' AND destination_dn_number IN (${Prisma.join(scope.extensions.numbers)}))`,
+            );
+        }
+    } else if (scope.extensions.numbers.length > 0) {
         conditions.push(
-            Prisma.sql`(destination_dn_type = 'extension' AND destination_dn_number IN (${Prisma.join(scope.extensionNumbers)}))`,
+            Prisma.sql`(destination_dn_type = 'extension' AND destination_dn_number NOT IN (${Prisma.join(scope.extensions.numbers)}))`,
         );
+    } else {
+        // Tous les postes du tenant : la condition se réduit au type.
+        conditions.push(Prisma.sql`(destination_dn_type = 'extension')`);
     }
     if (conditions.length === 0) return Prisma.sql`AND false`;
 
