@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Star } from "lucide-react";
+import { ChevronDown, ChevronUp, Star } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
@@ -16,15 +16,23 @@ import type { QueueInfo } from "@/types/queues.types";
 /**
  * Sous-menu « Mes équipes » : les files du périmètre, favorites épinglées en
  * tête. L'étoile (au survol) épingle sans naviguer ; cliquer la ligne ouvre la
- * statistique de l'équipe, période et provenance conservées. La liste défile
- * dans sa propre zone — un périmètre d'administrateur (~85 files) ne doit pas
- * engloutir la barre latérale, et la vraie recherche vit dans le header.
+ * statistique de l'équipe, période et provenance conservées.
+ *
+ * Les FAVORITES s'affichent toutes — les épingler est un choix explicite. Les
+ * autres se limitent à trois, le reste derrière « Afficher tout » : un
+ * périmètre d'administrateur (~85 files) ne doit pas engloutir la barre
+ * latérale, et la vraie recherche vit dans le header.
  */
+
+/** Files non épinglées visibles quand la liste est repliée. */
+const COLLAPSED_COUNT = 3;
+
 export function SidebarTeams() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const [queues, setQueues] = useState<QueueInfo[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(new Set());
+    const [expanded, setExpanded] = useState(false);
 
     useEffect(() => {
         const serverId = getSelectedServer();
@@ -38,14 +46,20 @@ export function SidebarTeams() {
 
     const activeQueue = pathname.startsWith("/statistics-v2") ? searchParams.get("queue") : null;
 
-    const { pinned, rest } = useMemo(() => {
+    const { pinned, shown, hiddenCount } = useMemo(() => {
         const byNumber = [...queues].sort((a, b) =>
             a.queueNumber.localeCompare(b.queueNumber, undefined, { numeric: true }));
-        return {
-            pinned: byNumber.filter((q) => favorites.has(q.queueNumber)),
-            rest: byNumber.filter((q) => !favorites.has(q.queueNumber)),
-        };
-    }, [queues, favorites]);
+        const pinned = byNumber.filter((q) => favorites.has(q.queueNumber));
+        const rest = byNumber.filter((q) => !favorites.has(q.queueNumber));
+        if (expanded) return { pinned, shown: rest, hiddenCount: 0 };
+
+        const visible = rest.slice(0, COLLAPSED_COUNT);
+        // L'équipe CONSULTÉE reste dans la liste même repliée : sans elle,
+        // l'écran ouvert ne serait surligné nulle part.
+        const active = rest.find((q) => q.queueNumber === activeQueue);
+        if (active && !visible.includes(active)) visible.push(active);
+        return { pinned, shown: visible, hiddenCount: rest.length - visible.length };
+    }, [queues, favorites, expanded, activeQueue]);
 
     // Le lien porte le contexte de consultation courant (période, provenance).
     const teamHref = (queueNumber: string) => {
@@ -119,10 +133,21 @@ export function SidebarTeams() {
             <div className="divide-y divide-slate-800/60">
                 {pinned.map(renderTeam)}
             </div>
-            {pinned.length > 0 && rest.length > 0 && <div className="mx-1 my-1.5 border-t-2 border-slate-700/80" />}
+            {pinned.length > 0 && shown.length > 0 && <div className="mx-1 my-1.5 border-t-2 border-slate-700/80" />}
             <div className="divide-y divide-slate-800/60">
-                {rest.map(renderTeam)}
+                {shown.map(renderTeam)}
             </div>
+            {(hiddenCount > 0 || expanded) && (
+                <button
+                    type="button"
+                    onClick={() => setExpanded((open) => !open)}
+                    className="flex w-full items-center gap-1 py-2 pl-2 text-[13px] text-slate-500 transition-colors hover:text-white"
+                >
+                    {expanded
+                        ? <>Réduire <ChevronUp className="h-3.5 w-3.5" /></>
+                        : <>Afficher tout <span className="text-slate-600">({hiddenCount})</span> <ChevronDown className="h-3.5 w-3.5" /></>}
+                </button>
+            )}
         </div>
     );
 }
