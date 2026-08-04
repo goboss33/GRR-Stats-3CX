@@ -11,7 +11,6 @@ import {
     type CallOrigin,
 } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
-import { getStatsExclusions } from "@/lib/stats-exclusions";
 
 export async function GET(request: NextRequest) {
     const authResult = await validateApiKey(request);
@@ -48,10 +47,6 @@ export async function GET(request: NextRequest) {
         // qui garantit qu'un clic sur un KPI ramène exactement autant de lignes
         // que le chiffre affiché — auparavant les deux SQL divergeaient.
         const rules = await getClassificationRules();
-        // Les exclusions (clients hébergés) sortent de TOUTES les statistiques —
-        // la chaîne d'équipe les hérite, donc vignettes, liens et graphiques
-        // restent d'accord avec les journaux.
-        const exclusions = await getStatsExclusions(serverId);
 
         // Provenance des appels (toggle Externe / Interne / Les deux).
         const originParam = url.searchParams.get("origin");
@@ -60,7 +55,7 @@ export async function GET(request: NextRequest) {
 
         // Requête paramétrée : $1 = queueNumber (texte), $2 = start, $3 = end (Date).
         const query = `
-            WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin, exclusions })},
+            WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
             queue_kpis AS (
                 SELECT
                     COUNT(*) as unique_calls,

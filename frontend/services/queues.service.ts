@@ -4,7 +4,6 @@ import { ServerId } from "@/lib/prisma-cdr";
 import { getQueueMembersRaw } from "@/services/repositories/cdr.repository";
 import type { QueueInfo, QueueMember } from "@/services/domain/call.types";
 import { resolveAccessScope } from "@/lib/access-scope";
-import { getStatsExclusions } from "@/lib/stats-exclusions";
 
 /**
  * Queues Service — Queue Members
@@ -61,14 +60,11 @@ export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> 
         queue.memberCount = uniqueMembers.length;
     });
 
-    // Les files exclues des statistiques (clients hébergés : Barnes, BCR…)
-    // disparaissent des sélecteurs — et leurs agents avec, la liste étant
-    // groupée par file.
-    const exclusions = await getStatsExclusions(serverId);
-    const excludedQueues = new Set(exclusions.queueNumbers);
-    const queues = Array.from(queuesMap.values()).filter((q) => !excludedQueues.has(q.queueNumber));
+    const queues = Array.from(queuesMap.values());
 
-    // Le sélecteur de files ne doit proposer que le périmètre de l'utilisateur.
+    // Le sélecteur ne propose que le périmètre de l'utilisateur — c'est lui,
+    // désormais, qui écarte les files des clients hébergés : elles ne sont
+    // dans le périmètre de personne (août 2026, fin de « exclue des stats »).
     if (scope.unrestricted) return queues;
     if (scope.empty || !scope.queueNumbers) return [];
     const allowed = new Set(scope.queueNumbers);

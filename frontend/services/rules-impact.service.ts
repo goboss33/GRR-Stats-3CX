@@ -1,7 +1,6 @@
 "use server";
 
 import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
-import { getStatsExclusions } from "@/lib/stats-exclusions";
 import { requireActionRole } from "@/lib/auth-guard";
 import { getClassificationRules } from "@/lib/classification-rules";
 import {
@@ -48,7 +47,7 @@ async function countWithRules(
     const prisma = getPrismaCdr(serverId);
 
     const rows = await prisma.$queryRawUnsafe<Record<string, bigint>[]>(
-        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", exclusions: await getStatsExclusions(serverId) })}
+        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3" })}
          SELECT
              (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'answered')      AS answered,
              (SELECT COUNT(*) FROM queue_calls WHERE outcome = 'handed_off')    AS handed_off,

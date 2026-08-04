@@ -15,7 +15,6 @@ import {
     type PassageOutcome,
 } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
-import { getStatsExclusions, type StatsExclusions } from "@/lib/stats-exclusions";
 import type {
     AggregatedCallLog,
     CallStatus,
@@ -39,7 +38,6 @@ import {
     formatDuration,
     getDisplayNumber,
     getDisplayName,
-    INTERNAL_SYSTEM_DEST_TYPES,
     buildDirectSegmentWhereClause,
 } from "@/services/domain/call-aggregation";
 
@@ -104,8 +102,6 @@ function buildAggregatedQueryParts(
     // Passées en paramètre plutôt que lues ici : ce constructeur est synchrone,
     // et le rendre asynchrone pour un réglage contaminerait tous ses appelants.
     rules: ClassificationRules = DEFAULT_CLASSIFICATION_RULES,
-    // Même doctrine pour les exclusions de clients hébergés.
-    exclusions: StatsExclusions = { queueNumbers: [], extensions: [] }
 ): {
     whereClause: string;
     dateOnlyWhereClause: string;
@@ -145,29 +141,6 @@ function buildAggregatedQueryParts(
         `cdr_started_at >= ${startP}`,
         `cdr_started_at <= ${endP}`,
     ];
-
-    // ── Exclusion des clients hébergés (files/postes exclus des stats) ───────
-    // Même population que le tableau de bord : un appel touchant une entité
-    // exclue — y compris comme SOURCE, pour les sortants de leurs postes —
-    // disparaît de la liste (cf. lib/stats-exclusions).
-    if (exclusions.queueNumbers.length > 0 || exclusions.extensions.length > 0) {
-        const exclParts: string[] = [];
-        if (exclusions.queueNumbers.length > 0) {
-            const ph = exclusions.queueNumbers.map((q) => bind(q));
-            exclParts.push(`(destination_dn_type = 'queue' AND destination_dn_number IN (${ph.join(", ")}))`);
-        }
-        if (exclusions.extensions.length > 0) {
-            const dst = exclusions.extensions.map((e) => bind(e));
-            exclParts.push(`(destination_dn_type = 'extension' AND destination_dn_number IN (${dst.join(", ")}))`);
-            const src = exclusions.extensions.map((e) => bind(e));
-            exclParts.push(`(source_dn_type = 'extension' AND source_dn_number IN (${src.join(", ")}))`);
-        }
-        whereConditions.push(`call_history_id NOT IN (
-            SELECT call_history_id FROM ${cdr}
-            WHERE cdr_started_at >= ${startP} AND cdr_started_at <= ${endP}
-              AND (${exclParts.join(" OR ")})
-        )`);
-    }
 
     // ── Filtrage par périmètre (cf. PRD droits d'accès §8.3) ──────────────────
     // Un appel est visible dès qu'AU MOINS UN de ses segments touche une file ou
@@ -832,8 +805,7 @@ export async function getCallLogsSQL(
     const timezone = await getServerTimezone(serverId);
     const rules = await getClassificationRules();
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } =
-        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, undefined, rules,
-            await getStatsExclusions(serverId));
+        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, undefined, rules);
 
     return buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, "", cdrTable(rules), rules.minSignificantDurationSeconds)
         + buildDataSelect("")
@@ -1262,8 +1234,7 @@ export async function getAggregatedCallLogs(
     const rules = await getClassificationRules();
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause, params,
         queueViewCTE, queueViewJoin, queueViewSelect, viewQueue } =
-        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, scope, rules,
-            await getStatsExclusions(serverId));
+        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, scope, rules);
     const pageNumber = Math.max(1, pagination.page);
 
     try {
@@ -1550,8 +1521,7 @@ export async function getExtensionAggregatedStats(
     const scope = await resolveAccessScope(serverId);
     const rules = await getClassificationRules();
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, params } =
-        buildAggregatedQueryParts(startDate, endDate, filters, { page: 1, pageSize: 1 }, undefined, undefined, scope, rules,
-            await getStatsExclusions(serverId));
+        buildAggregatedQueryParts(startDate, endDate, filters, { page: 1, pageSize: 1 }, undefined, undefined, scope, rules);
 
     const ctes = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, "", cdrTable(rules), rules.minSignificantDurationSeconds);
 

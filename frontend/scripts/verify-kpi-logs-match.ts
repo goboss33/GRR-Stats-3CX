@@ -8,7 +8,6 @@
 // Usage : npx tsx scripts/verify-kpi-logs-match.ts [file] [début ISO] [fin ISO]
 import { getPrismaCdr } from "@/lib/prisma-cdr";
 import { getClassificationRules } from "@/lib/classification-rules";
-import { getStatsExclusions } from "@/lib/stats-exclusions";
 import {
     buildTeamCTEChain,
     buildAgentCTEChain,
@@ -39,12 +38,10 @@ const CARTES: Array<{ nom: string; outcomes: PassageOutcome[]; team: boolean }> 
 
 async function main() {
     const prisma = getPrismaCdr("gerofinance");
-    // Règles VIVANTES et exclusions réelles : le script vérifiait longtemps
-    // les règles par défaut — un angle mort qui a caché l'écart 616/586 de
-    // juillet 2026 (exclusions absentes des vignettes).
+    // Règles VIVANTES, pas les valeurs par défaut : c'est cet angle mort qui
+    // avait caché l'écart 616/586 de juillet 2026.
     const rules = await getClassificationRules();
-    const exclusions = await getStatsExclusions("gerofinance");
-    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3", exclusions };
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
 
     console.log(`\nFile ${QUEUE} — ${START.toISOString().slice(0, 10)} → ${END.toISOString().slice(0, 10)}\n`);
 

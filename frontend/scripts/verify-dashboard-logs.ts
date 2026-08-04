@@ -12,7 +12,6 @@
 //
 // Lecture seule. Usage : npx tsx scripts/verify-dashboard-logs.ts [start] [end]
 import { getGlobalMetricsRaw } from "@/services/repositories/cdr.repository";
-import { getStatsExclusions, buildExclusionFilter } from "@/lib/stats-exclusions";
 import { Prisma } from "@prisma/cdr-client";
 import { getPrismaCdr } from "@/lib/prisma-cdr";
 import { getClassificationRules } from "@/lib/classification-rules";
@@ -33,10 +32,7 @@ const ORIGINS: CallOrigin[] = ["external", "internal", "both"];
     const prisma = getPrismaCdr("gerofinance");
     const rules = await getClassificationRules();
     const cdr = cdrTable(rules);
-    // Les exclusions (clients hébergés) s'appliquent aux DEUX écrans : la
-    // réplique doit exclure exactement ce que le tableau de bord exclut.
     const cdrSql = Prisma.raw(cdr);
-    const exclusion = buildExclusionFilter(await getStatsExclusions("gerofinance"), cdrSql, START, END);
     let ko = 0;
 
     console.log(`\nPériode ${START.toISOString().slice(0, 10)} → ${END.toISOString().slice(0, 10)} (table : ${cdr})\n`);
@@ -45,7 +41,7 @@ const ORIGINS: CallOrigin[] = ["external", "internal", "both"];
     const dash = await getGlobalMetricsRaw("gerofinance", START, END);
     const logs: Array<Record<string, bigint>> = await prisma.$queryRaw(Prisma.sql`
         WITH ca AS (SELECT call_history_id FROM ${cdrSql}
-                    WHERE cdr_started_at >= ${START} AND cdr_started_at <= ${END} ${exclusion}
+                    WHERE cdr_started_at >= ${START} AND cdr_started_at <= ${END}
                     GROUP BY call_history_id),
         ls AS (SELECT DISTINCT ON (call_history_id) call_history_id,
                   destination_dn_type ls_last_dest_type, destination_entity_type ls_last_dest_entity_type,
@@ -92,7 +88,7 @@ const ORIGINS: CallOrigin[] = ["external", "internal", "both"];
                 SELECT DISTINCT ON (call_history_id) call_history_id,
                        source_dn_type AS src, destination_dn_type AS fdst
                 FROM ${cdrSql}
-                WHERE cdr_started_at >= ${START} AND cdr_started_at <= ${END} ${exclusion}
+                WHERE cdr_started_at >= ${START} AND cdr_started_at <= ${END}
                 ORDER BY call_history_id, cdr_started_at ASC, cdr_id ASC
             )
             SELECT COUNT(*) FILTER (WHERE ${Prisma.raw(dashCond)}) AS dash,

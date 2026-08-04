@@ -3,7 +3,6 @@ import { requireApiRole } from "@/lib/auth-guard";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
 import { ServerId } from "@/lib/prisma-cdr";
 import { discoverQueues, listRegistryQueues, updateRegistryQueue, markQueuesReviewed } from "@/services/queue-registry.service";
-import { invalidateStatsExclusions } from "@/lib/stats-exclusions";
 import { logger } from "@/lib/logger";
 
 // Registre des files : administration réservée à l'ADMIN (cf. PRD droits d'accès §4.1).
@@ -31,7 +30,6 @@ export async function GET(request: NextRequest) {
                 region: q.region,
                 service: q.service,
                 status: q.status,
-                excludedFromStats: q.excludedFromStats,
                 agentCount: q.agentCount,
                 isNew: q.reviewedAt === null,
                 // Activité réelle (CDR), et non la date figée du registre.
@@ -82,16 +80,13 @@ export async function PUT(request: NextRequest) {
 
     try {
         const body = await request.json();
-        const { id, entity, region, service, status, excludedFromStats } = body;
+        const { id, entity, region, service, status } = body;
 
         if (!id || typeof id !== "string") {
             return NextResponse.json({ error: "ID de file requis" }, { status: 400 });
         }
         if (status !== undefined && !["ACTIVE", "ARCHIVED"].includes(status)) {
             return NextResponse.json({ error: "Statut invalide" }, { status: 400 });
-        }
-        if (excludedFromStats !== undefined && typeof excludedFromStats !== "boolean") {
-            return NextResponse.json({ error: "excludedFromStats doit être un booléen" }, { status: 400 });
         }
 
         const normalize = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -101,10 +96,7 @@ export async function PUT(request: NextRequest) {
             ...(region !== undefined ? { region: normalize(region) } : {}),
             ...(service !== undefined ? { service: normalize(service) } : {}),
             ...(status !== undefined ? { status } : {}),
-            ...(excludedFromStats !== undefined ? { excludedFromStats } : {}),
         });
-        // L'effet doit être immédiat pour l'auteur du changement.
-        if (excludedFromStats !== undefined) invalidateStatsExclusions();
 
         return NextResponse.json({ success: true });
     } catch (error) {

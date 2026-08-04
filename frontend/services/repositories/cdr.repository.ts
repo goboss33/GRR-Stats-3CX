@@ -23,7 +23,6 @@ import {
     type CallOrigin,
 } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
-import { getStatsExclusions, buildExclusionFilter } from "@/lib/stats-exclusions";
 import {
     SQL_SYSTEM_DEST_TYPES,
     SQL_REAL_PARTY_DEST_TYPES,
@@ -114,14 +113,6 @@ function buildScopeFilter(scope: AccessScope | undefined, table: Prisma.Sql): Pr
     )`;
 }
 
-/**
- * Fragment SQL écartant les appels des clients hébergés (files et postes
- * exclus des statistiques, cf. lib/stats-exclusions) : l'inverse exact du
- * filtre de périmètre — on ÉLIMINE tout appel touchant une entité exclue,
- * source comprise (les sortants des postes clients). `Prisma.empty` quand il
- * n'y a rien à exclure : coût nul. Jamais appliqué au monitoring de licence
- * (getConcurrentCallsData) : ces appels occupent réellement les lignes.
- */
 // ============================================
 // MÉTRIQUES GLOBALES (KPIs du dashboard)
 // ============================================
@@ -202,7 +193,6 @@ export async function getGlobalMetricsRaw(
     const realPartyTypes = Prisma.raw(SQL_REAL_PARTY_DEST_TYPES);
     const statusCase = Prisma.raw(buildFinalStatusCaseSQL());
     const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate);
-    const exclusionFilter = buildExclusionFilter(await getStatsExclusions(serverId), cdr, startDate, endDate);
 
     const query = Prisma.sql`
         -- Les trois CTE de base etaient assemblees TROIS fois — pour les statuts,
@@ -220,7 +210,6 @@ export async function getGlobalMetricsRaw(
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
               ${scopeFilter}
-              ${exclusionFilter}
             GROUP BY call_history_id
         ),
         last_segments AS (
@@ -415,7 +404,6 @@ export async function getGlobalMetricsByOriginRaw(
     const realPartyTypes = Prisma.raw(SQL_REAL_PARTY_DEST_TYPES);
     const statusCase = Prisma.raw(buildFinalStatusCaseSQL());
     const oc = buildOriginClassFragments(cdr, startDate, endDate);
-    const exclusionFilter = buildExclusionFilter(await getStatsExclusions(serverId), cdr, startDate, endDate);
 
     const query = Prisma.sql`
         WITH call_aggregates AS (
@@ -427,7 +415,6 @@ export async function getGlobalMetricsByOriginRaw(
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
               ${scopeFilter}
-              ${exclusionFilter}
             GROUP BY call_history_id
         ),
         last_segments AS (
@@ -551,7 +538,6 @@ export async function getTimelineByOriginRaw(
     const rules = await getClassificationRules();
     const cdr = Prisma.raw(cdrTable(rules));
     const oc = buildOriginClassFragments(cdr, startDate, endDate);
-    const exclusionFilter = buildExclusionFilter(await getStatsExclusions(serverId), cdr, startDate, endDate);
 
     const query = Prisma.sql`
         WITH call_aggregates AS (
@@ -561,7 +547,6 @@ export async function getTimelineByOriginRaw(
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
               ${buildScopeFilter(scope, cdr)}
-              ${exclusionFilter}
             GROUP BY call_history_id
         ),
         last_segments AS (
@@ -636,7 +621,6 @@ export async function getHeatmapByOriginRaw(
     const rules = await getClassificationRules();
     const cdr = Prisma.raw(cdrTable(rules));
     const oc = buildOriginClassFragments(cdr, startDate, endDate);
-    const exclusionFilter = buildExclusionFilter(await getStatsExclusions(serverId), cdr, startDate, endDate);
 
     const query = Prisma.sql`
         WITH unique_calls AS (
@@ -647,7 +631,6 @@ export async function getHeatmapByOriginRaw(
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
               ${buildScopeFilter(scope, cdr)}
-              ${exclusionFilter}
             GROUP BY call_history_id
         ),${oc.firstsCTE}
         lasts AS (
@@ -702,7 +685,6 @@ export async function getTimelineDataRaw(
     const rules = await getClassificationRules();
     const cdr = Prisma.raw(cdrTable(rules));
     const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate);
-    const exclusionFilter = buildExclusionFilter(await getStatsExclusions(serverId), cdr, startDate, endDate);
 
     const query = Prisma.sql`
         WITH call_aggregates AS (
@@ -712,7 +694,6 @@ export async function getTimelineDataRaw(
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
               ${buildScopeFilter(scope, cdr)}
-              ${exclusionFilter}
             GROUP BY call_history_id
         ),
         last_segments AS (
@@ -809,7 +790,7 @@ export async function getQueueTimelineDataRaw(
     const overflowList = outcomesForBucket("overflow").map((o) => `'${o}'`).join(", ");
 
     return prisma.$queryRawUnsafe<TimelineRow[]>(
-        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin, exclusions: await getStatsExclusions(serverId) })},
+        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
          team_calls AS (${TEAM_CALLS_UNION_SQL})
          SELECT
              date_trunc($4, started_at AT TIME ZONE $5) AS date_group,
@@ -842,7 +823,6 @@ export async function getHeatmapDataRaw(
     // Filtre de direction : la heatmap n'a ni CTE des premiers ni des derniers
     // segments — elle reçoit les deux, en bloc, quand le filtre est demandé.
     const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate);
-    const exclusionFilter = buildExclusionFilter(await getStatsExclusions(serverId), cdr, startDate, endDate);
     const extraCTEs = direction
         ? Prisma.sql`,
         firsts AS (
@@ -882,7 +862,6 @@ export async function getHeatmapDataRaw(
               AND cdr_started_at <= ${endDate}
               ${queueFilter}
               ${buildScopeFilter(scope, cdr)}
-              ${exclusionFilter}
             GROUP BY call_history_id
         )${extraCTEs}
         SELECT
@@ -916,7 +895,7 @@ export async function getQueueHeatmapDataRaw(
     const rules = await getClassificationRules();
 
     return prisma.$queryRawUnsafe<HeatmapRow[]>(
-        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin, exclusions: await getStatsExclusions(serverId) })},
+        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
          team_calls AS (${TEAM_CALLS_UNION_SQL})
          SELECT
              EXTRACT(ISODOW FROM started_at AT TIME ZONE $4)::int AS day_of_week,

@@ -229,7 +229,7 @@ export async function updateRegistryQueue(
     id: string,
     data: {
         entity?: string | null; region?: string | null; service?: string | null;
-        status?: "ACTIVE" | "ARCHIVED"; excludedFromStats?: boolean;
+        status?: "ACTIVE" | "ARCHIVED";
     },
 ) {
     return prismaAuth.queueRegistry.update({

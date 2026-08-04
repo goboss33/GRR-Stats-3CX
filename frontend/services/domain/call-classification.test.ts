@@ -11,7 +11,6 @@ import {
     buildCallQueueOutcomesCTE,
     buildDirectCallsCTE,
     buildTeamCTEChain,
-    buildExclusionConditionSQL,
     cdrTable,
     OUTCOME_RANK,
     DEFAULT_OUTCOME_GROUPING,
@@ -473,30 +472,5 @@ describe("réduction SQL des passages", () => {
         const sql = buildCallQueueOutcomesCTE(rules({ multiPassage: "best" }));
         expect(sql).toContain("DISTINCT ON");
         expect(sql).toContain(`WHEN 'answered' THEN ${OUTCOME_RANK.answered}`);
-    });
-});
-
-describe("exclusions clients hébergés — héritées par toute la partition", () => {
-    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
-    const excl = { queueNumbers: ["803"], extensions: ["260", "261"] };
-
-    it("sans exclusions : aucune trace dans la chaîne", () => {
-        expect(buildTeamCTEChain(rules(), P)).not.toContain("NOT IN");
-        expect(buildExclusionConditionSQL(undefined, "x", "cdroutput", P)).toBe("");
-        expect(buildExclusionConditionSQL({ queueNumbers: [], extensions: [] }, "x", "cdroutput", P)).toBe("");
-    });
-
-    it("avec exclusions : les DEUX blocs de la partition excluent — c'était l'écart 616/586 de juillet 2026", () => {
-        const sql = buildTeamCTEChain(rules(), { ...P, exclusions: excl });
-        expect(sql).toContain("cqo.call_history_id NOT IN");
-        expect(sql).toContain("direct_grouped.call_history_id NOT IN");
-        expect(sql).toContain("'803'");
-        expect(sql).toContain("'260', '261'");
-    });
-
-    it("le poste exclu est écarté en source ET en destination", () => {
-        const cond = buildExclusionConditionSQL(excl, "c.call_history_id", "cdroutput", P);
-        expect(cond).toContain("x.destination_dn_number IN ('260', '261')");
-        expect(cond).toContain("x.source_dn_number IN ('260', '261')");
     });
 });
