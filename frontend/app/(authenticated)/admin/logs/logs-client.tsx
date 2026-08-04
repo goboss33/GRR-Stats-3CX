@@ -882,6 +882,8 @@ export default function AdminLogsPage() {
                     calleeSearch={calleeSearch}
                     onCalleeSearchChange={setCalleeSearch}
                     selectedSens={selectedSens}
+                    callOrigin={urlOrigin}
+                    onCallOriginChange={setUrlOrigin}
                     onSensChange={handleSensChange}
                     selectedStatuses={selectedStatuses}
                     onStatusesChange={handleStatusesChange}

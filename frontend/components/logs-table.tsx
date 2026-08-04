@@ -13,6 +13,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import {
     ColumnFilterInput,
     ColumnFilterDateRange,
+    ColumnFilterProvenance,
     ColumnFilterSens,
     ColumnFilterStatus,
     ColumnFilterQueueOutcome,
@@ -39,7 +40,7 @@ import type {
 
 import { SortableHeader } from "@/components/logs-table-helpers";
 import { LogRow } from "@/components/log-row";
-import type { KpiBucket } from "@/services/domain/call-classification";
+import type { CallOrigin, KpiBucket } from "@/services/domain/call-classification";
 import type { QueueOrigin } from "@/components/column-filters/ColumnFilterQueueOrigin";
 
 type QueueBucket = Exclude<KpiBucket, "received">;
@@ -66,6 +67,9 @@ interface LogsTableProps {
     onCalleeSearchChange: (value: string) => void;
     selectedSens: CallSens[];
     onSensChange: (sens: CallSens[]) => void;
+    /** Provenance = MÊME état que le toggle du header (une seconde poignée). */
+    callOrigin: CallOrigin;
+    onCallOriginChange: (origin: CallOrigin) => void;
     selectedStatuses: CallStatus[];
     onStatusesChange: (statuses: CallStatus[]) => void;
     /** Statuts « dans la file » retenus ; vide = tous. */
@@ -120,6 +124,8 @@ export function LogsTable({
     onCalleeSearchChange,
     selectedSens,
     onSensChange,
+    callOrigin,
+    onCallOriginChange,
     selectedStatuses,
     onStatusesChange,
     queueOutcomes,
@@ -309,9 +315,16 @@ export function LogsTable({
                                     />
                                 </TableHead>
                             )}
-                            {/* Provenance : filtrée par le toggle du header —
-                                pas de second filtre qui pourrait le contredire. */}
-                            {columnVisibility.provenance && <TableHead className="py-2" />}
+                            {/* Provenance : SECONDE poignée sur l'état du toggle
+                                du header — choisir ici bascule aussi le toggle. */}
+                            {columnVisibility.provenance && (
+                                <TableHead className="py-2">
+                                    <ColumnFilterProvenance
+                                        value={callOrigin}
+                                        onChange={onCallOriginChange}
+                                    />
+                                </TableHead>
+                            )}
                             {columnVisibility.sens && (
                                 <TableHead className="py-2">
                                     <ColumnFilterSens

@@ -89,6 +89,15 @@ export function ActiveFilters({
 }: ActiveFiltersProps) {
     const activeFilters: React.ReactNode[] = [];
 
+    // La date d'abord, TOUJOURS : seule pastille de pur contexte, non
+    // retirable — elle ouvre la lecture, les filtres retirables suivent.
+    const dateLabel = `${format(dateRange.startDate, "dd/MM/yy", { locale: fr })} - ${format(dateRange.endDate, "dd/MM/yy", { locale: fr })}`;
+    activeFilters.push(
+        <Badge key="date" variant="outline" className="bg-slate-100 text-slate-700 gap-1 px-2 py-1">
+            📅 {dateLabel}
+        </Badge>
+    );
+
     // Provenance de l'appel (source du premier segment).
     if (filters.callOrigin) {
         activeFilters.push(
@@ -104,13 +113,54 @@ export function ActiveFilters({
         );
     }
 
-    // Date range (always shown as context)
-    const dateLabel = `${format(dateRange.startDate, "dd/MM/yy", { locale: fr })} - ${format(dateRange.endDate, "dd/MM/yy", { locale: fr })}`;
-    activeFilters.push(
-        <Badge key="date" variant="outline" className="bg-slate-100 text-slate-700 gap-1 px-2 py-1">
-            📅 {dateLabel}
-        </Badge>
-    );
+    // Vue file : la population est regardée du point de vue d'un groupe. La
+    // pastille n'est retirable que si la vue entreprise est accessible.
+    if (filters.queueView) {
+        activeFilters.push(
+            <Badge
+                key="queueView"
+                variant="secondary"
+                className={`bg-cyan-100 text-cyan-700 gap-1 px-2 py-1 ${onRemoveQueueView ? "cursor-pointer hover:bg-cyan-200 transition-colors" : ""}`}
+                onClick={onRemoveQueueView}
+            >
+                Vue : groupe {filters.queueView}
+                {onRemoveQueueView && <X className="h-3 w-3" />}
+            </Badge>
+        );
+    }
+
+    // Statut dans le groupe consulté (posé par les vignettes des statistiques).
+    if (filters.queueOutcomeFilter) {
+        const { queueNumber, outcomes } = filters.queueOutcomeFilter;
+        // Dédoublonné par libellé : « Perdu » recouvre plusieurs statuts fins.
+        const labels = [...new Set(outcomes.map((o) => queueOutcomeConfig[o]?.label ?? o))].join(", ");
+        activeFilters.push(
+            <Badge
+                key="queueOutcome"
+                variant="secondary"
+                className="bg-violet-100 text-violet-700 gap-1 px-2 py-1 cursor-pointer hover:bg-violet-200 transition-colors"
+                onClick={onRemoveQueueOutcome}
+            >
+                Statut groupe {queueNumber} : {labels}
+                <X className="h-3 w-3" />
+            </Badge>
+        );
+    }
+
+    // Origine dans la vue file : appels passés par la file, ou directs.
+    if (filters.queueOriginFilter) {
+        activeFilters.push(
+            <Badge
+                key="queueOrigin"
+                variant="secondary"
+                className="bg-teal-100 text-teal-700 gap-1 px-2 py-1 cursor-pointer hover:bg-teal-200 transition-colors"
+                onClick={onRemoveQueueOrigin}
+            >
+                Origine : {filters.queueOriginFilter === "queue" ? "File d'attente" : "Directs"}
+                <X className="h-3 w-3" />
+            </Badge>
+        );
+    }
 
     // Sens (Entrant / Sortant / Intra) — rien si tout est sélectionné.
     if (filters.sens && filters.sens.length > 0 && filters.sens.length < 3) {
