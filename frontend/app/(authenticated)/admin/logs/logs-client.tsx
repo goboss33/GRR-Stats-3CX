@@ -344,9 +344,10 @@ export default function AdminLogsPage() {
             params.set("queueOrigin", queueOrigin);
         }
 
-        if (callOrigin) {
-            params.set("origin", callOrigin);
-        }
+        // Toujours explicite : le défaut global étant « externe », omettre
+        // origin quand le toggle vaut « Les deux » ferait retomber l'écran
+        // sur « Externe » au rebond de l'URL.
+        params.set("origin", urlOrigin);
 
         if (queueOutcomeFilter) {
             params.set(
@@ -366,6 +367,7 @@ export default function AdminLogsPage() {
         debouncedCalleeSearch,
         debouncedHandledBySearch,
         selectedQueueNumber,
+        urlOrigin,
         debouncedIdSearch,
         segmentCountMin,
         segmentCountMax,
@@ -378,7 +380,6 @@ export default function AdminLogsPage() {
         queueOutcomeFilter,
         queueView,
         queueOrigin,
-        callOrigin,
     ]);
 
     // Fetch data
