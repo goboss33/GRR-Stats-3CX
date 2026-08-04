@@ -12,6 +12,7 @@ import {
     buildBridgeTouchSQL,
     buildSensFilterSQL,
     buildProvenanceFilterSQL,
+    buildPopulationFilterSQL,
     buildDirectionConditionSQL,
     ORIGIN_SENS,
     determineSegmentCategory,
@@ -389,6 +390,50 @@ describe("filtres dérivés des CASE partagés — jamais de prédicat parallèl
         expect(buildProvenanceFilterSQL("internal", "fs.src")).toContain("= 'internal'");
         expect(buildProvenanceFilterSQL("both", "fs.src")).toBe("");
         expect(buildProvenanceFilterSQL(undefined, "fs.src")).toBe("");
+    });
+});
+
+describe("buildPopulationFilterSQL — l'intersection provenance ∩ sens, sans redondance", () => {
+    const exprs = { sourceTypeExpr: "fs.src", firstDestTypeExpr: "fs.fdst" };
+
+    it("externe + entrant (le couple posé par un lien de vignette) : UN prédicat, la provenance", () => {
+        const conds = buildPopulationFilterSQL("external", ["inbound"], exprs);
+        expect(conds).toHaveLength(1);
+        expect(conds[0]).toContain("= 'external'");
+        // Deux prédicats équivalents faisaient dérailler le planificateur
+        // Postgres : 127 s au lieu de 3 s (juillet 2026).
+        expect(conds[0]).not.toContain("IN (");
+    });
+
+    it("interne + intra : le sens suffit (il implique la provenance)", () => {
+        const conds = buildPopulationFilterSQL("internal", ["intra"], exprs);
+        expect(conds).toHaveLength(1);
+        expect(conds[0]).toContain("IN ('intra')");
+    });
+
+    it("interne sans sens précis : la provenance seule", () => {
+        expect(buildPopulationFilterSQL("internal", [], exprs))
+            .toEqual([expect.stringContaining("= 'internal'")]);
+    });
+
+    it("intersection vide (externe + sortant) : FALSE, honnêtement", () => {
+        expect(buildPopulationFilterSQL("external", ["outbound"], exprs)).toEqual(["FALSE"]);
+    });
+
+    it("tout le monde : aucun filtre", () => {
+        expect(buildPopulationFilterSQL("both", [], exprs)).toEqual([]);
+        expect(buildPopulationFilterSQL(undefined, undefined, exprs)).toEqual([]);
+    });
+
+    it("jamais plus d'un prédicat, quel que soit le couple", () => {
+        const origins = [undefined, "both", "external", "internal"] as const;
+        const sensSets: Array<Array<"inbound" | "outbound" | "intra">> =
+            [[], ["inbound"], ["outbound"], ["intra"], ["inbound", "intra"], ["outbound", "intra"]];
+        for (const o of origins) {
+            for (const ss of sensSets) {
+                expect(buildPopulationFilterSQL(o, ss, exprs).length).toBeLessThanOrEqual(1);
+            }
+        }
     });
 });
 

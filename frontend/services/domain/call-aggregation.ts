@@ -510,6 +510,42 @@ export function buildProvenanceFilterSQL(
 }
 
 /**
+ * Filtre de POPULATION des journaux : l'intersection provenance ∩ sens,
+ * exprimée avec le MOINS de prédicats possible.
+ *
+ * Les deux axes sont corrélés (externe ⇔ entrant, par construction) : pousser
+ * les deux prédicats séparément — le couple exact posé par un lien de
+ * vignette — faisait dérailler l'estimation du planificateur Postgres
+ * (127 s au lieu de 3 s sur juillet 2026, ORDER BY + LIMIT en tête). Jamais
+ * deux conditions équivalentes : une seule, la plus simple.
+ */
+export function buildPopulationFilterSQL(
+    origin: CallOrigin | undefined,
+    sens: CallSens[] | undefined,
+    exprs: { sourceTypeExpr: string; firstDestTypeExpr: string },
+): string[] {
+    const all: CallSens[] = ["inbound", "outbound", "intra"];
+    const wanted = !sens || sens.length === 0 ? all : sens;
+    const allowed: CallSens[] = !origin || origin === "both" ? all
+        : origin === "external" ? ["inbound"]
+            : ["outbound", "intra"];
+    const effective = wanted.filter((v) => allowed.includes(v));
+
+    if (effective.length === 0) return ["FALSE"];
+    if (effective.length === all.length) return [];
+    // Externe ⇔ entrant : le prédicat de provenance suffit, et il ne lit
+    // qu'une colonne — le plus lisible pour le planificateur.
+    if (effective.length === 1 && effective[0] === "inbound") {
+        return [`${buildCallProvenanceCaseSQL(exprs.sourceTypeExpr)} = 'external'`];
+    }
+    // { sortant, intra } = tout l'interne : même raisonnement.
+    if (effective.length === 2 && !effective.includes("inbound")) {
+        return [`${buildCallProvenanceCaseSQL(exprs.sourceTypeExpr)} = 'internal'`];
+    }
+    return [buildSensFilterSQL(effective, exprs)];
+}
+
+/**
  * Sens retenus pour chaque position du toggle Externe / Interne / Les deux.
  * Le tableau de bord ne montre QUE le flux entrant : Externe = entrants
  * (pont compris), Interne = intra — les sortants ne vivent que dans les

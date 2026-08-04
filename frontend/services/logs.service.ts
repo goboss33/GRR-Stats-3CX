@@ -31,8 +31,7 @@ import {
     determineCallProvenance,
     determineCallSens,
     callTouchesBridge,
-    buildSensFilterSQL,
-    buildProvenanceFilterSQL,
+    buildPopulationFilterSQL,
     determineCallStatus,
     buildFinalStatusFilterSQL,
     determineSegmentStatus,
@@ -353,15 +352,13 @@ function buildAggregatedQueryParts(
     const dateOnlyWhereClause = `cdr_started_at >= ${startP} AND cdr_started_at <= ${endP}`;
 
     const aggregatedWhereConditions: string[] = [];
-    // Sens et provenance : les DEUX filtres dérivent des CASE du domaine —
-    // les mêmes expressions que le tableau de bord, la correspondance
-    // KPI ↔ journaux tient par construction. `fs` est le premier segment,
-    // déjà joint par les requêtes de données ET de comptage.
+    // Population (provenance ∩ sens) : UN filtre normalisé, dérivé des CASE
+    // du domaine — mêmes expressions que le tableau de bord, correspondance
+    // par construction, et jamais deux prédicats redondants (le planificateur
+    // Postgres en perdait pied). `fs` est le premier segment, déjà joint par
+    // les requêtes de données ET de comptage.
     const fsExprs = { sourceTypeExpr: "fs.source_dn_type", firstDestTypeExpr: "fs.destination_dn_type" };
-    const sensFilter = buildSensFilterSQL(filters.sens, fsExprs);
-    if (sensFilter) aggregatedWhereConditions.push(sensFilter);
-    const provenanceFilter = buildProvenanceFilterSQL(filters.callOrigin, fsExprs.sourceTypeExpr);
-    if (provenanceFilter) aggregatedWhereConditions.push(provenanceFilter);
+    aggregatedWhereConditions.push(...buildPopulationFilterSQL(filters.callOrigin, filters.sens, fsExprs));
     const statusFilter = buildFinalStatusFilterSQL(filters.statuses, rules.minAnswerSeconds);
     if (statusFilter) aggregatedWhereConditions.push(statusFilter);
 

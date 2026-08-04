@@ -21,7 +21,7 @@ import {
     SQL_REAL_PARTY_DEST_TYPES,
     buildFinalStatusCaseSQL,
     buildSensFilterSQL,
-    buildProvenanceFilterSQL,
+    buildPopulationFilterSQL,
     ORIGIN_SENS,
 } from "@/services/domain/call-aggregation";
 
@@ -85,10 +85,8 @@ const ORIGINS: CallOrigin[] = ["external", "internal", "both"];
     console.log("\ntoggle".padEnd(11), "tableau de bord".padStart(16), "journaux".padStart(10), "  verdict");
     for (const origin of ORIGINS) {
         const dashCond = buildSensFilterSQL(ORIGIN_SENS[origin], exprs) || "TRUE";
-        const logsCond = [
-            buildSensFilterSQL(ORIGIN_SENS[origin], exprs),
-            buildProvenanceFilterSQL(origin, exprs.sourceTypeExpr),
-        ].filter(Boolean).join(" AND ") || "TRUE";
+        // Le filtre NORMALISÉ que posent réellement les journaux.
+        const logsCond = buildPopulationFilterSQL(origin, ORIGIN_SENS[origin], exprs).join(" AND ") || "TRUE";
         const res: Array<{ dash: bigint; journaux: bigint }> = await prisma.$queryRaw(Prisma.sql`
             WITH firsts AS (
                 SELECT DISTINCT ON (call_history_id) call_history_id,
