@@ -225,6 +225,7 @@ export default function DashboardClient() {
                 <KpiCard
                     label="Appels reçus"
                     href={lienLogs()}
+                    linkPending={canViewLogs === null}
                     value={(metrics?.totalCalls ?? 0).toLocaleString("fr-CH")}
                     icon={Phone}
                     subtitle="Volume de la période"
@@ -234,6 +235,7 @@ export default function DashboardClient() {
                 <KpiCard
                     label="Répondus"
                     href={lienLogs(finalStatusesForBucket('answered'))}
+                    linkPending={canViewLogs === null}
                     value={(metrics?.answeredCalls ?? 0).toLocaleString("fr-CH")}
                     icon={TrendingUp}
                     tone="positive"
@@ -244,6 +246,7 @@ export default function DashboardClient() {
                 <KpiCard
                     label="Perdus"
                     href={lienLogs(finalStatusesForBucket('lost'))}
+                    linkPending={canViewLogs === null}
                     value={lostCalls.toLocaleString("fr-CH")}
                     icon={PhoneOff}
                     tone="negative"
@@ -254,6 +257,7 @@ export default function DashboardClient() {
                 <KpiCard
                     label="Messagerie"
                     href={lienLogs(finalStatusesForBucket('voicemail'))}
+                    linkPending={canViewLogs === null}
                     value={(metrics?.voicemailCalls ?? 0).toLocaleString("fr-CH")}
                     icon={Voicemail}
                     tone="info"

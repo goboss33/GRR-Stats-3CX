@@ -39,6 +39,12 @@ interface KpiCardProps {
     isLoading?: boolean;
     /** Rend la vignette cliquable vers les journaux correspondants. */
     href?: string;
+    /**
+     * Le droit de lier vers les journaux n'est pas encore connu : aucune
+     * icône (emplacement réservé) — la bonne apparaît d'un coup à la réponse
+     * du serveur, au lieu d'une icône qui se transforme sous les yeux.
+     */
+    linkPending?: boolean;
 }
 
 const TONES: Record<NonNullable<KpiCardProps["tone"]>, { value: string; icon: string }> = {
@@ -83,6 +89,7 @@ export function KpiCard({
     trend,
     isLoading = false,
     href,
+    linkPending = false,
 }: KpiCardProps) {
     const colors = TONES[tone];
 
@@ -92,10 +99,13 @@ export function KpiCard({
                 <div className="mb-2 flex items-center justify-between gap-2">
                     <span className="truncate text-sm font-medium text-slate-600">{label}</span>
                     {/* Le lien se signale par une icône discrète, comme sur les
-                        vignettes des statistiques de groupe. */}
-                    {href
-                        ? <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                        : <Icon className={`h-4 w-4 shrink-0 ${colors.icon}`} />}
+                        vignettes des statistiques de groupe. Tant que le droit
+                        est inconnu : rien, emplacement réservé. */}
+                    {linkPending
+                        ? <span className="h-4 w-4 shrink-0" aria-hidden />
+                        : href
+                            ? <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                            : <Icon className={`h-4 w-4 shrink-0 ${colors.icon}`} />}
                 </div>
 
                 {/* La valeur occupe sa propre ligne : rien ne peut la tronquer. */}
