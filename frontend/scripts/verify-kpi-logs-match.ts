@@ -7,13 +7,15 @@
 //
 // Usage : npx tsx scripts/verify-kpi-logs-match.ts [file] [début ISO] [fin ISO]
 import { getPrismaCdr } from "@/lib/prisma-cdr";
+import { getClassificationRules } from "@/lib/classification-rules";
+import { getStatsExclusions } from "@/lib/stats-exclusions";
 import {
-    DEFAULT_CLASSIFICATION_RULES as rules,
     buildTeamCTEChain,
     buildAgentCTEChain,
     TEAM_CALLS_UNION_SQL,
     buildQueueOutcomeSubquery,
     outcomesForBucket,
+    cdrTable,
     type PassageOutcome,
 } from "@/services/domain/call-classification";
 
@@ -21,7 +23,7 @@ const QUEUE = process.argv[2] ?? "900";
 const START = new Date(process.argv[3] ?? "2026-06-01T00:00:00.000Z");
 const END = new Date(process.argv[4] ?? "2026-07-01T00:00:00.000Z");
 
-const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
+
 
 /**
  * Les quatre vignettes du bilan d'équipe. Les statuts agrégés viennent de la
@@ -37,6 +39,12 @@ const CARTES: Array<{ nom: string; outcomes: PassageOutcome[]; team: boolean }> 
 
 async function main() {
     const prisma = getPrismaCdr("gerofinance");
+    // Règles VIVANTES et exclusions réelles : le script vérifiait longtemps
+    // les règles par défaut — un angle mort qui a caché l'écart 616/586 de
+    // juillet 2026 (exclusions absentes des vignettes).
+    const rules = await getClassificationRules();
+    const exclusions = await getStatsExclusions("gerofinance");
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3", exclusions };
 
     console.log(`\nFile ${QUEUE} — ${START.toISOString().slice(0, 10)} → ${END.toISOString().slice(0, 10)}\n`);
 
@@ -70,7 +78,7 @@ async function main() {
         });
         const logRows = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
             `SELECT COUNT(DISTINCT call_history_id) AS n
-             FROM cdroutput
+             FROM ${cdrTable(rules)}
              WHERE cdr_started_at >= $2 AND cdr_started_at <= $3
                AND call_history_id IN ${subquery}`,
             QUEUE, START, END,

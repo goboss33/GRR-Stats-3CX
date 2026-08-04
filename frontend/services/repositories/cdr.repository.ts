@@ -809,7 +809,7 @@ export async function getQueueTimelineDataRaw(
     const overflowList = outcomesForBucket("overflow").map((o) => `'${o}'`).join(", ");
 
     return prisma.$queryRawUnsafe<TimelineRow[]>(
-        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
+        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin, exclusions: await getStatsExclusions(serverId) })},
          team_calls AS (${TEAM_CALLS_UNION_SQL})
          SELECT
              date_trunc($4, started_at AT TIME ZONE $5) AS date_group,
@@ -916,7 +916,7 @@ export async function getQueueHeatmapDataRaw(
     const rules = await getClassificationRules();
 
     return prisma.$queryRawUnsafe<HeatmapRow[]>(
-        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
+        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin, exclusions: await getStatsExclusions(serverId) })},
          team_calls AS (${TEAM_CALLS_UNION_SQL})
          SELECT
              EXTRACT(ISODOW FROM started_at AT TIME ZONE $4)::int AS day_of_week,

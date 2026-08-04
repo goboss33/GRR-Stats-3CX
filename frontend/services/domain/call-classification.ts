@@ -541,6 +541,8 @@ export interface PassageCTEParams {
     endExpr: string;
     /** Provenance des appels retenus ; absent ou "both" = pas de filtre. */
     origin?: CallOrigin;
+    /** Files/postes exclus des statistiques (clients hébergés) ; absent = rien. */
+    exclusions?: StatsExclusionLists;
 }
 
 /**
@@ -837,6 +839,45 @@ export function buildDirectCallsCTE(
  *
  * À insérer derrière un `WITH`.
  */
+/** Listes d'exclusion des statistiques (clients hébergés) — cf. lib/stats-exclusions. */
+export interface StatsExclusionLists {
+    queueNumbers: string[];
+    extensions: string[];
+}
+
+const sqlQuote = (v: string) => `'${v.replace(/'/g, "''")}'`;
+
+/**
+ * Condition d'exclusion des clients hébergés, en dialecte « socle »
+ * (placeholders $n) — le miroir du buildExclusionFilter (Prisma.sql) des
+ * requêtes du tableau de bord : tout appel dont un segment de la période
+ * touche une file exclue ou un poste exclu sort de la population.
+ * Vide quand rien n'est exclu.
+ */
+export function buildExclusionConditionSQL(
+    exclusions: StatsExclusionLists | undefined,
+    callIdExpr: string,
+    cdr: string,
+    params: { startExpr: string; endExpr: string },
+): string {
+    if (!exclusions) return "";
+    const parts: string[] = [];
+    if (exclusions.queueNumbers.length > 0) {
+        parts.push(`(x.destination_dn_type = 'queue' AND x.destination_dn_number IN (${exclusions.queueNumbers.map(sqlQuote).join(", ")}))`);
+    }
+    if (exclusions.extensions.length > 0) {
+        const list = exclusions.extensions.map(sqlQuote).join(", ");
+        parts.push(`(x.destination_dn_type = 'extension' AND x.destination_dn_number IN (${list}))`);
+        parts.push(`(x.source_dn_type = 'extension' AND x.source_dn_number IN (${list}))`);
+    }
+    if (parts.length === 0) return "";
+    return `${callIdExpr} NOT IN (
+        SELECT x.call_history_id FROM ${cdr} x
+        WHERE x.cdr_started_at >= ${params.startExpr} AND x.cdr_started_at <= ${params.endExpr}
+          AND (${parts.join(" OR ")})
+    )`;
+}
+
 export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTEParams): string {
     if (!params.queueExpr) throw new Error("buildTeamCTEChain : une file doit être précisée");
     const cdr = cdrTable(rules);
@@ -851,6 +892,18 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
     const directOriginCond = hasOrigin
         ? buildOriginConditionSQL(params.origin, "direct_grouped.call_history_id", cdr)
         : "";
+
+    // Exclusions clients hébergés : même patron que la provenance — injectées
+    // dans les DEUX blocs de la partition, donc héritées mécaniquement par
+    // tous les consommateurs (vignettes, tableau par agent, graphiques, liens
+    // vers les logs). C'est leur absence ici qui faisait afficher 616 reçus à
+    // la vignette quand la liste des journaux en montrait 586 (juillet 2026,
+    // file 688).
+    const exclQueue = buildExclusionConditionSQL(params.exclusions, "cqo.call_history_id", cdr, params);
+    const exclusionQueueCond = exclQueue ? `
+          AND ${exclQueue}` : "";
+    const exclDirect = buildExclusionConditionSQL(params.exclusions, "direct_grouped.call_history_id", cdr, params);
+    const directExtraCond = [directOriginCond, exclDirect].filter(Boolean).join(" AND ");
 
     // Fait « servi dans le groupe » pour le bloc directs (même définition que
     // côté file). Vide quand la règle est inactive.
@@ -927,9 +980,9 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
             rules.voicemail === "excluded" ? "\n          AND cqo.outcome <> 'voicemail'" : ""}${
             // Même doctrine pour les abandons très courts quand la règle
             // `shortAbandonDisposition: "excluded"` les sort des reçus.
-            rules.shortAbandonDisposition === "excluded" ? "\n          AND cqo.outcome <> 'short_abandon'" : ""}${queueOriginCond}
+            rules.shortAbandonDisposition === "excluded" ? "\n          AND cqo.outcome <> 'short_abandon'" : ""}${queueOriginCond}${exclusionQueueCond}
     ),
-    ${buildDirectCallsCTE(rules, "team_direct_segments", "call_queue_outcomes", directOriginCond, directServedCond, directOverflowCond)}`;
+    ${buildDirectCallsCTE(rules, "team_direct_segments", "call_queue_outcomes", directExtraCond, directServedCond, directOverflowCond)}`;
 }
 
 /**
