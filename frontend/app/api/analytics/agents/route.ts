@@ -54,21 +54,16 @@ export async function GET(request: NextRequest) {
             ? originParam : "both";
 
         // Requête paramétrée : $1 = queueNumber (texte), $2 = start, $3 = end (Date).
+        // Le nom vient du SEGMENT de l'appel (nom au moment des faits, cf.
+        // agent_roster) : une réattribution de poste en cours de période donne
+        // une ligne PAR titulaire, chacune avec ses propres chiffres — jamais
+        // le nom du titulaire actuel appliqué rétroactivement à l'historique.
         const query = `
             WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
-            agent_names AS (
-                SELECT DISTINCT ON (destination_dn_number)
-                    destination_dn_number as extension,
-                    COALESCE(destination_dn_name, destination_participant_name, destination_dn_number) as name
-                FROM cdroutput
-                WHERE destination_dn_type = 'extension'
-                  AND destination_dn_number IN (SELECT extension FROM queue_agents)
-                ORDER BY destination_dn_number, cdr_started_at DESC
-            ),
             ${buildAgentCTEChain(rules)}
             SELECT
-                qa.extension,
-                COALESCE(an.name, qa.extension) as name,
+                ar.extension,
+                ar.name,
                 COALESCE(aqs.calls_received, 0) as calls_received,
                 COALESCE(aqs.resolved, 0) as resolved,
                 COALESCE(aqs.transferred, 0) as transferred,
@@ -77,11 +72,10 @@ export async function GET(request: NextRequest) {
                 COALESCE(ad.direct_answered, 0) as direct_answered,
                 COALESCE(ad.direct_transferred, 0) as direct_transferred,
                 COALESCE(ad.direct_talk_time, 0) as direct_talk_time
-            FROM queue_agents qa
-            LEFT JOIN agent_names an ON qa.extension = an.extension
-            LEFT JOIN agent_queue_stats aqs ON qa.extension = aqs.extension
-            LEFT JOIN agent_direct ad ON qa.extension = ad.extension
-            ORDER BY qa.extension
+            FROM agent_roster ar
+            LEFT JOIN agent_queue_stats aqs ON ar.extension = aqs.extension AND ar.name = aqs.name
+            LEFT JOIN agent_direct ad ON ar.extension = ad.extension AND ar.name = ad.name
+            ORDER BY ar.extension, ar.name
         `;
 
         logger.debug("[agents/route] Executing query with queueNumber:", queueNumber);

@@ -96,9 +96,11 @@ export function AgentPerformanceTableV2({
 
     // Évolution N-1 par agent : la pastille à côté du nom compare LE chiffre
     // affiché juste dessous (« N appels » de la jauge = répondus + directs +
-    // transferts accomplis). Appariement par extension — un agent absent de la
-    // période N-1 (nouveau collaborateur) n'a pas de pastille ; une période
-    // N-1 sans aucune prise en charge d'équipe ne compare rien.
+    // transferts accomplis). Appariement par (extension, nom) : les lignes
+    // sont ventilées par titulaire de l'époque, donc un poste réattribué ne
+    // compare que le MÊME titulaire d'une année sur l'autre — un nouveau
+    // collaborateur n'a pas de pastille au lieu d'hériter de l'historique de
+    // son prédécesseur ; une période N-1 sans prise en charge ne compare rien.
     const prevAgentMap = useMemo(() => {
         const map = new Map<string, { calls: number; participation: number }>();
         if (typeof previousStats !== "object") return map;
@@ -110,7 +112,7 @@ export function AgentPerformanceTableV2({
         if (prevTeamHandled <= 0) return map;
         for (const a of prevAgents) {
             const calls = a.answered + a.directAnswered + a.queueTransferred + a.directTransferred;
-            map.set(a.extension, {
+            map.set(`${a.extension}|${a.name}`, {
                 calls,
                 participation: Math.round((calls / prevTeamHandled) * 100),
             });
@@ -247,10 +249,10 @@ export function AgentPerformanceTableV2({
                                                     <TrendPill
                                                         current={agent.answered + agent.directAnswered + agent.transferred}
                                                         previous={previousStats === "loading" ? "loading"
-                                                            : prevAgentMap.get(agent.extension)?.calls ?? "unavailable"}
+                                                            : prevAgentMap.get(`${agent.extension}|${agent.name}`)?.calls ?? "unavailable"}
                                                         sense="higher-better"
-                                                        detail={prevAgentMap.has(agent.extension)
-                                                            ? `— participation : ${prevAgentMap.get(agent.extension)!.participation} % → ${agent.participationRate} %`
+                                                        detail={prevAgentMap.has(`${agent.extension}|${agent.name}`)
+                                                            ? `— participation : ${prevAgentMap.get(`${agent.extension}|${agent.name}`)!.participation} % → ${agent.participationRate} %`
                                                             : undefined}
                                                     />
                                                 </p>

@@ -889,7 +889,12 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
     // d'équipe (clock_seconds) lit team_direct_secs, qui en dérive.
     return `
     queue_agents AS (
-        SELECT DISTINCT child.destination_dn_number AS extension
+        -- Le nom retenu est celui porté par le segment AU MOMENT de l'appel :
+        -- un poste réattribué sur la période produit une paire (extension,
+        -- nom) PAR titulaire — chacun ne répond que de ses propres appels.
+        SELECT DISTINCT
+            child.destination_dn_number AS extension,
+            COALESCE(child.destination_dn_name, child.destination_participant_name, child.destination_dn_number) AS agent_name
         FROM ${cdr} child
         JOIN ${cdr} parent ON child.originating_cdr_id = parent.cdr_id
         WHERE child.creation_method = 'route_to'
@@ -905,9 +910,10 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
             c.cdr_started_at,
             c.cdr_answered_at,
             c.cdr_ended_at,
-            -- L'extension sert au tableau par agent ; les autres consommateurs
-            -- l'ignorent.
-            c.destination_dn_number AS extension
+            -- L'extension et le nom d'époque servent au tableau par agent ;
+            -- les autres consommateurs les ignorent.
+            c.destination_dn_number AS extension,
+            COALESCE(c.destination_dn_name, c.destination_participant_name, c.destination_dn_number) AS agent_name
         FROM ${cdr} c
         WHERE ${buildDirectSegmentWhereClause("c", { durationThreshold: rules.minSignificantDurationSeconds })}
           AND c.destination_dn_number IN (SELECT extension FROM queue_agents)
@@ -990,6 +996,7 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
             p.originating_cdr_id,
             p.call_history_id,
             p.destination_dn_number AS agent_ext,
+            COALESCE(p.destination_dn_name, p.destination_participant_name, p.destination_dn_number) AS agent_name,
             CASE WHEN p.cdr_answered_at IS NOT NULL THEN 1 ELSE 0 END AS was_answered,
             EXTRACT(EPOCH FROM (p.cdr_ended_at - p.cdr_answered_at)) AS talk_seconds,
             p.cdr_answered_at,
@@ -1011,6 +1018,7 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
     agent_queue_stats AS (
         SELECT
             qp.agent_ext AS extension,
+            qp.agent_name AS name,
             COUNT(DISTINCT qp.originating_cdr_id) AS calls_received,
             ${queueResolved},
             ${queueTransferred},
@@ -1018,7 +1026,7 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
         FROM queue_polling qp
         LEFT JOIN last_answered_agent la ON qp.call_history_id = la.call_history_id
         WHERE qp.agent_ext IN (SELECT extension FROM queue_agents)
-        GROUP BY qp.agent_ext
+        GROUP BY qp.agent_ext, qp.agent_name
     ),
     direct_last_answer AS (
         -- Dernier décrocheur DIRECT de chaque appel du bloc directs.
@@ -1033,6 +1041,7 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
     agent_direct AS (
         SELECT
             d.extension,
+            d.agent_name AS name,
             COUNT(DISTINCT d.call_history_id) AS direct_received,
             ${directAnswered},
             ${directTransferred},
@@ -1044,7 +1053,18 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
         JOIN direct_calls dc ON dc.call_history_id = d.call_history_id
         LEFT JOIN direct_last_answer dla ON dla.call_history_id = d.call_history_id
         WHERE ${buildDirectExclusionSQL(rules, "d")}
-        GROUP BY d.extension
+        GROUP BY d.extension, d.agent_name
+    ),
+    agent_roster AS (
+        -- Une ligne par (extension, nom-de-l'époque) : la réattribution d'un
+        -- poste sur la période affiche autant de lignes que de titulaires.
+        -- L'union couvre le cas marginal d'un nom vu uniquement sur des
+        -- appels directs (renommage entre deux sollicitations de la file).
+        SELECT DISTINCT extension, agent_name AS name FROM queue_agents
+        UNION
+        SELECT DISTINCT d.extension, d.agent_name
+        FROM team_direct_segments d
+        JOIN direct_calls dc ON dc.call_history_id = d.call_history_id
     )`;
 }
 
