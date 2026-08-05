@@ -10,7 +10,6 @@ import { useUrlPeriod, useUrlOrigin, applyPeriodToParams } from "@/lib/url-state
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tip } from "@/components/ui/tooltip";
 import { LogsTable } from "@/components/logs-table";
 import { Pagination } from "@/components/pagination";
 import { CallChainModal } from "@/components/call-chain-modal";
@@ -22,7 +21,6 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { QueueSelector } from "@/components/stats/queue-selector";
 import { NoPerimeterNotice } from "@/components/no-perimeter-notice";
 import { Label } from "@/components/ui/label";
 import {
@@ -134,17 +132,10 @@ export default function AdminLogsPage() {
     const [callerSearch, setCallerSearch] = useState(searchParams.get("caller") || "");
     const [calleeSearch, setCalleeSearch] = useState(searchParams.get("callee") || "");
     const [handledBySearch, setHandledBySearch] = useState(searchParams.get("handledBy") || "");
-    const [selectedQueueNumber, setSelectedQueueNumber] = useState<string | null>(searchParams.get("queue") || null);
-    // La vue file se reflète dans l'URL : le champ de recherche du header
-    // affiche la file consultée, et les liens vers les stats la transportent.
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        if ((params.get("queue") ?? null) === (selectedQueueNumber ?? null)) return;
-        if (selectedQueueNumber) params.set("queue", selectedQueueNumber);
-        else params.delete("queue");
-        router.replace(`${window.location.pathname}?${params.toString()}`, { scroll: false });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedQueueNumber]);
+    // Filtre de la colonne Queue(s) : restreint aux appels passés par cette
+    // file, SANS changer de vue — état local d'écran, comme les autres
+    // filtres de colonnes. (?queue= désigne désormais la VUE, cf. queueView.)
+    const [selectedQueueNumber, setSelectedQueueNumber] = useState<string | null>(null);
     const [idSearch, setIdSearch] = useState(searchParams.get("id") || "");
     const [segmentCountMin, setSegmentCountMin] = useState<number | undefined>(() => getInitialNumberParam("segMin"));
     const [segmentCountMax, setSegmentCountMax] = useState<number | undefined>(() => getInitialNumberParam("segMax"));
@@ -190,7 +181,7 @@ export default function AdminLogsPage() {
     // pas comme un filtre — elle ajoute au tableau le statut de chaque appel
     // dans la file consultee, a cote de son statut final.
     const [queueView, setQueueView] = useState<string | null>(
-        () => searchParams.get("queueView") || searchParams.get("queueOutcome")?.split(":")[0] || null,
+        () => searchParams.get("queue") || searchParams.get("queueOutcome")?.split(":")[0] || null,
     );
     const [canViewCompanyWide, setCanViewCompanyWide] = useState(true);
     const [noPerimeter, setNoPerimeter] = useState(false);
@@ -244,6 +235,18 @@ export default function AdminLogsPage() {
         setQueueOrigin(null);
         setCurrentPage(1);
     };
+
+    // La vue file EST l'URL (?queue=) : la recherche du header l'écrit, cette
+    // liste la lit. Même dérivation que l'état initial, pour qu'une arrivée
+    // par lien de vignette (queueOutcome sans queue) ne soit pas écrasée
+    // avant que l'écran n'ait réécrit l'URL.
+    useEffect(() => {
+        const expected = searchParams.get("queue")
+            || searchParams.get("queueOutcome")?.split(":")[0]
+            || null;
+        if ((expected ?? null) !== (queueView ?? null)) changeQueueView(expected);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
 
     // File consultée, résolue avec son libellé pour l'affichage.
     const selectedQueueView = queueView
@@ -313,7 +316,6 @@ export default function AdminLogsPage() {
         if (debouncedCallerSearch.trim()) params.set("caller", debouncedCallerSearch.trim());
         if (debouncedCalleeSearch.trim()) params.set("callee", debouncedCalleeSearch.trim());
         if (debouncedHandledBySearch.trim()) params.set("handledBy", debouncedHandledBySearch.trim());
-        if (selectedQueueNumber) params.set("queue", selectedQueueNumber);
         if (debouncedIdSearch.trim()) params.set("id", debouncedIdSearch.trim());
 
         // Numeric range filters
@@ -337,7 +339,7 @@ export default function AdminLogsPage() {
         // Conservé tel quel : ce filtre vient d'un KPI et n'est pas modifiable
         // depuis l'écran, mais il doit survivre aux changements de page.
         if (queueView) {
-            params.set("queueView", queueView);
+            params.set("queue", queueView);
         }
 
         if (queueOrigin) {
@@ -366,7 +368,6 @@ export default function AdminLogsPage() {
         debouncedCallerSearch,
         debouncedCalleeSearch,
         debouncedHandledBySearch,
-        selectedQueueNumber,
         urlOrigin,
         debouncedIdSearch,
         segmentCountMin,
@@ -796,47 +797,13 @@ export default function AdminLogsPage() {
                 <NoPerimeterNotice context="Les journaux d'appels sont filtrés selon les groupes qui vous sont attribués, et aucun ne l'est pour le moment." />
             )}
 
-            {/* Sélecteur de vue. La vue file ne filtre pas : elle ajoute au
-                tableau le statut de chaque appel dans la file consultée, à côté
-                de son statut final. Un manager voit ainsi que ses « perdus »
-                ont pu être récupérés ailleurs. */}
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5">
-                <span className="text-sm font-medium text-slate-600">Vue</span>
-
-                <div className="flex items-center gap-1.5">
-                    {/* Span intermédiaire : le bouton est désactivé précisément
-                        quand l'explication doit pouvoir s'afficher. */}
-                    <Tip content={canViewCompanyWide ? undefined : "Votre périmètre ne donne pas accès à la vue entreprise"}>
-                        <span className="inline-flex">
-                            <Button
-                                variant={queueView ? "outline" : "default"}
-                                size="sm"
-                                disabled={!canViewCompanyWide}
-                                onClick={() => changeQueueView(null)}
-                            >
-                                Entreprise
-                            </Button>
-                        </span>
-                    </Tip>
-
-                    <QueueSelector
-                        queues={queues}
-                        selectedQueueNumber={queueView}
-                        onSelect={(queueNumber) => changeQueueView(queueNumber)}
-                        placeholder="Choisir un groupe…"
-                        className="w-[320px]"
-                    />
-                </div>
-
-                {selectedQueueView && (
-                    <span className="text-sm text-slate-500">
-                        Statut affiché du point de vue du groupe{" "}
-                        <span className="font-medium text-slate-700">
-                            {selectedQueueView.number} – {selectedQueueView.name}
-                        </span>
-                    </span>
-                )}
-            </div>
+            {/* Plus de barre « Vue » : la recherche du header choisit la
+                file consultée, la pastille « Vue : groupe X » porte l'état et
+                sa croix ramène à la vue entreprise (pour qui y a droit). La
+                vue file n'agit pas comme un filtre — elle ajoute au tableau le
+                statut de chaque appel dans la file consultée, à côté de son
+                statut final : un manager voit ainsi que ses « perdus » ont pu
+                être récupérés ailleurs. */}
 
             {/* Table with integrated filters */}
             <Card className="border-slate-200 shadow-sm overflow-hidden">

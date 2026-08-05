@@ -9,14 +9,16 @@ import { getSelectedServer } from "@/lib/selected-server";
 import type { QueueInfo } from "@/types/queues.types";
 
 /**
- * Recherche globale de groupe — un outil de NAVIGATION, pas un filtre.
+ * Recherche globale de groupe — elle choisit l'équipe CONSULTÉE sur l'écran
+ * courant.
  *
- * Le champ reflète l'écran courant : vide sur le tableau de bord (c'est le
- * point de départ des recherches), le groupe consulté sur sa statistique, la
- * file consultée sur les journaux. Sélectionner un groupe ouvre TOUJOURS sa
- * statistique, d'où qu'on soit — période et provenance conservées. On
- * n'« efface » jamais : on navigue (les journaux gardent leur bouton « Vue
- * entreprise » pour sortir de la vue file).
+ * Sur les statistiques comme sur les journaux, sélectionner change la vue en
+ * place (un agent amène sur la vue de son groupe) ; seul le tableau de bord
+ * navigue — vers la statistique du groupe — puisqu'il n'a pas de vue par
+ * équipe. Période et provenance sont conservées dans tous les cas. On
+ * n'« efface » jamais depuis ce champ : revenir à la vue entreprise des
+ * journaux passe par la croix de la pastille « Vue : groupe X », qui n'existe
+ * que pour ceux qui y ont droit.
  */
 
 /** Écrans où l'URL porte une file consultée, que le champ doit refléter. */
@@ -40,10 +42,19 @@ export function HeaderQueueSearch() {
         ? searchParams.get("queue")
         : null;
 
-    const openQueueStats = (queueNumber: string) => {
+    const selectQueue = (queueNumber: string) => {
+        // Sur les journaux : la sélection règle la VUE en place (?queue=),
+        // sans navigation — l'écran réagit au changement d'URL.
+        if (pathname.startsWith("/admin/logs")) {
+            const params = new URLSearchParams(searchParams.toString());
+            params.set("queue", queueNumber);
+            router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+            return;
+        }
+        // Ailleurs : navigation vers la statistique du groupe. Seul le
+        // contexte de consultation voyage ; les filtres propres à un écran
+        // restent où ils sont.
         const params = new URLSearchParams();
-        // Seul le contexte de consultation voyage ; les filtres propres à un
-        // écran (colonnes des journaux…) restent où ils sont.
         for (const key of ["start", "end", "origin"]) {
             const value = searchParams.get(key);
             if (value) params.set(key, value);
@@ -54,14 +65,14 @@ export function HeaderQueueSearch() {
 
     return (
         <div className="w-[26rem]">
-            {/* show="both" : chercher un AGENT ouvre la statistique de son
-                groupe — chaque entrée du picker porte le queueNumber de
-                rattachement, agent compris. */}
+            {/* show="both" : chercher un AGENT mène à son groupe — chaque
+                entrée du picker porte le queueNumber de rattachement, agent
+                compris. */}
             <QueueAgentPicker
                 queues={queues}
                 show="both"
                 selectedQueueNumber={displayedQueue}
-                onSelect={(item) => openQueueStats(item.queueNumber)}
+                onSelect={(item) => selectQueue(item.queueNumber)}
                 placeholder="Rechercher un groupe ou un agent…"
                 size="compact"
                 inputClassName="h-10"
