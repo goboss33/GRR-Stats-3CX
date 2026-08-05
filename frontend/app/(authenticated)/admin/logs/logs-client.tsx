@@ -35,6 +35,7 @@ import {
 import { getAggregatedCallLogs, exportCallLogsCSV, getCallLogsSQL } from "@/services/logs.service";
 import { getScopedQueueOptions } from "@/services/queues.service";
 import { useDebounce } from "@/lib/use-debounce";
+import { toast } from "sonner";
 import { ServerId } from "@/lib/prisma-cdr";
 import type { QueueInfo } from "@/types/queues.types";
 import type {
@@ -52,6 +53,29 @@ import type {
 import { outcomesForBucket, type KpiBucket, type PassageOutcome } from "@/services/domain/call-classification";
 import { finalStatusesForBucket, DEFAULT_FINAL_GROUPING } from "@/services/domain/call-aggregation";
 import type { QueueOrigin } from "@/components/column-filters/ColumnFilterQueueOrigin";
+
+// Garde-fou transport pour les actions serveur : quand un redéploiement a
+// invalidé l'onglet (identifiants d'actions régénérés), Next répond une page
+// HTML que le client ne sait pas interpréter — la promesse ne se règle JAMAIS,
+// ni succès ni erreur, et le chargement tournerait pour toujours. Au-delà du
+// délai, on rejette pour rendre la main et afficher un message clair.
+const ACTION_TIMEOUT_MS = 30_000;
+async function withTimeout<T>(promise: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+        return await Promise.race([
+            promise,
+            new Promise<never>((_, reject) => {
+                timer = setTimeout(
+                    () => reject(new Error("Le serveur n'a pas répondu dans le délai imparti.")),
+                    ACTION_TIMEOUT_MS,
+                );
+            }),
+        ]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 const PAGE_SIZE = 50;
 
@@ -390,17 +414,18 @@ export default function AdminLogsPage() {
         setIsLoading(true);
         try {
             const serverId = getSelectedServer();
-            const result = await getAggregatedCallLogs(
+            const result = await withTimeout(getAggregatedCallLogs(
                 serverId,
                 dateRange.startDate,
                 dateRange.endDate,
                 effectiveFilters,
                 { page: currentPage, pageSize: PAGE_SIZE },
                 sort
-            );
+            ));
             setData(result);
         } catch (error) {
             console.error("Error fetching logs:", error);
+            toast.error("Impossible de charger les journaux. Rechargez la page : l'application a peut-être été mise à jour.");
         } finally {
             setIsLoading(false);
         }
@@ -488,7 +513,7 @@ export default function AdminLogsPage() {
         setIsExporting(true);
         try {
             const serverId = getSelectedServer();
-            const csv = await exportCallLogsCSV(serverId, dateRange.startDate, dateRange.endDate, effectiveFilters);
+            const csv = await withTimeout(exportCallLogsCSV(serverId, dateRange.startDate, dateRange.endDate, effectiveFilters));
             const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
@@ -496,6 +521,7 @@ export default function AdminLogsPage() {
             link.click();
         } catch (error) {
             console.error("Error exporting CSV:", error);
+            toast.error("Export impossible. Rechargez la page : l'application a peut-être été mise à jour.");
         } finally {
             setIsExporting(false);
         }
@@ -505,7 +531,7 @@ export default function AdminLogsPage() {
         setIsExporting(true);
         try {
             const serverId = getSelectedServer();
-            const csv = await exportCallLogsCSV(serverId, dateRange.startDate, dateRange.endDate, effectiveFilters, true);
+            const csv = await withTimeout(exportCallLogsCSV(serverId, dateRange.startDate, dateRange.endDate, effectiveFilters, true));
             const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
@@ -513,6 +539,7 @@ export default function AdminLogsPage() {
             link.click();
         } catch (error) {
             console.error("Error exporting CSV:", error);
+            toast.error("Export impossible. Rechargez la page : l'application a peut-être été mise à jour.");
         } finally {
             setIsExporting(false);
         }
@@ -523,7 +550,7 @@ export default function AdminLogsPage() {
         setIsLoadingSql(true);
         try {
             const serverId = getSelectedServer();
-            const sql = await getCallLogsSQL(serverId, dateRange.startDate, dateRange.endDate, effectiveFilters, { page: currentPage, pageSize: PAGE_SIZE }, sort);
+            const sql = await withTimeout(getCallLogsSQL(serverId, dateRange.startDate, dateRange.endDate, effectiveFilters, { page: currentPage, pageSize: PAGE_SIZE }, sort));
             setSqlQuery(sql);
         } catch (error) {
             console.error("Error fetching SQL:", error);

@@ -21,6 +21,11 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # Cf. frontend/Dockerfile : garde les identifiants d'actions serveur
+        # stables entre les builds — les onglets déjà ouverts survivent aux
+        # redéploiements. Génération : openssl rand -base64 32
+        - NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY}
     container_name: callcenter-frontend
     ports:
       - "3000:3000"

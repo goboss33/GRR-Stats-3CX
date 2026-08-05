@@ -30,6 +30,15 @@ ARG NEXTAUTH_URL="http://localhost:3000"
 ARG NEXTAUTH_SECRET
 ARG INTERNAL_API_URL="http://localhost:3000"
 ARG INTERNAL_API_KEY
+# Identifiants d'actions serveur STABLES d'un build à l'autre. Sans cette clé,
+# chaque build les régénère tous : un onglet ouvert au moment d'un redéploiement
+# poste des identifiants inconnus du nouveau conteneur -> « Failed to find
+# Server Action » côté serveur, et côté client une réponse HTML que le runtime
+# ne sait pas interpréter : le chargement tourne pour toujours.
+# Valeur attendue : 32 octets en base64 (openssl rand -base64 32), fournie par
+# l'environnement de la stack. Absente, on retombe sur le comportement d'avant
+# (clé aléatoire par build) sans casser la construction.
+ARG NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
 
 # Propagate build args to runtime environment variables
 ENV INTERNAL_API_URL=${INTERNAL_API_URL}
@@ -42,8 +51,9 @@ COPY . .
 RUN npx prisma generate
 
 # Build the application
+# (une clé vide doit être retirée de l'environnement, sinon Next la refuse)
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+RUN [ -n "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" ] || unset NEXT_SERVER_ACTIONS_ENCRYPTION_KEY; npm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
