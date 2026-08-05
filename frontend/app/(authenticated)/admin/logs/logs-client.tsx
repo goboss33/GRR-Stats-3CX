@@ -3,7 +3,7 @@
 import { getSelectedServer } from "@/lib/selected-server";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Download, FileText, Columns3, Code } from "lucide-react";
 import { format } from "date-fns";
 import { useUrlPeriod, useUrlOrigin, applyPeriodToParams } from "@/lib/url-state";
@@ -101,7 +101,6 @@ const defaultColumnVisibility: ColumnVisibility = {
 };
 
 export default function AdminLogsPage() {
-    const router = useRouter();
     const searchParams = useSearchParams();
 
     // Parse URL params for filters
@@ -384,9 +383,14 @@ export default function AdminLogsPage() {
             );
         }
 
-        router.replace(`/admin/logs?${params.toString()}`, { scroll: false });
+        // Écriture SUPERFICIELLE (pas de router.replace) : l'URL est un reflet
+        // de l'état, les données arrivent déjà par l'action serveur. Une vraie
+        // navigation déclencherait en plus un aller-retour RSC (garde d'auth
+        // comprise) concurrent du POST de données — inutile, et sur un serveur
+        // lent la réponse de l'action peut se perdre dans cette course :
+        // chargement infini. Next synchronise useSearchParams sur replaceState.
+        window.history.replaceState(null, "", `/admin/logs?${params.toString()}`);
     }, [
-        router,
         dateRange,
         currentPage,
         selectedSens,

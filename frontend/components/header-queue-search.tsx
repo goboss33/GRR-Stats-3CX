@@ -48,7 +48,9 @@ export function HeaderQueueSearch() {
         if (pathname.startsWith("/admin/logs")) {
             const params = new URLSearchParams(searchParams.toString());
             params.set("queue", queueNumber);
-            router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+            // Superficiel : changer de vue est un changement d'état de la
+            // page, les données suivent par action serveur (cf. lib/url-state).
+            window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
             return;
         }
         // Ailleurs : navigation vers la statistique du groupe. Seul le

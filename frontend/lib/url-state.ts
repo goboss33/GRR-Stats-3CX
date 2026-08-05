@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { useRouter, useSearchParams, usePathname, type ReadonlyURLSearchParams } from "next/navigation";
+import { useSearchParams, usePathname, type ReadonlyURLSearchParams } from "next/navigation";
 import { startOfMonth, endOfMonth, startOfDay, endOfDay, parseISO, format, isValid, subMonths } from "date-fns";
 
 /**
@@ -79,7 +79,6 @@ export function applyPeriodToParams(params: URLSearchParams, period: Period): vo
  * doit ramener à l'écran précédent, pas à la période précédente.
  */
 export function useUrlPeriod(): Period & { setPeriod: (period: Period) => void } {
-    const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
@@ -91,11 +90,16 @@ export function useUrlPeriod(): Period & { setPeriod: (period: Period) => void }
     const period = useMemo(() => periodFromIso(start, end), [start, end]);
 
     const query = searchParams.toString();
+    // Écriture SUPERFICIELLE : changer la période est un changement d'état,
+    // pas une navigation — les écrans rechargent leurs données par actions
+    // serveur. router.replace déclencherait un aller-retour RSC concurrent de
+    // ces actions (course perdante sur un serveur lent : réponse jetée,
+    // chargement infini). Next synchronise useSearchParams sur replaceState.
     const setPeriod = useCallback((next: Period) => {
         const params = new URLSearchParams(query);
         applyPeriodToParams(params, next);
-        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    }, [router, pathname, query]);
+        window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
+    }, [pathname, query]);
 
     return useMemo(() => ({ ...period, setPeriod }), [period, setPeriod]);
 }
@@ -126,18 +130,18 @@ export function originFromParam(raw: string | null): CallOrigin {
  * Un seul état, plusieurs poignées — impossible de faire mentir le header.
  */
 export function useUrlOrigin(): { origin: CallOrigin; setOrigin: (origin: CallOrigin) => void } {
-    const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
     const origin = originFromParam(searchParams.get("origin"));
 
     const query = searchParams.toString();
+    // Superficiel, comme setPeriod — même raison, même mécanique.
     const setOrigin = useCallback((next: CallOrigin) => {
         const params = new URLSearchParams(query);
         params.set("origin", next);
-        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    }, [router, pathname, query]);
+        window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
+    }, [pathname, query]);
 
     return useMemo(() => ({ origin, setOrigin }), [origin, setOrigin]);
 }
