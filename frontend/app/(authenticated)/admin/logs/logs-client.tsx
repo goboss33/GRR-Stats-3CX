@@ -4,7 +4,7 @@ import { getSelectedServer } from "@/lib/selected-server";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { RefreshCw, Download, FileText, Columns3, Code } from "lucide-react";
+import { Download, FileText, Columns3, Code } from "lucide-react";
 import { format } from "date-fns";
 import { useUrlPeriod, useUrlOrigin, applyPeriodToParams } from "@/lib/url-state";
 
@@ -15,6 +15,8 @@ import { Pagination } from "@/components/pagination";
 import { CallChainModal } from "@/components/call-chain-modal";
 import { SqlQueryModal } from "@/components/sql-query-modal";
 import { ActiveFilters } from "@/components/active-filters";
+import { Tip } from "@/components/ui/tooltip";
+import { useRegisterHeaderRefresh } from "@/components/header-scope";
 import {
     Popover,
     PopoverContent,
@@ -477,9 +479,10 @@ export default function AdminLogsPage() {
         });
     };
 
-    const handleRefresh = () => {
-        fetchData();
-    };
+    // « Actualiser » vit dans le header de l'application, comme sur le
+    // tableau de bord et les statistiques : la page déclare son rechargement,
+    // le bouton du header s'anime tant que la requête court.
+    useRegisterHeaderRefresh(fetchData, isLoading);
 
     const handleExportCSV = async () => {
         setIsExporting(true);
@@ -663,101 +666,6 @@ export default function AdminLogsPage() {
 
     return (
         <div className="space-y-4">
-            {/* Titre porté par le header de l'application : seules les
-                actions de l'écran restent ici. */}
-            <div className="flex items-center justify-end">
-                <div className="flex items-center gap-2">
-                    {/* Column visibility toggle */}
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="outline" size="sm" className="gap-2">
-                                <Columns3 className="h-4 w-4" />
-                                Colonnes
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-48 p-2" align="end">
-                            <p className="text-xs font-medium text-slate-600 mb-2 px-1">Colonnes visibles</p>
-                            <div className="space-y-1">
-                                {([
-                                    { key: "callHistoryId", label: "ID" },
-                                    { key: "segmentCount", label: "Segments" },
-                                    { key: "dateTime", label: "Date" },
-                                    { key: "timeSlot", label: "Heure" },
-                                    { key: "caller", label: "Appelant" },
-                                    { key: "callee", label: "Destinataire" },
-                                    { key: "handledBy", label: "Traité par" },
-                                    { key: "queues", label: "Queue(s)" },
-                                    { key: "journey", label: "Parcours" },
-                                    { key: "provenance", label: "Provenance" },
-                                    { key: "sens", label: "Sens" },
-                                    { key: "status", label: "Statut" },
-                                    { key: "duration", label: "Durée" },
-                                    { key: "waitTime", label: "Attente" },
-                                ] as { key: keyof ColumnVisibility; label: string }[]).map((col) => (
-                                    <div key={col.key} className="flex items-center gap-2 px-1 py-1">
-                                        <Checkbox
-                                            id={`col-${col.key}`}
-                                            checked={columnVisibility[col.key]}
-                                            onCheckedChange={(checked) =>
-                                                setColumnVisibility({ ...columnVisibility, [col.key]: checked as boolean })
-                                            }
-                                        />
-                                        <Label htmlFor={`col-${col.key}`} className="text-sm cursor-pointer">
-                                            {col.label}
-                                        </Label>
-                                    </div>
-                                ))}
-                            </div>
-                        </PopoverContent>
-                    </Popover>
-
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRefresh}
-                        disabled={isLoading}
-                        className="gap-2"
-                    >
-                        <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-                        Actualiser
-                    </Button>
-
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={isExporting || isLoading}
-                                className="gap-2"
-                            >
-                                <Download className={`h-4 w-4 ${isExporting ? "animate-pulse" : ""}`} />
-                                CSV
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={handleExportCSV}>
-                                <FileText className="h-4 w-4 mr-2" />
-                                Export complet
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={handleExportIdsOnly}>
-                                <FileText className="h-4 w-4 mr-2" />
-                                IDs uniquement
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleShowSQL}
-                        className="gap-2"
-                    >
-                        <Code className="h-4 w-4" />
-                        SQL
-                    </Button>
-                </div>
-            </div>
-
             {/* Active Filters Badges */}
             <ActiveFilters
                 dateRange={dateRange}
@@ -781,17 +689,107 @@ export default function AdminLogsPage() {
                 onResetAll={handleResetAllFilters}
             />
 
-            {/* Results Info */}
-            {data && (
-                <div className="flex items-center justify-between text-sm text-slate-600">
-                    <span>
-                        <span className="font-medium">{data.totalCount.toLocaleString()}</span> appels trouvés
-                    </span>
+            {/* Ligne de synthèse : le compte de résultats, flanqué des outils
+                d'écran en icônes discrètes (colonnes visibles, export CSV,
+                requête SQL). Plus de bouton « Actualiser » local : c'est
+                celui du header de l'application qui recharge cet écran. */}
+            <div className="flex items-center justify-between text-sm text-slate-600">
+                <div className="flex items-center gap-2">
+                    {data && (
+                        <span>
+                            <span className="font-medium">{data.totalCount.toLocaleString()}</span> appels trouvés
+                        </span>
+                    )}
+                    <div className="flex items-center gap-0.5">
+                        <Popover>
+                            <Tip content="Choisir les colonnes visibles">
+                                <PopoverTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-slate-700">
+                                        <Columns3 className="h-4 w-4" />
+                                    </Button>
+                                </PopoverTrigger>
+                            </Tip>
+                            <PopoverContent className="w-48 p-2" align="start">
+                                <p className="text-xs font-medium text-slate-600 mb-2 px-1">Colonnes visibles</p>
+                                <div className="space-y-1">
+                                    {([
+                                        { key: "callHistoryId", label: "ID" },
+                                        { key: "segmentCount", label: "Segments" },
+                                        { key: "dateTime", label: "Date" },
+                                        { key: "timeSlot", label: "Heure" },
+                                        { key: "caller", label: "Appelant" },
+                                        { key: "callee", label: "Destinataire" },
+                                        { key: "handledBy", label: "Traité par" },
+                                        { key: "queues", label: "Queue(s)" },
+                                        { key: "journey", label: "Parcours" },
+                                        { key: "provenance", label: "Provenance" },
+                                        { key: "sens", label: "Sens" },
+                                        { key: "status", label: "Statut" },
+                                        { key: "duration", label: "Durée" },
+                                        { key: "waitTime", label: "Attente" },
+                                    ] as { key: keyof ColumnVisibility; label: string }[]).map((col) => (
+                                        <div key={col.key} className="flex items-center gap-2 px-1 py-1">
+                                            <Checkbox
+                                                id={`col-${col.key}`}
+                                                checked={columnVisibility[col.key]}
+                                                onCheckedChange={(checked) =>
+                                                    setColumnVisibility({ ...columnVisibility, [col.key]: checked as boolean })
+                                                }
+                                            />
+                                            <Label htmlFor={`col-${col.key}`} className="text-sm cursor-pointer">
+                                                {col.label}
+                                            </Label>
+                                        </div>
+                                    ))}
+                                </div>
+                            </PopoverContent>
+                        </Popover>
+                        <DropdownMenu>
+                            {/* Le span garde l'infobulle vivante quand le
+                                bouton est désactivé pendant un export. */}
+                            <Tip content="Exporter en CSV">
+                                <span className="inline-flex">
+                                    <DropdownMenuTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            disabled={isExporting || isLoading}
+                                            className="h-7 w-7 text-slate-400 hover:text-slate-700"
+                                        >
+                                            <Download className={`h-4 w-4 ${isExporting ? "animate-pulse" : ""}`} />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                </span>
+                            </Tip>
+                            <DropdownMenuContent align="start">
+                                <DropdownMenuItem onClick={handleExportCSV}>
+                                    <FileText className="h-4 w-4 mr-2" />
+                                    Export complet
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={handleExportIdsOnly}>
+                                    <FileText className="h-4 w-4 mr-2" />
+                                    IDs uniquement
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                        <Tip content="Voir la requête SQL">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={handleShowSQL}
+                                className="h-7 w-7 text-slate-400 hover:text-slate-700"
+                            >
+                                <Code className="h-4 w-4" />
+                            </Button>
+                        </Tip>
+                    </div>
+                </div>
+                {data && (
                     <span>
                         Page {data.currentPage} sur {data.totalPages}
                     </span>
-                </div>
-            )}
+                )}
+            </div>
 
             {noPerimeter && (
                 <NoPerimeterNotice context="Les journaux d'appels sont filtrés selon les groupes qui vous sont attribués, et aucun ne l'est pour le moment." />
