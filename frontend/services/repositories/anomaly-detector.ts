@@ -98,6 +98,7 @@ interface PresenceRow {
     current_name: string | null;
     activity: bigint;
     last_activity_at: Date | null;
+    last_answered_at: Date | null;
 }
 
 async function computeAlerts(serverId: ServerId, windowDays: number): Promise<AnomalyAlert[]> {
@@ -154,7 +155,8 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
             COALESCE(a.extension, o.extension) AS extension,
             COALESCE(a.current_name, o.current_name) AS current_name,
             COALESCE(a.activity, 0) + COALESCE(o.activity, 0) AS activity,
-            GREATEST(a.last_at, o.last_at) AS last_activity_at
+            GREATEST(a.last_at, o.last_at) AS last_activity_at,
+            a.last_at AS last_answered_at
         FROM answered a
         FULL OUTER JOIN outbound o ON a.extension = o.extension
     `;
@@ -180,9 +182,24 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
           AND child.cdr_started_at >= ${windowStart}
         GROUP BY 1
     `;
+    // La signature doit être COURANTE, pas seulement présente dans la
+    // fenêtre : un appel DÉCROCHÉ par le poste APRÈS son dernier renvoi
+    // 'away' prouve que le statut a été corrigé entre-temps (cas réel,
+    // ext 513 : renvois jusqu'au retour, décrochés normaux ensuite) — la
+    // signature tombe, et le poste relève alors des règles ordinaires.
+    // Les appels ÉMIS ne comptent pas ici : on téléphone très bien en
+    // restant marqué Absent (cas 561), seul un appel REÇU décroché prouve
+    // que le routage est redevenu normal.
+    const lastAnsweredByExt = new Map(
+        presence.filter((r) => r.last_answered_at).map((r) => [r.extension, r.last_answered_at!]),
+    );
     const awaySignature = new Map(
         awayRows
             .filter((r) => Number(r.away_count) >= AWAY_MIN_CALLS && Number(r.away_days) >= AWAY_MIN_DAYS)
+            .filter((r) => {
+                const lastAnswered = lastAnsweredByExt.get(r.extension);
+                return !lastAnswered || lastAnswered < r.last_away_at;
+            })
             .map((r) => [r.extension, r.last_away_at]),
     );
 
