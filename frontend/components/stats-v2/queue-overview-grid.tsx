@@ -26,7 +26,8 @@ import type { CallOrigin } from "@/services/domain/call-classification";
  * que sa réponse arrive (pool borné, ~0,5 s par carte — LA MÊME requête KPI
  * que l'écran détail, pour que l'aperçu et le détail affichent les mêmes
  * chiffres par construction). Tri stable par numéro ; les groupes sans appel
- * sur la période se replient sous la grille.
+ * sur la période s'affichent comme les autres, à zéro — un zéro EST une
+ * information (arbitrage d'août 2026, exit le déplioir de pastilles).
  *
  * Les flèches de comparaison N-1 sont une SECONDE vague dans le même pool :
  * la file d'attente contient d'abord tous les chiffres N, puis les N-1 — les
@@ -136,8 +137,8 @@ export function QueueOverviewGrid({ queues, startDate, endDate, origin, onSelect
                     }
                     continue;
                 }
-                // Un groupe déjà connu vide sur la période N est replié : sa
-                // comparaison ne s'affichera nulle part, autant ne pas la payer.
+                // Un groupe vide sur la période N n'affiche pas de flèches
+                // (comparer zéro n'apporte rien) : autant ne pas payer le N-1.
                 const main = mainKpisRef.current[queueNumber];
                 if (main && main.callsReceived + main.teamDirectReceived === 0) {
                     setPrevKpisByQueue((current) => ({ ...current, [queueNumber]: "unavailable" }));
@@ -161,13 +162,7 @@ export function QueueOverviewGrid({ queues, startDate, endDate, origin, onSelect
 
     if (sorted.length === 0) return null;
 
-    // Un groupe « sans appel » ne l'est qu'une fois sa réponse arrivée.
-    const isEmpty = (q: QueueInfo) => {
-        const kpis = kpisByQueue[q.queueNumber];
-        return kpis !== undefined && kpis.callsReceived + kpis.teamDirectReceived === 0;
-    };
-    const visible = shown.filter((q) => !failed.has(q.queueNumber) && !isEmpty(q));
-    const empty = shown.filter((q) => isEmpty(q));
+    const visible = shown.filter((q) => !failed.has(q.queueNumber));
 
     return (
         <div className="space-y-4">
@@ -196,25 +191,6 @@ export function QueueOverviewGrid({ queues, startDate, endDate, origin, onSelect
                 </button>
             )}
 
-            {empty.length > 0 && (
-                <details className="text-sm text-slate-500">
-                    <summary className="cursor-pointer select-none hover:text-slate-700">
-                        {empty.length} groupe{empty.length > 1 ? "s" : ""} sans appel sur la période
-                    </summary>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                        {empty.map((q) => (
-                            <button
-                                key={q.queueNumber}
-                                type="button"
-                                onClick={() => onSelect(q.queueNumber, q.queueName)}
-                                className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-500 hover:border-blue-300 hover:text-slate-800"
-                            >
-                                {q.queueNumber} · {q.queueName}
-                            </button>
-                        ))}
-                    </div>
-                </details>
-            )}
         </div>
     );
 }
