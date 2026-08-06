@@ -30,8 +30,8 @@ import { QIcon } from "@/components/q-icon";
 import { cn } from "@/lib/utils";
 import { getSelectedServer } from "@/lib/selected-server";
 import {
-    getQueueTopology,
-    type FlowKind, type FlowNode, type DownstreamFlow, type QueueTopology,
+    getQueueTopology, getQueueJourneys,
+    type FlowKind, type FlowNode, type DownstreamFlow, type QueueTopology, type QueueJourney,
 } from "@/services/queue-topology.service";
 
 // ---- Géométrie des couloirs ----
@@ -125,9 +125,10 @@ function NodeCard({ node, side, onNavigate }: {
             </span>
             <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium leading-tight text-slate-800">{node.name}</span>
-                <span className="block text-[11px] text-slate-400">
+                <span className="block truncate text-[11px] text-slate-400">
                     {KIND_LABELS[node.kind]}
                     {"reason" in node && node.reason ? ` · ${REASON_LABELS[node.reason] ?? node.reason}` : ""}
+                    {node.via ? ` · via ${node.via}` : ""}
                 </span>
             </span>
             <span className={cn(
@@ -170,6 +171,10 @@ export function QueueFlowModal({ queueNumber, queueName, onClose }: {
 }) {
     const [topology, setTopology] = useState<QueueTopology | null>(null);
     const [loading, setLoading] = useState(false);
+    const [view, setView] = useState<"map" | "journeys">("map");
+    // Trajets types : chargés à la première ouverture de l'onglet.
+    const [journeys, setJourneys] = useState<QueueJourney[] | null>(null);
+    const [journeysFor, setJourneysFor] = useState<string | null>(null);
     // Fil d'Ariane de navigation ([0] = la file d'origine).
     const [trail, setTrail] = useState<Array<{ number: string; name: string }>>([]);
 
@@ -182,13 +187,25 @@ export function QueueFlowModal({ queueNumber, queueName, onClose }: {
     }, []);
 
     useEffect(() => {
-        if (!queueNumber) { setTopology(null); setTrail([]); return; }
+        if (!queueNumber) { setTopology(null); setTrail([]); setView("map"); setJourneys(null); setJourneysFor(null); return; }
         setTrail([{ number: queueNumber, name: queueName }]);
         load(queueNumber);
     }, [queueNumber, queueName, load]);
 
+    // Trajets types : calcul à la demande, pour la file affichée.
+    const currentNumber = trail.length > 0 ? trail[trail.length - 1].number : null;
+    useEffect(() => {
+        if (view !== "journeys" || !currentNumber || journeysFor === currentNumber) return;
+        setJourneys(null);
+        setJourneysFor(currentNumber);
+        getQueueJourneys(getSelectedServer(), currentNumber)
+            .then(setJourneys)
+            .catch(() => setJourneys([]));
+    }, [view, currentNumber, journeysFor]);
+
     const navigate = (num: string, name: string) => {
         setTrail((t) => [...t, { number: num, name }]);
+        setView("map");
         load(num);
     };
     const jumpTo = (index: number) => {
@@ -342,7 +359,76 @@ export function QueueFlowModal({ queueNumber, queueName, onClose }: {
                     </DialogTitle>
                 </DialogHeader>
 
-                {loading ? (
+                <div className="flex gap-1 border-b border-slate-200">
+                    {([
+                        { id: "map" as const, label: "Carte" },
+                        { id: "journeys" as const, label: "Trajets types" },
+                    ]).map((t) => (
+                        <button
+                            key={t.id}
+                            onClick={() => setView(t.id)}
+                            className={cn(
+                                "-mb-px border-b-2 px-4 py-1.5 text-sm font-medium transition-colors",
+                                view === t.id
+                                    ? "border-sky-600 text-sky-700"
+                                    : "border-transparent text-slate-500 hover:text-slate-800",
+                            )}
+                        >
+                            {t.label}
+                        </button>
+                    ))}
+                </div>
+
+                {view === "journeys" ? (
+                    <div className="min-h-[200px]">
+                        {journeys === null ? (
+                            <p className="py-16 text-center text-sm text-slate-500">Assemblage des trajets…</p>
+                        ) : journeys.length === 0 ? (
+                            <p className="py-16 text-center text-sm text-slate-500">Aucun trajet observé sur la fenêtre.</p>
+                        ) : (
+                            <div className="space-y-1.5">
+                                {journeys.map((j, idx) => (
+                                    <div key={idx} className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2">
+                                        <span className="w-16 shrink-0 pt-0.5 text-right text-sm font-semibold tabular-nums text-slate-700">
+                                            {j.count.toLocaleString("fr-CH")} ×
+                                        </span>
+                                        <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] leading-tight">
+                                            {j.steps.map((step, i) => {
+                                                const isCurrent = topology !== null
+                                                    && (step === `File ${topology.queueName}` || step === `File ${topology.queueNumber}`);
+                                                return (
+                                                    <span key={i} className="flex items-center gap-1.5">
+                                                        {i > 0 && <span className="text-slate-300">→</span>}
+                                                        <span className={cn(
+                                                            "rounded-md border px-1.5 py-0.5",
+                                                            isCurrent
+                                                                ? "border-sky-300 bg-sky-50 font-semibold text-sky-800"
+                                                                : "border-slate-200 bg-white text-slate-600",
+                                                        )}>
+                                                            {step}
+                                                        </span>
+                                                    </span>
+                                                );
+                                            })}
+                                            <span className="text-slate-300">→</span>
+                                            <span className={cn(
+                                                "rounded-md px-1.5 py-0.5 font-medium",
+                                                j.answered ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700",
+                                            )}>
+                                                {j.answered ? "Répondu" : "Non abouti"}
+                                            </span>
+                                        </span>
+                                    </div>
+                                ))}
+                                <p className="pt-1 text-[11px] text-slate-400">
+                                    Les 12 chemins les plus empruntés parmi les appels traversant cette file
+                                    ({topology?.windowDays ?? 90} jours). Postes anonymisés en « Poste direct » ;
+                                    « Répondu » = un poste a décroché quelque part dans l'appel.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                ) : loading ? (
                     <p className="py-16 text-center text-sm text-slate-500">Analyse des 90 derniers jours…</p>
                 ) : topology === null ? (
                     <p className="py-16 text-center text-sm text-slate-500">Impossible de déduire la topologie de cette file.</p>

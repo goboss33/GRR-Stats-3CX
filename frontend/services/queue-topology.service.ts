@@ -19,6 +19,14 @@
  *   répondu / routé / raccroché / autre se referme sur le total des passages
  *   (conservation des flux : 5410+110+706+2 ≈ 6229 sur la sonde).
  * - Le nom des scripts vit dans participant_name, pas dn_name.
+ * - Les SCRIPTS SONT TRAVERSÉS : un script est une rotule de routage, pas une
+ *   destination — on suit son continued_in jusqu'à l'atterrissage réel et le
+ *   script devient une étiquette « via » sur la route (vérifié : le script de
+ *   débordement de la 993 atterrit sur la file 900 pour 666 passages). Même
+ *   traitement en amont (le hop d'avant le script). Un script sans
+ *   continuation reste affiché tel quel (messagerie, terminus).
+ * - Un parent de type 'unknown' est un SDA : le segment d'arrivée de l'appel
+ *   (call_init) porte le numéro composé.
  *
  * Ces chiffres sont des FLUX BRUTS PAR PASSAGE : sans les règles de
  * classement, sans le grain « appel », sans filtre de provenance — ils ne
@@ -42,6 +50,15 @@ const TOP_PER_KIND = 5;
 
 const CACHE_TTL_MS = 10 * 60_000;
 const topologyCache = new Map<string, { data: QueueTopology; fetchedAt: number }>();
+const journeysCache = new Map<string, { data: QueueJourney[]; fetchedAt: number }>();
+
+/** Un trajet type : la séquence des étapes réellement empruntées par N appels. */
+export interface QueueJourney {
+    /** Les étapes, dans l'ordre (« SDA », « Poste direct », « rrpully_gerance63.Main », « File RR PULLY Gérance 63 »…). */
+    steps: string[];
+    answered: boolean;
+    count: number;
+}
 
 export type FlowKind = "did" | "script" | "ring_group" | "extension" | "queue" | "ivr" | "direct_dial" | "external" | "other";
 
@@ -54,6 +71,8 @@ export interface FlowNode {
     lastSeenAt: string | null;
     /** Regroupement de la longue traîne (« N autres SDA ») : le détail au survol. */
     grouped?: Array<{ name: string; volume: number }>;
+    /** Script traversé pour atteindre ce nœud (rotule de routage). */
+    via?: string;
 }
 
 export interface DownstreamFlow extends FlowNode {
@@ -95,6 +114,9 @@ interface UpstreamRow {
     parent_type: string | null;
     parent_number: string | null;
     parent_name: string | null;
+    gp_type: string | null;
+    gp_number: string | null;
+    gp_name: string | null;
     creation_method: string | null;
     creation_forward_reason: string | null;
     trunk_did: string | null;
@@ -107,6 +129,9 @@ interface DownstreamRow {
     next_type: string | null;
     next_number: string | null;
     next_name: string | null;
+    land_type: string | null;
+    land_number: string | null;
+    land_name: string | null;
     n: bigint;
     last_at: Date;
 }
@@ -134,14 +159,18 @@ async function queryOutcomes(serverId: ServerId, queueNumber: string, since: Dat
                    n.destination_dn_type AS next_type,
                    n.destination_dn_number AS next_number,
                    COALESCE(NULLIF(n.destination_dn_name, ''), NULLIF(n.destination_participant_name, ''), n.destination_dn_number, '(sans nom)') AS next_name,
+                   l.destination_dn_type AS land_type,
+                   l.destination_dn_number AS land_number,
+                   COALESCE(NULLIF(l.destination_dn_name, ''), NULLIF(l.destination_participant_name, ''), l.destination_dn_number) AS land_name,
                    COUNT(*) AS n,
                    MAX(q.cdr_started_at) AS last_at
             FROM cdroutput q
             JOIN cdroutput n ON n.cdr_id = q.continued_in_cdr_id
+            LEFT JOIN cdroutput l ON n.destination_dn_type = 'script' AND l.cdr_id = n.continued_in_cdr_id
             WHERE q.destination_dn_number = ${queueNumber} AND q.destination_dn_type = 'queue'
               AND q.cdr_started_at >= ${since}
               AND COALESCE(q.termination_reason_details, '') <> 'polling'
-            GROUP BY 1, 2, 3, 4 ORDER BY 5 DESC
+            GROUP BY 1, 2, 3, 4, 5, 6, 7 ORDER BY 8 DESC
         `,
     ]);
     return { balance: balance[0], routed };
@@ -202,15 +231,19 @@ async function computeTopology(serverId: ServerId, queueNumber: string): Promise
             SELECT p.destination_dn_type AS parent_type,
                    p.destination_dn_number AS parent_number,
                    COALESCE(NULLIF(p.destination_dn_name, ''), NULLIF(p.destination_participant_name, ''), p.destination_dn_number) AS parent_name,
+                   gp.destination_dn_type AS gp_type,
+                   gp.destination_dn_number AS gp_number,
+                   COALESCE(NULLIF(gp.destination_dn_name, ''), NULLIF(gp.destination_participant_name, ''), gp.destination_dn_number) AS gp_name,
                    q.creation_method, q.creation_forward_reason,
                    q.source_participant_trunk_did AS trunk_did,
                    COUNT(*) AS n,
                    MAX(q.cdr_started_at) AS last_at
             FROM cdroutput q
             LEFT JOIN cdroutput p ON p.cdr_id = q.originating_cdr_id
+            LEFT JOIN cdroutput gp ON p.destination_dn_type = 'script' AND gp.cdr_id = p.originating_cdr_id
             WHERE q.destination_dn_number = ${queueNumber} AND q.destination_dn_type = 'queue'
               AND q.cdr_started_at >= ${flowSince}
-            GROUP BY 1, 2, 3, 4, 5, 6
+            GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
         `,
         queryOutcomes(serverId, queueNumber, flowSince),
         // Membres (12 mois) avec répondus (fenêtre de flux) et dernière sollicitation.
@@ -250,7 +283,16 @@ async function computeTopology(serverId: ServerId, queueNumber: string): Promise
         let kind: FlowKind;
         let name: string;
         let number: string | null = null;
-        if (r.parent_type === null) {
+        let via: string | undefined;
+        // Le hop affiché : le grand-parent quand le parent est un script
+        // traversable (le script devient l'étiquette « via »).
+        const viaScript = r.parent_type === "script" && r.gp_type !== null;
+        const hopType = viaScript ? r.gp_type : r.parent_type;
+        const hopNumber = viaScript ? r.gp_number : r.parent_number;
+        const hopName = viaScript ? r.gp_name : r.parent_name;
+        if (viaScript) via = r.parent_name ?? "script";
+
+        if (hopType === null) {
             // Racine : appel arrivé directement sur la file — SDA (by_did) ou
             // numérotation interne du numéro de file.
             if (r.creation_forward_reason === "by_did" && r.trunk_did) {
@@ -263,20 +305,24 @@ async function computeTopology(serverId: ServerId, queueNumber: string): Promise
                 kind = "other";
                 name = r.creation_method ? `Arrivée ${r.creation_method}` : "Origine inconnue";
             }
+        } else if (hopType === "unknown") {
+            // Segment d'arrivée de l'appel (call_init) : son numéro EST le SDA.
+            kind = "did";
+            name = hopName || hopNumber || r.trunk_did || "SDA";
         } else {
-            kind = kindOfType(r.parent_type);
-            name = r.parent_name || r.parent_number || "(sans nom)";
-            number = r.parent_number;
-            if (kind === "script" && !r.parent_name) name = "Script";
+            kind = kindOfType(hopType);
+            name = hopName || hopNumber || "(sans nom)";
+            number = hopNumber;
+            if (kind === "script" && !hopName) name = "Script";
         }
-        const key = `${kind}|${number ?? name}`;
+        const key = `${kind}|${number ?? name}|${via ?? ""}`;
         const existing = upstreamMap.get(key);
         const lastAt = r.last_at.toISOString();
         if (existing) {
             existing.volume += Number(r.n);
             if (existing.lastSeenAt === null || lastAt > existing.lastSeenAt) existing.lastSeenAt = lastAt;
         } else {
-            upstreamMap.set(key, { kind, number, name, volume: Number(r.n), lastSeenAt: lastAt });
+            upstreamMap.set(key, { kind, number, name, volume: Number(r.n), lastSeenAt: lastAt, via });
         }
     }
     const upstream = foldLongTail([...upstreamMap.values()]);
@@ -284,8 +330,15 @@ async function computeTopology(serverId: ServerId, queueNumber: string): Promise
     // ---- Aval : renvois groupés par destination (raison dominante affichée) ----
     const downstreamMap = new Map<string, DownstreamFlow>();
     for (const r of outcomes.routed) {
-        const kind = kindOfType(r.next_type);
-        const key = `${kind}|${r.next_number ?? r.next_name}`;
+        // Script AVEC atterrissage : le nœud est la destination réelle, le
+        // script n'est qu'une étiquette de route. Sans atterrissage (script
+        // terminal, messagerie…), le script reste le nœud.
+        const landed = r.next_type === "script" && r.land_type !== null;
+        const kind = landed ? kindOfType(r.land_type) : kindOfType(r.next_type);
+        const number = landed ? r.land_number : r.next_number;
+        const name = (landed ? r.land_name : r.next_name) || "(sans nom)";
+        const via = landed ? (r.next_name ?? undefined) : undefined;
+        const key = `${kind}|${number ?? name}|${via ?? ""}`;
         const existing = downstreamMap.get(key);
         const lastAt = r.last_at.toISOString();
         if (existing) {
@@ -294,11 +347,12 @@ async function computeTopology(serverId: ServerId, queueNumber: string): Promise
         } else {
             downstreamMap.set(key, {
                 kind,
-                number: r.next_number,
-                name: r.next_name || "(sans nom)",
+                number,
+                name,
                 volume: Number(r.n),
                 lastSeenAt: lastAt,
                 reason: r.reason ?? "renvoi",
+                via,
             });
         }
     }
@@ -356,6 +410,91 @@ async function computeTopology(serverId: ServerId, queueNumber: string): Promise
         downstream,
         agents,
     };
+}
+
+/**
+ * Trajets types : les chemins complets réellement empruntés par les appels
+ * qui traversent la file — LA réponse à « dans quel ordre ça se passe ».
+ *
+ * Chaque appel est réduit à sa séquence d'étapes (les sollicitations d'agents
+ * exclues : ce sont les rouages internes des files ; les étapes consécutives
+ * identiques fusionnées), puis les chemins identiques sont comptés. Les
+ * postes sont anonymisés en « Poste direct » — sinon chaque extension
+ * fragmenterait les chemins — mais scripts, files et groupes gardent leur nom :
+ * ce sont eux, la structure. « Répondu » = au moins un poste a décroché
+ * quelque part dans l'appel.
+ */
+async function computeJourneys(serverId: ServerId, queueNumber: string): Promise<QueueJourney[]> {
+    const prisma = getPrismaCdr(serverId);
+    const since = new Date(Date.now() - FLOW_WINDOW_DAYS * 24 * 3600 * 1000);
+    const rows = await prisma.$queryRaw<Array<{ path: string; answered: boolean; n: bigint }>>`
+        WITH calls AS (
+            SELECT DISTINCT call_history_id
+            FROM cdroutput
+            WHERE destination_dn_number = ${queueNumber} AND destination_dn_type = 'queue'
+              AND cdr_started_at >= ${since}
+              AND call_history_id IS NOT NULL
+        ),
+        segs AS (
+            SELECT c.call_history_id, c.cdr_started_at, c.cdr_id,
+                CASE c.destination_dn_type
+                    WHEN 'queue' THEN 'File ' || COALESCE(NULLIF(c.destination_dn_name, ''), c.destination_dn_number)
+                    WHEN 'script' THEN COALESCE(NULLIF(c.destination_participant_name, ''), NULLIF(c.destination_dn_name, ''), 'Script')
+                    WHEN 'ring_group_ring_all' THEN 'Groupe ' || COALESCE(NULLIF(c.destination_dn_name, ''), c.destination_dn_number, '')
+                    WHEN 'ivr' THEN 'IVR'
+                    WHEN 'extension' THEN 'Poste direct'
+                    WHEN 'provider' THEN 'Externe'
+                    WHEN 'unknown' THEN 'SDA'
+                    ELSE COALESCE(c.destination_dn_type, '?')
+                END AS token
+            FROM cdroutput c
+            JOIN calls ON calls.call_history_id = c.call_history_id
+            WHERE COALESCE(c.creation_forward_reason, '') <> 'polling'
+        ),
+        dedup AS (
+            SELECT call_history_id, cdr_started_at, cdr_id, token,
+                   LAG(token) OVER (PARTITION BY call_history_id ORDER BY cdr_started_at, cdr_id) AS prev
+            FROM segs
+        ),
+        paths AS (
+            SELECT call_history_id,
+                   STRING_AGG(token, '→' ORDER BY cdr_started_at, cdr_id) AS path
+            FROM dedup
+            WHERE prev IS DISTINCT FROM token
+            GROUP BY call_history_id
+        ),
+        answered AS (
+            SELECT DISTINCT c.call_history_id
+            FROM cdroutput c
+            JOIN calls ON calls.call_history_id = c.call_history_id
+            WHERE c.destination_dn_type = 'extension' AND c.cdr_answered_at IS NOT NULL
+        )
+        SELECT p.path,
+               (a.call_history_id IS NOT NULL) AS answered,
+               COUNT(*) AS n
+        FROM paths p
+        LEFT JOIN answered a ON a.call_history_id = p.call_history_id
+        GROUP BY 1, 2 ORDER BY 3 DESC
+        LIMIT 12
+    `;
+    return rows.map((r) => ({
+        // Les noms 3CX de groupes commencent souvent déjà par « Groupe » :
+        // éviter le doublon avec notre préfixe.
+        steps: r.path.split("→").map((step) => step.replace(/^Groupe Groupe /, "Groupe ")),
+        answered: r.answered,
+        count: Number(r.n),
+    }));
+}
+
+/** Trajets types d'une file — ADMIN uniquement, même cache que la topologie. */
+export async function getQueueJourneys(serverId: ServerId, queueNumber: string): Promise<QueueJourney[]> {
+    await requireActionRole(["ADMIN"]);
+    const key = `${serverId}|${queueNumber}`;
+    const cached = journeysCache.get(key);
+    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.data;
+    const data = await computeJourneys(serverId, queueNumber);
+    journeysCache.set(key, { data, fetchedAt: Date.now() });
+    return data;
 }
 
 /** Topologie d'une file — ADMIN uniquement (l'onglet Files l'est déjà). */
