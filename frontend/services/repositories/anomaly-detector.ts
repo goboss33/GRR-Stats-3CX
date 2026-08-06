@@ -65,8 +65,12 @@ export type AnomalyAlert = {
     // ---- Preuves (l'écran de détail les montre au clic sur la ligne) ----
     /** Dernier signe de vie du poste (appel décroché ou émis) sur la fenêtre. */
     lastActivityAt?: string | null;
-    /** Dernier renvoi pour absence — le « signal » des alertes Absent. */
+    /** Dernier renvoi pour absence. */
     lastAwayAt?: string | null;
+    /** Début de l'épisode d'absence COURANT : premier renvoi 'away' postérieur
+     *  au dernier appel décroché du poste (recherche sur AWAY_LOOKBACK_DAYS).
+     *  C'est le « depuis quand il renvoie ses appels » de l'écran. */
+    awaySince?: string | null;
     /** Les renvois pour absence de la fenêtre (les plus récents d'abord). */
     awayCalls?: Array<{ at: string; callHistoryId: string }>;
     /** Sollicitations distribuées par la file sur la fenêtre (0 = file muette). */
@@ -92,6 +96,10 @@ const AWAY_MIN_DAYS = 3;
  *  — assez long pour survivre à un week-end, assez court pour qu'un départ en
  *  vacances (activité qui cesse, renvois qui continuent) se taise vite. */
 const AWAY_PRESENCE_FRESH_DAYS = 4;
+
+/** Recherche du DÉBUT de l'épisode d'absence courant : on remonte jusque-là
+ *  pour trouver le premier renvoi postérieur au dernier appel décroché. */
+const AWAY_LOOKBACK_DAYS = 90;
 
 const CACHE_TTL_MS = 10 * 60_000;
 const alertsCache = new Map<string, { alerts: AnomalyAlert[]; windowDays: number; fetchedAt: number }>();
@@ -197,6 +205,36 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
     `;
     // Les preuves à montrer : les 8 renvois les plus récents suffisent.
     const awayDetails = new Map(awayRows.map((r) => [r.extension, r.away_calls.slice(0, 8)]));
+
+    // Début de l'épisode d'absence COURANT, au-delà de la fenêtre : premier
+    // renvoi 'away' postérieur au dernier appel décroché du poste. Si aucun
+    // décroché sur la période de recherche, le premier renvoi connu fait foi
+    // (« absent depuis au moins... »).
+    const lookbackStart = new Date(Date.now() - AWAY_LOOKBACK_DAYS * 24 * 3600 * 1000);
+    const awaySinceRows = await prisma.$queryRaw<Array<{ extension: string; since: Date }>>`
+        WITH last_answered AS (
+            SELECT destination_dn_number AS extension, MAX(cdr_started_at) AS at
+            FROM cdroutput
+            WHERE destination_dn_type = 'extension'
+              AND cdr_answered_at IS NOT NULL
+              AND cdr_started_at >= ${lookbackStart}
+            GROUP BY 1
+        ),
+        bounces AS (
+            SELECT parent.destination_dn_number AS extension, child.cdr_started_at AS at
+            FROM cdroutput child
+            JOIN cdroutput parent ON child.originating_cdr_id = parent.cdr_id
+            WHERE child.creation_forward_reason = 'away'
+              AND parent.destination_dn_type = 'extension'
+              AND child.cdr_started_at >= ${lookbackStart}
+        )
+        SELECT b.extension, MIN(b.at) AS since
+        FROM bounces b
+        LEFT JOIN last_answered la ON la.extension = b.extension
+        WHERE la.at IS NULL OR b.at > la.at
+        GROUP BY b.extension
+    `;
+    const awaySince = new Map(awaySinceRows.map((r) => [r.extension, r.since]));
     // La signature doit être COURANTE, pas seulement présente dans la
     // fenêtre : un appel DÉCROCHÉ par le poste APRÈS son dernier renvoi
     // 'away' prouve que le statut a été corrigé entre-temps (cas réel,
@@ -348,6 +386,7 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
             lastPollAt: link.last_seen_at.toISOString(),
             lastActivityAt: activity.lastActivityAt?.toISOString() ?? null,
             lastAwayAt: awaySignature.get(extension)?.toISOString() ?? null,
+            awaySince: awaySince.get(extension)?.toISOString() ?? null,
             awayCalls: bounces.map((b) => ({ at: new Date(b.at).toISOString(), callHistoryId: b.id })),
             queuePollsInWindow: [...(pollsByQueue.get(homeQueue)?.values() ?? [])].reduce((acc, r) => acc + Number(r.polls), 0),
         });

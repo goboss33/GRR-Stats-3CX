@@ -25,14 +25,14 @@ import { getSelectedServer } from "@/lib/selected-server";
 import { getAlerts, ignoreAlert, restoreAlert, type IgnoredAlert } from "@/services/notifications.service";
 import type { AnomalyAlert } from "@/services/repositories/anomaly-detector";
 
-/** Le « Q » bleu de la 3CX — l'icône que les agents connaissent. */
-function QueueBadge({ off }: { off?: boolean }) {
+/** Le « Q » bleu de la 3CX — l'icône que les agents connaissent : grand,
+ *  fin, sans fond, dans le bleu exact de l'interface. */
+function QueueBadge() {
     return (
         <span
-            className={cn(
-                "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[13px] font-black leading-none",
-                off ? "bg-slate-200 text-slate-400" : "bg-sky-100 text-sky-600",
-            )}
+            aria-hidden
+            className="inline-block shrink-0 text-[22px] font-light leading-none"
+            style={{ color: "#0098C9" }}
         >
             Q
         </span>
@@ -58,27 +58,38 @@ function TypeCell({ type }: { type: AnomalyAlert["type"] }) {
     }
     return (
         <span className="inline-flex items-center gap-2 text-sm text-slate-700">
-            <QueueBadge off />
+            <QueueBadge />
             Déconnecté de la file d'attente
         </span>
     );
 }
 
-/** Le « signal » varie selon le type : sollicitation de file pour les
- *  déconnexions, renvoi pour absence pour les statuts Absent. */
+/** Le « signal » varie selon le type : DURÉE de l'épisode d'absence pour les
+ *  statuts Absent (depuis quand il renvoie ses appels — plus parlant que la
+ *  date du dernier renvoi), dernière sollicitation pour les déconnexions. */
 function SignalCell({ alert }: { alert: AnomalyAlert }) {
-    const isAway = alert.type === "away_forgotten";
-    const at = isAway ? alert.lastAwayAt : alert.lastPollAt;
-    if (!at) return <span className="text-slate-400">—</span>;
+    if (alert.type === "away_forgotten") {
+        const since = alert.awaySince ?? alert.lastAwayAt;
+        if (!since) return <span className="text-slate-400">—</span>;
+        return (
+            <Tip content={`Premier renvoi de l'épisode : ${format(new Date(since), "dd/MM/yyyy HH:mm", { locale: fr })}`}>
+                <span>
+                    <span className="text-slate-700">
+                        depuis {formatDistanceToNow(new Date(since), { locale: fr })}
+                    </span>
+                    <span className="block text-xs text-slate-400">renvoie ses appels (Absent)</span>
+                </span>
+            </Tip>
+        );
+    }
+    if (!alert.lastPollAt) return <span className="text-slate-400">—</span>;
     return (
-        <Tip content={format(new Date(at), "dd/MM/yyyy HH:mm", { locale: fr })}>
+        <Tip content={format(new Date(alert.lastPollAt), "dd/MM/yyyy HH:mm", { locale: fr })}>
             <span>
                 <span className="text-slate-700">
-                    {formatDistanceToNow(new Date(at), { addSuffix: true, locale: fr })}
+                    {formatDistanceToNow(new Date(alert.lastPollAt), { addSuffix: true, locale: fr })}
                 </span>
-                <span className="block text-xs text-slate-400">
-                    {isAway ? "dernier renvoi Absent" : "dernière sollicitation file"}
-                </span>
+                <span className="block text-xs text-slate-400">dernière sollicitation file</span>
             </span>
         </Tip>
     );
@@ -158,6 +169,11 @@ function EvidenceModal({ alert, onClose }: { alert: AnomalyAlert | null; onClose
                             {alert.type !== "queue_disconnected" && (
                                 <EvidenceRow label="Dernier signe de vie du poste">
                                     {fmt(alert.lastActivityAt)}
+                                </EvidenceRow>
+                            )}
+                            {alert.type === "away_forgotten" && (
+                                <EvidenceRow label="Renvoie ses appels depuis">
+                                    {fmt(alert.awaySince ?? alert.lastAwayAt)}
                                 </EvidenceRow>
                             )}
                             {alert.type === "queue_disconnected" && alert.activeMembers && (

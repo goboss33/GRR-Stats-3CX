@@ -91,9 +91,11 @@ export function HeaderNotifications() {
                                     </p>
                                     <p className="truncate text-xs text-slate-500">
                                         {a.queueName}
-                                        {a.lastPollAt && (
-                                            <> · dernière sollicitation {formatDistanceToNow(new Date(a.lastPollAt), { addSuffix: true, locale: fr })}</>
-                                        )}
+                                        {a.type === "away_forgotten" && (a.awaySince ?? a.lastAwayAt)
+                                            ? <> · renvoie ses appels depuis {formatDistanceToNow(new Date((a.awaySince ?? a.lastAwayAt)!), { locale: fr })}</>
+                                            : a.lastPollAt && (
+                                                <> · dernière sollicitation {formatDistanceToNow(new Date(a.lastPollAt), { addSuffix: true, locale: fr })}</>
+                                            )}
                                     </p>
                                 </div>
                             </div>
