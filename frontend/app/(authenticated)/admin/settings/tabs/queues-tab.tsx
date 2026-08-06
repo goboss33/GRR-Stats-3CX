@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, AlertTriangle, Tag, Search, Users, CheckCircle2, Archive, Eye } from "lucide-react";
+import { Loader2, RefreshCw, AlertTriangle, Tag, Search, Users, CheckCircle2, Archive, Eye, Workflow } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { getSelectedServer } from "@/lib/selected-server";
 import { KNOWN_REGIONS } from "@/services/domain/queue-naming";
 import { QueueDetailDialog } from "@/components/queue-detail-dialog";
+import { QueueFlowModal } from "@/components/settings/queue-flow-modal";
 import { assessQueueHealth, type HealthLevel } from "@/services/domain/queue-health";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -55,6 +56,8 @@ const statusStyles: Record<QueueStatus, string> = {
 
 export function QueuesTab() {
     const [queues, setQueues] = useState<RegistryQueue[]>([]);
+    // Carte de parcours (configuration déduite) ouverte sur cette file.
+    const [flowQueue, setFlowQueue] = useState<{ number: string; name: string } | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isDiscovering, setIsDiscovering] = useState(false);
     const [search, setSearch] = useState("");
@@ -491,6 +494,17 @@ export function QueuesTab() {
                                                     : "—"}
                                             </td>
                                             <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center gap-1">
+                                                <Tip content="Parcours d'appel — configuration déduite des 90 derniers jours">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() => setFlowQueue({ number: q.queueNumber, name: q.currentName })}
+                                                        className="h-8 w-8 text-slate-400 hover:text-sky-600"
+                                                    >
+                                                        <Workflow className="h-4 w-4" />
+                                                    </Button>
+                                                </Tip>
                                                 <Select value={q.status} onValueChange={(v) => patchQueue(q.id, { status: v as QueueStatus })}>
                                                     <SelectTrigger className={cn("h-8 w-32 text-xs", statusStyles[q.status])}>
                                                         <SelectValue />
@@ -501,6 +515,7 @@ export function QueuesTab() {
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -531,6 +546,11 @@ export function QueuesTab() {
                 </div>
             )}
 
+            <QueueFlowModal
+                queueNumber={flowQueue?.number ?? null}
+                queueName={flowQueue?.name ?? ""}
+                onClose={() => setFlowQueue(null)}
+            />
             <QueueDetailDialog
                 queueId={detailQueueId}
                 serverId={getSelectedServer()}
