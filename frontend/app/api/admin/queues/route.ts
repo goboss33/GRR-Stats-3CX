@@ -34,6 +34,8 @@ export async function GET(request: NextRequest) {
                 isNew: q.reviewedAt === null,
                 // Activité réelle (CDR), et non la date figée du registre.
                 lastCallAt: q.lastCallAt,
+                // Département 3CX déduit des CDR — null si jamais observé.
+                department: q.department,
                 agents: q.agents,
                 firstSeenAt: q.firstSeenAt.toISOString(),
                 lastSeenAt: q.lastSeenAt.toISOString(),
