@@ -26,10 +26,15 @@
  *   distribution séquentielle sollicite inégalement.
  * - « statut Absent oublié » : les appels directs du poste sont renvoyés pour
  *   cause d'absence (creation_forward_reason = 'away' sur le segment enfant
- *   du renvoi) de façon répétée ET récente, alors que le poste émet de vrais
- *   appels. Une file ne sollicite pas un agent Absent : cette signature
- *   REQUALIFIE l'alerte « agent déconnecté » du même poste — même détection,
- *   diagnostic plus précis. En vacances : aucun appel émis, donc silence.
+ *   du renvoi) de façon répétée, alors que le poste montre une activité
+ *   FRAÎCHE (dernier signe de vie ≤ AWAY_PRESENCE_FRESH_DAYS). La fraîcheur
+ *   est LE discriminant des départs en vacances (cas réel, ext 651) : on
+ *   boucle ses derniers appels, on passe Absent, on part — l'activité CESSE
+ *   pendant que les renvois continuent. À l'inverse, un statut oublié au
+ *   retour (cas réel, ext 561) entrelace renvois et signes de vie. Un poste
+ *   à signature Absent n'émet JAMAIS d'alerte « déconnecté » : le statut
+ *   explique la non-sollicitation — soit Absent oublié (activité fraîche),
+ *   soit rien (vacances).
  *
  * Les noms affichés sont ceux du TITULAIRE ACTUEL du poste (dernier segment
  * connu) : une alerte décrit le présent — contrairement aux statistiques de
@@ -73,6 +78,11 @@ const AGENT_POLL_FLOOR = 5;
 const AWAY_MIN_CALLS = 3;
 const AWAY_MIN_DAYS = 3;
 
+/** Fraîcheur exigée du dernier signe de vie pour « Absent oublié » : 4 jours
+ *  — assez long pour survivre à un week-end, assez court pour qu'un départ en
+ *  vacances (activité qui cesse, renvois qui continuent) se taise vite. */
+const AWAY_PRESENCE_FRESH_DAYS = 4;
+
 const CACHE_TTL_MS = 10 * 60_000;
 const alertsCache = new Map<string, { alerts: AnomalyAlert[]; windowDays: number; fetchedAt: number }>();
 
@@ -87,6 +97,7 @@ interface PresenceRow {
     extension: string;
     current_name: string | null;
     activity: bigint;
+    last_activity_at: Date | null;
 }
 
 async function computeAlerts(serverId: ServerId, windowDays: number): Promise<AnomalyAlert[]> {
@@ -118,7 +129,8 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
                 destination_dn_number AS extension,
                 COUNT(*) AS activity,
                 (ARRAY_AGG(COALESCE(destination_dn_name, destination_participant_name)
-                           ORDER BY cdr_started_at DESC))[1] AS current_name
+                           ORDER BY cdr_started_at DESC))[1] AS current_name,
+                MAX(cdr_started_at) AS last_at
             FROM cdroutput
             WHERE destination_dn_type = 'extension'
               AND cdr_answered_at IS NOT NULL
@@ -130,7 +142,8 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
             -- poste en source — ce n'est pas un geste humain, seuls les appels
             -- réellement INITIÉS témoignent d'une présence.
             SELECT source_dn_number AS extension, COUNT(*) AS activity,
-                   (ARRAY_AGG(source_dn_name ORDER BY cdr_started_at DESC))[1] AS current_name
+                   (ARRAY_AGG(source_dn_name ORDER BY cdr_started_at DESC))[1] AS current_name,
+                   MAX(cdr_started_at) AS last_at
             FROM cdroutput
             WHERE source_dn_number IS NOT NULL
               AND creation_method = 'call_init'
@@ -140,7 +153,8 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
         SELECT
             COALESCE(a.extension, o.extension) AS extension,
             COALESCE(a.current_name, o.current_name) AS current_name,
-            COALESCE(a.activity, 0) + COALESCE(o.activity, 0) AS activity
+            COALESCE(a.activity, 0) + COALESCE(o.activity, 0) AS activity,
+            GREATEST(a.last_at, o.last_at) AS last_activity_at
         FROM answered a
         FULL OUTER JOIN outbound o ON a.extension = o.extension
     `;
@@ -173,7 +187,9 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
     );
 
     const activeByExtension = new Map(
-        presence.filter((r) => Number(r.activity) > 0).map((r) => [r.extension, r.current_name]),
+        presence
+            .filter((r) => Number(r.activity) > 0)
+            .map((r) => [r.extension, { name: r.current_name, lastActivityAt: r.last_activity_at }]),
     );
     // Postes « casés » : sollicités par au moins une file sur la fenêtre.
     const polledAnywhere = new Set(polls.map((r) => r.agent_extension));
@@ -216,16 +232,20 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
 
     // Nom affiché : le titulaire actuel du poste si connu, sinon celui du lien.
     const displayName = (extension: string, linkName: string) =>
-        activeByExtension.get(extension) || linkName || extension;
+        activeByExtension.get(extension)?.name || linkName || extension;
 
     const alerts: AnomalyAlert[] = [];
     for (const [queueNumber, team] of byQueue) {
         const queuePolls = pollsByQueue.get(queueNumber);
         const queueName = team[0].queue_name || queueNumber;
 
-        // Membres candidats à l'anomalie : actifs, mais sollicités nulle part.
+        // Membres candidats à l'anomalie : actifs, sollicités nulle part, et
+        // SANS signature Absent — le statut Absent explique à lui seul la
+        // non-sollicitation, la passe dédiée en dessous s'en charge.
         const strandedActive = team.filter(
-            (m) => !polledAnywhere.has(m.agent_extension) && activeByExtension.has(m.agent_extension),
+            (m) => !polledAnywhere.has(m.agent_extension)
+                && activeByExtension.has(m.agent_extension)
+                && !awaySignature.has(m.agent_extension),
         );
 
         if (!queuePolls || queuePolls.size === 0) {
@@ -258,21 +278,7 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
         if (totalPolls < AGENT_POLL_FLOOR) continue;
         for (const m of strandedActive) {
             if (queuePolls.has(m.agent_extension)) continue;
-            // La signature « Absent » requalifie : une file ne sollicite pas
-            // un agent Absent — le remède n'est pas de se reconnecter à la Q
-            // mais de repasser Disponible.
-            const away = awaySignature.has(m.agent_extension);
-            // Poste Absent rattaché à une AUTRE file : son alerte sort là-bas.
-            if (away && awayHomeQueue.get(m.agent_extension) !== queueNumber) continue;
-            alerts.push(away ? {
-                id: `away_forgotten:${queueNumber}:${m.agent_extension}`,
-                type: "away_forgotten",
-                queueNumber,
-                queueName,
-                agentExtension: m.agent_extension,
-                agentName: displayName(m.agent_extension, m.agent_name),
-                lastPollAt: m.last_seen_at.toISOString(),
-            } : {
+            alerts.push({
                 id: `agent_disconnected:${queueNumber}:${m.agent_extension}`,
                 type: "agent_disconnected",
                 queueNumber,
@@ -282,6 +288,28 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
                 lastPollAt: m.last_seen_at.toISOString(),
             });
         }
+    }
+
+    // Passe « Absent oublié » : une alerte par POSTE à signature Absent, sur
+    // sa file de rattachement, à condition d'un signe de vie FRAIS — c'est le
+    // discriminant des vacances : l'activité qui CESSE pendant que les
+    // renvois continuent est un départ, pas un oubli.
+    const freshLimit = new Date(Date.now() - AWAY_PRESENCE_FRESH_DAYS * 24 * 3600 * 1000);
+    for (const [extension, homeQueue] of awayHomeQueue) {
+        if (polledAnywhere.has(extension)) continue;
+        const activity = activeByExtension.get(extension);
+        if (!activity?.lastActivityAt || activity.lastActivityAt < freshLimit) continue;
+        const link = latestLink.get(`${homeQueue}:${extension}`);
+        if (!link) continue;
+        alerts.push({
+            id: `away_forgotten:${homeQueue}:${extension}`,
+            type: "away_forgotten",
+            queueNumber: homeQueue,
+            queueName: link.queue_name || homeQueue,
+            agentExtension: extension,
+            agentName: displayName(extension, link.agent_name),
+            lastPollAt: link.last_seen_at.toISOString(),
+        });
     }
 
     // Les équipes entières d'abord (plus grave), puis les statuts Absent
