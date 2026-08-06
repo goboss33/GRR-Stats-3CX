@@ -10,13 +10,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, EyeOff, PhoneOff, RotateCcw } from "lucide-react";
+import { AlertCircle, EyeOff, RotateCcw } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
 
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tip } from "@/components/ui/tooltip";
@@ -25,41 +24,40 @@ import { getSelectedServer } from "@/lib/selected-server";
 import { getAlerts, ignoreAlert, restoreAlert, type IgnoredAlert } from "@/services/notifications.service";
 import type { AnomalyAlert } from "@/services/repositories/anomaly-detector";
 
-/** Le « Q » bleu de la 3CX — l'icône que les agents connaissent : grand,
- *  fin, sans fond, dans le bleu exact de l'interface. */
-function QueueBadge() {
+/** Le « Q » de la 3CX — le glyphe exact de l'interface (SVG fourni),
+ *  couleur héritée du parent (currentColor). */
+function QIcon({ className }: { className?: string }) {
     return (
-        <span
-            aria-hidden
-            className="inline-block shrink-0 text-[22px] font-light leading-none"
-            style={{ color: "#0098C9" }}
-        >
-            Q
-        </span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" fill="currentColor" aria-hidden className={className}>
+            <path d="M160 320C160 408.4 231.6 480 320 480C348.9 480 376 472.3 399.4 458.9L327.4 372.5C316.1 358.9 317.9 338.7 331.5 327.4C345.1 316.1 365.3 317.9 376.6 331.5L447.5 416.6C467.9 389.8 480 356.3 480 320C480 231.6 408.4 160 320 160C231.6 160 160 231.6 160 320zM440.9 508.6C406 531 364.5 544 320 544C196.3 544 96 443.7 96 320C96 196.3 196.3 96 320 96C443.7 96 544 196.3 544 320C544 376.1 523.4 427.4 489.3 466.7L536.6 523.5C547.9 537.1 546.1 557.3 532.5 568.6C518.9 579.9 498.7 578.1 487.4 564.5L440.8 508.6z" />
+        </svg>
     );
 }
 
 function TypeCell({ type }: { type: AnomalyAlert["type"] }) {
     if (type === "queue_disconnected") {
+        // Fond rouge sans radius, le Q en blanc : toute la file est hors Q.
         return (
-            <Badge variant="outline" className="gap-1.5 border-red-200 bg-red-50 text-red-700">
-                <PhoneOff className="h-3.5 w-3.5" />
-                File sans agent connecté
-            </Badge>
+            <span className="inline-flex items-center gap-1.5 bg-red-500 px-2 py-1 text-xs font-semibold text-white">
+                <QIcon className="h-3.5 w-3.5 shrink-0" />
+                File déconnectée
+            </span>
         );
     }
     if (type === "away_forgotten") {
         // Le surlignage orange sans radius, comme la pastille de statut 3CX.
         return (
-            <span className="inline-block bg-orange-300 px-2 py-0.5 text-xs font-semibold text-orange-950">
+            <span className="inline-flex items-center bg-orange-300 px-2 py-1 text-xs font-semibold text-orange-950">
                 Absent
             </span>
         );
     }
     return (
-        <span className="inline-flex items-center gap-2 text-sm text-slate-700">
-            <QueueBadge />
-            Déconnecté de la file d'attente
+        <span className="inline-flex items-center gap-1.5 border border-slate-600 bg-white px-2 py-1 text-xs font-medium text-slate-700">
+            <span className="shrink-0" style={{ color: "#0098C9" }}>
+                <QIcon className="h-3.5 w-3.5" />
+            </span>
+            Déconnecté
         </span>
     );
 }
@@ -322,7 +320,7 @@ export default function AlertsClient() {
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                                <th className="px-4 py-3">Type</th>
+                                <th className="px-4 py-3 text-center">Type</th>
                                 <th className="px-4 py-3">File</th>
                                 <th className="px-4 py-3">Agent(s) concerné(s)</th>
                                 <th className="px-4 py-3">Dernier signal</th>
@@ -336,7 +334,7 @@ export default function AlertsClient() {
                                     onClick={() => setInspected(a)}
                                     className="cursor-pointer hover:bg-slate-50 transition-colors"
                                 >
-                                    <td className="px-4 py-3"><TypeCell type={a.type} /></td>
+                                    <td className="px-4 py-3 text-center"><TypeCell type={a.type} /></td>
                                     <td className="px-4 py-3">
                                         <p className="font-medium text-slate-900">{a.queueName}</p>
                                         <p className="text-xs font-mono text-slate-500">File {a.queueNumber}</p>
