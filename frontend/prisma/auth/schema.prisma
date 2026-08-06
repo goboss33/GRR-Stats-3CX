@@ -70,6 +70,22 @@ enum Role {
   AGENT
 }
 
+/// Alertes ignorées « définitivement » — GLOBAL (partagé entre lecteurs) :
+/// « ce poste a été retiré de la file » est un fait d'organisation, pas une
+/// préférence. Rien n'est perdu : les alertes étant recalculées à la lecture,
+/// ignorer = filtrer à l'affichage ; l'onglet Ignorées permet de restaurer.
+/// `alertId` = identifiant stable de l'anomalie (type:file[:poste]).
+model AlertIgnore {
+  id            String   @id @default(cuid())
+  tenantId      String
+  alertId       String
+  ignoredById   String?
+  ignoredByName String
+  createdAt     DateTime @default(now())
+
+  @@unique([tenantId, alertId])
+}
+
 model AppSettings {
   id                          String   @id @default("global")
   minSignificantDurationSec   Int      @default(1)

@@ -24,6 +24,12 @@
  * - « agent déconnecté » : la file distribue (au-dessus du plancher), mais un
  *   membre actif-nulle-part n'a reçu aucune sollicitation. « Probable » : une
  *   distribution séquentielle sollicite inégalement.
+ * - « statut Absent oublié » : les appels directs du poste sont renvoyés pour
+ *   cause d'absence (creation_forward_reason = 'away' sur le segment enfant
+ *   du renvoi) de façon répétée ET récente, alors que le poste émet de vrais
+ *   appels. Une file ne sollicite pas un agent Absent : cette signature
+ *   REQUALIFIE l'alerte « agent déconnecté » du même poste — même détection,
+ *   diagnostic plus précis. En vacances : aucun appel émis, donc silence.
  *
  * Les noms affichés sont ceux du TITULAIRE ACTUEL du poste (dernier segment
  * connu) : une alerte décrit le présent — contrairement aux statistiques de
@@ -40,7 +46,7 @@ import { logger } from "@/lib/logger";
 
 export type AnomalyAlert = {
     id: string;
-    type: "queue_disconnected" | "agent_disconnected";
+    type: "queue_disconnected" | "agent_disconnected" | "away_forgotten";
     queueNumber: string;
     queueName: string;
     /** Renseignés pour `agent_disconnected` uniquement. */
@@ -61,6 +67,11 @@ const MEMBERSHIP_HORIZON_DAYS = 365;
 /** En-dessous de ce volume de sollicitations de la file sur la fenêtre, le
  *  silence envers UN agent ne prouve rien (distribution séquentielle). */
 const AGENT_POLL_FLOOR = 5;
+
+/** Signature « Absent oublié » : au moins N renvois 'away', étalés sur au
+ *  moins M jours distincts — un après-midi d'absence ne déclenche rien. */
+const AWAY_MIN_CALLS = 3;
+const AWAY_MIN_DAYS = 3;
 
 const CACHE_TTL_MS = 10 * 60_000;
 const alertsCache = new Map<string, { alerts: AnomalyAlert[]; windowDays: number; fetchedAt: number }>();
@@ -115,10 +126,14 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
             GROUP BY 1
         ),
         outbound AS (
+            -- call_init uniquement : un renvoi automatique porte parfois le
+            -- poste en source — ce n'est pas un geste humain, seuls les appels
+            -- réellement INITIÉS témoignent d'une présence.
             SELECT source_dn_number AS extension, COUNT(*) AS activity,
                    (ARRAY_AGG(source_dn_name ORDER BY cdr_started_at DESC))[1] AS current_name
             FROM cdroutput
             WHERE source_dn_number IS NOT NULL
+              AND creation_method = 'call_init'
               AND cdr_started_at >= ${windowStart}
             GROUP BY 1
         )
@@ -129,6 +144,34 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
         FROM answered a
         FULL OUTER JOIN outbound o ON a.extension = o.extension
     `;
+    // Renvois « Absent » : segment enfant créé avec la raison 'away' depuis un
+    // segment direct non décroché du poste. On garde le volume, l'étalement en
+    // jours distincts, et si le DERNIER appel direct du poste a encore renvoyé
+    // ainsi (signature toujours courante, pas un épisode passé).
+    const awayRows = await prisma.$queryRaw<Array<{
+        extension: string;
+        away_count: bigint;
+        away_days: bigint;
+        last_away_at: Date;
+    }>>`
+        SELECT
+            parent.destination_dn_number AS extension,
+            COUNT(*) AS away_count,
+            COUNT(DISTINCT DATE(child.cdr_started_at)) AS away_days,
+            MAX(child.cdr_started_at) AS last_away_at
+        FROM cdroutput child
+        JOIN cdroutput parent ON child.originating_cdr_id = parent.cdr_id
+        WHERE child.creation_forward_reason = 'away'
+          AND parent.destination_dn_type = 'extension'
+          AND child.cdr_started_at >= ${windowStart}
+        GROUP BY 1
+    `;
+    const awaySignature = new Map(
+        awayRows
+            .filter((r) => Number(r.away_count) >= AWAY_MIN_CALLS && Number(r.away_days) >= AWAY_MIN_DAYS)
+            .map((r) => [r.extension, r.last_away_at]),
+    );
+
     const activeByExtension = new Map(
         presence.filter((r) => Number(r.activity) > 0).map((r) => [r.extension, r.current_name]),
     );
@@ -156,6 +199,19 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
     for (const m of latestLink.values()) {
         if (!byQueue.has(m.queue_number)) byQueue.set(m.queue_number, []);
         byQueue.get(m.queue_number)!.push(m);
+    }
+
+    // « Absent oublié » concerne la PERSONNE, pas chaque file : une seule
+    // alerte par poste, rattachée à sa file la plus récente (les autres files
+    // du poste n'émettent rien pour lui).
+    const awayHomeQueue = new Map<string, string>();
+    for (const m of latestLink.values()) {
+        if (!awaySignature.has(m.agent_extension)) continue;
+        const current = awayHomeQueue.get(m.agent_extension);
+        const currentLink = current ? latestLink.get(`${current}:${m.agent_extension}`) : undefined;
+        if (!currentLink || m.last_seen_at > currentLink.last_seen_at) {
+            awayHomeQueue.set(m.agent_extension, m.queue_number);
+        }
     }
 
     // Nom affiché : le titulaire actuel du poste si connu, sinon celui du lien.
@@ -202,7 +258,21 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
         if (totalPolls < AGENT_POLL_FLOOR) continue;
         for (const m of strandedActive) {
             if (queuePolls.has(m.agent_extension)) continue;
-            alerts.push({
+            // La signature « Absent » requalifie : une file ne sollicite pas
+            // un agent Absent — le remède n'est pas de se reconnecter à la Q
+            // mais de repasser Disponible.
+            const away = awaySignature.has(m.agent_extension);
+            // Poste Absent rattaché à une AUTRE file : son alerte sort là-bas.
+            if (away && awayHomeQueue.get(m.agent_extension) !== queueNumber) continue;
+            alerts.push(away ? {
+                id: `away_forgotten:${queueNumber}:${m.agent_extension}`,
+                type: "away_forgotten",
+                queueNumber,
+                queueName,
+                agentExtension: m.agent_extension,
+                agentName: displayName(m.agent_extension, m.agent_name),
+                lastPollAt: m.last_seen_at.toISOString(),
+            } : {
                 id: `agent_disconnected:${queueNumber}:${m.agent_extension}`,
                 type: "agent_disconnected",
                 queueNumber,
@@ -214,10 +284,12 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
         }
     }
 
-    // Les équipes entières d'abord (plus grave), puis par file.
+    // Les équipes entières d'abord (plus grave), puis les statuts Absent
+    // oubliés (remède simple), puis les déconnexions individuelles.
+    const typeRank = { queue_disconnected: 0, away_forgotten: 1, agent_disconnected: 2 } as const;
     alerts.sort((a, b) => (a.type === b.type
         ? a.queueNumber.localeCompare(b.queueNumber)
-        : a.type === "queue_disconnected" ? -1 : 1));
+        : typeRank[a.type] - typeRank[b.type]));
     return alerts;
 }
 

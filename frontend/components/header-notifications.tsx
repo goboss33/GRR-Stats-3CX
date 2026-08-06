@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Bell, PhoneOff, UserX } from "lucide-react";
+import { Bell, Clock, PhoneOff, UserX } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 
@@ -78,12 +78,16 @@ export function HeaderNotifications() {
                             <div key={a.id} className="flex items-start gap-3 border-b px-4 py-3 last:border-b-0">
                                 {a.type === "queue_disconnected"
                                     ? <PhoneOff className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-                                    : <UserX className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />}
+                                    : a.type === "away_forgotten"
+                                        ? <Clock className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
+                                        : <UserX className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />}
                                 <div className="min-w-0">
                                     <p className="text-sm font-medium text-slate-900">
                                         {a.type === "queue_disconnected"
                                             ? `File ${a.queueNumber} sans agent connecté`
-                                            : `${a.agentName} déconnecté de la file ${a.queueNumber}`}
+                                            : a.type === "away_forgotten"
+                                                ? `${a.agentName} en statut Absent — probablement oublié`
+                                                : `${a.agentName} déconnecté de la file ${a.queueNumber}`}
                                     </p>
                                     <p className="truncate text-xs text-slate-500">
                                         {a.queueName}
