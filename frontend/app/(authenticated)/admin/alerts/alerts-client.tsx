@@ -36,10 +36,9 @@ function QIcon({ className }: { className?: string }) {
 
 function TypeCell({ type }: { type: AnomalyAlert["type"] }) {
     if (type === "queue_disconnected") {
-        // Fond rouge sans radius, le Q en blanc : toute la file est hors Q.
+        // Fond rouge sans radius : toute la file est hors Q.
         return (
-            <span className="inline-flex items-center gap-1.5 bg-red-500 px-2 py-1 text-xs font-semibold text-white">
-                <QIcon className="h-3.5 w-3.5 shrink-0" />
+            <span className="inline-flex items-center bg-red-500 px-2 py-1 text-xs font-semibold text-white">
                 File déconnectée
             </span>
         );
