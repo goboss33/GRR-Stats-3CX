@@ -273,7 +273,10 @@ export async function getQueuesLiveActivity(serverId: ServerId): Promise<Record<
         >`
             SELECT parent.destination_dn_number AS queue_number,
                    child.destination_dn_number  AS extension,
-                   MAX(child.destination_dn_name) AS name,
+                   -- Nom ACTUEL du poste : celui de sa dernière sollicitation.
+                   -- MAX() aurait pris le dernier par ordre ALPHABÉTIQUE.
+                   (ARRAY_AGG(child.destination_dn_name
+                              ORDER BY child.cdr_started_at DESC))[1] AS name,
                    COUNT(*)::bigint             AS attempts,
                    MAX(child.cdr_started_at)    AS last_seen
             FROM cdroutput child
@@ -337,7 +340,9 @@ export async function getQueueDetail(serverId: ServerId, id: string): Promise<Qu
     const [agents, lastCall] = await Promise.all([
         prisma.$queryRaw<{ extension: string; name: string | null; attempts: bigint; last_seen: Date }[]>`
             SELECT child.destination_dn_number AS extension,
-                   MAX(child.destination_dn_name) AS name,
+                   -- Idem : le nom de la sollicitation la plus récente.
+                   (ARRAY_AGG(child.destination_dn_name
+                              ORDER BY child.cdr_started_at DESC))[1] AS name,
                    COUNT(*)::bigint              AS attempts,
                    MAX(child.cdr_started_at)     AS last_seen
             FROM cdroutput child

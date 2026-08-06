@@ -1088,13 +1088,29 @@ export async function getHourlyTrendRaw(
 // SIMPLE LOOKUPS
 // ============================================
 
+/**
+ * Nom d'une file — celui de son DERNIER appel, c'est-à-dire son nom ACTUEL.
+ *
+ * Une file renommée porte plusieurs noms dans l'historique : sans tri, la base
+ * en renvoyait un au hasard (et pouvait changer d'avis après une maintenance).
+ * L'identité d'une file est son NUMÉRO ; son nom est une étiquette, et
+ * l'étiquette qui vaut est la plus récente — un renommage désigne toujours la
+ * même équipe, contrairement à un poste réattribué à quelqu'un d'autre (là,
+ * le nom de l'époque s'impose, cf. route analytics/agents). Les journaux, eux,
+ * gardent le nom porté par chaque appel : ils racontent le passé.
+ *
+ * L'index composite (destination_dn_number, destination_dn_type,
+ * cdr_started_at) rend ce tri gratuit : parcours d'index à rebours, une ligne.
+ */
 export async function getQueueName(serverId: ServerId, queueNumber: string): Promise<string> {
     const prisma = getPrismaCdr(serverId);
-    const queueInfo = await prisma.$queryRaw<any[]>`
-        SELECT DISTINCT destination_dn_name AS queue_name
+    const queueInfo = await prisma.$queryRaw<{ queue_name: string }[]>`
+        SELECT destination_dn_name AS queue_name
         FROM cdroutput
         WHERE destination_dn_number = ${queueNumber}
           AND destination_dn_type = 'queue'
+          AND destination_dn_name IS NOT NULL
+        ORDER BY cdr_started_at DESC
         LIMIT 1;
     `;
     return queueInfo[0]?.queue_name || queueNumber;
@@ -1123,10 +1139,22 @@ const queueMembersColdFetch = new Map<string, Promise<QueueMemberRow[]>>();
 async function queryQueueMembers(serverId: ServerId): Promise<QueueMemberRow[]> {
     const prisma = getPrismaCdr(serverId);
     const rows = await prisma.$queryRaw<QueueMemberRow[]>`
-        WITH QueueMembers AS (
+        WITH QueueNames AS (
+            -- Nom ACTUEL de chaque file : celui de son dernier appel. Sans ce
+            -- passage, le nom sortait du regroupement lui-même — une file
+            -- renommée produisait une ligne par nom, et l'affichage retenait
+            -- la première venue (ordre laissé à la base, donc arbitraire).
+            SELECT DISTINCT ON (destination_dn_number)
+                destination_dn_number AS queue_number,
+                destination_dn_name AS queue_name
+            FROM cdroutput
+            WHERE destination_dn_type = 'queue'
+              AND destination_dn_name IS NOT NULL
+            ORDER BY destination_dn_number, cdr_started_at DESC
+        ),
+        QueueMembers AS (
             SELECT
                 parent.destination_dn_number AS queue_number,
-                parent.destination_dn_name AS queue_name,
                 child.destination_dn_number AS agent_extension,
                 child.destination_dn_name AS agent_name,
                 COUNT(*) as attempts_count,
@@ -1136,10 +1164,19 @@ async function queryQueueMembers(serverId: ServerId): Promise<QueueMemberRow[]> 
             WHERE child.creation_method = 'route_to'
               AND child.creation_forward_reason = 'polling'
               AND parent.destination_dn_type = 'queue'
-            GROUP BY parent.destination_dn_number, parent.destination_dn_name,
+            GROUP BY parent.destination_dn_number,
                      child.destination_dn_number, child.destination_dn_name
         )
-        SELECT * FROM QueueMembers ORDER BY queue_number, agent_extension;
+        SELECT
+            m.queue_number,
+            COALESCE(n.queue_name, m.queue_number) AS queue_name,
+            m.agent_extension,
+            m.agent_name,
+            m.attempts_count,
+            m.last_seen_at
+        FROM QueueMembers m
+        LEFT JOIN QueueNames n ON n.queue_number = m.queue_number
+        ORDER BY m.queue_number, m.agent_extension;
     `;
     queueMembersCache.set(serverId, { rows, fetchedAt: Date.now(), refreshing: false });
     return rows;
