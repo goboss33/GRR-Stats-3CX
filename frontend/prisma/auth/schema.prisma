@@ -233,8 +233,20 @@ model UserTenantAccess {
   @@id([userId, tenantId])
 }
 
-/// Périmètre d'un MANAGER : liste EXPLICITE de files.
+/// Périmètre : liste EXPLICITE de files.
 /// Aucune règle dynamique — une nouvelle file n'entre jamais seule dans un périmètre.
+///
+/// DOCTRINE DÉPARTEMENTS (arrêtée en août 2026, avant le nettoyage 3CX) : le
+/// futur sélecteur par départements dans l'affectation des droits doit rester
+/// un raccourci STATIQUE — cocher un département coche ses files du moment,
+/// et c'est toujours une liste de files qui est enregistrée ici (on peut
+/// ensuite en retirer, ou n'affecter qu'une file isolée). Ne passer en
+/// rattachement DYNAMIQUE (le périmètre suivrait le département, nouvelles
+/// files comprises) que le jour où la XAPI 3CX fournira la composition en
+/// FAIT établi : aujourd'hui le lien file↔département est DÉDUIT des CDR
+/// (destination_participant_group_name, couverture partielle) — adosser des
+/// droits d'accès à une donnée déduite reproduirait le problème « équipe de
+/// Nyon » appliqué à la sécurité.
 model UserQueuePerimeter {
   userId  String
   queueId String

@@ -1116,6 +1116,29 @@ export async function getQueueName(serverId: ServerId, queueNumber: string): Pro
     return queueInfo[0]?.queue_name || queueNumber;
 }
 
+/**
+ * Département d'une file — le « groupe » 3CX, tel qu'il FUIT dans les CDR
+ * (destination_participant_group_name, rempli sur ~2/3 des segments). Même
+ * doctrine que le nom : la dernière valeur non vide fait foi. `null` quand la
+ * base ne l'a jamais vu — l'affichage n'invente rien (« Département X » quand
+ * on le connaît, rien sinon). `__DEFAULT__` est le groupe par défaut de la
+ * 3CX : une file non rattachée, donc pas un département.
+ */
+export async function getQueueDepartment(serverId: ServerId, queueNumber: string): Promise<string | null> {
+    const prisma = getPrismaCdr(serverId);
+    const rows = await prisma.$queryRaw<{ department: string }[]>`
+        SELECT destination_participant_group_name AS department
+        FROM cdroutput
+        WHERE destination_dn_number = ${queueNumber}
+          AND destination_dn_type = 'queue'
+          AND COALESCE(destination_participant_group_name, '') <> ''
+          AND destination_participant_group_name <> '__DEFAULT__'
+        ORDER BY cdr_started_at DESC
+        LIMIT 1;
+    `;
+    return rows[0]?.department ?? null;
+}
+
 // L'annuaire files/agents agrège TOUT l'historique CDR (~3-7 s mesurées sur
 // sept mois : ~660 000 lignes jointes puis agrégées, incompressible sans borne
 // temporelle — laquelle viendra avec le chantier des files inactives) et il

@@ -20,6 +20,8 @@ interface TeamOverviewProps {
     logsEnabled: boolean;
     queueName: string;
     queueNumber: string;
+    /** Département 3CX (déduit des CDR) — affiché quand on le connaît, rien sinon. */
+    queueDepartment?: string | null;
     startDate: string;
     endDate: string;
     /** Provenance affichée (contexte global, réglée dans le header de l'app). */
@@ -45,7 +47,7 @@ const COLORS = {
     overflow: "#f59e0b",
 };
 
-export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queueNumber, startDate, endDate, origin }: TeamOverviewProps) {
+export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queueNumber, queueDepartment, startDate, endDate, origin }: TeamOverviewProps) {
     // Les totaux des vignettes viennent du helper PARTAGÉ avec les cartes de
     // l'aperçu des groupes (services/domain/team-totals) : les deux écrans ne
     // peuvent pas diverger. Le détail fin (regroupements, liens) reste ici.
@@ -147,9 +149,14 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                     provenance se règle dans le HEADER de l'application
                     (contexte global) ; elle voyage avec les liens des cartes. */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center mb-6">
-                    <div className="lg:col-span-4 flex items-center gap-2 text-sm font-medium text-slate-500">
-                        <Users className="h-4 w-4" />
-                        <span>Bilan du groupe · {queueName}</span>
+                    <div className="lg:col-span-4">
+                        <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                            <Users className="h-4 w-4" />
+                            <span>Bilan du groupe · {queueName}</span>
+                        </div>
+                        {queueDepartment && (
+                            <p className="mt-0.5 pl-6 text-xs text-slate-400">Département {queueDepartment}</p>
+                        )}
                     </div>
                     <div className="lg:col-span-8 flex flex-wrap items-center justify-end gap-3">
                         <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">

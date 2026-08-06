@@ -217,6 +217,7 @@ export async function listRegistryQueues(serverId: ServerId) {
         ...q,
         agentCount: live[q.queueNumber]?.agents.length ?? countByQueue.get(q.queueNumber) ?? 0,
         lastCallAt: live[q.queueNumber]?.lastCallAt ?? null,
+        department: live[q.queueNumber]?.department ?? null,
         agents: live[q.queueNumber]?.agents ?? [],
     }));
 }
@@ -247,6 +248,8 @@ export interface QueueAgentActivity {
 
 export interface QueueLiveActivity {
     lastCallAt: string | null;
+    /** Département 3CX (dernière valeur non vide observée) — null si jamais vu. */
+    department: string | null;
     agents: QueueAgentActivity[];
 }
 
@@ -261,12 +264,24 @@ export interface QueueLiveActivity {
 export async function getQueuesLiveActivity(serverId: ServerId): Promise<Record<string, QueueLiveActivity>> {
     const prisma = getPrismaCdr(serverId);
 
-    const [lastCalls, agents] = await Promise.all([
+    const [lastCalls, departments, agents] = await Promise.all([
         prisma.$queryRaw<{ queue_number: string; last_call: Date }[]>`
             SELECT destination_dn_number AS queue_number, MAX(cdr_started_at) AS last_call
             FROM cdroutput
             WHERE destination_dn_type = 'queue' AND destination_dn_number IS NOT NULL
             GROUP BY destination_dn_number
+        `,
+        // Département (groupe 3CX) : dernière valeur non vide — __DEFAULT__ est
+        // le groupe par défaut, c'est-à-dire « pas de département ».
+        prisma.$queryRaw<{ queue_number: string; department: string }[]>`
+            SELECT DISTINCT ON (destination_dn_number)
+                destination_dn_number AS queue_number,
+                destination_participant_group_name AS department
+            FROM cdroutput
+            WHERE destination_dn_type = 'queue' AND destination_dn_number IS NOT NULL
+              AND COALESCE(destination_participant_group_name, '') <> ''
+              AND destination_participant_group_name <> '__DEFAULT__'
+            ORDER BY destination_dn_number, cdr_started_at DESC
         `,
         prisma.$queryRaw<
             { queue_number: string; extension: string; name: string | null; attempts: bigint; last_seen: Date }[]
@@ -291,10 +306,14 @@ export async function getQueuesLiveActivity(serverId: ServerId): Promise<Record<
 
     const result: Record<string, QueueLiveActivity> = {};
     for (const c of lastCalls) {
-        result[c.queue_number] = { lastCallAt: c.last_call.toISOString(), agents: [] };
+        result[c.queue_number] = { lastCallAt: c.last_call.toISOString(), department: null, agents: [] };
+    }
+    for (const d of departments) {
+        const entry = (result[d.queue_number] ??= { lastCallAt: null, department: null, agents: [] });
+        entry.department = d.department;
     }
     for (const a of agents) {
-        const entry = (result[a.queue_number] ??= { lastCallAt: null, agents: [] });
+        const entry = (result[a.queue_number] ??= { lastCallAt: null, department: null, agents: [] });
         entry.agents.push({
             extension: a.extension,
             name: a.name ?? a.extension,

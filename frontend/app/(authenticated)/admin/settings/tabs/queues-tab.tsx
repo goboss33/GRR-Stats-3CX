@@ -21,6 +21,7 @@ import { fr } from "date-fns/locale";
 type QueueStatus = "ACTIVE" | "ARCHIVED";
 
 interface RegistryQueue {
+    department: string | null;
     id: string;
     queueNumber: string;
     currentName: string;
@@ -429,6 +430,9 @@ export function QueuesTab() {
                                                             (renommée)
                                                         </span>
                                                     </Tip>
+                                                )}
+                                                {q.department && (
+                                                    <p className="mt-0.5 text-xs text-slate-400">Département {q.department}</p>
                                                 )}
                                                 {/* Explique pourquoi la file remonte lors d'une recherche par agent */}
                                                 {matchedAgents(q).length > 0 && (

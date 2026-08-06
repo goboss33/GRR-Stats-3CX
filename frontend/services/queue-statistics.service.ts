@@ -6,6 +6,7 @@ import { logger } from "@/lib/logger";
 import { resolveAccessScope, isQueueInScope } from "@/lib/access-scope";
 import {
     getQueueName,
+    getQueueDepartment,
     getDailyTrendRaw,
     getHourlyTrendRaw,
 } from "@/services/repositories/cdr.repository";
@@ -110,8 +111,9 @@ export async function getQueueStatistics(
         throw new Error("Cette file d'attente n'est pas dans votre périmètre");
     }
 
-    const [queueName, kpis, agents, dailyTrend, hourlyTrend, timelineData, heatmapData] = await Promise.all([
+    const [queueName, queueDepartment, kpis, agents, dailyTrend, hourlyTrend, timelineData, heatmapData] = await Promise.all([
         getQueueName(serverId, queueNumber),
+        getQueueDepartment(serverId, queueNumber),
         computeQueueKPIs(serverId, queueNumber, startDate, endDate, origin),
         computeAgentStats(serverId, queueNumber, startDate, endDate, origin),
         computeDailyTrend(serverId, queueNumber, startDate, endDate, origin),
@@ -123,6 +125,7 @@ export async function getQueueStatistics(
     return {
         queueNumber,
         queueName,
+        queueDepartment,
         period: {
             start: startDate.toISOString(),
             end: endDate.toISOString(),

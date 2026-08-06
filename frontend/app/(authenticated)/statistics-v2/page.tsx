@@ -246,6 +246,7 @@ export default function StatisticsV2Page() {
                         logsEnabled={canViewLogs === true}
                         queueName={statistics.queueName}
                         queueNumber={statistics.queueNumber}
+                        queueDepartment={statistics.queueDepartment}
                         startDate={format(dateRange.startDate, "yyyy-MM-dd")}
                         endDate={format(dateRange.endDate, "yyyy-MM-dd")}
                         origin={origin}

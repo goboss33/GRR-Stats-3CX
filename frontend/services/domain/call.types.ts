@@ -382,6 +382,8 @@ export interface HourlyTrend {
 export interface QueueStatistics {
     queueNumber: string;
     queueName: string;
+    /** Département 3CX (déduit des CDR) — null quand il n'a jamais été observé. */
+    queueDepartment: string | null;
     period: {
         start: string;
         end: string;
