@@ -75,6 +75,7 @@ export function UserAccessDialog({
         canViewExtensionStats: true,
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
+        canViewNotifications: false,
     });
     const [scope, setScope] = useState<ScopePreview | null>(null);
 
@@ -112,6 +113,7 @@ export function UserAccessDialog({
                 canViewExtensionStats: accessData.access.canViewExtensionStats,
                 canViewFullPhoneNumbers: accessData.access.canViewFullPhoneNumbers,
                 canCreateApiKeys: accessData.access.canCreateApiKeys,
+                canViewNotifications: accessData.access.canViewNotifications,
             });
             setScope(accessData.scope ?? null);
 
@@ -419,6 +421,11 @@ export function UserAccessDialog({
                                     key: "canCreateApiKeys" as const,
                                     label: "Créer des clés API",
                                     hint: "La clé hérite automatiquement du périmètre de son propriétaire",
+                                },
+                                {
+                                    key: "canViewNotifications" as const,
+                                    label: "Voir la cloche d'alertes",
+                                    hint: "Anomalies détectées dans son périmètre (agents déconnectés de leur file…). Par défaut : activé pour ADMIN et MODERATOR, désactivé pour MANAGER",
                                 },
                             ].map((p) => (
                                 <div key={p.key} className="flex items-center justify-between rounded-lg border p-3">

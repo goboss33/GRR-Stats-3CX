@@ -46,6 +46,7 @@ async function main() {
         canViewExtensionStats: true,
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
+        canViewNotifications: false,
     });
     const scope = await describeUserScope(user.id);
     console.log(`   ${scope.queues.length} files (attendu ${pully.length})`);
@@ -63,6 +64,7 @@ async function main() {
         canViewExtensionStats: true,
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
+        canViewNotifications: false,
     });
     const scope2 = await describeUserScope(user.id);
     console.log(`   ${scope2.queues.length} files (attendu 2) · logs : ${scope2.canViewLogs}`);

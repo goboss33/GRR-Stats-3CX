@@ -27,6 +27,7 @@ function projectSettings(settings: Record<string, unknown>) {
     return {
         minSignificantDurationSec: settings.minSignificantDurationSec,
         perimeterEnforcementEnabled: settings.perimeterEnforcementEnabled,
+        notificationWindowDays: settings.notificationWindowDays,
         ruleMultiPassage: settings.ruleMultiPassage,
         ruleOverflow: settings.ruleOverflow,
         ruleShortAbandonSec: settings.ruleShortAbandonSec,
@@ -107,6 +108,15 @@ export async function PUT(request: NextRequest) {
             );
         }
 
+        const notifWindow = body.notificationWindowDays;
+        if (notifWindow !== undefined
+            && (typeof notifWindow !== "number" || !Number.isInteger(notifWindow) || notifWindow < 1 || notifWindow > 90)) {
+            return NextResponse.json(
+                { error: "notificationWindowDays doit être un entier entre 1 et 90." },
+                { status: 400 },
+            );
+        }
+
         const shortAbandon = body.ruleShortAbandonSec;
         if (shortAbandon !== undefined && shortAbandon !== null
             && (typeof shortAbandon !== "number" || shortAbandon < 0 || shortAbandon > 300)) {
@@ -124,6 +134,7 @@ export async function PUT(request: NextRequest) {
             ...ruleData,
             ...(shortAbandon !== undefined ? { ruleShortAbandonSec: shortAbandon } : {}),
             ...(minAnswer !== undefined ? { ruleMinAnswerSec: minAnswer } : {}),
+            ...(notifWindow !== undefined ? { notificationWindowDays: notifWindow } : {}),
         };
 
         const settings = await prismaAuth.appSettings.upsert({

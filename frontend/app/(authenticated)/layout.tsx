@@ -1,6 +1,7 @@
 import { auth, signOut } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
+import { effectiveCanViewNotifications } from "@/lib/notification-access";
 import { Header } from "@/components/header";
 import { HeaderScopeProvider } from "@/components/header-scope";
 import { Suspense } from "react";
@@ -31,7 +32,7 @@ export default async function AuthenticatedLayout({
 
     const dbUser = await prismaAuth.user.findUnique({
         where: { id: session.user.id },
-        select: { profilePicture: true, canViewLogs: true, canViewExtensionStats: true }
+        select: { profilePicture: true, canViewLogs: true, canViewExtensionStats: true, canViewNotifications: true }
     });
     const profilePicture = dbUser?.profilePicture || null;
     // Sans les droits « Voir les logs » / « Extension/DDI », les entrées
@@ -39,6 +40,11 @@ export default async function AuthenticatedLayout({
     // toute façon (contrôle côté serveur).
     const canViewLogs = dbUser?.canViewLogs ?? true;
     const canViewExtensionStats = dbUser?.canViewExtensionStats ?? true;
+    // Cloche d'alertes : droit individuel, défaut par rôle (cf. lib/notification-access).
+    const showAlerts = effectiveCanViewNotifications({
+        role: userRole,
+        canViewNotifications: dbUser?.canViewNotifications ?? null,
+    });
 
     return (
         <div className="flex h-screen bg-slate-50">
@@ -58,7 +64,7 @@ export default async function AuthenticatedLayout({
                 {/* Le provider relie les pages au header : elles y déclarent
                     quelles provenances sont préchargées (spinners du toggle). */}
                 <HeaderScopeProvider>
-                    <Header userName={userName} />
+                    <Header userName={userName} showAlerts={showAlerts} />
                     <main className="flex-1 overflow-y-auto p-6">
                         <Suspense fallback={<Loading />}>
                             {children}

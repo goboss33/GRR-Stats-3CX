@@ -39,6 +39,16 @@ async function replaceCompanyWideWithCanViewLogs(): Promise<void> {
     await prismaAuth.$executeRawUnsafe(
         `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "canViewExtensionStats" BOOLEAN NOT NULL DEFAULT true`,
     );
+    // Cloche d'alertes (août 2026) : NULLABLE à dessein — null = non arbitré,
+    // le défaut se calcule alors PAR RÔLE (ADMIN/MODERATOR oui, MANAGER non),
+    // y compris pour les utilisateurs créés après cette migration.
+    await prismaAuth.$executeRawUnsafe(
+        `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "canViewNotifications" BOOLEAN`,
+    );
+    // Fenêtre d'observation du détecteur d'anomalies (jours).
+    await prismaAuth.$executeRawUnsafe(
+        `ALTER TABLE "AppSettings" ADD COLUMN IF NOT EXISTS "notificationWindowDays" INTEGER NOT NULL DEFAULT 7`,
+    );
 }
 
 /**

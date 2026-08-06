@@ -58,6 +58,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             canViewExtensionStats: Boolean(body.canViewExtensionStats),
             canViewFullPhoneNumbers: Boolean(body.canViewFullPhoneNumbers),
             canCreateApiKeys: Boolean(body.canCreateApiKeys),
+            canViewNotifications: Boolean(body.canViewNotifications),
         };
 
         await setUserAccess(id, payload);

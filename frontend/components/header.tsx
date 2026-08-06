@@ -5,6 +5,7 @@ import { DateRangePicker } from "@/components/date-range-picker";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
+import { HeaderNotifications } from "@/components/header-notifications";
 import { OriginToggle } from "@/components/stats-v2/origin-toggle";
 import { HeaderQueueSearch } from "@/components/header-queue-search";
 import { useHeaderScope } from "@/components/header-scope";
@@ -13,6 +14,7 @@ import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
 const pageTitleMap: Record<string, string> = {
     "/dashboard": "Tableau de bord",
     "/admin/logs": "Logs d'appels",
+    "/admin/alerts": "Alertes",
     "/admin/settings": "Paramètres",
     "/documentation": "Documentation",
     "/statistics-v2": "Mes équipes",
@@ -123,7 +125,7 @@ function HeaderRefreshButton() {
     );
 }
 
-export function Header({ userName }: { userName: string }) {
+export function Header({ userName, showAlerts }: { userName: string; showAlerts: boolean }) {
     const pathname = usePathname();
     const title = getPageTitle(pathname);
 
@@ -153,6 +155,7 @@ export function Header({ userName }: { userName: string }) {
                     <HeaderPeriodPicker />
                 </ContextControl>
 
+                {showAlerts && <HeaderNotifications />}
                 <HeaderRefreshButton />
             </div>
         </header>

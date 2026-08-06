@@ -10,6 +10,7 @@
 // ============================================
 
 import { prismaAuth } from "@/lib/prisma-auth";
+import { effectiveCanViewNotifications } from "@/lib/notification-access";
 import type { Role } from "@prisma/auth-client";
 
 export type OverrideMode = "INCLUDE" | "EXCLUDE";
@@ -28,6 +29,9 @@ export interface UserAccessPayload {
     canViewExtensionStats: boolean;
     canViewFullPhoneNumbers: boolean;
     canCreateApiKeys: boolean;
+    /// Valeur EFFECTIVE à la lecture (le null « défaut par rôle » est résolu) ;
+    /// l'enregistrement écrit une valeur explicite.
+    canViewNotifications: boolean;
 }
 
 /** Accès configurés d'un utilisateur. */
@@ -35,7 +39,7 @@ export async function getUserAccess(userId: string): Promise<UserAccessPayload> 
     const [user, tenants, perimeter, overrides] = await Promise.all([
         prismaAuth.user.findUnique({
             where: { id: userId },
-            select: { canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, canCreateApiKeys: true },
+            select: { role: true, canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, canCreateApiKeys: true, canViewNotifications: true },
         }),
         prismaAuth.userTenantAccess.findMany({ where: { userId }, select: { tenantId: true } }),
         prismaAuth.userQueuePerimeter.findMany({ where: { userId }, select: { queueId: true } }),
@@ -59,6 +63,7 @@ export async function getUserAccess(userId: string): Promise<UserAccessPayload> 
         canViewExtensionStats: user.canViewExtensionStats,
         canViewFullPhoneNumbers: user.canViewFullPhoneNumbers,
         canCreateApiKeys: user.canCreateApiKeys,
+        canViewNotifications: effectiveCanViewNotifications(user),
     };
 }
 
@@ -76,6 +81,7 @@ export async function setUserAccess(userId: string, payload: UserAccessPayload):
                 canViewExtensionStats: payload.canViewExtensionStats,
                 canViewFullPhoneNumbers: payload.canViewFullPhoneNumbers,
                 canCreateApiKeys: payload.canCreateApiKeys,
+                canViewNotifications: payload.canViewNotifications,
             },
         }),
         prismaAuth.userTenantAccess.deleteMany({ where: { userId } }),
@@ -192,6 +198,8 @@ export interface UserScopeDescription {
     canViewExtensionStats: boolean;
     canViewFullPhoneNumbers: boolean;
     canCreateApiKeys: boolean;
+    /** Effectif : le null « défaut par rôle » est résolu (cf. lib/notification-access). */
+    canViewNotifications: boolean;
 }
 
 /**
@@ -203,6 +211,7 @@ export async function describeUserScope(userId: string): Promise<UserScopeDescri
         where: { id: userId },
         select: {
             role: true,
+            canViewNotifications: true,
             canViewLogs: true,
             canViewExtensionStats: true,
             canViewFullPhoneNumbers: true,
@@ -272,5 +281,6 @@ export async function describeUserScope(userId: string): Promise<UserScopeDescri
         canViewExtensionStats: user.canViewExtensionStats,
         canViewFullPhoneNumbers: user.canViewFullPhoneNumbers,
         canCreateApiKeys: user.canCreateApiKeys,
+        canViewNotifications: effectiveCanViewNotifications(user),
     };
 }

@@ -43,6 +43,10 @@ model User {
   canViewExtensionStats   Boolean @default(true)
   canViewFullPhoneNumbers Boolean @default(false)
   canCreateApiKeys        Boolean @default(false)
+  /// Voir la cloche d'alertes (anomalies détectées dans son périmètre).
+  /// `null` = non arbitré -> défaut par rôle : activé pour ADMIN/MODERATOR,
+  /// désactivé pour MANAGER (cf. lib/notification-access).
+  canViewNotifications    Boolean?
 
   tenantAccess       UserTenantAccess[]
   queuePerimeter     UserQueuePerimeter[]
@@ -75,6 +79,9 @@ model AppSettings {
   perimeterEnforcementEnabled Boolean  @default(false)
   /// Nombre de jours sans appel avant qu'une file passe en ARCHIVED.
   queueArchiveAfterDays       Int      @default(90)
+  /// Fenêtre d'observation (jours) du détecteur d'anomalies de la cloche
+  /// d'alertes — cf. services/notifications.service.
+  notificationWindowDays      Int      @default(7)
   /// Horodate l'amorçage des périmètres ADMIN/MODERATOR (août 2026 : ces rôles
   /// ont cessé de tout voir par défaut). Ne rejoue jamais : sans ce marqueur,
   /// chaque démarrage réattribuerait les files qu'un administrateur a retirées.
