@@ -2,12 +2,15 @@
 
 /**
  * Écran de détail des alertes : le tableau complet derrière la cloche du
- * header. Ignorer est GLOBAL (tous lecteurs), tracé, sans confirmation — et
- * réversible depuis l'onglet Ignorées : rien ne disparaît jamais vraiment.
+ * header. Cliquer une ligne ouvre les PREUVES de la détection (renvois avec
+ * IDs d'appels — cliquables vers les logs —, dernier signe de vie, activité
+ * de la file). Ignorer est GLOBAL (tous lecteurs), tracé, sans confirmation —
+ * et réversible depuis l'onglet Ignorées : rien ne disparaît jamais vraiment.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, Clock, EyeOff, PhoneOff, RotateCcw, UserX } from "lucide-react";
+import Link from "next/link";
+import { AlertCircle, EyeOff, PhoneOff, RotateCcw } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
@@ -15,13 +18,28 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { getSelectedServer } from "@/lib/selected-server";
 import { getAlerts, ignoreAlert, restoreAlert, type IgnoredAlert } from "@/services/notifications.service";
 import type { AnomalyAlert } from "@/services/repositories/anomaly-detector";
 
-function TypeBadge({ type }: { type: AnomalyAlert["type"] }) {
+/** Le « Q » bleu de la 3CX — l'icône que les agents connaissent. */
+function QueueBadge({ off }: { off?: boolean }) {
+    return (
+        <span
+            className={cn(
+                "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[13px] font-black leading-none",
+                off ? "bg-slate-200 text-slate-400" : "bg-sky-100 text-sky-600",
+            )}
+        >
+            Q
+        </span>
+    );
+}
+
+function TypeCell({ type }: { type: AnomalyAlert["type"] }) {
     if (type === "queue_disconnected") {
         return (
             <Badge variant="outline" className="gap-1.5 border-red-200 bg-red-50 text-red-700">
@@ -31,18 +49,38 @@ function TypeBadge({ type }: { type: AnomalyAlert["type"] }) {
         );
     }
     if (type === "away_forgotten") {
+        // Le surlignage orange sans radius, comme la pastille de statut 3CX.
         return (
-            <Badge variant="outline" className="gap-1.5 border-orange-200 bg-orange-50 text-orange-700">
-                <Clock className="h-3.5 w-3.5" />
-                Statut Absent oublié (probable)
-            </Badge>
+            <span className="inline-block bg-orange-300 px-2 py-0.5 text-xs font-semibold text-orange-950">
+                Absent
+            </span>
         );
     }
     return (
-        <Badge variant="outline" className="gap-1.5 border-amber-200 bg-amber-50 text-amber-700">
-            <UserX className="h-3.5 w-3.5" />
-            Agent déconnecté (probable)
-        </Badge>
+        <span className="inline-flex items-center gap-2 text-sm text-slate-700">
+            <QueueBadge off />
+            Déconnecté de la file d'attente
+        </span>
+    );
+}
+
+/** Le « signal » varie selon le type : sollicitation de file pour les
+ *  déconnexions, renvoi pour absence pour les statuts Absent. */
+function SignalCell({ alert }: { alert: AnomalyAlert }) {
+    const isAway = alert.type === "away_forgotten";
+    const at = isAway ? alert.lastAwayAt : alert.lastPollAt;
+    if (!at) return <span className="text-slate-400">—</span>;
+    return (
+        <Tip content={format(new Date(at), "dd/MM/yyyy HH:mm", { locale: fr })}>
+            <span>
+                <span className="text-slate-700">
+                    {formatDistanceToNow(new Date(at), { addSuffix: true, locale: fr })}
+                </span>
+                <span className="block text-xs text-slate-400">
+                    {isAway ? "dernier renvoi Absent" : "dernière sollicitation file"}
+                </span>
+            </span>
+        </Tip>
     );
 }
 
@@ -68,12 +106,111 @@ function AgentsCell({ alert }: { alert: AnomalyAlert }) {
     );
 }
 
+function EvidenceRow({ label, children }: { label: string; children: React.ReactNode }) {
+    return (
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 py-2 last:border-b-0">
+            <span className="text-sm text-slate-500">{label}</span>
+            <span className="text-right text-sm text-slate-800">{children}</span>
+        </div>
+    );
+}
+
+function fmt(at: string | null | undefined): string {
+    return at ? format(new Date(at), "EEE dd/MM HH:mm", { locale: fr }) : "—";
+}
+
+/** Lien vers l'appel dans les logs — avec la période du jour de l'appel :
+ *  sans elle, les logs s'ouvriraient sur leur période par défaut (le mois
+ *  passé) et ne trouveraient pas un appel de cette semaine. */
+function logHref(callHistoryId: string, at: string): string {
+    const day = new Date(at);
+    const before = new Date(day.getTime() - 24 * 3600 * 1000);
+    const after = new Date(day.getTime() + 24 * 3600 * 1000);
+    return `/admin/logs?id=${callHistoryId}&start=${format(before, "yyyy-MM-dd")}&end=${format(after, "yyyy-MM-dd")}`;
+}
+
+/** Les preuves brutes de la détection : des appels (et des absences d'appels),
+ *  pas des phrases. Les IDs mènent au log correspondant. */
+function EvidenceModal({ alert, onClose }: { alert: AnomalyAlert | null; onClose: () => void }) {
+    return (
+        <Dialog open={alert !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+            <DialogContent className="max-w-lg">
+                {alert && (
+                    <>
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-3">
+                                <TypeCell type={alert.type} />
+                            </DialogTitle>
+                        </DialogHeader>
+                        <p className="text-sm text-slate-600">
+                            {alert.type === "queue_disconnected"
+                                ? <>File {alert.queueNumber} · {alert.queueName}</>
+                                : <>{alert.agentName} (Ext. {alert.agentExtension}) · file {alert.queueNumber} {alert.queueName}</>}
+                        </p>
+
+                        <div>
+                            <EvidenceRow label="Dernière sollicitation par la file">
+                                {fmt(alert.lastPollAt)}
+                            </EvidenceRow>
+                            <EvidenceRow label="Sollicitations distribuées par la file (fenêtre)">
+                                {alert.queuePollsInWindow ?? 0}
+                            </EvidenceRow>
+                            {alert.type !== "queue_disconnected" && (
+                                <EvidenceRow label="Dernier signe de vie du poste">
+                                    {fmt(alert.lastActivityAt)}
+                                </EvidenceRow>
+                            )}
+                            {alert.type === "queue_disconnected" && alert.activeMembers && (
+                                <EvidenceRow label="Signes de vie des membres">
+                                    <span className="space-y-0.5">
+                                        {alert.activeMembers.map((m) => (
+                                            <span key={m.extension} className="block">
+                                                {m.name} · {fmt(m.lastActivityAt)}
+                                            </span>
+                                        ))}
+                                    </span>
+                                </EvidenceRow>
+                            )}
+                        </div>
+
+                        {alert.type === "away_forgotten" && alert.awayCalls && alert.awayCalls.length > 0 && (
+                            <div>
+                                <p className="mb-1 text-sm font-medium text-slate-700">
+                                    Appels directs renvoyés pour absence
+                                </p>
+                                <div className="max-h-44 overflow-y-auto rounded border border-slate-200 bg-slate-50 p-2">
+                                    {alert.awayCalls.map((c) => (
+                                        <p key={`${c.callHistoryId}-${c.at}`} className="flex items-baseline justify-between gap-3 py-0.5 text-xs">
+                                            <span className="text-slate-600">{fmt(c.at)}</span>
+                                            <Link
+                                                href={logHref(c.callHistoryId, c.at)}
+                                                className="font-mono text-blue-600 hover:underline"
+                                            >
+                                                {c.callHistoryId}
+                                            </Link>
+                                        </p>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <p className="text-xs text-slate-400">
+                            Fenêtre d'observation glissante — les identifiants ouvrent l'appel dans les logs.
+                        </p>
+                    </>
+                )}
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 export default function AlertsClient() {
     const [alerts, setAlerts] = useState<AnomalyAlert[] | null>(null);
     const [ignored, setIgnored] = useState<IgnoredAlert[]>([]);
     const [windowDays, setWindowDays] = useState(7);
     const [tab, setTab] = useState<"active" | "ignored">("active");
     const [busyId, setBusyId] = useState<string | null>(null);
+    const [inspected, setInspected] = useState<AnomalyAlert | null>(null);
 
     const load = useCallback(() => {
         getAlerts(getSelectedServer())
@@ -129,8 +266,9 @@ export default function AlertsClient() {
                         probablement déconnectée de sa file (bouton « Q »). Un membre jamais sollicité alors
                         que la file distribue est signalé individuellement ; si ses appels directs sont
                         renvoyés pour cause d'absence, c'est son statut Absent qui a probablement été oublié.
-                        Les alertes s'éteignent d'elles-mêmes quand la situation rentre dans l'ordre ;
-                        « Ignorer » est partagé entre tous les lecteurs, tracé, et réversible ici même.
+                        Cliquez une ligne pour voir les preuves. Les alertes s'éteignent d'elles-mêmes quand
+                        la situation rentre dans l'ordre ; « Ignorer » est partagé entre tous les lecteurs,
+                        tracé, et réversible ici même.
                     </p>
                 </div>
             </div>
@@ -171,30 +309,24 @@ export default function AlertsClient() {
                                 <th className="px-4 py-3">Type</th>
                                 <th className="px-4 py-3">File</th>
                                 <th className="px-4 py-3">Agent(s) concerné(s)</th>
-                                <th className="px-4 py-3">Dernière sollicitation</th>
+                                <th className="px-4 py-3">Dernier signal</th>
                                 <th className="px-4 py-3 text-right">{tab === "ignored" ? "Ignorée" : ""}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {rows.map(({ alert: a, meta }) => (
-                                <tr key={a.id} className="hover:bg-slate-50 transition-colors">
-                                    <td className="px-4 py-3"><TypeBadge type={a.type} /></td>
+                                <tr
+                                    key={a.id}
+                                    onClick={() => setInspected(a)}
+                                    className="cursor-pointer hover:bg-slate-50 transition-colors"
+                                >
+                                    <td className="px-4 py-3"><TypeCell type={a.type} /></td>
                                     <td className="px-4 py-3">
                                         <p className="font-medium text-slate-900">{a.queueName}</p>
                                         <p className="text-xs font-mono text-slate-500">File {a.queueNumber}</p>
                                     </td>
                                     <td className="px-4 py-3"><AgentsCell alert={a} /></td>
-                                    <td className="px-4 py-3">
-                                        {a.lastPollAt ? (
-                                            <Tip content={format(new Date(a.lastPollAt), "dd/MM/yyyy HH:mm", { locale: fr })}>
-                                                <span className="text-slate-700">
-                                                    {formatDistanceToNow(new Date(a.lastPollAt), { addSuffix: true, locale: fr })}
-                                                </span>
-                                            </Tip>
-                                        ) : (
-                                            <span className="text-slate-400">—</span>
-                                        )}
-                                    </td>
+                                    <td className="px-4 py-3"><SignalCell alert={a} /></td>
                                     <td className="px-4 py-3 text-right">
                                         {tab === "active" ? (
                                             <Tip content="Ignorer pour tous les lecteurs — réversible depuis l'onglet Ignorées">
@@ -202,7 +334,7 @@ export default function AlertsClient() {
                                                     variant="ghost"
                                                     size="icon"
                                                     disabled={busyId === a.id}
-                                                    onClick={() => onIgnore(a.id)}
+                                                    onClick={(e) => { e.stopPropagation(); onIgnore(a.id); }}
                                                     className="h-7 w-7 text-slate-400 hover:text-slate-700"
                                                 >
                                                     <EyeOff className="h-4 w-4" />
@@ -218,7 +350,7 @@ export default function AlertsClient() {
                                                         variant="ghost"
                                                         size="icon"
                                                         disabled={busyId === a.id}
-                                                        onClick={() => onRestore(a.id)}
+                                                        onClick={(e) => { e.stopPropagation(); onRestore(a.id); }}
                                                         className="h-7 w-7 text-slate-400 hover:text-slate-700"
                                                     >
                                                         <RotateCcw className="h-4 w-4" />
@@ -233,6 +365,8 @@ export default function AlertsClient() {
                     </table>
                 )}
             </Card>
+
+            <EvidenceModal alert={inspected} onClose={() => setInspected(null)} />
         </div>
     );
 }

@@ -60,7 +60,17 @@ export type AnomalyAlert = {
     /** Dernière sollicitation connue de la file vers ce membre (ou l'équipe). */
     lastPollAt: string | null;
     /** Membres concernés — actifs mais sollicités nulle part (pour `queue_disconnected`). */
-    activeMembers?: Array<{ extension: string; name: string }>;
+    activeMembers?: Array<{ extension: string; name: string; lastActivityAt: string | null }>;
+
+    // ---- Preuves (l'écran de détail les montre au clic sur la ligne) ----
+    /** Dernier signe de vie du poste (appel décroché ou émis) sur la fenêtre. */
+    lastActivityAt?: string | null;
+    /** Dernier renvoi pour absence — le « signal » des alertes Absent. */
+    lastAwayAt?: string | null;
+    /** Les renvois pour absence de la fenêtre (les plus récents d'abord). */
+    awayCalls?: Array<{ at: string; callHistoryId: string }>;
+    /** Sollicitations distribuées par la file sur la fenêtre (0 = file muette). */
+    queuePollsInWindow?: number;
 };
 
 /** Un lien file↔agent plus vieux que ça n'engage plus l'équipe. Long à
@@ -169,12 +179,15 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
         away_count: bigint;
         away_days: bigint;
         last_away_at: Date;
+        away_calls: Array<{ at: string; id: string }>;
     }>>`
         SELECT
             parent.destination_dn_number AS extension,
             COUNT(*) AS away_count,
             COUNT(DISTINCT DATE(child.cdr_started_at)) AS away_days,
-            MAX(child.cdr_started_at) AS last_away_at
+            MAX(child.cdr_started_at) AS last_away_at,
+            JSON_AGG(JSON_BUILD_OBJECT('at', child.cdr_started_at, 'id', parent.call_history_id)
+                     ORDER BY child.cdr_started_at DESC) AS away_calls
         FROM cdroutput child
         JOIN cdroutput parent ON child.originating_cdr_id = parent.cdr_id
         WHERE child.creation_forward_reason = 'away'
@@ -182,6 +195,8 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
           AND child.cdr_started_at >= ${windowStart}
         GROUP BY 1
     `;
+    // Les preuves à montrer : les 8 renvois les plus récents suffisent.
+    const awayDetails = new Map(awayRows.map((r) => [r.extension, r.away_calls.slice(0, 8)]));
     // La signature doit être COURANTE, pas seulement présente dans la
     // fenêtre : un appel DÉCROCHÉ par le poste APRÈS son dernier renvoi
     // 'away' prouve que le statut a été corrigé entre-temps (cas réel,
@@ -283,7 +298,9 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
                     activeMembers: strandedActive.map((m) => ({
                         extension: m.agent_extension,
                         name: displayName(m.agent_extension, m.agent_name),
+                        lastActivityAt: activeByExtension.get(m.agent_extension)?.lastActivityAt?.toISOString() ?? null,
                     })),
+                    queuePollsInWindow: 0,
                 });
             }
             continue;
@@ -303,6 +320,8 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
                 agentExtension: m.agent_extension,
                 agentName: displayName(m.agent_extension, m.agent_name),
                 lastPollAt: m.last_seen_at.toISOString(),
+                lastActivityAt: activeByExtension.get(m.agent_extension)?.lastActivityAt?.toISOString() ?? null,
+                queuePollsInWindow: totalPolls,
             });
         }
     }
@@ -318,6 +337,7 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
         if (!activity?.lastActivityAt || activity.lastActivityAt < freshLimit) continue;
         const link = latestLink.get(`${homeQueue}:${extension}`);
         if (!link) continue;
+        const bounces = awayDetails.get(extension) ?? [];
         alerts.push({
             id: `away_forgotten:${homeQueue}:${extension}`,
             type: "away_forgotten",
@@ -326,6 +346,10 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
             agentExtension: extension,
             agentName: displayName(extension, link.agent_name),
             lastPollAt: link.last_seen_at.toISOString(),
+            lastActivityAt: activity.lastActivityAt?.toISOString() ?? null,
+            lastAwayAt: awaySignature.get(extension)?.toISOString() ?? null,
+            awayCalls: bounces.map((b) => ({ at: new Date(b.at).toISOString(), callHistoryId: b.id })),
+            queuePollsInWindow: [...(pollsByQueue.get(homeQueue)?.values() ?? [])].reduce((acc, r) => acc + Number(r.polls), 0),
         });
     }
 
