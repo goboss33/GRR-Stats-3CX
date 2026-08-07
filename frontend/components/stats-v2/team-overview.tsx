@@ -6,7 +6,7 @@ import { QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tip } from "@/components/ui/tooltip";
 import { TrendPill } from "@/components/stats-v2/trend-arrow";
-import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, ExternalLink, TrendingUp } from "lucide-react";
+import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, TrendingUp } from "lucide-react";
 import { outcomesForBucket, sumBucket, type CallOrigin } from "@/services/domain/call-classification";
 import { computeTeamTotals, type TeamTotals } from "@/services/domain/team-totals";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
@@ -249,12 +249,11 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         <PhoneIncoming className="h-4 w-4 text-blue-600" />
                                         <span className="text-xs font-medium text-slate-600">Total reçus</span>
                                     </div>
-                                    {logsEnabled && <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-blue-600 transition-colors" />}
+                                    <TrendPill current={totalReceived} previous={prevOf((t) => t.totalReceived)} sense="neutral" />
                                 </div>
                                 <div className="text-2xl font-bold text-slate-900">{totalReceived}</div>
-                                <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
-                                    <span>File: {kpis.callsReceived} · Directs: {kpis.teamDirectReceived}</span>
-                                    <TrendPill current={totalReceived} previous={prevOf((t) => t.totalReceived)} sense="neutral" />
+                                <div className="mt-0.5 text-[10px] text-slate-500">
+                                    Directs: {kpis.teamDirectReceived} · Équipe: {kpis.callsReceived}
                                 </div>
                             </TileShell>
 
@@ -268,12 +267,11 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         <Phone className="h-4 w-4 text-emerald-600" />
                                         <span className="text-xs font-medium text-slate-600">Répondus</span>
                                     </div>
-                                    {logsEnabled && <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-emerald-600 transition-colors" />}
+                                    <TrendPill current={totalAnswered} previous={prevOf((t) => t.totalAnswered)} sense="higher-better" />
                                 </div>
                                 <div className="text-2xl font-bold text-emerald-700">{totalAnswered}</div>
-                                <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
-                                    <span>File: {kpis.callsAnswered} · Directs: {kpis.teamDirectAnswered}{totalHandedOff > 0 && <> · Transférés: {totalHandedOff}</>}</span>
-                                    <TrendPill current={totalAnswered} previous={prevOf((t) => t.totalAnswered)} sense="higher-better" />
+                                <div className="mt-0.5 text-[10px] text-slate-500">
+                                    Directs: {kpis.teamDirectAnswered} · Équipe: {kpis.callsAnswered}{totalHandedOff > 0 && <> · Transférés: {totalHandedOff}</>}
                                 </div>
                             </TileShell>
 
@@ -287,12 +285,11 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         <PhoneMissed className="h-4 w-4 text-red-600" />
                                         <span className="text-xs font-medium text-slate-600">Perdus</span>
                                     </div>
-                                    {logsEnabled && <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-red-600 transition-colors" />}
+                                    <TrendPill current={totalLost} previous={prevOf((t) => t.totalLost)} sense="lower-better" />
                                 </div>
                                 <div className="text-2xl font-bold text-red-700">{totalLost}</div>
-                                <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
-                                    <span>File: {sumBucket(kpis.outcomeCounts, "lost")} · Directs: {kpis.directLost}</span>
-                                    <TrendPill current={totalLost} previous={prevOf((t) => t.totalLost)} sense="lower-better" />
+                                <div className="mt-0.5 text-[10px] text-slate-500">
+                                    Directs: {kpis.directLost} · Équipe: {sumBucket(kpis.outcomeCounts, "lost")}
                                 </div>
                             </TileShell>
 
@@ -309,12 +306,11 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         <ArrowRightLeft className="h-4 w-4 text-amber-600" />
                                         <span className="text-xs font-medium text-slate-600">Débordements</span>
                                     </div>
-                                    {logsEnabled && <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-amber-600 transition-colors" />}
+                                    <TrendPill current={totalOverflow} previous={prevOf((t) => t.totalRedirected)} sense="neutral" />
                                 </div>
                                 <div className="text-2xl font-bold text-amber-700">{totalOverflow}</div>
-                                <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
-                                    <span>File: {kpis.callsOverflow} · Directs: {kpis.directOverflow}</span>
-                                    <TrendPill current={totalOverflow} previous={prevOf((t) => t.totalRedirected)} sense="neutral" />
+                                <div className="mt-0.5 text-[10px] text-slate-500">
+                                    Directs: {kpis.directOverflow} · Équipe: {kpis.callsOverflow}
                                 </div>
                             </TileShell>
 
