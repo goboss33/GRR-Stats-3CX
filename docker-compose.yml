@@ -2,6 +2,10 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: callcenter-db
+    # Docker n'accorde que 64 Mo de /dev/shm par défaut : les plans parallèles
+    # de Postgres (workers, hash joins) y allouent leurs segments et échouent
+    # en « could not resize shared memory segment » sur les grosses requêtes.
+    shm_size: "1gb"
     ports:
       - "5432:5432"
     environment:
