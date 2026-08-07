@@ -392,7 +392,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-violet-50/50 border border-violet-100">
                                 <div className="flex items-center gap-2">
                                     <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />
-                                    <span className="text-sm font-medium text-violet-900">File d'attente ({queueNumber})</span>
+                                    <span className="text-sm font-medium text-violet-900">Appels d'équipe</span>
                                     <span className="text-xs font-semibold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">
                                         {totalReceived > 0 ? Math.round((kpis.callsReceived / totalReceived) * 100) : 0}%
                                     </span>
