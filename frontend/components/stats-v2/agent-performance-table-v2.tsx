@@ -29,7 +29,7 @@ interface AgentPerformanceTableV2Props {
     handedOffInPerformance?: "success" | "neutral";
 }
 
-type SortField = "name" | "queueAnswered" | "directAnswered" | "transferred" | "totalAnswered" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds";
+type SortField = "name" | "queueAnswered" | "directAnswered" | "transferred" | "totalAnswered" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds" | "participationRate";
 type SortDirection = "asc" | "desc";
 
 const columnTooltips: Record<string, string> = {
@@ -40,16 +40,11 @@ const columnTooltips: Record<string, string> = {
     totalAnswered: "La somme : appels directs + appels d'équipe + appels transférés",
     totalHandlingTimeSeconds: "Temps total en conversation",
     avgHandlingTimeSeconds: "Durée moyenne d'une conversation",
+    participationRate: "Sa part des appels pris en charge par l'équipe",
 };
 
 // Préférence d'affichage des dénominateurs (mémorisée par navigateur).
 const RATIOS_STORAGE_KEY = "agent-performance-show-ratios";
-
-function getParticipationColor(rate: number): string {
-    if (rate >= 20) return "text-blue-700 bg-blue-50 border-blue-200";
-    if (rate >= 10) return "text-slate-700 bg-slate-50 border-slate-200";
-    return "text-slate-500 bg-slate-50 border-slate-200";
-}
 
 export function AgentPerformanceTableV2({
     agents,
@@ -160,6 +155,10 @@ export function AgentPerformanceTableV2({
     });
 
 
+    // Largeur des segments de la barre « Taux de participation » : la piste
+    // entière représente les 100 % de l'équipe.
+    const shareOfTeam = (n: number) => (teamHandled > 0 ? (n / teamHandled) * 100 : 0);
+
     const formatDurationHMS = (seconds: number): string => {
         if (seconds < 60) return `${seconds}s`;
         const hours = Math.floor(seconds / 3600);
@@ -187,13 +186,13 @@ export function AgentPerformanceTableV2({
         ? Math.round((totals.totalHandlingTimeSeconds) / (totals.answered + totalDirectCallsAnswered))
         : 0;
 
-    const SortHeader = ({ field, label, className }: { field: SortField; label: string; className?: string }) => (
+    const SortHeader = ({ field, label, className, center }: { field: SortField; label: string; className?: string; center?: boolean }) => (
         <th
-            className={"px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors " + (className ?? "")}
+            className={"px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors " + (center ? "text-center " : "text-left ") + (className ?? "")}
             onClick={() => handleSort(field)}
         >
-            <div className="flex items-center gap-1 whitespace-nowrap">
-                {label}
+            <div className={`flex items-center gap-1 ${center ? "justify-center" : ""}`}>
+                <span className="whitespace-pre-line leading-tight">{label}</span>
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <Info className="h-3 w-3 text-slate-400 hover:text-slate-600 flex-shrink-0" />
@@ -261,15 +260,17 @@ export function AgentPerformanceTableV2({
                         <table className="w-full">
                             <thead className="bg-slate-50 border-y">
                                 <tr>
-                                    <SortHeader field="name" label="Agent" />
-                                    {/* Hiérarchie : les 3 composantes en petit, leur somme
-                                        « Prise en charge totale » en gros sur colonne bleutée. */}
-                                    <SortHeader field="directAnswered" label="Appels directs" />
-                                    <SortHeader field="queueAnswered" label="Appels d'équipe" />
-                                    <SortHeader field="transferred" label="Appels transférés" />
-                                    <SortHeader field="totalAnswered" label="Prise en charge totale" className="bg-blue-100/70 text-blue-900" />
-                                    <SortHeader field="totalHandlingTimeSeconds" label="Durée totale" />
-                                    <SortHeader field="avgHandlingTimeSeconds" label="Durée moy." />
+                                    <SortHeader field="name" label="Agent" className="w-[20%]" />
+                                    {/* Hiérarchie : les 3 composantes en petit et centrées, leur
+                                        somme « Prise en charge totale » en gros sur colonne
+                                        bleutée, sa décomposition en barre tricolore. */}
+                                    <SortHeader field="directAnswered" label={"Appels\ndirects"} center className="w-[9%]" />
+                                    <SortHeader field="queueAnswered" label={"Appels\nd'équipe"} center className="w-[9%]" />
+                                    <SortHeader field="transferred" label={"Appels\ntransférés"} center className="w-[10%]" />
+                                    <SortHeader field="totalAnswered" label={"Prise en charge\ntotale"} center className="w-[14%] bg-blue-100/70 text-blue-900" />
+                                    <SortHeader field="participationRate" label={"Taux de\nparticipation"} className="w-[19%]" />
+                                    <SortHeader field="totalHandlingTimeSeconds" label={"Durée\ntotale"} center className="w-[9.5%]" />
+                                    <SortHeader field="avgHandlingTimeSeconds" label={"Durée\nmoy."} center className="w-[9.5%]" />
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -292,40 +293,45 @@ export function AgentPerformanceTableV2({
                                                 <p className="text-xs text-slate-500">Ext. {agent.extension}</p>
                                             </div>
                                         </td>
-                                        <td className="px-3 py-3">
+                                        <td className="px-3 py-3 text-center">
                                             <span className="text-sm font-medium text-blue-700">{agent.directAnswered}</span>
                                             {showRatios && <span className="text-slate-400 text-xs">/{agent.directReceived}</span>}
                                         </td>
-                                        <td className="px-3 py-3">
+                                        <td className="px-3 py-3 text-center">
                                             <span className="text-sm font-medium text-violet-700">{agent.answered}</span>
                                             {showRatios && <span className="text-slate-400 text-xs">/{agent.callsReceived}</span>}
                                         </td>
-                                        <td className="px-3 py-3">
+                                        <td className="px-3 py-3 text-center">
                                             <span className="text-sm font-medium text-amber-700">{agent.transferred}</span>
                                         </td>
-                                        <td className="px-3 py-3 bg-blue-50/70">
-                                            <div className="flex items-center gap-2">
-                                                <span>
-                                                    <span className="text-lg font-bold text-slate-900">{agent.totalAnswered}</span>
-                                                    {showRatios && <span className="text-slate-400 text-sm">/{agent.callsReceived + agent.directReceived}</span>}
-                                                </span>
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild>
-                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold border cursor-help ${getParticipationColor(agent.participationRate)}`}>
-                                                            {agent.participationRate}%
-                                                        </span>
-                                                    </TooltipTrigger>
-                                                    <TooltipContent side="top" className="max-w-xs text-xs">
-                                                        {agent.name} a pris en charge {agent.answered + agent.directAnswered + agent.transferred} des {teamHandled} appels
-                                                        traités par l&apos;équipe, soit {agent.participationRate} %
-                                                    </TooltipContent>
-                                                </Tooltip>
-                                            </div>
+                                        <td className="px-3 py-3 text-center bg-blue-50/70">
+                                            <span className="text-lg font-bold text-slate-900">{agent.totalAnswered}</span>
+                                            {showRatios && <span className="text-slate-400 text-sm">/{agent.callsReceived + agent.directReceived}</span>}
                                         </td>
-                                        <td className="px-3 py-3 text-slate-700">
+                                        <td className="px-3 py-3">
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <div className="flex cursor-help items-center gap-2">
+                                                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                                                            <div className="flex h-full">
+                                                                <div className="bg-blue-500" style={{ width: `${shareOfTeam(agent.directAnswered)}%` }} />
+                                                                <div className="bg-violet-500" style={{ width: `${shareOfTeam(agent.answered)}%` }} />
+                                                                <div className="bg-amber-500" style={{ width: `${shareOfTeam(agent.transferred)}%` }} />
+                                                            </div>
+                                                        </div>
+                                                        <span className="w-9 text-right text-xs font-semibold text-slate-600">{agent.participationRate}%</span>
+                                                    </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="top" className="max-w-xs text-xs">
+                                                    {agent.name} a pris en charge {agent.answered + agent.directAnswered + agent.transferred} des {teamHandled} appels
+                                                    traités par l&apos;équipe, soit {agent.participationRate} %
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </td>
+                                        <td className="px-3 py-3 text-center text-slate-700">
                                             {formatDurationHMS(agent.totalHandlingTimeSeconds)}
                                         </td>
-                                        <td className="px-3 py-3 text-slate-700">
+                                        <td className="px-3 py-3 text-center text-slate-700">
                                             {formatDuration(agent.avgHandlingTimeSeconds)}
                                         </td>
                                     </tr>
@@ -335,7 +341,7 @@ export function AgentPerformanceTableV2({
                             <tfoot className="bg-slate-100 border-t-2 border-slate-300">
                                 <tr className="font-semibold">
                                     <td className="px-3 py-3 text-slate-800">TOTAL</td>
-                                    <td className="px-3 py-3">
+                                    <td className="px-3 py-3 text-center">
                                         <Tooltip>
                                             <TooltipTrigger asChild>
                                                 <span className="text-sm text-blue-700 cursor-help">
@@ -348,23 +354,24 @@ export function AgentPerformanceTableV2({
                                             </TooltipContent>
                                         </Tooltip>
                                     </td>
-                                    <td className="px-3 py-3">
+                                    <td className="px-3 py-3 text-center">
                                         <span className="text-sm text-violet-700">{totals.answered}</span>
                                         {showRatios && <span className="text-slate-400 text-xs">/{totalQueueCallsReceived}</span>}
                                     </td>
-                                    <td className="px-3 py-3">
+                                    <td className="px-3 py-3 text-center">
                                         <span className="text-sm text-amber-700">{totalTeamTransferred}</span>
                                     </td>
-                                    <td className="px-3 py-3 bg-blue-100/60">
+                                    <td className="px-3 py-3 text-center bg-blue-100/60">
                                         {/* Même définition que la barre « Prise en charge » du
                                             bilan : la ligne TOTAL retombe sur son pourcentage. */}
                                         <span className="text-lg font-bold text-slate-900">{totals.answered + totalDirectCallsAnswered + (handedOffCounts ? totalTeamTransferred : 0)}</span>
                                         {showRatios && <span className="text-slate-400 text-sm">/{totalQueueCallsReceived + totalDirectCallsReceived}</span>}
                                     </td>
-                                    <td className="px-3 py-3 text-slate-800">
+                                    <td className="px-3 py-3 text-slate-400">—</td>
+                                    <td className="px-3 py-3 text-center text-slate-800">
                                         {formatDurationHMS(totals.totalHandlingTimeSeconds)}
                                     </td>
-                                    <td className="px-3 py-3 text-slate-800">
+                                    <td className="px-3 py-3 text-center text-slate-800">
                                         {formatDuration(totalAvgHandling)}
                                     </td>
                                 </tr>
