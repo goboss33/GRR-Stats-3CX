@@ -5,8 +5,8 @@ import { formatDurationHuman as formatDuration } from "@/services/domain/call-ag
 import { AgentStats, QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendPill } from "@/components/stats-v2/trend-arrow";
-import { Users, ArrowUpDown, Info } from "lucide-react";
-import { useState, useMemo } from "react";
+import { Users, ArrowUpDown, Info, Eye, EyeOff } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
 import {
     Tooltip,
     TooltipContent,
@@ -29,19 +29,21 @@ interface AgentPerformanceTableV2Props {
     handedOffInPerformance?: "success" | "neutral";
 }
 
-type SortField = "name" | "queueAnswered" | "directAnswered" | "transferred" | "totalAnswered" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds" | "participationRate";
+type SortField = "name" | "queueAnswered" | "directAnswered" | "transferred" | "totalAnswered" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds";
 type SortDirection = "asc" | "desc";
 
 const columnTooltips: Record<string, string> = {
     name: "La pastille compare ses appels pris en charge à la période précédente",
-    queueAnswered: "Appels de la file résolus par l'agent / appels où il a sonné",
-    directAnswered: "Appels directs répondus / reçus",
-    transferred: "A décroché puis transféré l'appel ailleurs",
-    totalAnswered: "La somme : Directs + File + Transférés",
+    queueAnswered: "Contribution de l'agent aux appels d'équipe",
+    directAnswered: "Appels directs répondus",
+    transferred: "Appels transférés par l'agent à une autre équipe",
+    totalAnswered: "La somme : appels directs + appels d'équipe + appels transférés",
     totalHandlingTimeSeconds: "Temps total en conversation",
     avgHandlingTimeSeconds: "Durée moyenne d'une conversation",
-    participationRate: "Sa part des appels pris en charge par l'équipe",
 };
+
+// Préférence d'affichage des dénominateurs (mémorisée par navigateur).
+const RATIOS_STORAGE_KEY = "agent-performance-show-ratios";
 
 function getParticipationColor(rate: number): string {
     if (rate >= 20) return "text-blue-700 bg-blue-50 border-blue-200";
@@ -58,12 +60,24 @@ export function AgentPerformanceTableV2({
     totalDirectCallsReceived,
     handedOffInPerformance = "success",
 }: AgentPerformanceTableV2Props) {
-    const [sortField, setSortField] = useState<SortField>("participationRate");
+    const [sortField, setSortField] = useState<SortField>("totalAnswered");
     const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
     // Un transfert accompli est une prise en charge (règle configurable) : la
     // colonne « Pris en charge » et la jauge suivent la même définition que la
     // barre de l'écran.
     const handedOffCounts = handedOffInPerformance === "success";
+
+    // Les dénominateurs (reçus, sollicitations) parlent aux analystes mais
+    // surchargent la lecture des managers : masqués par défaut.
+    const [showRatios, setShowRatios] = useState(false);
+    useEffect(() => {
+        setShowRatios(localStorage.getItem(RATIOS_STORAGE_KEY) === "1");
+    }, []);
+    const toggleRatios = () => {
+        const next = !showRatios;
+        setShowRatios(next);
+        localStorage.setItem(RATIOS_STORAGE_KEY, next ? "1" : "0");
+    };
 
     // Total answered calls for participation rate
     const totalTeamAnswered = totalQueueCallsAnswered + totalDirectCallsAnswered;
@@ -75,8 +89,9 @@ export function AgentPerformanceTableV2({
 
     // Compute participation rates for all agents — un transfert accompli est
     // une participation au même titre qu'une réponse (travail des réceptions).
+    const teamHandled = totalTeamAnswered + totalTeamTransferred;
+
     const agentsWithMetrics = useMemo(() => {
-        const teamHandled = totalTeamAnswered + totalTeamTransferred;
         return agents.map(agent => {
             const transferred = agent.queueTransferred + agent.directTransferred;
             return {
@@ -92,7 +107,7 @@ export function AgentPerformanceTableV2({
                 totalAnswered: agent.answered + agent.directAnswered + (handedOffCounts ? transferred : 0),
             };
         });
-    }, [agents, totalTeamAnswered, totalTeamTransferred, handedOffCounts]);
+    }, [agents, teamHandled, handedOffCounts]);
 
     // Évolution N-1 par agent : la pastille à côté du nom compare LE chiffre
     // affiché juste dessous (« N appels » de la jauge = répondus + directs +
@@ -177,7 +192,7 @@ export function AgentPerformanceTableV2({
             className={"px-3 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors " + (className ?? "")}
             onClick={() => handleSort(field)}
         >
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 whitespace-nowrap">
                 {label}
                 <Tooltip>
                     <TooltipTrigger asChild>
@@ -222,6 +237,23 @@ export function AgentPerformanceTableV2({
                                 ({agents.length} agent{agents.length > 1 ? "s" : ""})
                             </span>
                         </CardTitle>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    type="button"
+                                    onClick={toggleRatios}
+                                    className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${showRatios
+                                        ? "border-blue-200 bg-blue-50 text-blue-700"
+                                        : "border-slate-200 text-slate-500 hover:text-slate-700"}`}
+                                >
+                                    {showRatios ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                                    Ratios
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-xs text-xs">
+                                Afficher le nombre d&apos;appels reçus derrière chaque chiffre (ex. 85/111)
+                            </TooltipContent>
+                        </Tooltip>
                     </div>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -230,15 +262,14 @@ export function AgentPerformanceTableV2({
                             <thead className="bg-slate-50 border-y">
                                 <tr>
                                     <SortHeader field="name" label="Agent" />
-                                    {/* Directs + File + Transférés (teinte commune) = Pris en
-                                        charge (teinte bleue) : l'addition se lit de gauche à droite. */}
-                                    <SortHeader field="directAnswered" label="Directs" className="bg-slate-100/80" />
-                                    <SortHeader field="queueAnswered" label="File (résolu)" className="bg-slate-100/80" />
-                                    <SortHeader field="transferred" label="Transférés" className="bg-slate-100/80" />
-                                    <SortHeader field="totalAnswered" label="Pris en charge" className="bg-blue-100/70 text-blue-900" />
+                                    {/* Hiérarchie : les 3 composantes en petit, leur somme
+                                        « Prise en charge totale » en gros sur colonne bleutée. */}
+                                    <SortHeader field="directAnswered" label="Appels directs" />
+                                    <SortHeader field="queueAnswered" label="Appels d'équipe" />
+                                    <SortHeader field="transferred" label="Appels transférés" />
+                                    <SortHeader field="totalAnswered" label="Prise en charge totale" className="bg-blue-100/70 text-blue-900" />
                                     <SortHeader field="totalHandlingTimeSeconds" label="Durée totale" />
                                     <SortHeader field="avgHandlingTimeSeconds" label="Durée moy." />
-                                    <SortHeader field="participationRate" label="%" />
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -261,31 +292,41 @@ export function AgentPerformanceTableV2({
                                                 <p className="text-xs text-slate-500">Ext. {agent.extension}</p>
                                             </div>
                                         </td>
-                                        <td className="px-3 py-3 bg-slate-50/60">
-                                            <span className="font-semibold text-blue-700">{agent.directAnswered}</span>
-                                            <span className="text-slate-400 text-sm">/{agent.directReceived}</span>
+                                        <td className="px-3 py-3">
+                                            <span className="text-sm font-medium text-blue-700">{agent.directAnswered}</span>
+                                            {showRatios && <span className="text-slate-400 text-xs">/{agent.directReceived}</span>}
                                         </td>
-                                        <td className="px-3 py-3 bg-slate-50/60">
-                                            <span className="font-semibold text-violet-700">{agent.answered}</span>
-                                            <span className="text-slate-400 text-sm">/{agent.callsReceived}</span>
+                                        <td className="px-3 py-3">
+                                            <span className="text-sm font-medium text-violet-700">{agent.answered}</span>
+                                            {showRatios && <span className="text-slate-400 text-xs">/{agent.callsReceived}</span>}
                                         </td>
-                                        <td className="px-3 py-3 bg-slate-50/60">
-                                            <span className="font-semibold text-amber-700">{agent.transferred}</span>
+                                        <td className="px-3 py-3">
+                                            <span className="text-sm font-medium text-amber-700">{agent.transferred}</span>
                                         </td>
                                         <td className="px-3 py-3 bg-blue-50/70">
-                                            <span className="font-semibold text-slate-900">{agent.totalAnswered}</span>
-                                            <span className="text-slate-400 text-sm">/{agent.callsReceived + agent.directReceived}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span>
+                                                    <span className="text-lg font-bold text-slate-900">{agent.totalAnswered}</span>
+                                                    {showRatios && <span className="text-slate-400 text-sm">/{agent.callsReceived + agent.directReceived}</span>}
+                                                </span>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold border cursor-help ${getParticipationColor(agent.participationRate)}`}>
+                                                            {agent.participationRate}%
+                                                        </span>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="top" className="max-w-xs text-xs">
+                                                        {agent.name} a pris en charge {agent.answered + agent.directAnswered + agent.transferred} des {teamHandled} appels
+                                                        traités par l&apos;équipe, soit {agent.participationRate} %
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </div>
                                         </td>
                                         <td className="px-3 py-3 text-slate-700">
                                             {formatDurationHMS(agent.totalHandlingTimeSeconds)}
                                         </td>
                                         <td className="px-3 py-3 text-slate-700">
                                             {formatDuration(agent.avgHandlingTimeSeconds)}
-                                        </td>
-                                        <td className="px-3 py-3">
-                                            <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-sm font-bold border ${getParticipationColor(agent.participationRate)}`}>
-                                                {agent.participationRate}%
-                                            </span>
                                         </td>
                                     </tr>
                                 ))}
@@ -294,12 +335,12 @@ export function AgentPerformanceTableV2({
                             <tfoot className="bg-slate-100 border-t-2 border-slate-300">
                                 <tr className="font-semibold">
                                     <td className="px-3 py-3 text-slate-800">TOTAL</td>
-                                    <td className="px-3 py-3 bg-slate-200/40">
+                                    <td className="px-3 py-3">
                                         <Tooltip>
                                             <TooltipTrigger asChild>
-                                                <span className="text-blue-700 cursor-help">
+                                                <span className="text-sm text-blue-700 cursor-help">
                                                     {totalDirectCallsAnswered}
-                                                    <span className="text-slate-400 text-sm">/{totalDirectCallsReceived}</span>
+                                                    {showRatios && <span className="text-slate-400 text-xs">/{totalDirectCallsReceived}</span>}
                                                 </span>
                                             </TooltipTrigger>
                                             <TooltipContent side="top" className="max-w-xs text-xs">
@@ -307,18 +348,18 @@ export function AgentPerformanceTableV2({
                                             </TooltipContent>
                                         </Tooltip>
                                     </td>
-                                    <td className="px-3 py-3 bg-slate-200/40">
-                                        <span className="text-violet-700">{totals.answered}</span>
-                                        <span className="text-slate-400 text-sm">/{totalQueueCallsReceived}</span>
+                                    <td className="px-3 py-3">
+                                        <span className="text-sm text-violet-700">{totals.answered}</span>
+                                        {showRatios && <span className="text-slate-400 text-xs">/{totalQueueCallsReceived}</span>}
                                     </td>
-                                    <td className="px-3 py-3 bg-slate-200/40">
-                                        <span className="text-amber-700">{totalTeamTransferred}</span>
+                                    <td className="px-3 py-3">
+                                        <span className="text-sm text-amber-700">{totalTeamTransferred}</span>
                                     </td>
                                     <td className="px-3 py-3 bg-blue-100/60">
                                         {/* Même définition que la barre « Prise en charge » du
                                             bilan : la ligne TOTAL retombe sur son pourcentage. */}
-                                        <span className="text-slate-900">{totals.answered + totalDirectCallsAnswered + (handedOffCounts ? totalTeamTransferred : 0)}</span>
-                                        <span className="text-slate-400 text-sm">/{totalQueueCallsReceived + totalDirectCallsReceived}</span>
+                                        <span className="text-lg font-bold text-slate-900">{totals.answered + totalDirectCallsAnswered + (handedOffCounts ? totalTeamTransferred : 0)}</span>
+                                        {showRatios && <span className="text-slate-400 text-sm">/{totalQueueCallsReceived + totalDirectCallsReceived}</span>}
                                     </td>
                                     <td className="px-3 py-3 text-slate-800">
                                         {formatDurationHMS(totals.totalHandlingTimeSeconds)}
@@ -326,7 +367,6 @@ export function AgentPerformanceTableV2({
                                     <td className="px-3 py-3 text-slate-800">
                                         {formatDuration(totalAvgHandling)}
                                     </td>
-                                    <td className="px-3 py-3 text-slate-400">—</td>
                                 </tr>
                             </tfoot>
                         </table>
