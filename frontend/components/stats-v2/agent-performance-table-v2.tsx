@@ -260,7 +260,7 @@ export function AgentPerformanceTableV2({
                         <table className="w-full">
                             <thead className="bg-slate-50 border-y">
                                 <tr>
-                                    <SortHeader field="name" label="Agent" className="w-[20%]" />
+                                    <SortHeader field="name" label="Agent" className="w-[22%]" />
                                     {/* Hiérarchie : les 3 composantes en petit et centrées, leur
                                         somme « Prise en charge totale » en gros sur colonne
                                         bleutée, sa décomposition en barre tricolore. */}
@@ -268,9 +268,9 @@ export function AgentPerformanceTableV2({
                                     <SortHeader field="queueAnswered" label={"Appels\nd'équipe"} center className="w-[9%]" />
                                     <SortHeader field="transferred" label={"Appels\ntransférés"} center className="w-[10%]" />
                                     <SortHeader field="totalAnswered" label={"Prise en charge\ntotale"} center className="w-[14%] bg-blue-100/70 text-blue-900" />
-                                    <SortHeader field="participationRate" label={"Taux de\nparticipation"} className="w-[19%]" />
-                                    <SortHeader field="totalHandlingTimeSeconds" label={"Durée\ntotale"} center className="w-[9.5%]" />
-                                    <SortHeader field="avgHandlingTimeSeconds" label={"Durée\nmoy."} center className="w-[9.5%]" />
+                                    <SortHeader field="participationRate" label={"Taux de\nparticipation"} center className="w-[14%] bg-blue-100/70 text-blue-900" />
+                                    <SortHeader field="totalHandlingTimeSeconds" label={"Durée\ntotale"} center className="w-[11%]" />
+                                    <SortHeader field="avgHandlingTimeSeconds" label={"Durée\nmoy."} center className="w-[11%]" />
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -308,11 +308,11 @@ export function AgentPerformanceTableV2({
                                             <span className="text-lg font-bold text-slate-900">{agent.totalAnswered}</span>
                                             {showRatios && <span className="text-slate-400 text-sm">/{agent.callsReceived + agent.directReceived}</span>}
                                         </td>
-                                        <td className="px-3 py-3">
+                                        <td className="px-3 py-3 bg-blue-50/70">
                                             <Tooltip>
                                                 <TooltipTrigger asChild>
                                                     <div className="flex cursor-help items-center gap-2">
-                                                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                                                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200/60">
                                                             <div className="flex h-full">
                                                                 <div className="bg-blue-500" style={{ width: `${shareOfTeam(agent.directAnswered)}%` }} />
                                                                 <div className="bg-violet-500" style={{ width: `${shareOfTeam(agent.answered)}%` }} />
@@ -367,7 +367,7 @@ export function AgentPerformanceTableV2({
                                         <span className="text-lg font-bold text-slate-900">{totals.answered + totalDirectCallsAnswered + (handedOffCounts ? totalTeamTransferred : 0)}</span>
                                         {showRatios && <span className="text-slate-400 text-sm">/{totalQueueCallsReceived + totalDirectCallsReceived}</span>}
                                     </td>
-                                    <td className="px-3 py-3 text-slate-400">—</td>
+                                    <td className="px-3 py-3 text-center bg-blue-100/60 text-slate-400">—</td>
                                     <td className="px-3 py-3 text-center text-slate-800">
                                         {formatDurationHMS(totals.totalHandlingTimeSeconds)}
                                     </td>
