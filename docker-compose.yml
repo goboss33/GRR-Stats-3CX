@@ -11,6 +11,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    # Watchtower (présent sur le serveur de prod) ne doit JAMAIS redémarrer la
+    # base de son propre chef — mises à jour Postgres uniquement volontaires.
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
@@ -53,6 +57,10 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    # Image construite localement : hors de portée de Watchtower, et on
+    # déploie par « pull and redeploy » volontaire, jamais automatique.
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
 
 volumes:
   postgres_data:
