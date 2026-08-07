@@ -84,10 +84,10 @@ export function HeaderNotifications() {
                                 <div className="min-w-0">
                                     <p className="text-sm font-medium text-slate-900">
                                         {a.type === "queue_disconnected"
-                                            ? `File ${a.queueNumber} sans agent connecté`
+                                            ? `Équipe ${a.queueNumber} sans agent connecté`
                                             : a.type === "away_forgotten"
                                                 ? `${a.agentName} en statut Absent — probablement oublié`
-                                                : `${a.agentName} déconnecté de la file ${a.queueNumber}`}
+                                                : `${a.agentName} déconnecté de l'équipe ${a.queueNumber}`}
                                     </p>
                                     <p className="truncate text-xs text-slate-500">
                                         {a.queueName}

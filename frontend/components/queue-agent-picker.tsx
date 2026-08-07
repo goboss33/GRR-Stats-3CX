@@ -391,7 +391,7 @@ export function QueueAgentPicker({
                                         "px-3 py-2 text-xs font-semibold text-slate-500 bg-slate-50 border-b sticky top-0",
                                         groupedItems.typeOnlyItems.length > 0 && "border-t"
                                     )}>
-                                        Files d&apos;attente ({groupedItems.queueItems.length})
+                                        Équipes ({groupedItems.queueItems.length})
                                     </div>
                                     {groupedItems.queueItems.map((item) => (
                                         <button

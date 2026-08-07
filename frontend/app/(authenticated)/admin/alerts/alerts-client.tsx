@@ -32,7 +32,7 @@ function TypeCell({ type }: { type: AnomalyAlert["type"] }) {
         // Fond rouge sans radius : toute la file est hors Q.
         return (
             <span className="inline-flex items-center bg-red-500 px-2 py-1 text-xs font-semibold text-white">
-                File déconnectée
+                Équipe déconnectée
             </span>
         );
     }
@@ -79,7 +79,7 @@ function SignalCell({ alert }: { alert: AnomalyAlert }) {
                 <span className="text-slate-700">
                     {formatDistanceToNow(new Date(alert.lastPollAt), { addSuffix: true, locale: fr })}
                 </span>
-                <span className="block text-xs text-slate-400">dernière sollicitation file</span>
+                <span className="block text-xs text-slate-400">dernière sollicitation de l'équipe</span>
             </span>
         </Tip>
     );
@@ -145,8 +145,8 @@ function EvidenceModal({ alert, onClose }: { alert: AnomalyAlert | null; onClose
                         </DialogHeader>
                         <p className="text-sm text-slate-600">
                             {alert.type === "queue_disconnected"
-                                ? <>File {alert.queueNumber} · {alert.queueName}</>
-                                : <>{alert.agentName} (Ext. {alert.agentExtension}) · file {alert.queueNumber} {alert.queueName}</>}
+                                ? <>Équipe {alert.queueNumber} · {alert.queueName}</>
+                                : <>{alert.agentName} (Ext. {alert.agentExtension}) · équipe {alert.queueNumber} {alert.queueName}</>}
                         </p>
 
                         <div>
@@ -313,7 +313,7 @@ export default function AlertsClient() {
                         <thead>
                             <tr className="border-b bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
                                 <th className="px-4 py-3 text-center">Type</th>
-                                <th className="px-4 py-3">File</th>
+                                <th className="px-4 py-3">Équipe</th>
                                 <th className="px-4 py-3">Agent(s) concerné(s)</th>
                                 <th className="px-4 py-3">Dernier signal</th>
                                 <th className="px-4 py-3 text-right">{tab === "ignored" ? "Ignorée" : ""}</th>
@@ -329,7 +329,7 @@ export default function AlertsClient() {
                                     <td className="px-4 py-3 text-center"><TypeCell type={a.type} /></td>
                                     <td className="px-4 py-3">
                                         <p className="font-medium text-slate-900">{a.queueName}</p>
-                                        <p className="text-xs font-mono text-slate-500">File {a.queueNumber}</p>
+                                        <p className="text-xs font-mono text-slate-500">Équipe {a.queueNumber}</p>
                                     </td>
                                     <td className="px-4 py-3"><AgentsCell alert={a} /></td>
                                     <td className="px-4 py-3"><SignalCell alert={a} /></td>
