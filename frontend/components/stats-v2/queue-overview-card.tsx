@@ -17,7 +17,7 @@ import type { QueueKPIs } from "@/types/statistics.types";
  * l'écran détail : la carte et le détail ne peuvent pas se contredire. La
  * pastille reprend les seuils de la barre de prise en charge (vert ≥ 80 %,
  * ambre ≥ 60 %, rouge en dessous) ; le donut est la version simple à trois
- * segments — les couleurs des vignettes Répondus / Perdus / Redirigés.
+ * segments — les couleurs des vignettes Répondus / Perdus / Débordements.
  *
  * Chaque chiffre porte sa flèche de comparaison N-1 (période de même durée
  * juste avant, cf. period-comparison) — les mêmes formules computeTeamTotals
@@ -75,7 +75,7 @@ export function QueueOverviewCard({ queueNumber, queueName, kpis, previousKpis, 
     const donut = [
         { name: "Répondus", value: totals.totalAnswered, color: DONUT_COLORS.answered },
         { name: "Perdus", value: totals.totalLost, color: DONUT_COLORS.lost },
-        { name: "Redirigés", value: totals.totalRedirected, color: DONUT_COLORS.redirected },
+        { name: "Débordements", value: totals.totalRedirected, color: DONUT_COLORS.redirected },
     ].filter((d) => d.value > 0);
 
     return (
@@ -158,7 +158,7 @@ export function QueueOverviewCard({ queueNumber, queueName, kpis, previousKpis, 
                         </div>
                         <div className="flex items-center justify-between">
                             <dt className="flex items-center gap-1.5 text-slate-500">
-                                <ArrowRightLeft className="h-3.5 w-3.5 text-amber-500" /> Redirigés
+                                <ArrowRightLeft className="h-3.5 w-3.5 text-amber-500" /> Débordements
                             </dt>
                             <dd className="flex items-center gap-1 font-semibold tabular-nums text-amber-700">
                                 {totals.totalRedirected}

@@ -180,8 +180,8 @@ export const RULE_SPECS: RuleSpec[] = [
         caseQuestion: "Pour {queue}, cet appel doit-il compter comme répondu ?",
         options: [
             { value: "overflow", label: "Non — Transféré chez l'origine",
-              consequence: "L'appel n'est Répondu que chez l'équipe qui a servi le client en dernier — les chiffres des équipes s'additionnent sans doublon. Un transfert qui échoue laisse l'appel Répondu ici.",
-              summary: "Un appel n'est répondu que chez l'équipe qui a servi le client en dernier (sinon : Transféré)" },
+              consequence: "L'appel garde le statut « Transféré » chez l'équipe qui a décroché (visible dans le tableau des agents et les logs) et « Répondu » chez celle qui a servi le client en dernier. La vignette Répondus des deux équipes le compte : le transfert accompli est du travail fait. Un transfert qui échoue laisse l'appel Répondu ici.",
+              summary: "Le transfert accompli reste visible comme Transféré chez l'équipe d'origine" },
             { value: "answered", label: "Oui — Répondu partout",
               consequence: "Chaque équipe est jugée sur son décroché ; un même client peut être « répondu » chez deux équipes.",
               summary: "Un appel transféré est Répondu chez chaque équipe qui a décroché" },
@@ -197,9 +197,9 @@ export const RULE_SPECS: RuleSpec[] = [
             { value: "lost", label: "Perdu",
               consequence: "L'équipe de l'agent est jugée comme si l'appel était mort chez elle, même s'il a continué — et peut-être abouti — ailleurs.",
               summary: "Une sonnerie directe non répondue partie vers une autre file compte Perdue" },
-            { value: "overflow", label: "Débordé (Redirigé)",
-              consequence: "La même case que le débordement de file : « l'appel nous a échappé ». Ne change ni les reçus ni la prise en charge — seulement la ventilation Perdus → Redirigés. Symétrique du transfert accompli, côté non-décroché.",
-              summary: "Une sonnerie directe non répondue partie vers une autre file est Débordée (Redirigée)" },
+            { value: "overflow", label: "Débordé",
+              consequence: "La même case que le débordement de file : « l'appel nous a échappé ». Ne change ni les reçus ni la prise en charge — seulement la ventilation Perdus → Débordements. Symétrique du transfert accompli, côté non-décroché.",
+              summary: "Une sonnerie directe non répondue partie vers une autre file est Débordée" },
         ],
         more: "Le cas type : le renvoi sans réponse d'un collaborateur pointe directement vers une réception ou une file sœur, sans passer par la file de son propre groupe. Quand l'appel passe par la file du groupe, le débordement de file s'applique déjà — cette règle couvre l'autre chemin. Mesuré : ~230-310 appels/mois, concentrés sur les réceptions.",
     },
@@ -224,9 +224,9 @@ export const RULE_SPECS: RuleSpec[] = [
         kind: "choice", key: "overflow", section: 3,
         question: "Un appel qui déborde vers une autre file sans décroché ici, c'est… ?",
         options: [
-            { value: "neutral", label: "Débordé (Redirigé)",
+            { value: "neutral", label: "Débordé",
               consequence: "Ni répondu ni perdu pour la file d'origine — une catégorie à part.",
-              summary: "Un débordement sans décroché est Redirigé (ni répondu, ni perdu)" },
+              summary: "Un débordement sans décroché est Débordé (ni répondu, ni perdu)" },
             { value: "lost", label: "Perdu pour la file d'origine",
               consequence: "Vision exigeante, utile pour piloter les effectifs : la file n'a pas su répondre dans son délai.",
               summary: "Un débordement sans décroché compte Perdu pour la file d'origine" },
@@ -249,7 +249,7 @@ export const RULE_SPECS: RuleSpec[] = [
         question: "Plusieurs agents décrochent le même appel : qui a le crédit ?",
         options: [
             { value: "lastAnswer", label: "Le dernier décrocheur",
-              consequence: "Un appel = un agent crédité (celui qui a servi le client en dernier). La somme du tableau par agent égale la vignette Répondus.",
+              consequence: "Un appel = un agent crédité (celui qui a servi le client en dernier) ; les transferts accomplis sont crédités à part, dans la colonne Transférés. La somme du tableau par agent égale les vignettes.",
               summary: "Le crédit d'un appel va au dernier décrocheur — la somme du tableau agents égale les vignettes" },
             { value: "each", label: "Chaque décrocheur",
               consequence: "On lit l'activité de chacun, mais un appel partagé compte dans plusieurs lignes : la somme du tableau dépasse le total.",
@@ -310,7 +310,7 @@ export const RULE_SPECS: RuleSpec[] = [
 /** Pastilles du glossaire — mêmes couleurs que les vignettes des statistiques. */
 export const GLOSSARY = [
     { label: "Répondu", className: "bg-emerald-50 text-emerald-700 border-emerald-200", title: "Un agent du groupe a servi le client en dernier" },
-    { label: "Transféré", className: "bg-amber-50 text-amber-700 border-amber-200", title: "Décroché ici, puis client servi ailleurs — le transfert accompli" },
+    { label: "Transféré", className: "bg-emerald-50 text-emerald-600 border-emerald-200", title: "Décroché ici, puis client servi ailleurs — le transfert accompli, compté dans Répondus" },
     { label: "Débordé", className: "bg-orange-50 text-orange-700 border-orange-200", title: "Parti vers une autre file SANS décroché ici" },
     { label: "Perdu", className: "bg-red-50 text-red-700 border-red-200", title: "Personne n'a servi le client" },
     { label: "Messagerie", className: "bg-indigo-50 text-indigo-700 border-indigo-200", title: "Terminé sur la messagerie vocale" },

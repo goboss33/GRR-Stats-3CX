@@ -131,14 +131,14 @@ model AppSettings {
   /// fusionnées dans l'appel principal — exige la vue cdroutput_merged,
   /// cf. prisma/cdr/sql/001_effective_call_id.sql)
   ruleCallGrain               String   @default("leg")
-  /// Appel répondu puis servi hors du groupe : "overflow" (Redirigé) | "answered"
+  /// Appel répondu puis servi hors du groupe : "overflow" (Transféré) | "answered"
   ruleAnsweredThenTransferred String   @default("overflow")
   /// Crédit du tableau par agent : "lastAnswer" (dernier décrocheur) | "each"
   ruleAgentCredit             String   @default("lastAnswer")
   /// Transfert accompli dans la performance : "success" | "neutral"
   ruleHandedOffInPerformance  String   @default("success")
   /// Sonnerie directe non répondue partie vers la file d'une autre équipe :
-  /// "lost" (Perdu) | "overflow" (Débordé, rangé dans les Redirigés)
+  /// "lost" (Perdu) | "overflow" (Débordé, rangé dans les Débordements)
   ruleUnansweredDirectOverflow String  @default("lost")
   /// Durée minimale d'une conversation pour qu'un décroché compte comme répondu.
   ruleMinAnswerSec            Int      @default(1)

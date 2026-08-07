@@ -33,7 +33,7 @@ const CARTES: Array<{ nom: string; outcomes: PassageOutcome[]; team: boolean }> 
     { nom: "Total reçus", outcomes: outcomesForBucket("received"), team: true },
     { nom: "Répondus", outcomes: outcomesForBucket("answered"), team: true },
     { nom: "Perdus", outcomes: outcomesForBucket("lost"), team: true },
-    { nom: "Redirigés", outcomes: outcomesForBucket("overflow"), team: false },
+    { nom: "Débordements", outcomes: outcomesForBucket("overflow"), team: false },
 ];
 
 async function main() {

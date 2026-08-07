@@ -186,7 +186,7 @@ export async function GET(request: NextRequest) {
             // (règle answeredThenTransferred) : ni répondu, ni perdu.
             directHandedOff: Number(row.direct_handed_off),
             // Non répondu et reparti vers la file d'une autre équipe : Débordé
-            // (règle unansweredDirectOverflow) — dans les Redirigés, pas les Perdus.
+            // (règle unansweredDirectOverflow) — dans les Débordements, pas les Perdus.
             directOverflow: Number(row.direct_overflow),
             directLost: Number(row.direct_received) - Number(row.direct_answered)
                 - Number(row.direct_handed_off) - Number(row.direct_overflow),

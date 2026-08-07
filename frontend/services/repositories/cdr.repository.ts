@@ -799,11 +799,13 @@ export async function getQueueTimelineDataRaw(
     const diffDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
     const interval = diffDays <= 2 ? "hour" : "day";
 
-    // Les statuts regroupés sous « Perdus » et « Redirigés » viennent de la
-    // même table que les vignettes : changer le regroupement met la courbe à
-    // jour du même coup. « Redirigés » couvre donc transférés ET débordés —
-    // sans quoi les transferts accomplis (le métier des réceptions)
-    // disparaissaient de la courbe et du total.
+    // Les trois séries viennent de la même table de regroupement que les
+    // vignettes : changer le regroupement met la courbe à jour du même coup.
+    // « Répondus » couvre donc aussi les transferts accomplis (décision août
+    // 2026), et « Débordements » les seuls départs sans décroché — sans quoi
+    // les transférés ne tomberaient dans aucune série et la somme des courbes
+    // ne ferait plus « Total reçus ».
+    const answeredList = outcomesForBucket("answered").map((o) => `'${o}'`).join(", ");
     const lostList = outcomesForBucket("lost").map((o) => `'${o}'`).join(", ");
     const overflowList = outcomesForBucket("overflow").map((o) => `'${o}'`).join(", ");
 
@@ -812,7 +814,7 @@ export async function getQueueTimelineDataRaw(
          team_calls AS (${TEAM_CALLS_UNION_SQL})
          SELECT
              date_trunc($4, started_at AT TIME ZONE $5) AS date_group,
-             COUNT(*) FILTER (WHERE outcome = 'answered')          AS answered,
+             COUNT(*) FILTER (WHERE outcome IN (${answeredList}))  AS answered,
              COUNT(*) FILTER (WHERE outcome IN (${lostList}))      AS missed,
              COUNT(*) FILTER (WHERE outcome IN (${overflowList}))  AS overflow
          FROM team_calls

@@ -82,12 +82,13 @@ async function countWithRules(
     const directOverflow = Number(r.direct_overflow);
 
     // Mêmes regroupements que les vignettes : ce sont ces quatre chiffres que
-    // l'administrateur reconnaîtra sur l'écran de statistiques.
+    // l'administrateur reconnaîtra sur l'écran de statistiques. Côté directs,
+    // le transfert accompli rejoint « répondus » comme dans computeTeamTotals.
     return {
         received: sumBucket(counts, "received") + directTotal,
-        answered: sumBucket(counts, "answered") + directAnswered,
+        answered: sumBucket(counts, "answered") + directAnswered + directHandedOff,
         lost: sumBucket(counts, "lost") + (directTotal - directAnswered - directHandedOff - directOverflow),
-        overflow: sumBucket(counts, "overflow") + directHandedOff + directOverflow,
+        overflow: sumBucket(counts, "overflow") + directOverflow,
         multiPassageCalls: Number(r.multi_passage),
     };
 }
@@ -154,7 +155,7 @@ export async function measureSingleRule(
     diff("reçus", a.received, b.received);
     diff("répondus", a.answered, b.answered);
     diff("perdus", a.lost, b.lost);
-    diff("redirigés", a.overflow, b.overflow);
+    diff("débordements", a.overflow, b.overflow);
 
     if (parts.length === 0) return "Ce choix ne change aucun chiffre sur cette période.";
     return `Par rapport à l'autre option : ${parts.join(" · ")} (30 derniers jours).`;

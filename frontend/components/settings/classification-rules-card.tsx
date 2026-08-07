@@ -280,7 +280,7 @@ export function ClassificationRulesCard({ rules, onChange, saved }: Props) {
                                 </tr>
                             </thead>
                             <tbody>
-                                {([["Total reçus", "received"], ["Répondus", "answered"], ["Perdus", "lost"], ["Redirigés", "overflow"]] as const).map(
+                                {([["Total reçus", "received"], ["Répondus", "answered"], ["Perdus", "lost"], ["Débordements", "overflow"]] as const).map(
                                     ([label, key]) => (
                                         <tr key={key} className="border-b border-slate-50 last:border-0">
                                             <td className="px-3 py-1.5 text-slate-700">{label}</td>

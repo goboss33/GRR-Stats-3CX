@@ -99,7 +99,7 @@ async function main() {
     const s = statsRows[0], l = logsRows[0];
     const keys = ["total", "answered", "abandoned", "overflow"] as const;
     const label: Record<string, string> = {
-        total: "Total appels", answered: "Répondus", abandoned: "Perdus", overflow: "Redirigés",
+        total: "Total appels", answered: "Répondus", abandoned: "Perdus", overflow: "Débordements",
     };
 
     console.log("KPI (par appel) vs LOGS (par segment) — mêmes données, même période\n");

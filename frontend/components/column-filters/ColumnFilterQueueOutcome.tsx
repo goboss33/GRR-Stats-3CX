@@ -36,7 +36,7 @@ interface ColumnFilterQueueOutcomeProps {
 const BUCKETS: { value: Bucket; label: string }[] = [
     { value: "answered", label: "Répondu" },
     { value: "lost", label: "Perdu" },
-    { value: "overflow", label: "Redirigé" },
+    { value: "overflow", label: "Débordé" },
 ];
 
 export function ColumnFilterQueueOutcome({

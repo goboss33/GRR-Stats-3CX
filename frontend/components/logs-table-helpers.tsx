@@ -57,10 +57,12 @@ export const statusConfig: Record<CallStatus, { icon: typeof Phone; className: s
  */
 export const queueOutcomeConfig: Record<PassageOutcome, { label: string; className: string }> = {
     answered: { label: "Répondu", className: "bg-emerald-100 text-emerald-700" },
-    // Transféré = décroché ici puis servi ailleurs (le transfert accompli) ;
-    // Redirigé = parti ailleurs sans décroché ici. Même vignette, deux natures.
-    handed_off: { label: "Transféré", className: "bg-amber-100 text-amber-700" },
-    overflow: { label: "Redirigé", className: "bg-amber-100 text-amber-700" },
+    // Transféré = décroché ici puis servi ailleurs (le transfert accompli) —
+    // compté dans la vignette Répondus, d'où le vert clair (même grammaire que
+    // le donut : teinte claire = transféré) ; Débordé = parti SANS décroché
+    // ici, seul occupant de la vignette orange « Débordements ».
+    handed_off: { label: "Transféré", className: "bg-emerald-50 text-emerald-600" },
+    overflow: { label: "Débordé", className: "bg-amber-100 text-amber-700" },
     // Messagerie et abandons courts existent dans le socle — ils restent
     // configurables et pilotent le calcul — mais les vignettes ne les nomment
     // jamais : elles les rangent dans « Perdus ». Les logs emploient donc le

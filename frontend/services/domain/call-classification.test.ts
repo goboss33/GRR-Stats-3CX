@@ -144,8 +144,9 @@ describe("répondu puis servi hors du groupe (answeredThenTransferred)", () => {
         expect(off).toContain("CASE WHEN answered THEN 'answered' ELSE 'abandoned' END");
     });
 
-    it("« Redirigés » regroupe transferts accomplis et débordements", () => {
-        expect(outcomesForBucket("overflow").sort()).toEqual(["handed_off", "overflow"]);
+    it("le transfert accompli s'affiche dans « Répondus », le débordement seul reste orange", () => {
+        expect(outcomesForBucket("answered").sort()).toEqual(["answered", "handed_off"]);
+        expect(outcomesForBucket("overflow")).toEqual(["overflow"]);
     });
 });
 
@@ -290,21 +291,21 @@ describe("regroupement d'affichage", () => {
     // L'écran reste à quatre vignettes. Ce qui compte ici est que la même table
     // serve à additionner les compteurs ET à construire le lien du clic : c'est
     // la seule façon d'être sûr que le chiffre affiché et la liste coïncident.
-    const counts = { answered: 1722, overflow: 31, voicemail: 11, short_abandon: 110, abandoned: 95 };
+    const counts = { answered: 1722, handed_off: 12, overflow: 31, voicemail: 11, short_abandon: 110, abandoned: 95 };
 
     it("« Perdus » absorbe messagerie et abandons courts", () => {
         expect(outcomesForBucket("lost").sort()).toEqual(["abandoned", "short_abandon", "voicemail"]);
         expect(sumBucket(counts, "lost")).toBe(216);
     });
 
-    it("« Répondus » et « Redirigés » restent isolés", () => {
-        expect(sumBucket(counts, "answered")).toBe(1722);
+    it("« Répondus » additionne répondus et transférés, « Débordements » reste isolé", () => {
+        expect(sumBucket(counts, "answered")).toBe(1722 + 12);
         expect(sumBucket(counts, "overflow")).toBe(31);
     });
 
     it("« Total reçus » couvre tous les statuts", () => {
         expect(outcomesForBucket("received")).toHaveLength(6);
-        expect(sumBucket(counts, "received")).toBe(1969);
+        expect(sumBucket(counts, "received")).toBe(1981);
     });
 
     it("les vignettes forment une partition : leur somme égale le total", () => {
@@ -315,7 +316,7 @@ describe("regroupement d'affichage", () => {
     it("un regroupement alternatif est suivi sans toucher au reste", () => {
         const grouping = { ...DEFAULT_OUTCOME_GROUPING, voicemail: "answered" as const };
         expect(sumBucket(counts, "lost", grouping)).toBe(205);
-        expect(sumBucket(counts, "answered", grouping)).toBe(1733);
+        expect(sumBucket(counts, "answered", grouping)).toBe(1745);
     });
 
     it("un compteur absent vaut zéro plutôt que NaN", () => {

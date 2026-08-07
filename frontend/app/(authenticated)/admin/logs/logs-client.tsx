@@ -220,7 +220,7 @@ export default function AdminLogsPage() {
     // équivaut à « pas de filtre ».
     const { origin: urlOrigin, setOrigin: setUrlOrigin } = useUrlOrigin();
     const callOrigin: "internal" | "external" | null = urlOrigin === "both" ? null : urlOrigin;
-    // L'écran raisonne en vignettes (Répondu / Perdu / Redirigé) ; le socle, en
+    // L'écran raisonne en vignettes (Répondu / Perdu / Débordé) ; le socle, en
     // statuts fins. DEFAULT_OUTCOME_GROUPING fait le pont, et c'est la même
     // table que celle utilisée par les statistiques.
     const [queueBuckets, setQueueBuckets] = useState<Array<Exclude<KpiBucket, "received">>>(() => {

@@ -185,7 +185,7 @@ const endpoints: ApiEndpoint[] = [
             { name: "callsAbandoned", type: "integer", description: "Appels abandonnés" },
             { name: "abandonedBefore10s", type: "integer", description: "Abandons avant 10 secondes" },
             { name: "abandonedAfter10s", type: "integer", description: "Abandons après 10 secondes" },
-            { name: "callsOverflow", type: "integer", description: "Appels redirigés (overflow)" },
+            { name: "callsOverflow", type: "integer", description: "Appels débordés (overflow, partis sans décroché)" },
             { name: "totalPassages", type: "integer", description: "Total des passages CDR" },
             { name: "pingPongCount", type: "integer", description: "Nombre de passages supplémentaires (ping-pong)" },
             { name: "pingPongPercentage", type: "number", description: "Pourcentage de ping-pong" },

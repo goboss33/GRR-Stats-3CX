@@ -37,6 +37,15 @@ interface Decision {
 
 const decisions: Decision[] = [
     {
+        id: "1.16",
+        category: "Statistiques Queue",
+        title: "Le transfert accompli est un Répondu ; « Redirigés » devient « Débordements »",
+        date: "7 août 2026",
+        summary: "Un appel décroché par l'équipe puis servi ailleurs (statut fin « Transféré ») est compté dans la vignette Répondus, en sous-catégorie visible (File · Directs · Transférés). La vignette orange, renommée « Débordements », ne contient plus que les appels partis SANS décroché. Dans les entrées plus anciennes de cette page, « Redirigés » se lit désormais « Débordements ».",
+        justification: "L'ancienne vignette orange mélangeait du travail accompli (décrocher puis transférer — le métier des réceptions) et de la vraie fuite (personne n'a décroché). Ce mélange rendait la couleur d'alerte mensongère et créait un écart inexpliqué entre les Répondus du haut de page et la « Prise en charge totale » du tableau des agents (ex. 421 vs 426). Revers assumé : un appel transféré est répondu chez l'équipe qui a décroché ET chez celle qui a servi en dernier — la somme des répondus par équipe n'est plus additive entre équipes (les vues multi-équipes de l'app dédupliquent par préséance).",
+        impact: "DEFAULT_OUTCOME_GROUPING (handed_off → answered) et computeTeamTotals : vignettes, donuts, courbe de volume et liens vers les logs suivent la même table. Le statut fin « Transféré » reste visible partout (badge des logs en vert clair, colonne du tableau des agents, sous-ligne de la vignette). Les consommateurs de l'API analytics voient leurs « répondus » augmenter du nombre de transferts accomplis.",
+    },
+    {
         id: "1.10",
         category: "Statistiques Queue",
         title: "Cercle fermé : Total = Répondus + Perdus + Redirigés",
@@ -403,7 +412,7 @@ export default function DocumentationPage() {
                     <SectionTitle
                         icon={TrendingUp}
                         title="Étude de cas : scénarios d'appels"
-                        subtitle="Comment chaque type d'appel est comptabilisé pour garantir Total = Répondus + Perdus + Redirigés"
+                        subtitle="Comment chaque type d'appel est comptabilisé pour garantir Total = Répondus + Perdus + Débordements"
                     />
 
                     <Card className="mb-6">
@@ -414,7 +423,7 @@ export default function DocumentationPage() {
                                     Invariant fondamental
                                 </h4>
                                 <p className="text-sm text-emerald-800">
-                                    <code className="font-mono font-bold">Total reçus = Répondus + Perdus + Redirigés</code>
+                                    <code className="font-mono font-bold">Total reçus = Répondus (dont Transférés) + Perdus + Débordements</code>
                                 </p>
                                 <p className="text-xs text-emerald-700 mt-1">
                                     Chaque appel doit être compté exactement une fois, quelque part. Aucun appel ne doit être double-compté ni disparaître.
@@ -458,7 +467,7 @@ export default function DocumentationPage() {
                                             <span className="text-slate-400">Perdu : 0</span>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-slate-400">Redirigé : 0</span>
+                                            <span className="text-slate-400">Débordé : 0</span>
                                             <span className="text-slate-400">— l'appel est revenu et a été traité</span>
                                         </div>
                                     </div>
@@ -502,13 +511,13 @@ export default function DocumentationPage() {
                                             <span className="text-slate-400">Perdu : 0</span>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-amber-600 font-bold">Redirigé : 1</span>
+                                            <span className="text-amber-600 font-bold">Débordé : 1</span>
                                             <span className="text-slate-400">— sorti de 993 sans y être traité</span>
                                         </div>
                                     </div>
                                     <div className="mt-3 bg-slate-50 rounded p-3 border border-slate-200">
                                         <p className="text-xs text-slate-600">
-                                            <strong>Règle :</strong> Un appel est "Redirigé" s'il a quitté la file SANS y être traité ET sans y revenir. Ici, 993 n'a traité personne → Redirigé.
+                                            <strong>Règle :</strong> Un appel est "Débordé" s'il a quitté la file SANS y être traité ET sans y revenir. Ici, 993 n'a traité personne → Débordé.
                                         </p>
                                     </div>
                                 </div>
@@ -544,13 +553,13 @@ export default function DocumentationPage() {
                                             <span className="text-slate-400">Perdu : 0</span>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-slate-400">Redirigé : 0</span>
+                                            <span className="text-slate-400">Débordé : 0</span>
                                             <span className="text-slate-400">— l'appel est revenu via direct</span>
                                         </div>
                                     </div>
                                     <div className="mt-3 bg-slate-50 rounded p-3 border border-slate-200">
                                         <p className="text-xs text-slate-600">
-                                            <strong>Règle :</strong> Un transfert vers un agent de la file annule le statut "Redirigé". Maxime faisant partie de 993, l'appel est "Répondu" pour 993.
+                                            <strong>Règle :</strong> Un transfert vers un agent de la file annule le statut "Débordé". Maxime faisant partie de 993, l'appel est "Répondu" pour 993.
                                         </p>
                                     </div>
                                 </div>
@@ -588,8 +597,8 @@ export default function DocumentationPage() {
                                             <span className="text-slate-400">— appelant a raccroché dans 993</span>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-slate-400">Redirigé : 0</span>
-                                            <span className="text-slate-400">— "Perdu" annule "Redirigé"</span>
+                                            <span className="text-slate-400">Débordé : 0</span>
+                                            <span className="text-slate-400">— "Perdu" annule "Débordé"</span>
                                         </div>
                                     </div>
                                     <div className="mt-3 bg-slate-50 rounded p-3 border border-slate-200">
@@ -623,7 +632,7 @@ export default function DocumentationPage() {
                                     </p>
                                 </div>
                                 <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
-                                    <h5 className="font-semibold text-amber-900 mb-2">Redirigé ↗️</h5>
+                                    <h5 className="font-semibold text-amber-900 mb-2">Débordé ↗️</h5>
                                     <p className="text-sm text-amber-800">
                                         Appel sorti de la file SANS y être traité ET sans y revenir. Si l'appel revient et est traité → annulé.
                                     </p>
@@ -637,7 +646,7 @@ export default function DocumentationPage() {
                 <div className="text-center text-xs text-slate-400 pt-8 pb-4">
                     Documentation technique — GRR Stats 3CX
                     <br />
-                    Dernière mise à jour : avril 2026
+                    Dernière mise à jour : août 2026
                 </div>
             </div>
         </div>

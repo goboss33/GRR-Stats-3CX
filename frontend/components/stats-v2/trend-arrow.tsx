@@ -11,7 +11,7 @@ import { trendDirection, type TrendDirection } from "@/services/domain/period-co
  *
  * La couleur dit « bonne ou mauvaise nouvelle », pas « monte ou descend » :
  * une hausse des Perdus est ROUGE. Les métriques de volume (Total reçus,
- * Redirigés) restent grises quel que soit le sens — un volume n'est ni bien
+ * Débordements) restent grises quel que soit le sens — un volume n'est ni bien
  * ni mal. Le détail chiffré vit dans l'infobulle, pas sur la carte.
  *
  * Le slot a une largeur FIXE dans ses trois états — squelette (comparaison en

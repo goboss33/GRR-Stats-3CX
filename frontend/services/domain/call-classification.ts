@@ -33,7 +33,7 @@ import { buildDirectSegmentWhereClause, SQL_REAL_PARTY_DEST_TYPES } from "./call
  *
  * Ces catégories sont mutuellement exclusives : un appel tombe dans une et une
  * seule d'entre elles pour une file donnée. C'est ce qui garantit que
- * `répondus + redirigés + messagerie + perdus + abandons courts = total`.
+ * `répondus + transférés + débordés + messagerie + perdus + abandons courts = total`.
  */
 export type PassageOutcome =
     | "answered"        // un agent de la file a décroché
@@ -81,10 +81,14 @@ export type KpiBucket = "received" | "answered" | "lost" | "overflow";
  */
 export const DEFAULT_OUTCOME_GROUPING: Record<PassageOutcome, Exclude<KpiBucket, "received">> = {
     answered: "answered",
-    // Transféré et débordé partagent la vignette « Redirigés » (l'appel est
-    // reparti ailleurs) mais PAS le même verdict : la performance compte le
-    // transfert accompli comme un succès (règle handedOffInPerformance).
-    handed_off: "overflow",
+    // Le transfert accompli s'affiche dans « Répondus » (décision août 2026) :
+    // l'équipe a décroché et le client a fini servi — c'est du travail fait,
+    // pas de la fuite. La vignette orange (« Débordements ») ne contient plus
+    // que les appels partis SANS décroché ici. Revers assumé : un appel
+    // transféré est « répondu » chez l'équipe qui a décroché ET chez celle qui
+    // a servi en dernier — la somme des répondus par équipe n'est plus
+    // additive (l'écran, lui, déduplique par préséance).
+    handed_off: "answered",
     overflow: "overflow",
     voicemail: "lost",
     short_abandon: "lost",
@@ -122,7 +126,7 @@ export interface ClassificationRules {
 
     /**
      * Appel non pris qui déborde vers une autre file et y est répondu.
-     * - "neutral"  : catégorie « redirigé », ni répondu ni perdu
+     * - "neutral"  : catégorie « débordé », ni répondu ni perdu
      * - "lost"     : compté comme perdu pour la file d'origine
      * - "answered" : compté comme répondu (vue entreprise)
      */
@@ -196,12 +200,12 @@ export interface ClassificationRules {
      * qui échoue (personne ne décroche ailleurs, ou l'agent reprend l'appel)
      * laisse le groupe dernier serveur → l'appel reste Répondu.
      *
-     * - "overflow" : l'appel devient « Transféré » (statut handed_off, affiché
-     *                dans les Redirigés) — il n'est « Répondu » que chez
-     *                l'équipe qui a servi le client en dernier, ce qui rend les
-     *                chiffres additifs entre équipes
-     * - "answered" : compté Répondu — le groupe est jugé sur son décroché,
-     *                quelle que soit la suite
+     * - "overflow" : l'appel devient « Transféré » (statut handed_off — depuis
+     *                août 2026 affiché dans la vignette Répondus, sous-ligne
+     *                « Transférés ») ; le statut fin reste distinct, ce qui
+     *                garde le transfert visible (colonne du tableau, logs)
+     * - "answered" : compté Répondu tout court — le statut fin « Transféré »
+     *                disparaît, le groupe est jugé sur son décroché
      */
     answeredThenTransferred: "overflow" | "answered";
 
@@ -252,7 +256,7 @@ export interface ClassificationRules {
      *                answeredThenTransferred (décroché puis parti = Transféré ;
      *                pas décroché puis parti = Débordé). Ne change ni les
      *                reçus ni la prise en charge, seulement la ventilation
-     *                Perdus → Redirigés.
+     *                Perdus → Débordements.
      */
     unansweredDirectOverflow: "lost" | "overflow";
 
@@ -948,8 +952,10 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
  * Le CRÉDIT suit la règle `agentCredit` :
  * - "lastAnswer" : un appel répondu est crédité au dernier décrocheur du
  *   groupe, et seulement s'il est resté « Répondu » (un appel requalifié
- *   Redirigé par `answeredThenTransferred` ne crédite personne). Invariant :
- *   la somme des crédits égale la vignette Répondus, bloc par bloc.
+ *   Transféré par `answeredThenTransferred` crédite son décrocheur via le
+ *   compteur transferts, pas via répondus). Invariant : la somme des crédits
+ *   « répondus » égale les répondus au sens fin (la vignette Répondus, elle,
+ *   ajoute les transferts accomplis depuis août 2026), bloc par bloc.
  * - "each" : chaque agent décrocheur compte l'appel — la somme peut dépasser
  *   la vignette, c'est le prix de la lecture « activité de chacun ».
  *

@@ -26,7 +26,7 @@ export interface TeamKpiData {
     totalReceived: number;      // Total appels reçus (file + directs)
     totalAnswered: number;      // Total appels répondus (file + directs)
     totalLost: number;          // Total appels perdus
-    totalOverflow: number;      // Total appels redirigés
+    totalOverflow: number;      // Total appels débordés
     performanceRate: number;    // % de performance (répondus/reçus)
     avgWaitTimeSeconds: number; // Temps d'attente moyen
 }

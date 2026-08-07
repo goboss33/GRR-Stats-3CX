@@ -21,10 +21,12 @@ describe("computeTeamTotals — les formules des vignettes, partagées", () => {
     it("additionne file et directs, et forme une partition exacte", () => {
         const t = computeTeamTotals(kpis());
         expect(t.totalReceived).toBe(150);
-        expect(t.totalAnswered).toBe(90);
+        // Répondus = répondus fins (60+30) + transferts accomplis (7+4).
+        expect(t.totalAnswered).toBe(90 + 11);
         expect(t.totalLost).toBe(28 + 14); // lost file (20+5+3) + directs
-        expect(t.totalRedirected).toBe(7 + 5 + 4 + 2);
-        // Partition : répondus + perdus + redirigés = reçus.
+        // Débordements = débordés seuls, les transférés vivent dans Répondus.
+        expect(t.totalRedirected).toBe(5 + 2);
+        // Partition : répondus + perdus + débordements = reçus.
         expect(t.totalAnswered + t.totalLost + t.totalRedirected).toBe(t.totalReceived);
     });
 

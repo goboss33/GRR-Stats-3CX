@@ -75,7 +75,7 @@ const CustomTooltip = ({
                     {hasOverflow && (
                         <div className="flex items-center gap-3">
                             <span className="w-3 h-3 rounded-full bg-amber-500 shadow-sm shadow-amber-200"></span>
-                            <span className="text-slate-600 flex-1">Redirigés:</span>
+                            <span className="text-slate-600 flex-1">Débordements:</span>
                             <span className="font-bold text-slate-900">{overflow}</span>
                         </div>
                     )}
@@ -185,13 +185,13 @@ export function CallsChart({ data, previousData, previousOffsetMs = 0 }: CallsCh
                         formatter={(value) => (
                             <span className="text-slate-600 font-medium ml-1">
                                 {value === "answered" ? "Répondus"
-                                    : value === "overflow" ? "Redirigés"
+                                    : value === "overflow" ? "Débordements"
                                     : "Perdus"}
                             </span>
                         )}
                     />
                     {/* Superposition N-1 : pointillés estompés, seulement les
-                        deux séries de tête — doubler aussi Redirigés noierait
+                        deux séries de tête — doubler aussi Débordements noierait
                         le graphique. Hors légende : le toggle « Période
                         précédente » les nomme déjà, et leurs pastilles y
                         seraient identiques aux courbes N. */}

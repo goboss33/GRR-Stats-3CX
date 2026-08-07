@@ -350,7 +350,7 @@ export function ActiveFilters({
             answered: "Répondu",
             not_answered: "Non rép.",
             missed: "Manqués",
-            overflow: "Redirigé",
+            overflow: "Débordé",
             busy: "Occupé",
             voicemail: "Messagerie",
         };

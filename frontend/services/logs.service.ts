@@ -295,7 +295,7 @@ function buildAggregatedQueryParts(
         LEFT JOIN answering_queue aq ON aq.call_history_id = ca.call_history_id`;
         // Un appel direct de l'équipe a lui aussi un sort, et la vignette le
         // compte (« Répondus : File 32 · Directs 620 »). Trois issues possibles :
-        // répondu, redirigé (servi hors du groupe), ou perdu.
+        // répondu, transféré ou débordé (servi hors du groupe), ou perdu.
         queueViewSelect = `,
             COALESCE(qv.outcome, dc.outcome) as queue_view_status,
             (dc.call_history_id IS NOT NULL) as queue_view_is_direct,

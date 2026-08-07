@@ -36,7 +36,7 @@ const RESULT_OPTIONS: { value: string; label: string }[] = [
     { value: "answered", label: "Répondu" },
     { value: "not_answered", label: "Non répondu" },
     { value: "abandoned", label: "Manqué" },
-    { value: "overflow", label: "Redirigé" },
+    { value: "overflow", label: "Débordé" },
     { value: "busy", label: "Occupé" },
     { value: "voicemail", label: "Messagerie" },
 ];
@@ -646,7 +646,7 @@ export function ColumnFilterJourney({
                                         }
                                     }}
                                 />
-                                <Label className="text-sm cursor-pointer whitespace-nowrap">Redirigé vers</Label>
+                                <Label className="text-sm cursor-pointer whitespace-nowrap">Débordé vers</Label>
                                 <div className={cn(
                                     "flex-1 transition-opacity",
                                     !condition.overflowQueueNumber && "opacity-50 pointer-events-none"

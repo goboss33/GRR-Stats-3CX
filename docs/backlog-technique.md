@@ -52,7 +52,17 @@ supprime les avertissements pour TOUS les services du serveur
 authentification. Le passer derrière l'entrypoint websecure avec un
 middleware d'auth (ou restreindre par pare-feu aux IP d'administration).
 
-## 5. Divers hérités de la bascule
+## 5. Communication : « répondus » a changé de définition (7 août 2026)
+
+Le transfert accompli est désormais compté dans la vignette Répondus
+(« Redirigés » renommée « Débordements », qui ne garde que les départs sans
+décroché). Conséquence pour les consommateurs EXTERNES de l'API analytics
+(Excel…) : leurs « répondus » augmentent du nombre de transferts accomplis,
+et la somme des répondus par équipe n'est plus additive (un appel transféré
+est répondu chez l'équipe qui a décroché ET chez celle qui a servi en
+dernier). À signaler lors de la prochaine comparaison Excel ↔ app.
+
+## 6. Divers hérités de la bascule
 
 - Recréer les clés API des consommateurs externes (Excel…) en prod, ou
   copier la base auth (étape 7 du runbook).

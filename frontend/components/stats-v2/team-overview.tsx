@@ -34,7 +34,7 @@ interface TeamOverviewProps {
 // violet = file), l'INTENSITÉ et la TEXTURE disent le sort — plein foncé =
 // répondu ici, plein clair = transféré (pris en charge, remis à quelqu'un),
 // hachuré = non abouti. L'ambre reste réservé à l'anneau extérieur et à la
-// vignette Redirigés : l'introduire ici casserait la lecture par canal.
+// vignette Débordements : l'introduire ici casserait la lecture par canal.
 const COLORS = {
     direct: "#3b82f6",
     directTransferred: "#93c5fd",
@@ -53,7 +53,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
     // peuvent pas diverger. Le détail fin (regroupements, liens) reste ici.
     const {
         totalReceived, totalAnswered, totalLost, totalHandedOff,
-        totalOverflowed, totalRedirected: totalOverflow, performanceRate,
+        totalRedirected: totalOverflow, performanceRate,
     } = computeTeamTotals(kpis);
     const handedOffCounts = kpis.handedOffInPerformance === "success";
 
@@ -98,11 +98,11 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
     const outcomeLink = (outcomes: readonly string[], team = true) =>
         `/admin/logs?start=${startDate}&end=${endDate}&queueOutcome=${queueNumber}:${outcomes.join(",")}${team ? ":team" : ""}${originParam}`;
 
-    // Anneau externe : KPIs (Répondus, Perdus, Redirigés)
+    // Anneau externe : KPIs (Répondus, Perdus, Débordements)
     const outcomeData = [
         { name: "Répondus", value: totalAnswered, color: COLORS.answered },
         { name: "Perdus", value: totalLost, color: COLORS.abandoned },
-        { name: "Redirigés", value: totalOverflow, color: COLORS.overflow },
+        { name: "Débordements", value: totalOverflow, color: COLORS.overflow },
     ].filter(d => d.value > 0);
 
     const directTotal = kpis.teamDirectReceived;
@@ -185,7 +185,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             </svg>
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
-                                    {/* Anneau externe : KPIs (Répondus, Perdus, Redirigés) */}
+                                    {/* Anneau externe : KPIs (Répondus, Perdus, Débordements) */}
                                     <Pie
                                         data={outcomeData}
                                         cx="50%"
@@ -272,7 +272,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 </div>
                                 <div className="text-2xl font-bold text-emerald-700">{totalAnswered}</div>
                                 <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
-                                    <span>File: {kpis.callsAnswered} · Directs: {kpis.teamDirectAnswered}</span>
+                                    <span>File: {kpis.callsAnswered} · Directs: {kpis.teamDirectAnswered}{totalHandedOff > 0 && <> · Transférés: {totalHandedOff}</>}</span>
                                     <TrendPill current={totalAnswered} previous={prevOf((t) => t.totalAnswered)} sense="higher-better" />
                                 </div>
                             </TileShell>
@@ -296,8 +296,10 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 </div>
                             </TileShell>
 
-                            {/* Redirigés — file + directs : le lien inclut les
-                                directs (team) pour lister la même population. */}
+                            {/* Débordements — partis SANS décroché ici, file +
+                                directs : le lien inclut les directs (team) pour
+                                lister la même population. Les transferts
+                                accomplis vivent dans la vignette Répondus. */}
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("overflow"))}
                                 hoverClass="hover:border-amber-300"
@@ -305,13 +307,13 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <ArrowRightLeft className="h-4 w-4 text-amber-600" />
-                                        <span className="text-xs font-medium text-slate-600">Redirigés</span>
+                                        <span className="text-xs font-medium text-slate-600">Débordements</span>
                                     </div>
                                     {logsEnabled && <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-amber-600 transition-colors" />}
                                 </div>
                                 <div className="text-2xl font-bold text-amber-700">{totalOverflow}</div>
                                 <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
-                                    <span>Transférés: {totalHandedOff} · Débordés: {totalOverflowed}</span>
+                                    <span>File: {kpis.callsOverflow} · Directs: {kpis.directOverflow}</span>
                                     <TrendPill current={totalOverflow} previous={prevOf((t) => t.totalRedirected)} sense="neutral" />
                                 </div>
                             </TileShell>
@@ -338,9 +340,9 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <TrendPill current={performanceRate} previous={prevOf((t) => t.performanceRate)} sense="higher-better" unit="points" />
                                 </div>
                                 <div className="text-xs text-slate-500">
-                                    {handedOffCounts && totalHandedOff > 0
-                                        ? `${totalAnswered} répondus + ${totalHandedOff} transférés / ${totalReceived} reçus`
-                                        : `${totalAnswered} répondus / ${totalReceived} reçus`}
+                                    {handedOffCounts
+                                        ? `${totalAnswered} pris en charge${totalHandedOff > 0 ? ` (dont ${totalHandedOff} transférés)` : ""} / ${totalReceived} reçus`
+                                        : `${totalAnswered - totalHandedOff} répondus hors transferts / ${totalReceived} reçus`}
                                 </div>
                             </div>
                             <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
