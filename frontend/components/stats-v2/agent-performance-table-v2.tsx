@@ -302,7 +302,9 @@ export function AgentPerformanceTableV2({
                                             {showRatios && <span className="text-slate-400 text-xs">/{agent.callsReceived}</span>}
                                         </td>
                                         <td className="px-3 py-3 text-center">
-                                            <span className="text-sm font-medium text-amber-700">{agent.transferred}</span>
+                                            {/* Teal, pas ambre : l'ambre est la couleur des Débordements,
+                                                or le transfert accompli compte dans les Répondus. */}
+                                            <span className="text-sm font-medium text-teal-600">{agent.transferred}</span>
                                         </td>
                                         <td className="px-3 py-3 text-center bg-blue-50/70">
                                             <span className="text-lg font-bold text-slate-900">{agent.totalAnswered}</span>
@@ -316,7 +318,7 @@ export function AgentPerformanceTableV2({
                                                             <div className="flex h-full">
                                                                 <div className="bg-blue-500" style={{ width: `${shareOfTeam(agent.directAnswered)}%` }} />
                                                                 <div className="bg-violet-500" style={{ width: `${shareOfTeam(agent.answered)}%` }} />
-                                                                <div className="bg-amber-500" style={{ width: `${shareOfTeam(agent.transferred)}%` }} />
+                                                                <div className="bg-teal-500" style={{ width: `${shareOfTeam(agent.transferred)}%` }} />
                                                             </div>
                                                         </div>
                                                         <span className="w-9 text-right text-xs font-semibold text-slate-600">{agent.participationRate}%</span>
@@ -359,7 +361,7 @@ export function AgentPerformanceTableV2({
                                         {showRatios && <span className="text-slate-400 text-xs">/{totalQueueCallsReceived}</span>}
                                     </td>
                                     <td className="px-3 py-3 text-center">
-                                        <span className="text-sm text-amber-700">{totalTeamTransferred}</span>
+                                        <span className="text-sm text-teal-600">{totalTeamTransferred}</span>
                                     </td>
                                     <td className="px-3 py-3 text-center bg-blue-100/60">
                                         {/* Même définition que la barre « Prise en charge » du
