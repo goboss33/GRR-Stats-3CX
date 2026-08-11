@@ -152,10 +152,10 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                     <div className="lg:col-span-4">
                         <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
                             <Users className="h-4 w-4" />
-                            <span>Bilan du groupe · {queueName}</span>
+                            <span>{queueName}</span>
                         </div>
                         {queueDepartment && (
-                            <p className="mt-0.5 pl-6 text-xs text-slate-400">Département {queueDepartment}</p>
+                            <p className="mt-0.5 pl-6 text-xs text-slate-400">{queueDepartment}</p>
                         )}
                     </div>
                     <div className="lg:col-span-8 flex flex-wrap items-center justify-end gap-3">
