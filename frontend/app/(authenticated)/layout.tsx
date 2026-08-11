@@ -60,7 +60,12 @@ export default async function AuthenticatedLayout({
                 profilePicture={profilePicture}
                 signOutAction={handleSignOut}
             />
-            <div className="flex-1 flex flex-col overflow-hidden">
+            {/* min-w-0 est VITAL : sans lui, un item flex ne rétrécit jamais
+                sous la largeur minimale de son contenu (min-width:auto). Un
+                tableau large dans une page élargirait alors toute cette
+                colonne — header compris — au-delà de la fenêtre, et les
+                boutons à droite du header seraient clippés hors de l'écran. */}
+            <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
                 {/* Le provider relie les pages au header : elles y déclarent
                     quelles provenances sont préchargées (spinners du toggle). */}
                 <HeaderScopeProvider>

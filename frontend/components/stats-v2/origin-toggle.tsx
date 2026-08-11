@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Building2, Globe, Layers, Loader2, type LucideIcon } from "lucide-react";
 import { Tip } from "@/components/ui/tooltip";
 import type { CallOrigin } from "@/services/domain/call-classification";
 
@@ -14,10 +14,14 @@ import type { CallOrigin } from "@/services/domain/call-classification";
  * courbe, heatmap — et voyage jusqu'aux logs via les liens des vignettes.
  */
 
-const OPTIONS: Array<{ value: CallOrigin; label: string; title: string }> = [
-    { value: "external", label: "Externe", title: "Appels venus de l'extérieur (clients)" },
-    { value: "internal", label: "Interne", title: "Appels venus d'un poste interne (collègues)" },
-    { value: "both", label: "Les deux", title: "Toutes provenances confondues" },
+// Les icônes remplacent les libellés quand la fenêtre devient étroite
+// (1000–1129px, cf. les classes min-/max- sur le rendu) : Globe = extérieur,
+// Building2 = poste interne, Layers = les deux provenances. L'infobulle
+// (opt.title) garde alors le texte accessible au survol.
+const OPTIONS: Array<{ value: CallOrigin; label: string; title: string; Icon: LucideIcon }> = [
+    { value: "external", label: "Externe", title: "Appels venus de l'extérieur (clients)", Icon: Globe },
+    { value: "internal", label: "Interne", title: "Appels venus d'un poste interne (collègues)", Icon: Building2 },
+    { value: "both", label: "Les deux", title: "Toutes provenances confondues", Icon: Layers },
 ];
 
 interface OriginToggleProps {
@@ -37,7 +41,7 @@ export function OriginToggle({ value, onChange, loadedOrigins, disabled = false 
         <div
             role="group"
             aria-label="Provenance des appels"
-            className="inline-flex items-center rounded-full bg-slate-200/70 p-1"
+            className="inline-flex shrink-0 items-center rounded-full bg-slate-200/70 p-1 max-[999px]:order-1"
         >
             {OPTIONS.map((opt) => {
                 const selected = value === opt.value;
@@ -53,9 +57,15 @@ export function OriginToggle({ value, onChange, loadedOrigins, disabled = false 
                                 type="button"
                                 aria-pressed={selected}
                                 aria-busy={!loaded}
+                                // Le libellé disparaît en mode icône (fenêtre
+                                // étroite) : le nom accessible doit survivre.
+                                aria-label={opt.label}
                                 disabled={disabled || !loaded}
                                 onClick={() => onChange(opt.value)}
-                                className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                                // whitespace-nowrap : un libellé qui passe à la ligne
+                                // (« Les / deux ») fait « gonfler » le toggle quand le
+                                // header se compresse.
+                                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-colors min-[1000px]:max-[1129px]:px-3 ${
                                     selected
                                         ? "bg-blue-600 text-white shadow-sm"
                                         : loaded
@@ -63,7 +73,11 @@ export function OriginToggle({ value, onChange, loadedOrigins, disabled = false 
                                             : "cursor-not-allowed text-slate-400"
                                 }`}
                             >
-                                {opt.label}
+                                {/* Icône visible UNIQUEMENT en mode étroit (1000–
+                                    1129px) ; le libellé texte prend le relais en
+                                    dehors de cette zone, y compris en mode 2 lignes. */}
+                                <opt.Icon aria-hidden className="hidden h-4 w-4 min-[1000px]:max-[1129px]:block" />
+                                <span className="min-[1000px]:max-[1129px]:hidden">{opt.label}</span>
                                 {!loaded && <Loader2 className="h-3 w-3 animate-spin" />}
                             </button>
                         </span>

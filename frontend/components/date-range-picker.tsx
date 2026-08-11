@@ -67,6 +67,13 @@ export interface DateRangePickerProps {
     size?: "default" | "compact";
     /** Format for displaying the date range */
     displayFormat?: "short" | "long";
+    /**
+     * Classes additionnelles pour le BOUTON déclencheur. Le header s'en sert
+     * pour rendre sa largeur compressible (w-full, la largeur étant alors
+     * portée par le wrapper via `className`) — fusionnée en dernier, elle
+     * l'emporte sur la largeur par défaut.
+     */
+    triggerClassName?: string;
 }
 
 // ============================================
@@ -95,6 +102,7 @@ export function DateRangePicker({
     className,
     size = "default",
     displayFormat = "short",
+    triggerClassName,
 }: DateRangePickerProps) {
     const [open, setOpen] = React.useState(false);
 
@@ -293,7 +301,8 @@ export function DateRangePicker({
                             "justify-start text-left",
                             triggerWidth,
                             triggerStyles,
-                            !dateRange && "text-muted-foreground"
+                            !dateRange && "text-muted-foreground",
+                            triggerClassName
                         )}
                     >
                         <CalendarIcon className={cn(
