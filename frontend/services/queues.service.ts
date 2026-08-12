@@ -27,6 +27,7 @@ export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> 
             queuesMap.set(qNum, {
                 queueNumber: qNum,
                 queueName: row.queue_name,
+                queueDepartment: row.queue_department,
                 members: [],
                 memberCount: 0
             });

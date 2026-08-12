@@ -410,6 +410,8 @@ export interface QueueMember {
 export interface QueueInfo {
     queueNumber: string;
     queueName: string;
+    /** Département 3CX (déduit des CDR) — sert à la recherche, jamais affiché seul. */
+    queueDepartment: string | null;
     members: QueueMember[];
     memberCount: number;
 }

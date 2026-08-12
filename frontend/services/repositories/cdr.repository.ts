@@ -66,6 +66,8 @@ export interface TrendRow {
 export interface QueueMemberRow {
     queue_number: string;
     queue_name: string;
+    /** Département 3CX de la file — null quand il n'a jamais été observé. */
+    queue_department: string | null;
     agent_extension: string;
     agent_name: string;
     attempts_count: bigint;
@@ -1177,6 +1179,20 @@ async function queryQueueMembers(serverId: ServerId): Promise<QueueMemberRow[]> 
               AND destination_dn_name IS NOT NULL
             ORDER BY destination_dn_number, cdr_started_at DESC
         ),
+        QueueDepartments AS (
+            -- Département ACTUEL de chaque file : dernier groupe 3CX non vide
+            -- observé (__DEFAULT__ = « pas de département »). Même doctrine
+            -- que le nom ci-dessus et que getQueueDepartment — il sert à la
+            -- RECHERCHE de l'annuaire (trouver une file par son département).
+            SELECT DISTINCT ON (destination_dn_number)
+                destination_dn_number AS queue_number,
+                destination_participant_group_name AS department
+            FROM cdroutput
+            WHERE destination_dn_type = 'queue'
+              AND COALESCE(destination_participant_group_name, '') <> ''
+              AND destination_participant_group_name <> '__DEFAULT__'
+            ORDER BY destination_dn_number, cdr_started_at DESC
+        ),
         QueueMembers AS (
             SELECT
                 parent.destination_dn_number AS queue_number,
@@ -1195,12 +1211,14 @@ async function queryQueueMembers(serverId: ServerId): Promise<QueueMemberRow[]> 
         SELECT
             m.queue_number,
             COALESCE(n.queue_name, m.queue_number) AS queue_name,
+            d.department AS queue_department,
             m.agent_extension,
             m.agent_name,
             m.attempts_count,
             m.last_seen_at
         FROM QueueMembers m
         LEFT JOIN QueueNames n ON n.queue_number = m.queue_number
+        LEFT JOIN QueueDepartments d ON d.queue_number = m.queue_number
         ORDER BY m.queue_number, m.agent_extension;
     `;
     queueMembersCache.set(serverId, { rows, fetchedAt: Date.now(), refreshing: false });

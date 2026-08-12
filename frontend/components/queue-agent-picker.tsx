@@ -4,7 +4,7 @@
  * A reusable search/select component for queues and/or agents.
  * 
  * Features:
- * - Search by queue name/number or agent name/extension
+ * - Search by queue name/number/department or agent name/extension
  * - Filter to show only queues, only agents, or both
  * - Grouped results with counts
  * - Size variants (default, compact)
@@ -42,6 +42,8 @@ export interface QueueAgentPickerItem {
     type: "queue" | "agent" | "type-only" | "any-agent" | "any-queue";
     queueNumber: string;
     queueName: string;
+    /** Département 3CX de la file — critère de recherche uniquement, pas affiché. */
+    queueDepartment?: string | null;
     agentExtension?: string;
     agentName?: string;
     label: string;
@@ -178,6 +180,7 @@ export function QueueAgentPicker({
                     type: "queue",
                     queueNumber: queue.queueNumber,
                     queueName: queue.queueName,
+                    queueDepartment: queue.queueDepartment,
                     label: queue.queueName,
                     sublabel: `File ${queue.queueNumber} • ${queue.memberCount} agent${queue.memberCount > 1 ? "s" : ""}`,
                 });
@@ -190,6 +193,7 @@ export function QueueAgentPicker({
                         type: "agent",
                         queueNumber: queue.queueNumber,
                         queueName: queue.queueName,
+                        queueDepartment: queue.queueDepartment,
                         agentExtension: member.agentExtension,
                         agentName: member.agentName,
                         label: member.agentName,
@@ -207,11 +211,15 @@ export function QueueAgentPicker({
         const search = inputValue.toLowerCase().trim();
         if (!search) return searchItems;
 
+        // Le département matche comme le NOM de la file : une recherche
+        // « neuchatel » remonte la file du département GRR NEUCHATEL — et ses
+        // agents, exactement comme une recherche sur le nom de la file.
         return searchItems.filter((item) => {
             if (item.type === "queue" || item.type === "any-queue") {
                 return (
                     item.queueName.toLowerCase().includes(search) ||
                     item.queueNumber.includes(search) ||
+                    item.queueDepartment?.toLowerCase().includes(search) ||
                     item.label.toLowerCase().includes(search)
                 );
             } else {
@@ -220,6 +228,7 @@ export function QueueAgentPicker({
                     item.agentExtension?.includes(search) ||
                     item.queueName.toLowerCase().includes(search) ||
                     item.queueNumber.includes(search) ||
+                    item.queueDepartment?.toLowerCase().includes(search) ||
                     item.label.toLowerCase().includes(search)
                 );
             }
