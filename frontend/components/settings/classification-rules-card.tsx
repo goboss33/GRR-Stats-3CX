@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Loader2, Printer, TrendingUp } from "lucide-react";
+import { FileText, Loader2, Printer, RotateCcw, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { Tip } from "@/components/ui/tooltip";
 import { QueueAgentPicker } from "@/components/queue-agent-picker";
 import { RuleCard } from "@/components/settings/rule-card";
 import {
-    GLOSSARY, RULE_SPECS, SECTIONS, buildSummary,
+    GLOSSARY, RECOMMENDED_RULES, RULE_SPECS, SECTIONS, buildSummary,
     type RuleSpec, type SectionId,
 } from "@/components/settings/rules-config";
 import { getScopedQueueOptions } from "@/services/queues.service";
@@ -109,6 +109,22 @@ export function ClassificationRulesCard({ rules, onChange, saved }: Props) {
         return map;
     }, []);
 
+    // Applique les valeurs recommandées à l'état d'édition — l'enregistrement
+    // reste un geste séparé, et « modifié » signale chaque règle qui change.
+    const applyRecommended = () => {
+        const next = { ...rules, ...RECOMMENDED_RULES };
+        if (JSON.stringify(next) === JSON.stringify(rules)) {
+            toast.info("Les options par défaut sont déjà appliquées.");
+            return;
+        }
+        onChange(next);
+        // Les mesures d'impact affichées décrivaient l'état d'édition d'AVANT
+        // le clic : on les purge pour ne pas laisser lire des chiffres périmés.
+        setMeasures({});
+        setGlobalImpact(null);
+        toast.info("Options par défaut appliquées — vérifiez, puis enregistrez.");
+    };
+
     const measureRule = async (spec: RuleSpec) => {
         if (!queue) { toast.error("Choisissez d'abord un groupe à observer."); return; }
         const alternative = withAlternative(spec, rules);
@@ -143,8 +159,13 @@ export function ClassificationRulesCard({ rules, onChange, saved }: Props) {
         const section = SECTIONS.find((s) => s.id === id)!;
         const specs = bySection.get(id) ?? [];
         return (
-            <section key={id} id={`regles-section-${id}`} data-section={id} className="scroll-mt-4 space-y-3">
-                <div className="flex items-baseline gap-3">
+            <section
+                key={id}
+                id={`regles-section-${id}`}
+                data-section={id}
+                className="scroll-mt-4 space-y-3 rounded-2xl border border-slate-200 bg-slate-100/70 p-4 sm:p-5"
+            >
+                <div className="flex items-baseline gap-3 border-b border-slate-200/80 pb-3">
                     <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-bold tabular-nums text-blue-700">
                         {id}
                     </span>
@@ -214,10 +235,16 @@ export function ClassificationRulesCard({ rules, onChange, saved }: Props) {
                                 <FileText className="h-4 w-4 text-blue-600" />
                                 Comment compte-t-on aujourd&apos;hui ?
                             </CardTitle>
-                            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()}>
-                                <Printer className="h-3.5 w-3.5" />
-                                Imprimer
-                            </Button>
+                            <div className="flex items-center gap-2">
+                                <Button variant="outline" size="sm" className="gap-1.5" onClick={applyRecommended}>
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                    Options par défaut
+                                </Button>
+                                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()}>
+                                    <Printer className="h-3.5 w-3.5" />
+                                    Imprimer
+                                </Button>
+                            </div>
                         </div>
                         <CardDescription>
                             Une phrase par règle active — ce résumé se met à jour à chaque choix.

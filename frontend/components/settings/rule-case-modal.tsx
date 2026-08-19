@@ -35,6 +35,8 @@ interface Props {
     options: ChoiceOption[];
     /** Valeur active, pour marquer l'option en place. */
     current: string;
+    /** Valeur recommandée (RECOMMENDED_RULES), pour l'étiquette « défaut ». */
+    recommended?: string;
     onChoose: (value: string) => void;
     queues: QueueInfo[];
     initialQueue: string | null;
@@ -43,7 +45,7 @@ interface Props {
 }
 
 export function RuleCaseModal({
-    open, onClose, question, options, current, onChoose, queues, initialQueue, findCases,
+    open, onClose, question, options, current, recommended, onChoose, queues, initialQueue, findCases,
 }: Props) {
     const [queue, setQueue] = useState<string | null>(initialQueue);
     const [cases, setCases] = useState<ExemplarCase[] | null>(null);
@@ -200,6 +202,11 @@ export function RuleCaseModal({
                                     >
                                         <span className="block text-sm font-medium text-slate-900">
                                             {opt.label}
+                                            {opt.value === recommended && (
+                                                <span className="ml-2 rounded-full bg-blue-100 px-1.5 py-px align-middle text-[10px] font-bold uppercase tracking-wide text-blue-700">
+                                                    défaut
+                                                </span>
+                                            )}
                                             {opt.value === current && (
                                                 <span className="ml-2 text-xs font-normal text-blue-600">— réglage actuel</span>
                                             )}

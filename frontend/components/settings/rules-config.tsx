@@ -307,6 +307,38 @@ export const RULE_SPECS: RuleSpec[] = [
     },
 ];
 
+/**
+ * Les « options par défaut » de l'écran — la configuration maison recommandée
+ * (arbitrée en août 2026). Distincte de DEFAULT_CLASSIFICATION_RULES, qui
+ * reste le repli TECHNIQUE d'une installation sans réglages enregistrés (ex.
+ * callGrain "leg" n'exige pas la vue cdroutput_merged). L'écran met ces
+ * valeurs en évidence sur chaque règle, et le bouton « Options par défaut »
+ * les applique d'un coup — sans enregistrer.
+ */
+export const RECOMMENDED_RULES: ClassificationRules = {
+    // 1. Qu'est-ce qu'un appel ?
+    callGrain: "merged",
+    minSignificantDurationSeconds: 1,
+    // 2. Quels appels comptent ?
+    voicemail: "excluded",
+    shortAbandonThresholdSeconds: 5,
+    shortAbandonDisposition: "excluded",
+    shortAbandonClock: "team",
+    // 3. Comment juge-t-on un appel ?
+    answeredThenTransferred: "overflow",
+    unansweredDirectOverflow: "overflow",
+    multiPassage: "best",
+    overflow: "neutral",
+    minAnswerSeconds: 1,
+    // 4. Crédit & performance
+    agentCredit: "lastAnswer",
+    handedOffInPerformance: "success",
+    // 5. Qui voit quoi ?
+    outOfScopeFinalStatus: "name",
+    // Avancé
+    directAndQueue: "queueWins",
+};
+
 /** Pastilles du glossaire — mêmes couleurs que les vignettes des statistiques. */
 export const GLOSSARY = [
     { label: "Répondu", className: "bg-emerald-50 text-emerald-700 border-emerald-200", title: "Un agent du groupe a servi le client en dernier" },

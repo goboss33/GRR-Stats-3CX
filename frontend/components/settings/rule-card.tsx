@@ -8,7 +8,7 @@ import { RuleCaseModal } from "@/components/settings/rule-case-modal";
 import { findExemplarCases } from "@/services/rule-cases.service";
 import type { ClassificationRules } from "@/services/domain/call-classification";
 import type { QueueInfo } from "@/types/queues.types";
-import type { ChoiceOption, RuleSpec } from "@/components/settings/rules-config";
+import { RECOMMENDED_RULES, type ChoiceOption, type RuleSpec } from "@/components/settings/rules-config";
 
 /**
  * Carte d'une règle — une question, des options, une conséquence.
@@ -32,13 +32,16 @@ interface Props {
     measureResult?: string | null;
 }
 
-function OptionButtons({ options, value, onPick }: {
-    options: readonly ChoiceOption[]; value: string; onPick: (v: string) => void;
+function OptionButtons({ options, value, recommended, onPick }: {
+    options: readonly ChoiceOption[]; value: string; recommended?: string; onPick: (v: string) => void;
 }) {
     return (
         <div className="flex flex-wrap gap-2" role="group">
             {options.map((opt) => {
                 const selected = opt.value === value;
+                // L'option par défaut reste repérable même non choisie :
+                // bordure bleutée + étiquette « défaut ».
+                const isDefault = opt.value === recommended;
                 return (
                     <button
                         key={opt.value}
@@ -48,14 +51,46 @@ function OptionButtons({ options, value, onPick }: {
                         className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
                             selected
                                 ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                                : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                                : isDefault
+                                    ? "border-blue-300 bg-blue-50/70 text-slate-700 hover:border-blue-400 hover:text-slate-900"
+                                    : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:text-slate-900"
                         }`}
                     >
                         {opt.label}
+                        {isDefault && (
+                            <span className={`ml-1.5 rounded-full px-1.5 py-px align-middle text-[10px] font-bold uppercase tracking-wide ${
+                                selected ? "bg-white/25 text-white" : "bg-blue-100 text-blue-700"
+                            }`}>
+                                défaut
+                            </span>
+                        )}
                     </button>
                 );
             })}
         </div>
+    );
+}
+
+/** Pastille « défaut : N s » à côté d'un champ numérique — un clic l'applique. */
+function DefaultValueChip({ current, recommended, onApply }: {
+    current: number | null; recommended: number | null; onApply: () => void;
+}) {
+    if (recommended === null) return null;
+    const applied = current === recommended;
+    return (
+        <button
+            type="button"
+            onClick={onApply}
+            disabled={applied}
+            title={applied ? "La valeur par défaut est appliquée" : "Appliquer la valeur par défaut"}
+            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                applied
+                    ? "cursor-default border-blue-200 bg-blue-50/60 text-blue-400"
+                    : "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+            }`}
+        >
+            défaut : {recommended} s
+        </button>
     );
 }
 
@@ -78,6 +113,12 @@ export function RuleCard({
 
     const caseKind = spec.kind !== "number" ? spec.caseKind : undefined;
     const caseQuestion = spec.kind !== "number" ? spec.caseQuestion : undefined;
+
+    // Valeur recommandée de la règle (cf. RECOMMENDED_RULES) : marque l'option
+    // par défaut, et alimente la pastille des champs numériques.
+    const recommendedChoice = spec.kind === "shortAbandon"
+        ? String(RECOMMENDED_RULES.shortAbandonDisposition)
+        : spec.kind === "choice" ? String(RECOMMENDED_RULES[spec.key]) : undefined;
 
     return (
         <div className="rounded-xl border border-slate-200 bg-white p-5">
@@ -105,6 +146,11 @@ export function RuleCard({
                         })}
                     />
                     <span className="text-sm text-slate-500">{spec.unit}</span>
+                    <DefaultValueChip
+                        current={rules[spec.key]}
+                        recommended={RECOMMENDED_RULES[spec.key]}
+                        onApply={() => onChange({ ...rules, [spec.key]: RECOMMENDED_RULES[spec.key] })}
+                    />
                 </div>
             )}
 
@@ -123,6 +169,11 @@ export function RuleCard({
                         })}
                     />
                     <span className="text-sm text-slate-500">seconde(s)</span>
+                    <DefaultValueChip
+                        current={rules.shortAbandonThresholdSeconds}
+                        recommended={RECOMMENDED_RULES.shortAbandonThresholdSeconds}
+                        onApply={() => onChange({ ...rules, shortAbandonThresholdSeconds: RECOMMENDED_RULES.shortAbandonThresholdSeconds })}
+                    />
                 </div>
             )}
 
@@ -138,7 +189,7 @@ export function RuleCard({
 
             {options.length > 0 && (
                 <>
-                    <OptionButtons options={options} value={value} onPick={pick} />
+                    <OptionButtons options={options} value={value} recommended={recommendedChoice} onPick={pick} />
                     {activeOption && (
                         <p className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-600">
                             → {activeOption.consequence}
@@ -192,6 +243,7 @@ export function RuleCard({
                     question={caseQuestion}
                     options={options}
                     current={value}
+                    recommended={recommendedChoice}
                     onChoose={pick}
                     queues={queues}
                     initialQueue={selectedQueue}
