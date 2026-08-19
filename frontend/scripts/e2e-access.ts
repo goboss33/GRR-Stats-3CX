@@ -47,6 +47,7 @@ async function main() {
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
         canViewNotifications: false,
+        agentRatiosLevel: "none",
     });
     const scope = await describeUserScope(user.id);
     console.log(`   ${scope.queues.length} files (attendu ${pully.length})`);
@@ -65,6 +66,7 @@ async function main() {
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
         canViewNotifications: false,
+        agentRatiosLevel: "none",
     });
     const scope2 = await describeUserScope(user.id);
     console.log(`   ${scope2.queues.length} files (attendu 2) · logs : ${scope2.canViewLogs}`);

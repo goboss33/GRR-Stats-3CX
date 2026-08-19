@@ -4,6 +4,7 @@ import { ServerId } from "@/lib/prisma-cdr";
 import { getQueueMembersRaw } from "@/services/repositories/cdr.repository";
 import type { QueueInfo, QueueMember } from "@/services/domain/call.types";
 import { resolveAccessScope } from "@/lib/access-scope";
+import type { AgentRatiosLevel } from "@/lib/ratios-access";
 
 /**
  * Queues Service — Queue Members
@@ -87,6 +88,7 @@ export async function getScopedQueueOptions(serverId: ServerId): Promise<{
     queues: QueueInfo[];
     canViewCompanyWide: boolean;
     canViewLogs: boolean;
+    agentRatiosLevel: AgentRatiosLevel;
     noPerimeter: boolean;
 }> {
     const scope = await resolveAccessScope(serverId);
@@ -95,6 +97,7 @@ export async function getScopedQueueOptions(serverId: ServerId): Promise<{
         queues,
         canViewCompanyWide: scope.canBrowseAllQueues,
         canViewLogs: scope.canViewLogs,
+        agentRatiosLevel: scope.agentRatiosLevel,
         // Distingue « aucun droit » de « aucune file dans ce tenant » : les deux
         // donnent une liste vide, mais appellent des messages opposés.
         noPerimeter: scope.empty,

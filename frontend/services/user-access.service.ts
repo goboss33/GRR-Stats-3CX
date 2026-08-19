@@ -11,6 +11,7 @@
 
 import { prismaAuth } from "@/lib/prisma-auth";
 import { effectiveCanViewNotifications } from "@/lib/notification-access";
+import { effectiveAgentRatiosLevel, type AgentRatiosLevel } from "@/lib/ratios-access";
 import type { Role } from "@prisma/auth-client";
 
 export type OverrideMode = "INCLUDE" | "EXCLUDE";
@@ -32,6 +33,9 @@ export interface UserAccessPayload {
     /// Valeur EFFECTIVE à la lecture (le null « défaut par rôle » est résolu) ;
     /// l'enregistrement écrit une valeur explicite.
     canViewNotifications: boolean;
+    /// Ratios du tableau des agents — même mécanique que canViewNotifications :
+    /// effectif à la lecture, explicite à l'enregistrement.
+    agentRatiosLevel: AgentRatiosLevel;
 }
 
 /** Accès configurés d'un utilisateur. */
@@ -39,7 +43,7 @@ export async function getUserAccess(userId: string): Promise<UserAccessPayload> 
     const [user, tenants, perimeter, overrides] = await Promise.all([
         prismaAuth.user.findUnique({
             where: { id: userId },
-            select: { role: true, canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, canCreateApiKeys: true, canViewNotifications: true },
+            select: { role: true, canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, canCreateApiKeys: true, canViewNotifications: true, agentRatiosLevel: true },
         }),
         prismaAuth.userTenantAccess.findMany({ where: { userId }, select: { tenantId: true } }),
         prismaAuth.userQueuePerimeter.findMany({ where: { userId }, select: { queueId: true } }),
@@ -64,6 +68,7 @@ export async function getUserAccess(userId: string): Promise<UserAccessPayload> 
         canViewFullPhoneNumbers: user.canViewFullPhoneNumbers,
         canCreateApiKeys: user.canCreateApiKeys,
         canViewNotifications: effectiveCanViewNotifications(user),
+        agentRatiosLevel: effectiveAgentRatiosLevel(user),
     };
 }
 
@@ -82,6 +87,7 @@ export async function setUserAccess(userId: string, payload: UserAccessPayload):
                 canViewFullPhoneNumbers: payload.canViewFullPhoneNumbers,
                 canCreateApiKeys: payload.canCreateApiKeys,
                 canViewNotifications: payload.canViewNotifications,
+                agentRatiosLevel: payload.agentRatiosLevel,
             },
         }),
         prismaAuth.userTenantAccess.deleteMany({ where: { userId } }),
@@ -200,6 +206,8 @@ export interface UserScopeDescription {
     canCreateApiKeys: boolean;
     /** Effectif : le null « défaut par rôle » est résolu (cf. lib/notification-access). */
     canViewNotifications: boolean;
+    /** Effectif : le null « défaut par rôle » est résolu (cf. lib/ratios-access). */
+    agentRatiosLevel: AgentRatiosLevel;
 }
 
 /**
@@ -216,6 +224,7 @@ export async function describeUserScope(userId: string): Promise<UserScopeDescri
             canViewExtensionStats: true,
             canViewFullPhoneNumbers: true,
             canCreateApiKeys: true,
+            agentRatiosLevel: true,
         },
     });
     if (!user) throw new Error("Utilisateur introuvable");
@@ -282,5 +291,6 @@ export async function describeUserScope(userId: string): Promise<UserScopeDescri
         canViewFullPhoneNumbers: user.canViewFullPhoneNumbers,
         canCreateApiKeys: user.canCreateApiKeys,
         canViewNotifications: effectiveCanViewNotifications(user),
+        agentRatiosLevel: effectiveAgentRatiosLevel(user),
     };
 }

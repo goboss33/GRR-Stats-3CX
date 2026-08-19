@@ -86,6 +86,12 @@ export default function StatisticsV2Page() {
     // scintillement lien actif → retiré pour les utilisateurs restreints).
     const [canViewLogs, setCanViewLogs] = useState<boolean | null>(null);
 
+    // Droit « Ratios » : quels dénominateurs le tableau des agents affiche
+    // (aucun / ligne TOTAL / partout) — décision serveur également. Le défaut
+    // « none » vaut tant que la réponse n'est pas arrivée : les ratios
+    // apparaissent, jamais l'inverse.
+    const [agentRatiosLevel, setAgentRatiosLevel] = useState<"none" | "totals" | "all">("none");
+
     // Seul le signal « aucun périmètre » est encore utile ici : la liste des
     // files vit désormais sur le tableau de bord (aperçu) et dans le header.
     useEffect(() => {
@@ -93,6 +99,7 @@ export default function StatisticsV2Page() {
             .then((options) => {
                 setNoPerimeter(options.noPerimeter);
                 setCanViewLogs(options.canViewLogs);
+                setAgentRatiosLevel(options.agentRatiosLevel);
             })
             .finally(() => setIsLoadingQueues(false));
     }, []);
@@ -264,6 +271,7 @@ export default function StatisticsV2Page() {
                         totalDirectCallsAnswered={statistics.kpis.teamDirectAnswered}
                         totalDirectCallsReceived={statistics.kpis.teamDirectReceived}
                         handedOffInPerformance={statistics.kpis.handedOffInPerformance}
+                        ratiosLevel={agentRatiosLevel}
                     />
 
                     {/* Évolution du Volume + Carte des Affluences */}

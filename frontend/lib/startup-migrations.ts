@@ -45,6 +45,13 @@ async function replaceCompanyWideWithCanViewLogs(): Promise<void> {
     await prismaAuth.$executeRawUnsafe(
         `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "canViewNotifications" BOOLEAN`,
     );
+    // Ratios du tableau des agents (août 2026) : NULLABLE à dessein — null =
+    // non arbitré, le défaut se calcule par rôle (cf. lib/ratios-access).
+    // Sans cet ALTER, une instance `next dev` sur une base pas encore poussée
+    // planterait à CHAQUE résolution de portée (la colonne est SELECTionnée).
+    await prismaAuth.$executeRawUnsafe(
+        `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "agentRatiosLevel" TEXT`,
+    );
     // Fenêtre d'observation du détecteur d'anomalies (jours).
     await prismaAuth.$executeRawUnsafe(
         `ALTER TABLE "AppSettings" ADD COLUMN IF NOT EXISTS "notificationWindowDays" INTEGER NOT NULL DEFAULT 7`,

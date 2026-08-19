@@ -5,8 +5,8 @@ import { formatDurationHuman as formatDuration } from "@/services/domain/call-ag
 import { AgentStats, QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendPill } from "@/components/stats-v2/trend-arrow";
-import { Users, ArrowUpDown, Info, Eye, EyeOff } from "lucide-react";
-import { useState, useMemo, useEffect } from "react";
+import { Users, ArrowUpDown, Info } from "lucide-react";
+import { useState, useMemo } from "react";
 import {
     Tooltip,
     TooltipContent,
@@ -27,6 +27,12 @@ interface AgentPerformanceTableV2Props {
     totalDirectCallsReceived: number;
     /** Le transfert accompli compte-t-il dans la prise en charge ? (règle) */
     handedOffInPerformance?: "success" | "neutral";
+    /**
+     * Niveau d'affichage des dénominateurs (« 85/111 ») — un DROIT résolu côté
+     * serveur (fiche utilisateur, cf. lib/ratios-access), plus une préférence
+     * locale : "none" = aucun, "totals" = ligne TOTAL seule, "all" = partout.
+     */
+    ratiosLevel?: "none" | "totals" | "all";
 }
 
 type SortField = "name" | "queueAnswered" | "directAnswered" | "transferred" | "totalAnswered" | "totalHandlingTimeSeconds" | "avgHandlingTimeSeconds" | "participationRate";
@@ -43,9 +49,6 @@ const columnTooltips: Record<string, string> = {
     participationRate: "Sa part des appels pris en charge par l'équipe",
 };
 
-// Préférence d'affichage des dénominateurs (mémorisée par navigateur).
-const RATIOS_STORAGE_KEY = "agent-performance-show-ratios";
-
 export function AgentPerformanceTableV2({
     agents,
     previousStats,
@@ -54,6 +57,7 @@ export function AgentPerformanceTableV2({
     totalDirectCallsAnswered,
     totalDirectCallsReceived,
     handedOffInPerformance = "success",
+    ratiosLevel = "none",
 }: AgentPerformanceTableV2Props) {
     const [sortField, setSortField] = useState<SortField>("totalAnswered");
     const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -62,17 +66,9 @@ export function AgentPerformanceTableV2({
     // barre de l'écran.
     const handedOffCounts = handedOffInPerformance === "success";
 
-    // Les dénominateurs (reçus, sollicitations) parlent aux analystes mais
-    // surchargent la lecture des managers : masqués par défaut.
-    const [showRatios, setShowRatios] = useState(false);
-    useEffect(() => {
-        setShowRatios(localStorage.getItem(RATIOS_STORAGE_KEY) === "1");
-    }, []);
-    const toggleRatios = () => {
-        const next = !showRatios;
-        setShowRatios(next);
-        localStorage.setItem(RATIOS_STORAGE_KEY, next ? "1" : "0");
-    };
+    // Les dénominateurs, ligne par ligne ou sur le seul TOTAL, selon le droit.
+    const showRowRatios = ratiosLevel === "all";
+    const showTotalRatios = ratiosLevel !== "none";
 
     // Total answered calls for participation rate
     const totalTeamAnswered = totalQueueCallsAnswered + totalDirectCallsAnswered;
@@ -228,32 +224,13 @@ export function AgentPerformanceTableV2({
         <TooltipProvider delayDuration={0}>
             <Card>
                 <CardHeader>
-                    <div className="flex items-center justify-between">
-                        <CardTitle className="flex items-center gap-2">
-                            <Users className="h-5 w-5 text-blue-600" />
-                            Performance des Agents
-                            <span className="text-sm font-normal text-slate-500">
-                                ({agents.length} agent{agents.length > 1 ? "s" : ""})
-                            </span>
-                        </CardTitle>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <button
-                                    type="button"
-                                    onClick={toggleRatios}
-                                    className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${showRatios
-                                        ? "border-blue-200 bg-blue-50 text-blue-700"
-                                        : "border-slate-200 text-slate-500 hover:text-slate-700"}`}
-                                >
-                                    {showRatios ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                                    Ratios
-                                </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-xs text-xs">
-                                Afficher le nombre d&apos;appels reçus derrière chaque chiffre (ex. 85/111)
-                            </TooltipContent>
-                        </Tooltip>
-                    </div>
+                    <CardTitle className="flex items-center gap-2">
+                        <Users className="h-5 w-5 text-blue-600" />
+                        Performance des Agents
+                        <span className="text-sm font-normal text-slate-500">
+                            ({agents.length} agent{agents.length > 1 ? "s" : ""})
+                        </span>
+                    </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                     <div className="overflow-x-auto">
@@ -295,11 +272,11 @@ export function AgentPerformanceTableV2({
                                         </td>
                                         <td className="px-3 py-3 text-center">
                                             <span className="text-sm font-medium text-blue-700">{agent.directAnswered}</span>
-                                            {showRatios && <span className="text-slate-400 text-xs">/{agent.directReceived}</span>}
+                                            {showRowRatios && <span className="text-slate-400 text-xs">/{agent.directReceived}</span>}
                                         </td>
                                         <td className="px-3 py-3 text-center">
                                             <span className="text-sm font-medium text-violet-700">{agent.answered}</span>
-                                            {showRatios && <span className="text-slate-400 text-xs">/{agent.callsReceived}</span>}
+                                            {showRowRatios && <span className="text-slate-400 text-xs">/{agent.callsReceived}</span>}
                                         </td>
                                         <td className="px-3 py-3 text-center">
                                             {/* Teal, pas ambre : l'ambre est la couleur des Débordements,
@@ -308,7 +285,7 @@ export function AgentPerformanceTableV2({
                                         </td>
                                         <td className="px-3 py-3 text-center bg-blue-50/70">
                                             <span className="text-lg font-bold text-slate-900">{agent.totalAnswered}</span>
-                                            {showRatios && <span className="text-slate-400 text-sm">/{agent.callsReceived + agent.directReceived}</span>}
+                                            {showRowRatios && <span className="text-slate-400 text-sm">/{agent.callsReceived + agent.directReceived}</span>}
                                         </td>
                                         <td className="px-3 py-3 bg-blue-50/70">
                                             <Tooltip>
@@ -348,7 +325,7 @@ export function AgentPerformanceTableV2({
                                             <TooltipTrigger asChild>
                                                 <span className="text-sm text-blue-700 cursor-help">
                                                     {totalDirectCallsAnswered}
-                                                    {showRatios && <span className="text-slate-400 text-xs">/{totalDirectCallsReceived}</span>}
+                                                    {showTotalRatios && <span className="text-slate-400 text-xs">/{totalDirectCallsReceived}</span>}
                                                 </span>
                                             </TooltipTrigger>
                                             <TooltipContent side="top" className="max-w-xs text-xs">
@@ -358,7 +335,7 @@ export function AgentPerformanceTableV2({
                                     </td>
                                     <td className="px-3 py-3 text-center">
                                         <span className="text-sm text-violet-700">{totals.answered}</span>
-                                        {showRatios && <span className="text-slate-400 text-xs">/{totalQueueCallsReceived}</span>}
+                                        {showTotalRatios && <span className="text-slate-400 text-xs">/{totalQueueCallsReceived}</span>}
                                     </td>
                                     <td className="px-3 py-3 text-center">
                                         <span className="text-sm text-teal-600">{totalTeamTransferred}</span>
@@ -367,7 +344,7 @@ export function AgentPerformanceTableV2({
                                         {/* Même définition que la barre « Prise en charge » du
                                             bilan : la ligne TOTAL retombe sur son pourcentage. */}
                                         <span className="text-lg font-bold text-slate-900">{totals.answered + totalDirectCallsAnswered + (handedOffCounts ? totalTeamTransferred : 0)}</span>
-                                        {showRatios && <span className="text-slate-400 text-sm">/{totalQueueCallsReceived + totalDirectCallsReceived}</span>}
+                                        {showTotalRatios && <span className="text-slate-400 text-sm">/{totalQueueCallsReceived + totalDirectCallsReceived}</span>}
                                     </td>
                                     <td className="px-3 py-3 text-center bg-blue-100/60 text-slate-400">—</td>
                                     <td className="px-3 py-3 text-center text-slate-800">

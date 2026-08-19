@@ -47,6 +47,11 @@ model User {
   /// `null` = non arbitré -> défaut par rôle : activé pour ADMIN/MODERATOR,
   /// désactivé pour MANAGER (cf. lib/notification-access).
   canViewNotifications    Boolean?
+  /// Ratios (dénominateurs « 85/111 ») du tableau de performance des agents :
+  /// "none" = aucun, "totals" = ligne TOTAL seule, "all" = toutes les lignes.
+  /// `null` = non arbitré -> défaut par rôle : "all" pour ADMIN/MODERATOR,
+  /// "none" pour les autres (cf. lib/ratios-access).
+  agentRatiosLevel        String?
 
   tenantAccess       UserTenantAccess[]
   queuePerimeter     UserQueuePerimeter[]

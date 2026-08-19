@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prismaAuth } from "@/lib/prisma-auth";
 import { ServerId } from "@/lib/prisma-cdr";
+import { effectiveAgentRatiosLevel, type AgentRatiosLevel } from "@/lib/ratios-access";
 
 // ============================================
 // PORTÉE D'ACCÈS — ce qu'un utilisateur a le droit de voir
@@ -76,6 +77,11 @@ export interface AccessScope {
     canViewLogs: boolean;
     /** Autorisé à consulter l'écran Extension / DDI — même logique que les logs. */
     canViewExtensionStats: boolean;
+    /**
+     * Ratios (dénominateurs) du tableau de performance des agents :
+     * aucun, ligne TOTAL seule, ou toutes les lignes (cf. lib/ratios-access).
+     */
+    agentRatiosLevel: AgentRatiosLevel;
     /** true quand l'utilisateur n'a aucun périmètre : il ne doit rien voir. */
     empty: boolean;
 }
@@ -108,6 +114,11 @@ export function unrestrictedScope(): AccessScope {
         canBrowseAllQueues: true,
         canViewLogs: true,
         canViewExtensionStats: true,
+        // Tout sauf les ratios : en mode observation comme pour les clés
+        // système, on garde le comportement d'avant le droit — dénominateurs
+        // masqués pour tout le monde (directive managers). La fiche
+        // utilisateur ne parle que lorsque le filtrage est actif.
+        agentRatiosLevel: "none",
         empty: false,
     };
 }
@@ -126,6 +137,8 @@ export function emptyScope(maskPhoneNumbers = true): AccessScope {
         canBrowseAllQueues: false,
         canViewLogs: true,
         canViewExtensionStats: true,
+        // Sans périmètre, aucun tableau d'agents ne s'affiche de toute façon.
+        agentRatiosLevel: "none",
         empty: true,
     };
 }
@@ -162,11 +175,13 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
             canViewLogs: true,
             canViewExtensionStats: true,
             canViewFullPhoneNumbers: true,
+            agentRatiosLevel: true,
             tenantAccess: { select: { tenantId: true } },
         },
     });
     if (!user) return emptyScope();
 
+    const agentRatiosLevel = effectiveAgentRatiosLevel(user);
     const maskPhoneNumbers = !user.canViewFullPhoneNumbers;
     const allowedTenants = user.tenantAccess.map((t) => t.tenantId);
 
@@ -207,6 +222,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
             canBrowseAllQueues: true,
             canViewLogs: user.canViewLogs,
             canViewExtensionStats: user.canViewExtensionStats,
+            agentRatiosLevel,
             empty: false,
         };
     }
@@ -224,6 +240,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
             canBrowseAllQueues: false,
             canViewLogs: user.canViewLogs,
             canViewExtensionStats: user.canViewExtensionStats,
+            agentRatiosLevel,
             empty: false,
         };
     }
@@ -238,6 +255,7 @@ async function resolveScopeForUser(userId: string, tenantId: ServerId): Promise<
         canBrowseAllQueues: false,
         canViewLogs: user.canViewLogs,
         canViewExtensionStats: user.canViewExtensionStats,
+        agentRatiosLevel,
         empty: false,
     };
 }

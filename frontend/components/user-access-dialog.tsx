@@ -76,6 +76,7 @@ export function UserAccessDialog({
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
         canViewNotifications: false,
+        agentRatiosLevel: "none" as "none" | "totals" | "all",
     });
     const [scope, setScope] = useState<ScopePreview | null>(null);
 
@@ -114,6 +115,7 @@ export function UserAccessDialog({
                 canViewFullPhoneNumbers: accessData.access.canViewFullPhoneNumbers,
                 canCreateApiKeys: accessData.access.canCreateApiKeys,
                 canViewNotifications: accessData.access.canViewNotifications,
+                agentRatiosLevel: accessData.access.agentRatiosLevel ?? "none",
             });
             setScope(accessData.scope ?? null);
 
@@ -407,6 +409,52 @@ export function UserAccessDialog({
                                     label: "Voir les logs d'appels",
                                     hint: "Sinon l'écran des logs est fermé et les chiffres cliquables ne mènent plus au détail des appels",
                                 },
+                            ].map((p) => (
+                                <div key={p.key} className="flex items-center justify-between rounded-lg border p-3">
+                                    <div>
+                                        <p className="text-sm font-medium">{p.label}</p>
+                                        <p className="text-xs text-slate-500">{p.hint}</p>
+                                    </div>
+                                    <Switch
+                                        checked={permissions[p.key]}
+                                        onCheckedChange={(v) => setPermissions((prev) => ({ ...prev, [p.key]: v }))}
+                                    />
+                                </div>
+                            ))}
+
+                            {/* Ratios du tableau des agents — trois niveaux, pas un interrupteur. */}
+                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                                <div className="min-w-0">
+                                    <p className="text-sm font-medium">Ratios du tableau des agents</p>
+                                    <p className="text-xs text-slate-500">
+                                        Les dénominateurs (« 85/111 ») du tableau de performance des équipes.
+                                        Par défaut : Partout pour ADMIN et MODERATOR, Aucun pour MANAGER
+                                    </p>
+                                </div>
+                                <div className="flex shrink-0 overflow-hidden rounded-lg border border-slate-200" role="group">
+                                    {([
+                                        { value: "none", label: "Aucun" },
+                                        { value: "totals", label: "Ligne TOTAL" },
+                                        { value: "all", label: "Partout" },
+                                    ] as const).map((l) => (
+                                        <button
+                                            key={l.value}
+                                            type="button"
+                                            aria-pressed={permissions.agentRatiosLevel === l.value}
+                                            onClick={() => setPermissions((prev) => ({ ...prev, agentRatiosLevel: l.value }))}
+                                            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                                                permissions.agentRatiosLevel === l.value
+                                                    ? "bg-blue-600 text-white"
+                                                    : "bg-white text-slate-600 hover:bg-slate-50"
+                                            }`}
+                                        >
+                                            {l.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {[
                                 {
                                     key: "canViewExtensionStats" as const,
                                     label: "Voir les statistiques Extension / DDI",

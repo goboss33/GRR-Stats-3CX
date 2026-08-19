@@ -158,6 +158,37 @@ describe("portée selon le rôle", () => {
         expect(scope.canViewExtensionStats).toBe(false);
     });
 
+    it("le droit « Ratios » suit la fiche, avec un défaut par rôle", async () => {
+        // Non arbitré (colonne absente/null) : les rôles globaux voient tout,
+        // le manager rien — cf. lib/ratios-access.
+        setup({
+            user: { role: "ADMIN", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, agentRatiosLevel: null, tenantAccess: [] },
+            perimeter: ["900"],
+        });
+        expect((await resolveAccessScope(TENANT)).agentRatiosLevel).toBe("all");
+
+        setup({ perimeter: ["900"] });
+        expect((await resolveAccessScope(TENANT)).agentRatiosLevel).toBe("none");
+
+        // La valeur explicite l'emporte sur le rôle, dans les deux sens.
+        setup({
+            user: { role: "ADMIN", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, agentRatiosLevel: "none", tenantAccess: [] },
+            perimeter: ["900"],
+        });
+        expect((await resolveAccessScope(TENANT)).agentRatiosLevel).toBe("none");
+
+        setup({
+            user: { role: "MANAGER", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: false, agentRatiosLevel: "totals", tenantAccess: [{ tenantId: TENANT }] },
+            perimeter: ["900"],
+        });
+        expect((await resolveAccessScope(TENANT)).agentRatiosLevel).toBe("totals");
+    });
+
+    it("mode observation : les ratios restent masqués (comportement d'avant le droit)", async () => {
+        setup({ enforcement: false });
+        expect((await resolveAccessScope(TENANT)).agentRatiosLevel).toBe("none");
+    });
+
     it("MODERATOR : périmètre aussi, et seulement sur un tenant autorisé", async () => {
         setup({
             user: { role: "MODERATOR", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: true, tenantAccess: [{ tenantId: TENANT }] },
@@ -261,6 +292,15 @@ describe("clés API", () => {
         const scope = await resolveApiKeyScope("key1", TENANT);
         expect(scope.unrestricted).toBe(false);
         expect(scope.queueNumbers).toEqual(["900"]);
+    });
+
+    it("hérite aussi du niveau de ratios de son propriétaire", async () => {
+        setup({
+            apiKey: { createdBy: "u1" },
+            user: { role: "MANAGER", canViewLogs: true, canViewExtensionStats: true, canViewFullPhoneNumbers: false, agentRatiosLevel: "totals", tenantAccess: [{ tenantId: TENANT }] },
+            perimeter: ["900"],
+        });
+        expect((await resolveApiKeyScope("key1", TENANT)).agentRatiosLevel).toBe("totals");
     });
 
     it("suit la réduction du périmètre du propriétaire", async () => {
