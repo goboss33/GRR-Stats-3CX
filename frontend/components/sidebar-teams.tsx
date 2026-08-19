@@ -181,23 +181,29 @@ export function SidebarTeams() {
                     || group.items.some((q) => q.queueNumber === activeQueue);
                 return (
                     <div key={group.key}>
+                        {/* Chevron à GAUCHE (le signe universel du nœud
+                            dépliable) ; les équipes s'indentent sous un rail
+                            vertical aligné sur lui — la filiation se lit sans
+                            avoir à comparer les typographies. */}
                         <button
                             type="button"
                             onClick={() => toggleDept(group.key, isOpen)}
                             title={group.label}
-                            className="flex w-full items-center justify-between gap-1 py-1.5 pl-2 pr-1 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 transition-colors hover:text-slate-300"
+                            className="flex w-full items-center gap-1 py-1.5 pl-1 pr-1 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 transition-colors hover:text-slate-300"
                         >
-                            <span className="min-w-0 truncate">{group.label}</span>
-                            <span className="flex shrink-0 items-center gap-0.5 font-normal normal-case tracking-normal text-slate-600">
+                            {isOpen
+                                ? <ChevronDown className="h-3 w-3 shrink-0" />
+                                : <ChevronRight className="h-3 w-3 shrink-0" />}
+                            <span className="min-w-0 flex-1 truncate">{group.label}</span>
+                            <span className="shrink-0 font-normal normal-case tracking-normal text-slate-600">
                                 {group.items.length}
-                                {isOpen
-                                    ? <ChevronDown className="h-3 w-3" />
-                                    : <ChevronRight className="h-3 w-3" />}
                             </span>
                         </button>
                         {isOpen && (
-                            <div className="divide-y divide-slate-800/60">
-                                {group.items.map(renderTeam)}
+                            <div className="ml-2.5 border-l border-slate-800 pl-1.5">
+                                <div className="divide-y divide-slate-800/60">
+                                    {group.items.map(renderTeam)}
+                                </div>
                             </div>
                         )}
                     </div>
