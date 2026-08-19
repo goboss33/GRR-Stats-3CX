@@ -1,6 +1,7 @@
 "use server";
 
 import { ServerId } from "@/lib/prisma-cdr";
+import { prismaAuth } from "@/lib/prisma-auth";
 import { getQueueMembersRaw } from "@/services/repositories/cdr.repository";
 import type { QueueInfo, QueueMember } from "@/services/domain/call.types";
 import { resolveAccessScope } from "@/lib/access-scope";
@@ -62,7 +63,27 @@ export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> 
         queue.memberCount = uniqueMembers.length;
     });
 
-    const queues = Array.from(queuesMap.values());
+    let queues = Array.from(queuesMap.values());
+
+    // Files ARCHIVÉES masquées des listes (réglage global, actif par défaut) :
+    // filtre d'AFFICHAGE seulement — l'annuaire CDR n'oublie rien, et les
+    // stats passées ou journaux d'une file archivée restent accessibles par
+    // lien direct. Désarchiver une file (Réglages ▸ Files) la fait
+    // réapparaître aussitôt, son périmètre n'ayant jamais bougé.
+    const [settings, archived] = await Promise.all([
+        prismaAuth.appSettings.findUnique({
+            where: { id: "global" },
+            select: { hideArchivedQueues: true },
+        }),
+        prismaAuth.queueRegistry.findMany({
+            where: { tenantId: serverId, status: "ARCHIVED" },
+            select: { queueNumber: true },
+        }),
+    ]);
+    if ((settings?.hideArchivedQueues ?? true) && archived.length > 0) {
+        const hidden = new Set(archived.map((q) => q.queueNumber));
+        queues = queues.filter((q) => !hidden.has(q.queueNumber));
+    }
 
     // Le sélecteur ne propose que le périmètre de l'utilisateur — c'est lui,
     // désormais, qui écarte les files des clients hébergés : elles ne sont

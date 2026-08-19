@@ -100,6 +100,10 @@ model AppSettings {
   perimeterEnforcementEnabled Boolean  @default(false)
   /// Nombre de jours sans appel avant qu'une file passe en ARCHIVED.
   queueArchiveAfterDays       Int      @default(90)
+  /// Masquer les files ARCHIVED des listes (sidebar, sélecteur, aperçu des
+  /// groupes). Filtre d'AFFICHAGE seulement : périmètres, statistiques des
+  /// périodes passées et journaux restent accessibles par lien direct.
+  hideArchivedQueues          Boolean  @default(true)
   /// Fenêtre d'observation (jours) du détecteur d'anomalies de la cloche
   /// d'alertes — cf. services/notifications.service.
   notificationWindowDays      Int      @default(7)

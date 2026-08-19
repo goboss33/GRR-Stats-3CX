@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -66,6 +67,35 @@ export function QueuesTab() {
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [detailQueueId, setDetailQueueId] = useState<string | null>(null);
     const [bulkBusy, setBulkBusy] = useState(false);
+    // null = valeur pas encore connue : l'interrupteur attend le serveur.
+    const [hideArchived, setHideArchived] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        fetch("/api/admin/settings")
+            .then((res) => res.json())
+            .then((data) => setHideArchived(Boolean(data.hideArchivedQueues)))
+            .catch(() => undefined);
+    }, []);
+
+    // Bascule optimiste : l'interrupteur répond immédiatement, l'erreur rétablit.
+    const saveHideArchived = async (value: boolean) => {
+        const previous = hideArchived;
+        setHideArchived(value);
+        try {
+            const res = await fetch("/api/admin/settings", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ hideArchivedQueues: value }),
+            });
+            if (!res.ok) throw new Error();
+            toast.success(value
+                ? "Les files archivées sont masquées des listes"
+                : "Les files archivées réapparaissent dans les listes");
+        } catch {
+            setHideArchived(previous);
+            toast.error("Enregistrement impossible");
+        }
+    };
 
     const load = useCallback(async () => {
         try {
@@ -226,13 +256,27 @@ export function QueuesTab() {
                         {queues.length} file(s) — les étiquettes servent à composer les périmètres des managers
                     </p>
                 </div>
-                <Button onClick={runDiscovery} disabled={isDiscovering}>
-                    {isDiscovering ? (
-                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Découverte…</>
-                    ) : (
-                        <><RefreshCw className="mr-2 h-4 w-4" /> Découvrir les files</>
-                    )}
-                </Button>
+                <div className="flex flex-wrap items-center gap-4">
+                    {/* Filtre d'AFFICHAGE global : sidebar, sélecteur et aperçu
+                        des groupes. Les périmètres et les données restent intacts. */}
+                    <Tip content="Retire les files archivées de la barre latérale, de la recherche et de l'aperçu des groupes — pour tous les utilisateurs. Périmètres, statistiques passées et journaux restent intacts.">
+                        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                            <Switch
+                                checked={hideArchived === true}
+                                disabled={hideArchived === null}
+                                onCheckedChange={saveHideArchived}
+                            />
+                            Masquer les files archivées des listes
+                        </label>
+                    </Tip>
+                    <Button onClick={runDiscovery} disabled={isDiscovering}>
+                        {isDiscovering ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Découverte…</>
+                        ) : (
+                            <><RefreshCw className="mr-2 h-4 w-4" /> Découvrir les files</>
+                        )}
+                    </Button>
+                </div>
             </div>
 
             {queues.length === 0 && (

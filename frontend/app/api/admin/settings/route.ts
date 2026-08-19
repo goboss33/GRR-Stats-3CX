@@ -28,6 +28,7 @@ function projectSettings(settings: Record<string, unknown>) {
         minSignificantDurationSec: settings.minSignificantDurationSec,
         perimeterEnforcementEnabled: settings.perimeterEnforcementEnabled,
         notificationWindowDays: settings.notificationWindowDays,
+        hideArchivedQueues: settings.hideArchivedQueues,
         ruleMultiPassage: settings.ruleMultiPassage,
         ruleOverflow: settings.ruleOverflow,
         ruleShortAbandonSec: settings.ruleShortAbandonSec,
@@ -135,6 +136,9 @@ export async function PUT(request: NextRequest) {
             ...(shortAbandon !== undefined ? { ruleShortAbandonSec: shortAbandon } : {}),
             ...(minAnswer !== undefined ? { ruleMinAnswerSec: minAnswer } : {}),
             ...(notifWindow !== undefined ? { notificationWindowDays: notifWindow } : {}),
+            ...(body.hideArchivedQueues !== undefined
+                ? { hideArchivedQueues: Boolean(body.hideArchivedQueues) }
+                : {}),
         };
 
         const settings = await prismaAuth.appSettings.upsert({

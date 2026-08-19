@@ -56,6 +56,10 @@ async function replaceCompanyWideWithCanViewLogs(): Promise<void> {
     await prismaAuth.$executeRawUnsafe(
         `ALTER TABLE "AppSettings" ADD COLUMN IF NOT EXISTS "notificationWindowDays" INTEGER NOT NULL DEFAULT 7`,
     );
+    // Masquage des files archivées dans les listes (août 2026).
+    await prismaAuth.$executeRawUnsafe(
+        `ALTER TABLE "AppSettings" ADD COLUMN IF NOT EXISTS "hideArchivedQueues" BOOLEAN NOT NULL DEFAULT true`,
+    );
 }
 
 /**
