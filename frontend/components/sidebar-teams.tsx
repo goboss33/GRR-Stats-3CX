@@ -31,6 +31,8 @@ const NO_DEPT_KEY = "__none__";
 const NO_DEPT_LABEL = "Sans département";
 /** Départements dépliés manuellement (mémorisés par navigateur). */
 const OPEN_DEPTS_STORAGE_KEY = "sidebar-open-departments";
+/** Repli du bloc Favoris — ouvert par défaut, contrairement aux départements. */
+const FAVORITES_OPEN_STORAGE_KEY = "sidebar-favorites-open";
 
 const collator = new Intl.Collator("fr", { numeric: true, sensitivity: "base" });
 
@@ -42,13 +44,16 @@ export function SidebarTeams() {
     // Repliés par défaut ; la préférence est relue au montage seulement (pas
     // au rendu serveur, qui ne connaît pas localStorage).
     const [openDepts, setOpenDepts] = useState<Set<string>>(new Set());
+    // Les favoris, eux, naissent OUVERTS : les épingler est un choix explicite.
+    const [favoritesOpen, setFavoritesOpen] = useState(true);
 
     useEffect(() => {
         try {
             const raw = localStorage.getItem(OPEN_DEPTS_STORAGE_KEY);
             if (raw) setOpenDepts(new Set(JSON.parse(raw) as string[]));
+            if (localStorage.getItem(FAVORITES_OPEN_STORAGE_KEY) === "0") setFavoritesOpen(false);
         } catch {
-            // Préférence illisible : on repart tout replié.
+            // Préférence illisible : on repart aux défauts.
         }
     }, []);
 
@@ -84,6 +89,15 @@ export function SidebarTeams() {
         });
         return { pinned, groups };
     }, [queues, favorites]);
+
+    const toggleFavorites = (visuallyOpen: boolean) => {
+        setFavoritesOpen(!visuallyOpen);
+        try {
+            localStorage.setItem(FAVORITES_OPEN_STORAGE_KEY, visuallyOpen ? "0" : "1");
+        } catch {
+            // Stockage indisponible : la bascule reste pour la session.
+        }
+    };
 
     // Bascule d'un département, mémorisée. Le « visuallyOpen » compte : un
     // groupe peut être ouvert par l'équipe active sans figurer dans l'état.
@@ -158,7 +172,7 @@ export function SidebarTeams() {
                 >
                     <Star
                         className={cn(
-                            "h-3.5 w-3.5",
+                            "h-3 w-3",
                             isFavorite ? "fill-amber-400 text-amber-400" : "text-slate-500 hover:text-amber-400",
                         )}
                     />
@@ -170,10 +184,35 @@ export function SidebarTeams() {
 
     return (
         <div className="ml-4 mt-1 min-h-0 overflow-y-auto border-l border-slate-800 pl-2 [scrollbar-width:thin] [scrollbar-color:#334155_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700 hover:[&::-webkit-scrollbar-thumb]:bg-slate-600">
-            <div className="divide-y divide-slate-800/60">
-                {pinned.map(renderTeam)}
-            </div>
-            {pinned.length > 0 && groups.length > 0 && <div className="mx-1 my-1.5 border-t-2 border-slate-700/80" />}
+            {pinned.length > 0 && (() => {
+                // Même règle que les départements : le bloc reste ouvert tant
+                // que l'équipe consultée y vit.
+                const isOpen = favoritesOpen || pinned.some((q) => q.queueNumber === activeQueue);
+                return (
+                    <div>
+                        <button
+                            type="button"
+                            onClick={() => toggleFavorites(isOpen)}
+                            className="flex w-full items-center gap-1 py-1.5 pl-1 pr-1 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 transition-colors hover:text-slate-300"
+                        >
+                            {isOpen
+                                ? <ChevronDown className="h-3 w-3 shrink-0" />
+                                : <ChevronRight className="h-3 w-3 shrink-0" />}
+                            <span className="min-w-0 flex-1 truncate">Favoris</span>
+                            <span className="shrink-0 font-normal normal-case tracking-normal text-slate-600">
+                                {pinned.length}
+                            </span>
+                        </button>
+                        {isOpen && (
+                            <div className="ml-2.5 border-l border-slate-800 pl-1.5">
+                                <div className="divide-y divide-slate-800/60">
+                                    {pinned.map(renderTeam)}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
             {groups.map((group) => {
                 // Ouvert si déplié par l'utilisateur OU si l'équipe consultée y
                 // vit — l'écran ouvert doit être surligné quelque part.
