@@ -139,7 +139,10 @@ export function Sidebar({ userRole, canViewLogs, canViewExtensionStats, user, au
             <aside
                 className={cn(
                     "flex flex-col h-screen bg-slate-900 border-r border-slate-800 transition-all duration-300",
-                    collapsed ? "w-16" : "w-64"
+                    // 288 px plutôt que 256 : les noms d'équipes et les en-têtes
+                    // de département wrappent nettement moins (arbitrage août
+                    // 2026 — largeur fixe, pas de réglage utilisateur).
+                    collapsed ? "w-16" : "w-72"
                 )}
             >
                 {/* Logo */}

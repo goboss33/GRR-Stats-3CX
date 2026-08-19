@@ -38,6 +38,9 @@ import { QueueInfo } from "@/types/queues.types";
 
 export type ShowFilter = "queues" | "agents" | "both";
 
+/** Tri français : accents pliés, numéros comparés en valeur numérique. */
+const collator = new Intl.Collator("fr", { numeric: true, sensitivity: "base" });
+
 export interface QueueAgentPickerItem {
     type: "queue" | "agent" | "type-only" | "any-agent" | "any-queue";
     queueNumber: string;
@@ -240,8 +243,31 @@ export function QueueAgentPicker({
         const anyItems = filteredItems.filter((i) => i.type === "any-agent" || i.type === "any-queue");
         const typeOnlyItems = filteredItems.filter((i) => i.type === "type-only");
         const queueItems = filteredItems.filter((i) => i.type === "queue");
-        const agentItems = filteredItems.filter((i) => i.type === "agent");
-        return { anyItems, typeOnlyItems, queueItems, agentItems };
+        // Agents à plat et alphabétiques : on cherche une personne par son nom,
+        // jamais par département — et un poste mixte sert plusieurs départements.
+        const agentItems = [...filteredItems.filter((i) => i.type === "agent")]
+            .sort((a, b) => collator.compare(a.label, b.label) || collator.compare(a.queueName, b.queueName));
+
+        // Équipes SOUS-GROUPÉES par département (alphabétique, « Sans
+        // département » en dernier), équipes triées par nom dans chaque groupe.
+        // Pendant la frappe, les groupes sans résultat disparaissent d'eux-mêmes.
+        const byDept = new Map<string, { department: string | null; items: QueueAgentPickerItem[] }>();
+        for (const item of queueItems) {
+            const dept = item.queueDepartment?.trim() || null;
+            const key = dept ?? "__none__";
+            const group = byDept.get(key) ?? { department: dept, items: [] };
+            group.items.push(item);
+            byDept.set(key, group);
+        }
+        const queueGroups = [...byDept.values()]
+            .map((g) => ({ ...g, items: [...g.items].sort((a, b) => collator.compare(a.label, b.label)) }))
+            .sort((a, b) => {
+                if (a.department === null) return 1;
+                if (b.department === null) return -1;
+                return collator.compare(a.department, b.department);
+            });
+
+        return { anyItems, typeOnlyItems, queueItems, queueGroups, agentItems };
     }, [filteredItems]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -402,28 +428,35 @@ export function QueueAgentPicker({
                                     )}>
                                         Équipes ({groupedItems.queueItems.length})
                                     </div>
-                                    {groupedItems.queueItems.map((item) => (
-                                        <button
-                                            key={`queue-${item.queueNumber}`}
-                                            type="button"
-                                            className={cn(
-                                                "w-full px-3 py-2 text-left hover:bg-slate-100 flex items-center gap-3 transition-colors",
-                                                selectedQueueNumber === item.queueNumber && "bg-blue-50"
-                                            )}
-                                            onClick={() => handleSelect(item)}
-                                        >
-                                            <div className="p-1.5 bg-blue-100 rounded text-blue-600">
-                                                <Users className="h-4 w-4" />
+                                    {groupedItems.queueGroups.map((group) => (
+                                        <React.Fragment key={group.department ?? "__none__"}>
+                                            <div className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                                                {group.department ?? "Sans département"}
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-slate-900 truncate">
-                                                    {item.label}
-                                                </p>
-                                                <p className="text-xs text-slate-500 truncate">
-                                                    {item.sublabel}
-                                                </p>
-                                            </div>
-                                        </button>
+                                            {group.items.map((item) => (
+                                                <button
+                                                    key={`queue-${item.queueNumber}`}
+                                                    type="button"
+                                                    className={cn(
+                                                        "w-full px-3 py-2 text-left hover:bg-slate-100 flex items-center gap-3 transition-colors",
+                                                        selectedQueueNumber === item.queueNumber && "bg-blue-50"
+                                                    )}
+                                                    onClick={() => handleSelect(item)}
+                                                >
+                                                    <div className="p-1.5 bg-blue-100 rounded text-blue-600">
+                                                        <Users className="h-4 w-4" />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium text-slate-900 truncate">
+                                                            {item.label}
+                                                        </p>
+                                                        <p className="text-xs text-slate-500 truncate">
+                                                            {item.sublabel}
+                                                        </p>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </React.Fragment>
                                     ))}
                                 </>
                             )}

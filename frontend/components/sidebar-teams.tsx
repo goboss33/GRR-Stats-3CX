@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ChevronDown, ChevronUp, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, Star } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
@@ -14,25 +14,43 @@ import { getQueueFavorites, toggleQueueFavorite } from "@/services/queue-favorit
 import type { QueueInfo } from "@/types/queues.types";
 
 /**
- * Sous-menu « Mes équipes » : les files du périmètre, favorites épinglées en
- * tête. L'étoile (au survol) épingle sans naviguer ; cliquer la ligne ouvre la
- * statistique de l'équipe, période et provenance conservées.
+ * Sous-menu « Mes équipes » : favorites épinglées en tête, puis les files du
+ * périmètre groupées par DÉPARTEMENT 3CX — départements et équipes en ordre
+ * alphabétique, « Sans département » en dernier. Les groupes sont REPLIÉS par
+ * défaut (état mémorisé par navigateur) : c'est ce qui remplace l'ancien
+ * « Afficher tout (N) » — un périmètre d'administrateur (~85 files) tient en
+ * une vingtaine de lignes d'en-têtes. Le département de l'équipe CONSULTÉE
+ * s'affiche toujours ouvert : l'écran ouvert doit être surligné quelque part.
  *
- * Les FAVORITES s'affichent toutes — les épingler est un choix explicite. Les
- * autres se limitent à trois, le reste derrière « Afficher tout » : un
- * périmètre d'administrateur (~85 files) ne doit pas engloutir la barre
- * latérale, et la vraie recherche vit dans le header.
+ * L'étoile (au survol) épingle sans naviguer ; cliquer la ligne ouvre la
+ * statistique de l'équipe, période et provenance conservées.
  */
 
-/** Files non épinglées visibles quand la liste est repliée. */
-const COLLAPSED_COUNT = 3;
+/** Clé et libellé du groupe des files sans département 3CX. */
+const NO_DEPT_KEY = "__none__";
+const NO_DEPT_LABEL = "Sans département";
+/** Départements dépliés manuellement (mémorisés par navigateur). */
+const OPEN_DEPTS_STORAGE_KEY = "sidebar-open-departments";
+
+const collator = new Intl.Collator("fr", { numeric: true, sensitivity: "base" });
 
 export function SidebarTeams() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const [queues, setQueues] = useState<QueueInfo[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(new Set());
-    const [expanded, setExpanded] = useState(false);
+    // Repliés par défaut ; la préférence est relue au montage seulement (pas
+    // au rendu serveur, qui ne connaît pas localStorage).
+    const [openDepts, setOpenDepts] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem(OPEN_DEPTS_STORAGE_KEY);
+            if (raw) setOpenDepts(new Set(JSON.parse(raw) as string[]));
+        } catch {
+            // Préférence illisible : on repart tout replié.
+        }
+    }, []);
 
     useEffect(() => {
         const serverId = getSelectedServer();
@@ -46,20 +64,42 @@ export function SidebarTeams() {
 
     const activeQueue = pathname.startsWith("/statistics-v2") ? searchParams.get("queue") : null;
 
-    const { pinned, shown, hiddenCount } = useMemo(() => {
-        const byNumber = [...queues].sort((a, b) =>
-            a.queueNumber.localeCompare(b.queueNumber, undefined, { numeric: true }));
-        const pinned = byNumber.filter((q) => favorites.has(q.queueNumber));
-        const rest = byNumber.filter((q) => !favorites.has(q.queueNumber));
-        if (expanded) return { pinned, shown: rest, hiddenCount: 0 };
+    const { pinned, groups } = useMemo(() => {
+        const byName = [...queues].sort((a, b) => collator.compare(a.queueName, b.queueName));
+        const pinned = byName.filter((q) => favorites.has(q.queueNumber));
+        const rest = byName.filter((q) => !favorites.has(q.queueNumber));
 
-        const visible = rest.slice(0, COLLAPSED_COUNT);
-        // L'équipe CONSULTÉE reste dans la liste même repliée : sans elle,
-        // l'écran ouvert ne serait surligné nulle part.
-        const active = rest.find((q) => q.queueNumber === activeQueue);
-        if (active && !visible.includes(active)) visible.push(active);
-        return { pinned, shown: visible, hiddenCount: rest.length - visible.length };
-    }, [queues, favorites, expanded, activeQueue]);
+        const byDept = new Map<string, { key: string; label: string; items: QueueInfo[] }>();
+        for (const q of rest) {
+            const dept = q.queueDepartment?.trim();
+            const key = dept ? dept : NO_DEPT_KEY;
+            const group = byDept.get(key) ?? { key, label: dept || NO_DEPT_LABEL, items: [] };
+            group.items.push(q);
+            byDept.set(key, group);
+        }
+        const groups = [...byDept.values()].sort((a, b) => {
+            if (a.key === NO_DEPT_KEY) return 1;
+            if (b.key === NO_DEPT_KEY) return -1;
+            return collator.compare(a.label, b.label);
+        });
+        return { pinned, groups };
+    }, [queues, favorites]);
+
+    // Bascule d'un département, mémorisée. Le « visuallyOpen » compte : un
+    // groupe peut être ouvert par l'équipe active sans figurer dans l'état.
+    const toggleDept = (key: string, visuallyOpen: boolean) => {
+        setOpenDepts((prev) => {
+            const next = new Set(prev);
+            if (visuallyOpen) next.delete(key);
+            else next.add(key);
+            try {
+                localStorage.setItem(OPEN_DEPTS_STORAGE_KEY, JSON.stringify([...next]));
+            } catch {
+                // Stockage indisponible (mode privé) : la bascule reste pour la session.
+            }
+            return next;
+        });
+    };
 
     // Le lien porte le contexte de consultation courant (période, provenance).
     const teamHref = (queueNumber: string) => {
@@ -133,21 +173,36 @@ export function SidebarTeams() {
             <div className="divide-y divide-slate-800/60">
                 {pinned.map(renderTeam)}
             </div>
-            {pinned.length > 0 && shown.length > 0 && <div className="mx-1 my-1.5 border-t-2 border-slate-700/80" />}
-            <div className="divide-y divide-slate-800/60">
-                {shown.map(renderTeam)}
-            </div>
-            {(hiddenCount > 0 || expanded) && (
-                <button
-                    type="button"
-                    onClick={() => setExpanded((open) => !open)}
-                    className="flex w-full items-center gap-1 py-2 pl-2 text-[13px] text-slate-500 transition-colors hover:text-white"
-                >
-                    {expanded
-                        ? <>Réduire <ChevronUp className="h-3.5 w-3.5" /></>
-                        : <>Afficher tout <span className="text-slate-600">({hiddenCount})</span> <ChevronDown className="h-3.5 w-3.5" /></>}
-                </button>
-            )}
+            {pinned.length > 0 && groups.length > 0 && <div className="mx-1 my-1.5 border-t-2 border-slate-700/80" />}
+            {groups.map((group) => {
+                // Ouvert si déplié par l'utilisateur OU si l'équipe consultée y
+                // vit — l'écran ouvert doit être surligné quelque part.
+                const isOpen = openDepts.has(group.key)
+                    || group.items.some((q) => q.queueNumber === activeQueue);
+                return (
+                    <div key={group.key}>
+                        <button
+                            type="button"
+                            onClick={() => toggleDept(group.key, isOpen)}
+                            title={group.label}
+                            className="flex w-full items-center justify-between gap-1 py-1.5 pl-2 pr-1 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 transition-colors hover:text-slate-300"
+                        >
+                            <span className="min-w-0 truncate">{group.label}</span>
+                            <span className="flex shrink-0 items-center gap-0.5 font-normal normal-case tracking-normal text-slate-600">
+                                {group.items.length}
+                                {isOpen
+                                    ? <ChevronDown className="h-3 w-3" />
+                                    : <ChevronRight className="h-3 w-3" />}
+                            </span>
+                        </button>
+                        {isOpen && (
+                            <div className="divide-y divide-slate-800/60">
+                                {group.items.map(renderTeam)}
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
         </div>
     );
 }
