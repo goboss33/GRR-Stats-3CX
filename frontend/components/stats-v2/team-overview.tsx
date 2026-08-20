@@ -114,12 +114,18 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
         const isLost = name === "Perdus";
         if (!isLost && pctExact < 5) return null;
         const pct = Math.round(pctExact);
-        const r = outerRadius + 13;
-        const x = cx + r * Math.cos(-midAngle * RADIAN);
-        const y = cy + r * Math.sin(-midAngle * RADIAN);
+        // Tous les libellés s'écartent de l'anneau par leur demi-étendue
+        // PROJETÉE dans la direction du segment : ~8 px d'air garantis quel
+        // que soit l'angle, un texte large ne revient jamais lécher l'arc.
+        const ux = Math.cos(-midAngle * RADIAN);
+        const uy = Math.sin(-midAngle * RADIAN);
         if (!isLost) {
+            const plainW = `${pct}%`.length * 7.8;
+            const plainExtent = (plainW / 2) * Math.abs(ux) + 8 * Math.abs(uy);
+            const dPlain = outerRadius + 8 + plainExtent;
             return (
-                <text x={x} y={y} textAnchor="middle" dominantBaseline="central"
+                <text x={cx + dPlain * ux} y={cy + dPlain * uy}
+                    textAnchor="middle" dominantBaseline="central"
                     fontSize={15} fontWeight={500}
                     fill={name === "Répondus" ? "#047857" : "#b45309"}
                 >
@@ -127,15 +133,11 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                 </text>
             );
         }
-        // LA donnée cherchée : un chip complet (fond pâle, bordure, gras),
-        // décalé de l'anneau dans la direction de son segment — la demi-
-        // étendue projetée garantit ~8 px d'air quel que soit l'angle.
+        // LA donnée cherchée : un chip complet (fond pâle, bordure, gras).
         const showAlert = verdict !== "ok";
         const label = `${pct}%`;
         const textW = label.length * 8.3;
         const w = 16 + textW + (showAlert ? 17 : 0);
-        const ux = Math.cos(-midAngle * RADIAN);
-        const uy = Math.sin(-midAngle * RADIAN);
         const halfExtent = (w / 2) * Math.abs(ux) + 11 * Math.abs(uy);
         const d = outerRadius + 8 + halfExtent;
         const chipCx = cx + d * ux;
