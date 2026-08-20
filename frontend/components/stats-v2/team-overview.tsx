@@ -7,8 +7,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tip } from "@/components/ui/tooltip";
 import { TrendPill } from "@/components/stats-v2/trend-arrow";
 import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, TrendingUp } from "lucide-react";
+import { LOSS_BADGE } from "@/components/stats-v2/loss-badge";
 import { outcomesForBucket, sumBucket, type CallOrigin } from "@/services/domain/call-classification";
-import { computeTeamTotals, type TeamTotals } from "@/services/domain/team-totals";
+import {
+    computeTeamTotals, lossVerdict,
+    LOSS_RATE_THRESHOLD, LOSS_RATE_WARNING_MARGIN,
+    type TeamTotals,
+} from "@/services/domain/team-totals";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import Link from "next/link";
 
@@ -53,7 +58,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
     // peuvent pas diverger. Le détail fin (regroupements, liens) reste ici.
     const {
         totalReceived, totalAnswered, totalLost, totalHandedOff,
-        totalRedirected: totalOverflow, performanceRate,
+        totalRedirected: totalOverflow, performanceRate, lossRate,
     } = computeTeamTotals(kpis);
     const handedOffCounts = kpis.handedOffInPerformance === "success";
 
@@ -82,6 +87,71 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
     const directUnanswered = kpis.teamDirectReceived - kpis.teamDirectAnswered - kpis.directHandedOff;
     const queueUnanswered = kpis.callsReceived - kpis.callsAnswered - kpis.callsHandedOff;
 
+    // Segments de la barre de répartition — l'ordre ancre le ROUGE à droite :
+    // son bord gauche vaut 100 − taux de perte, le repère fixe à
+    // 100 − LOSS_RATE_THRESHOLD matérialise donc la consigne sans calcul
+    // mental. Quand la règle ne compte pas les transferts dans la prise en
+    // charge, ils forment un segment neutre à part : la barre somme TOUJOURS
+    // aux reçus, rien ne se cache.
+    const totalHandled = handedOffCounts ? totalAnswered : totalAnswered - totalHandedOff;
+    const pctOf = (value: number) => (totalReceived > 0 ? (value / totalReceived) * 100 : 0);
+    const barSegments = [
+        {
+            key: "handled",
+            label: handedOffCounts ? "Pris en charge" : "Répondus",
+            value: totalHandled,
+            barClass: "bg-emerald-500",
+            tip: handedOffCounts
+                ? `Répondus + transferts accomplis${totalHandedOff > 0 ? ` (dont ${totalHandedOff} transférés)` : ""}`
+                : "Répondus hors transferts",
+        },
+        ...(!handedOffCounts && totalHandedOff > 0 ? [{
+            key: "handedOff",
+            label: "Transférés",
+            value: totalHandedOff,
+            barClass: "bg-slate-400",
+            tip: "Décrochés ici puis servis ailleurs — hors prise en charge selon la règle active",
+        }] : []),
+        {
+            key: "overflow",
+            label: "Débordements",
+            value: totalOverflow,
+            barClass: "bg-amber-500",
+            tip: "Partis sans décroché ici",
+        },
+        {
+            key: "lost",
+            label: "Perdus",
+            value: totalLost,
+            barClass: "bg-red-500",
+            tip: "Ni répondus, ni transférés, ni débordés — la perte de la consigne",
+        },
+    ].filter((s) => s.value > 0);
+
+    // Étiquette ambre masquée quand le segment est trop étroit ou risque de
+    // chevaucher le titre (à gauche) ou le chiffre rouge (à droite) — la
+    // légende prend le relais. Le rouge, lui, s'affiche toujours : c'est la
+    // vedette.
+    const overflowPct = pctOf(totalOverflow);
+    const overflowRate = Math.round(overflowPct);
+    const overflowCenter = pctOf(totalHandled) + (handedOffCounts ? 0 : pctOf(totalHandedOff)) + overflowPct / 2;
+    const showOverflowLabel = overflowPct >= 6 && overflowCenter >= 40 && overflowCenter <= 85;
+
+    // Verdict du taux de perte — la consigne est « moins de 30 % de perdus ».
+    // La pastille ne parle QUE lorsqu'il y a alerte : silence sous la zone
+    // d'approche (la barre suffit), orange avant le mur, rouge au dépassement.
+    const verdictStyle = LOSS_BADGE[lossVerdict(lossRate)];
+
+    // Comparaison N-1 des TAUX de la barre : en infobulle seulement. Les
+    // pastilles visibles doublonnaient à l'œil avec celles des vignettes —
+    // qui comparent des VOLUMES ; l'écart en points reste à un survol.
+    const prevRateTip = (pick: (t: TeamTotals) => number, current: number) => {
+        const prev = prevOf(pick);
+        if (typeof prev !== "number") return undefined;
+        const diff = current - prev;
+        return `Période précédente : ${prev} % (${diff > 0 ? "+" : ""}${diff} pts)`;
+    };
+
 
     // Lien vers les logs filtres par le SOCLE de classement : la population
     // listee est exactement celle agregee par le KPI, donc le nombre de lignes
@@ -98,11 +168,12 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
     const outcomeLink = (outcomes: readonly string[], team = true) =>
         `/admin/logs?start=${startDate}&end=${endDate}&queueOutcome=${queueNumber}:${outcomes.join(",")}${team ? ":team" : ""}${originParam}`;
 
-    // Anneau externe : KPIs (Répondus, Perdus, Débordements)
+    // Anneau externe : KPIs dans l'ordre de la barre et des vignettes
+    // (vert Répondus, ambre Débordements, rouge Perdus).
     const outcomeData = [
         { name: "Répondus", value: totalAnswered, color: COLORS.answered },
-        { name: "Perdus", value: totalLost, color: COLORS.abandoned },
         { name: "Débordements", value: totalOverflow, color: COLORS.overflow },
+        { name: "Perdus", value: totalLost, color: COLORS.abandoned },
     ].filter(d => d.value > 0);
 
     const directTotal = kpis.teamDirectReceived;
@@ -114,8 +185,11 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
 
     // Vignette KPI : lien vers les journaux quand l'utilisateur y a droit,
     // simple carte sinon — même contenu, sans affordance de clic mensongère.
-    const TileShell = ({ href, hoverClass, children }: {
+    // `toneClass` teinte le fond aux couleurs du segment correspondant de la
+    // barre de répartition : les vignettes SONT la légende de la barre.
+    const TileShell = ({ href, toneClass, hoverClass, children }: {
         href: string;
+        toneClass: string;
         hoverClass: string;
         children: React.ReactNode;
     }) => (logsEnabled ? (
@@ -123,12 +197,12 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className={`group p-3 rounded-xl bg-slate-50 border border-slate-200 hover:shadow-md transition-all cursor-pointer ${hoverClass}`}
+            className={`group p-3 rounded-xl border hover:shadow-md transition-all cursor-pointer ${toneClass} ${hoverClass}`}
         >
             {children}
         </Link>
     ) : (
-        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">{children}</div>
+        <div className={`p-3 rounded-xl border ${toneClass}`}>{children}</div>
     ));
 
     const innerData = [
@@ -185,7 +259,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             </svg>
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
-                                    {/* Anneau externe : KPIs (Répondus, Perdus, Débordements) */}
+                                    {/* Anneau externe : KPIs (Répondus, Débordements, Perdus) */}
                                     <Pie
                                         data={outcomeData}
                                         cx="50%"
@@ -239,9 +313,12 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                     <div className="lg:col-span-8 space-y-4">
                         {/* KPI Cards Grid */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {/* Total Reçus */}
+                            {/* Total Reçus — le dénominateur reste NEUTRE : un
+                                volume n'est ni bon ni mauvais, et le bleu est
+                                réservé au canal « directs ». */}
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("received"))}
+                                toneClass="bg-slate-50 border-slate-200"
                                 hoverClass="hover:border-blue-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
@@ -260,66 +337,75 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             {/* Répondus */}
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("answered"))}
+                                toneClass="bg-emerald-50/50 border-emerald-100"
                                 hoverClass="hover:border-emerald-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <Phone className="h-4 w-4 text-emerald-600" />
-                                        <span className="text-xs font-medium text-slate-600">Répondus</span>
+                                        <span className="text-xs font-medium text-emerald-900">Répondus</span>
                                     </div>
                                     <TrendPill current={totalAnswered} previous={prevOf((t) => t.totalAnswered)} sense="higher-better" />
                                 </div>
                                 <div className="text-2xl font-bold text-emerald-700">{totalAnswered}</div>
-                                <div className="mt-0.5 text-[10px] text-slate-500">
+                                <div className="mt-0.5 text-[10px] text-emerald-600">
                                     Directs: {kpis.teamDirectAnswered} · Équipe: {kpis.callsAnswered}{totalHandedOff > 0 && <> · Transférés: {totalHandedOff}</>}
-                                </div>
-                            </TileShell>
-
-                            {/* Perdus */}
-                            <TileShell
-                                href={outcomeLink(outcomesForBucket("lost"))}
-                                hoverClass="hover:border-red-300"
-                            >
-                                <div className="flex items-center justify-between mb-1">
-                                    <div className="flex items-center gap-1.5">
-                                        <PhoneMissed className="h-4 w-4 text-red-600" />
-                                        <span className="text-xs font-medium text-slate-600">Perdus</span>
-                                    </div>
-                                    <TrendPill current={totalLost} previous={prevOf((t) => t.totalLost)} sense="lower-better" />
-                                </div>
-                                <div className="text-2xl font-bold text-red-700">{totalLost}</div>
-                                <div className="mt-0.5 text-[10px] text-slate-500">
-                                    Directs: {kpis.directLost} · Équipe: {sumBucket(kpis.outcomeCounts, "lost")}
                                 </div>
                             </TileShell>
 
                             {/* Débordements — partis SANS décroché ici, file +
                                 directs : le lien inclut les directs (team) pour
                                 lister la même population. Les transferts
-                                accomplis vivent dans la vignette Répondus. */}
+                                accomplis vivent dans la vignette Répondus.
+                                AVANT Perdus : l'ordre des vignettes suit celui
+                                des segments de la barre (vert, ambre, rouge). */}
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("overflow"))}
+                                toneClass="bg-amber-50/50 border-amber-100"
                                 hoverClass="hover:border-amber-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <ArrowRightLeft className="h-4 w-4 text-amber-600" />
-                                        <span className="text-xs font-medium text-slate-600">Débordements</span>
+                                        <span className="text-xs font-medium text-amber-900">Débordements</span>
                                     </div>
                                     <TrendPill current={totalOverflow} previous={prevOf((t) => t.totalRedirected)} sense="neutral" />
                                 </div>
                                 <div className="text-2xl font-bold text-amber-700">{totalOverflow}</div>
-                                <div className="mt-0.5 text-[10px] text-slate-500">
+                                <div className="mt-0.5 text-[10px] text-amber-600">
                                     Directs: {kpis.directOverflow} · Équipe: {kpis.callsOverflow}
+                                </div>
+                            </TileShell>
+
+                            {/* Perdus */}
+                            <TileShell
+                                href={outcomeLink(outcomesForBucket("lost"))}
+                                toneClass="bg-red-50/50 border-red-100"
+                                hoverClass="hover:border-red-300"
+                            >
+                                <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center gap-1.5">
+                                        <PhoneMissed className="h-4 w-4 text-red-600" />
+                                        <span className="text-xs font-medium text-red-900">Perdus</span>
+                                    </div>
+                                    <TrendPill current={totalLost} previous={prevOf((t) => t.totalLost)} sense="lower-better" />
+                                </div>
+                                <div className="text-2xl font-bold text-red-700">{totalLost}</div>
+                                <div className="mt-0.5 text-[10px] text-red-600">
+                                    Directs: {kpis.directLost} · Équipe: {sumBucket(kpis.outcomeCounts, "lost")}
                                 </div>
                             </TileShell>
 
                         </div>
 
-                        {/* Performance Bar — taux de prise en charge : répondus
-                            + transferts accomplis quand la règle les compte. */}
+                        {/* Barre de répartition — TOUS les reçus, empilés : pris
+                            en charge (vert), débordements (ambre), perdus
+                            (rouge, ancré à droite face au repère des 30 %). */}
                         <div className="pt-3 border-t border-slate-200">
-                            <div className="flex items-center justify-between mb-2">
+                            {/* Une seule ligne collée à la barre : prise en charge à
+                                gauche, taux de perte à droite — chacun au-dessus de
+                                son segment. L'étiquette ambre flotte entre les deux. */}
+                            <div className="relative flex flex-wrap items-end justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                     <TrendingUp className="h-4 w-4 text-slate-500" />
                                     <Tip content={handedOffCounts
@@ -330,23 +416,70 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                             Prise en charge
                                         </span>
                                     </Tip>
-                                    <span className={`text-sm font-bold ${performanceRate >= 80 ? 'text-emerald-700' : performanceRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}>
-                                        {performanceRate}%
+                                    <Tip content={prevRateTip((t) => t.performanceRate, performanceRate)}>
+                                        <span className={`text-sm font-bold ${performanceRate >= 80 ? 'text-emerald-700' : performanceRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}>
+                                            {performanceRate}%
+                                        </span>
+                                    </Tip>
+                                </div>
+                                {showOverflowLabel && (
+                                    <span
+                                        className="absolute bottom-0 -translate-x-1/2 text-xs font-medium text-amber-700"
+                                        style={{ left: `${overflowCenter}%` }}
+                                    >
+                                        {overflowRate}%
                                     </span>
-                                    <TrendPill current={performanceRate} previous={prevOf((t) => t.performanceRate)} sense="higher-better" unit="points" />
-                                </div>
-                                <div className="text-xs text-slate-500">
-                                    {handedOffCounts
-                                        ? `${totalAnswered} pris en charge${totalHandedOff > 0 ? ` (dont ${totalHandedOff} transférés)` : ""} / ${totalReceived} reçus`
-                                        : `${totalAnswered - totalHandedOff} répondus hors transferts / ${totalReceived} reçus`}
-                                </div>
+                                )}
+                                {totalReceived > 0 && (
+                                    <div className="flex items-center gap-1.5">
+                                        {verdictStyle && (
+                                            <Tip content={`Taux de perte = perdus / reçus. Consigne : rester sous ${LOSS_RATE_THRESHOLD} % — pré-alerte dès ${LOSS_RATE_THRESHOLD - LOSS_RATE_WARNING_MARGIN} %.`}>
+                                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${verdictStyle.badge}`}>
+                                                    <verdictStyle.Icon className="h-3.5 w-3.5" />
+                                                    {verdictStyle.label}
+                                                </span>
+                                            </Tip>
+                                        )}
+                                        <Tip content={prevRateTip((t) => t.lossRate, lossRate)}>
+                                            <span className="text-xl font-bold leading-none text-red-700">{lossRate}%</span>
+                                        </Tip>
+                                    </div>
+                                )}
                             </div>
-                            <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                                <div
-                                    className={`h-full rounded-full transition-all ${performanceRate >= 80 ? 'bg-emerald-500' : performanceRate >= 60 ? 'bg-amber-500' : 'bg-red-500'}`}
-                                    style={{ width: `${Math.min(performanceRate, 100)}%` }}
-                                />
+                            <div
+                                className="relative mt-1"
+                                role="img"
+                                aria-label={`Répartition des reçus : ${performanceRate} % pris en charge, ${overflowRate} % débordements, ${lossRate} % perdus — consigne : perte sous ${LOSS_RATE_THRESHOLD} %`}
+                            >
+                                {/* Pas de légende permanente : les vignettes teintées
+                                    au-dessus jouent ce rôle, le survol d'un segment
+                                    donne le détail. */}
+                                <div className="flex h-3.5 overflow-hidden rounded-full bg-slate-100">
+                                    {barSegments.map((s) => (
+                                        <Tip key={s.key} content={`${s.label} : ${s.value} appels (${Math.round(pctOf(s.value))} %) — ${s.tip}`}>
+                                            <div className={`${s.barClass} transition-all`} style={{ width: `${pctOf(s.value)}%` }} />
+                                        </Tip>
+                                    ))}
+                                </div>
+                                {totalReceived > 0 && (
+                                    <div
+                                        className="absolute -top-1 -bottom-1 w-0.5 rounded-full bg-slate-700/60"
+                                        style={{ left: `${100 - LOSS_RATE_THRESHOLD}%` }}
+                                    />
+                                )}
                             </div>
+                            {totalReceived > 0 && (
+                                <div className="relative h-4">
+                                    <Tip content="Si le segment rouge déborde à gauche du trait, la consigne des 30 % de perte est dépassée.">
+                                        <span
+                                            className="absolute top-0.5 -translate-x-1/2 whitespace-nowrap text-[10px] text-slate-500"
+                                            style={{ left: `${100 - LOSS_RATE_THRESHOLD}%` }}
+                                        >
+                                            seuil perte {LOSS_RATE_THRESHOLD}%
+                                        </span>
+                                    </Tip>
+                                </div>
+                            )}
                         </div>
 
                         {/* Détails Directs vs File (compact) */}

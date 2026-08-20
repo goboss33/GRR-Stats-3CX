@@ -172,6 +172,7 @@ export function QueueOverviewGrid({ queues, startDate, endDate, origin, onSelect
                         key={q.queueNumber}
                         queueNumber={q.queueNumber}
                         queueName={q.queueName}
+                        queueDepartment={q.queueDepartment}
                         kpis={kpisByQueue[q.queueNumber] ?? null}
                         previousKpis={prevKpisByQueue[q.queueNumber] ?? "loading"}
                         onSelect={onSelect}

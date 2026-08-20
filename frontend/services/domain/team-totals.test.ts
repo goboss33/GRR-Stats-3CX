@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeTeamTotals, performanceTone } from "./team-totals";
+import { computeTeamTotals, lossVerdict, LOSS_RATE_THRESHOLD, LOSS_RATE_WARNING_MARGIN } from "./team-totals";
 import type { QueueKPIs } from "@/types/statistics.types";
 
 // Fixture minimale : seuls les champs lus par computeTeamTotals sont
@@ -37,6 +37,14 @@ describe("computeTeamTotals — les formules des vignettes, partagées", () => {
             .toBe(Math.round((90 / 150) * 100));
     });
 
+    it("la partition tient aussi quand les transferts sortent de la prise en charge", () => {
+        // Règle « neutral » : les transferts forment un segment à part dans la
+        // barre de répartition — la somme des segments vaut toujours les reçus.
+        const t = computeTeamTotals(kpis({ handedOffInPerformance: "neutral" }));
+        expect((t.totalAnswered - t.totalHandedOff) + t.totalHandedOff + t.totalRedirected + t.totalLost)
+            .toBe(t.totalReceived);
+    });
+
     it("zéro reçu : 0 % plutôt qu'une division par zéro", () => {
         const empty = kpis({
             callsReceived: 0, callsAnswered: 0, teamDirectReceived: 0, teamDirectAnswered: 0,
@@ -44,14 +52,31 @@ describe("computeTeamTotals — les formules des vignettes, partagées", () => {
             outcomeCounts: { answered: 0, handed_off: 0, overflow: 0, voicemail: 0, short_abandon: 0, abandoned: 0 },
         });
         expect(computeTeamTotals(empty).performanceRate).toBe(0);
+        expect(computeTeamTotals(empty).lossRate).toBe(0);
     });
 });
 
-describe("performanceTone — les seuils de la barre du détail", () => {
-    it("vert ≥ 80, ambre ≥ 60, rouge en dessous", () => {
-        expect(performanceTone(80).dot).toBe("bg-emerald-500");
-        expect(performanceTone(79).dot).toBe("bg-amber-500");
-        expect(performanceTone(60).dot).toBe("bg-amber-500");
-        expect(performanceTone(59).dot).toBe("bg-red-500");
+describe("computeTeamTotals — taux de perte", () => {
+    it("perte = perdus / reçus, indépendante de la règle des transferts", () => {
+        expect(computeTeamTotals(kpis()).lossRate).toBe(28); // 42 / 150
+        // La règle des transferts ne bouge que la prise en charge, jamais la perte.
+        expect(computeTeamTotals(kpis({ handedOffInPerformance: "neutral" })).lossRate).toBe(28);
+    });
+});
+
+describe("lossVerdict — la consigne « inférieur à 30 % »", () => {
+    it("sous la zone d'approche → ok", () => {
+        expect(lossVerdict(0)).toBe("ok");
+        expect(lossVerdict(LOSS_RATE_THRESHOLD - LOSS_RATE_WARNING_MARGIN - 1)).toBe("ok");
+    });
+
+    it("zone d'approche → warning, dès seuil − marge", () => {
+        expect(lossVerdict(LOSS_RATE_THRESHOLD - LOSS_RATE_WARNING_MARGIN)).toBe("warning");
+        expect(lossVerdict(LOSS_RATE_THRESHOLD - 1)).toBe("warning");
+    });
+
+    it("30 tout rond est déjà dépassé : « inférieur à 30 », pas « au plus 30 »", () => {
+        expect(lossVerdict(LOSS_RATE_THRESHOLD)).toBe("over");
+        expect(lossVerdict(LOSS_RATE_THRESHOLD + 1)).toBe("over");
     });
 });

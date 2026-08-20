@@ -23,6 +23,8 @@ export interface TeamTotals {
     totalRedirected: number;
     /** Prise en charge (%), règle handedOffInPerformance appliquée. */
     performanceRate: number;
+    /** Taux de perte (%) = perdus / reçus — LA consigne managériale (seuil 30 %). */
+    lossRate: number;
 }
 
 export function computeTeamTotals(kpis: QueueKPIs): TeamTotals {
@@ -45,16 +47,28 @@ export function computeTeamTotals(kpis: QueueKPIs): TeamTotals {
     const performanceRate = totalReceived > 0
         ? Math.round((totalHandled / totalReceived) * 100)
         : 0;
+    const lossRate = totalReceived > 0
+        ? Math.round((totalLost / totalReceived) * 100)
+        : 0;
 
-    return { totalReceived, totalAnswered, totalLost, totalHandedOff, totalOverflowed, totalRedirected, performanceRate };
+    return { totalReceived, totalAnswered, totalLost, totalHandedOff, totalOverflowed, totalRedirected, performanceRate, lossRate };
 }
 
 /**
- * Couleur de la prise en charge — les seuils de la barre du détail, partagés
- * par la pastille des cartes d'aperçu. `dot`/`text` sont des classes Tailwind.
+ * Consigne managériale : le taux de perte doit rester SOUS ce seuil (en %).
+ * La perte, c'est les perdus seuls — les débordements ne comptent pas dedans
+ * (définition validée avec le métier, août 2026).
  */
-export function performanceTone(rate: number): { dot: string; text: string } {
-    if (rate >= 80) return { dot: "bg-emerald-500", text: "text-emerald-700" };
-    if (rate >= 60) return { dot: "bg-amber-500", text: "text-amber-700" };
-    return { dot: "bg-red-500", text: "text-red-700" };
+export const LOSS_RATE_THRESHOLD = 30;
+/** Pré-alerte : on passe en orange à seuil − marge, avant la sanction. */
+export const LOSS_RATE_WARNING_MARGIN = 5;
+
+export type LossVerdict = "ok" | "warning" | "over";
+
+/** Verdict face à la consigne — « inférieur à 30 % » : 30 tout rond est déjà dépassé. */
+export function lossVerdict(rate: number): LossVerdict {
+    if (rate >= LOSS_RATE_THRESHOLD) return "over";
+    if (rate >= LOSS_RATE_THRESHOLD - LOSS_RATE_WARNING_MARGIN) return "warning";
+    return "ok";
 }
+
