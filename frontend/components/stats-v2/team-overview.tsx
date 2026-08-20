@@ -98,9 +98,10 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
 
     // Étiquettes des trois zones de l'anneau extérieur, posées à l'EXTÉRIEUR
     // de l'arc, sans ligne de rappel : la position et la couleur (fixe, celle
-    // du segment — jamais un code santé) disent l'appartenance. Le rouge est
-    // LA donnée cherchée : plus gros, gras, toujours affiché ; le vert et
-    // l'ambre se taisent sous 5 % (l'infobulle du secteur prend le relais).
+    // du segment — jamais un code santé) disent l'appartenance. Même taille
+    // pour les trois ; le rouge, LA donnée cherchée, garde le gras et son
+    // chip, et s'affiche toujours — le vert et l'ambre se taisent sous 5 %
+    // (l'infobulle du secteur prend le relais).
     const RADIAN = Math.PI / 180;
     const renderOutcomeLabel = (props: unknown) => {
         const { cx, cy, midAngle, outerRadius, name, value } = props as {
@@ -119,7 +120,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
         if (!isLost) {
             return (
                 <text x={x} y={y} textAnchor="middle" dominantBaseline="central"
-                    fontSize={11} fontWeight={500}
+                    fontSize={15} fontWeight={500}
                     fill={name === "Répondus" ? "#047857" : "#b45309"}
                 >
                     {pct}%
@@ -285,6 +286,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         stroke="none"
                                         label={renderOutcomeLabel}
                                         labelLine={false}
+                                        isAnimationActive={false}
                                     >
                                         {outcomeData.map((entry, index) => (
                                             <Cell key={`outer-${index}`} fill={entry.color} />
@@ -301,6 +303,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         dataKey="value"
                                         stroke="none"
                                         startAngle={-90}
+                                        isAnimationActive={false}
                                     >
                                         {innerData.map((entry, index) => (
                                             <Cell
