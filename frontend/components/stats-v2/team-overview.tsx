@@ -455,8 +455,14 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         <div className="text-[10px] text-blue-600">Transférés</div>
                                     </div>
                                     <div className="text-center">
+                                        {/* Le taux garde la couleur de son bloc et ne
+                                            vire qu'au ROUGE, sous 60 % : le vert et
+                                            l'ambre appartiennent au registre des sorts
+                                            (répondus, débordés) — les réutiliser ici
+                                            faisait trois grammaires de couleur sur un
+                                            même écran. Seule l'alerte parle encore. */}
                                         <Tip content="Prise en charge du bloc : (répondus + transférés) / reçus">
-                                            <div className={`font-bold ${directRate >= 80 ? 'text-emerald-700' : directRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}>
+                                            <div className={`font-bold ${directRate >= 60 ? 'text-blue-700' : 'text-red-700'}`}>
                                                 {directRate}%
                                             </div>
                                         </Tip>
@@ -489,7 +495,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     </div>
                                     <div className="text-center">
                                         <Tip content="Prise en charge du bloc : (répondus + transférés) / reçus">
-                                            <div className={`font-bold ${queueRate >= 80 ? 'text-emerald-700' : queueRate >= 60 ? 'text-amber-700' : 'text-red-700'}`}>
+                                            <div className={`font-bold ${queueRate >= 60 ? 'text-violet-700' : 'text-red-700'}`}>
                                                 {queueRate}%
                                             </div>
                                         </Tip>

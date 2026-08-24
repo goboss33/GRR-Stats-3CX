@@ -304,6 +304,18 @@ model TenantSettings {
   timezone           String   @default("Europe/Zurich")
   licenceThreshold   Int?
   trunkThreshold     Int?
+  /// SURCOUCHE XAPI (août 2026) — interrogation directe du 3CX, activable et
+  /// désactivable par tenant. Le socle CDR reste la source de vérité en toute
+  /// circonstance : rien de ce qui existe ne doit dépendre de cet
+  /// interrupteur, XAPI ne fait qu'AJOUTER par-dessus.
+  xapiEnabled        Boolean  @default(false)
+  /// Clé XAPI CHIFFRÉE (AES-256-GCM, cf. lib/secret-box) — jamais en clair en
+  /// base, jamais renvoyée au navigateur. Credential SORTANT : contrairement
+  /// aux clés API entrantes (ApiKey.keyHash, bcrypt), il faut pouvoir la
+  /// relire pour appeler le 3CX, donc chiffrement réversible et non hachage.
+  xapiKeyEncrypted   String?
+  /// Date de dernière saisie de la clé — seule trace montrable à l'écran.
+  xapiKeyUpdatedAt   DateTime?
   /// DÉPRÉCIÉ (août 2026) — plus lu par aucun écran, voir
   /// QueueRegistry.excludedFromStats. Les postes hors file sont désormais
   /// visibles des seuls rôles globaux, via leur périmètre.
