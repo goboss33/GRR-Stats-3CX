@@ -11,8 +11,6 @@ import {
     getConcurrentCallsChartData,
 } from "@/services/dashboard.service";
 import {
-    getDailyTrendRaw,
-    getHourlyTrendRaw,
     getQueueMembersRaw,
     getQueueName,
     getCallSegments,
@@ -22,7 +20,6 @@ import { getPrismaCdr } from "@/lib/prisma-cdr";
 const SERVER = "gerofinance" as const;
 const END = new Date();
 const START = new Date(END.getTime() - 7 * 24 * 60 * 60 * 1000);
-const TZ = "Europe/Zurich";
 
 let failures = 0;
 
@@ -61,8 +58,6 @@ async function main() {
     console.log("\nStatistiques de file :");
     await check("getQueueTimelineData", () => getQueueTimelineData(SERVER, queue, START, END));
     await check("getQueueHeatmapData", () => getQueueHeatmapData(SERVER, queue, START, END));
-    await check("getDailyTrendRaw", () => getDailyTrendRaw(SERVER, queue, START, END, TZ));
-    await check("getHourlyTrendRaw", () => getHourlyTrendRaw(SERVER, queue, START, END, TZ));
     await check("getQueueName", () => getQueueName(SERVER, queue));
     await check("getQueueMembersRaw", () => getQueueMembersRaw(SERVER));
 

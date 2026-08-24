@@ -365,20 +365,6 @@ export interface AgentStats {
     totalHandlingTimeSeconds: number;
 }
 
-export interface DailyTrend {
-    date: string;
-    received: number;
-    answered: number;
-    abandoned: number;
-}
-
-export interface HourlyTrend {
-    hour: number;
-    received: number;
-    answered: number;
-    abandoned: number;
-}
-
 export interface QueueStatistics {
     queueNumber: string;
     queueName: string;
@@ -390,8 +376,6 @@ export interface QueueStatistics {
     };
     kpis: QueueKPIs;
     agents: AgentStats[];
-    dailyTrend: DailyTrend[];
-    hourlyTrend: HourlyTrend[];
     timelineData: TimelineDataPoint[];
     heatmapData: HeatmapDataPoint[];
 }

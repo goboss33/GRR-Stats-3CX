@@ -1,14 +1,11 @@
 "use server";
 
 import { ServerId } from "@/lib/prisma-cdr";
-import { getServerTimezone } from "@/lib/servers";
 import { logger } from "@/lib/logger";
 import { resolveAccessScope, isQueueInScope } from "@/lib/access-scope";
 import {
     getQueueName,
     getQueueDepartment,
-    getDailyTrendRaw,
-    getHourlyTrendRaw,
 } from "@/services/repositories/cdr.repository";
 import {
     getQueueTimelineData,
@@ -18,8 +15,6 @@ import type {
     QueueStatistics,
     QueueKPIs,
     AgentStats,
-    DailyTrend,
-    HourlyTrend,
     OverflowDestination,
 } from "@/services/domain/call.types";
 import type { CallOrigin, PassageOutcome } from "@/services/domain/call-classification";
@@ -111,13 +106,11 @@ export async function getQueueStatistics(
         throw new Error("Cette file d'attente n'est pas dans votre périmètre");
     }
 
-    const [queueName, queueDepartment, kpis, agents, dailyTrend, hourlyTrend, timelineData, heatmapData] = await Promise.all([
+    const [queueName, queueDepartment, kpis, agents, timelineData, heatmapData] = await Promise.all([
         getQueueName(serverId, queueNumber),
         getQueueDepartment(serverId, queueNumber),
         computeQueueKPIs(serverId, queueNumber, startDate, endDate, origin),
         computeAgentStats(serverId, queueNumber, startDate, endDate, origin),
-        computeDailyTrend(serverId, queueNumber, startDate, endDate, origin),
-        computeHourlyTrend(serverId, queueNumber, startDate, endDate, origin),
         getQueueTimelineData(serverId, queueNumber, startDate, endDate, origin),
         getQueueHeatmapData(serverId, queueNumber, startDate, endDate, origin),
     ]);
@@ -132,8 +125,6 @@ export async function getQueueStatistics(
         },
         kpis,
         agents,
-        dailyTrend,
-        hourlyTrend,
         timelineData,
         heatmapData,
     };
@@ -308,54 +299,4 @@ async function computeAgentStats(
             totalHandlingTimeSeconds: agent.queueTalkTimeSeconds + agent.directTalkTimeSeconds,
         };
     });
-}
-
-async function computeDailyTrend(
-    serverId: ServerId,
-    queueNumber: string,
-    startDate: Date,
-    endDate: Date,
-    origin: CallOrigin = "both"
-): Promise<DailyTrend[]> {
-    const timezone = await getServerTimezone(serverId);
-    const result = await getDailyTrendRaw(serverId, queueNumber, startDate, endDate, timezone, origin);
-    return result.map((row) => {
-        const dateStr = row.call_date
-            ? new Date(row.call_date).toISOString().split("T")[0]
-            : "";
-        return {
-            date: dateStr,
-            received: Number(row.received || 0),
-            answered: Number(row.answered || 0),
-            abandoned: Number(row.abandoned || 0),
-        };
-    });
-}
-
-async function computeHourlyTrend(
-    serverId: ServerId,
-    queueNumber: string,
-    startDate: Date,
-    endDate: Date,
-    origin: CallOrigin = "both"
-): Promise<HourlyTrend[]> {
-    const timezone = await getServerTimezone(serverId);
-    const result = await getHourlyTrendRaw(serverId, queueNumber, startDate, endDate, timezone, origin);
-
-    const hourlyMap = new Map<number, HourlyTrend>();
-    for (let h = 0; h < 24; h++) {
-        hourlyMap.set(h, { hour: h, received: 0, answered: 0, abandoned: 0 });
-    }
-
-    result.forEach((row) => {
-        const hour = Number(row.call_hour);
-        hourlyMap.set(hour, {
-            hour,
-            received: Number(row.received || 0),
-            answered: Number(row.answered || 0),
-            abandoned: Number(row.abandoned || 0),
-        });
-    });
-
-    return Array.from(hourlyMap.values());
 }

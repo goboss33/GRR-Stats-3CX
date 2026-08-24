@@ -55,14 +55,6 @@ export interface ConcurrentCallsRow {
     concurrent_calls: bigint;
 }
 
-export interface TrendRow {
-    call_date: Date | null;
-    call_hour: number | null;
-    received: bigint;
-    answered: bigint;
-    abandoned: bigint;
-}
-
 export interface QueueMemberRow {
     queue_number: string;
     queue_name: string;
@@ -996,96 +988,6 @@ export async function getConcurrentCallsData(
     `;
 
     return prisma.$queryRaw<ConcurrentCallsRow[]>(query);
-}
-
-// ============================================
-// QUEUE TRENDS (daily/hourly breakdown)
-// ============================================
-
-export async function getDailyTrendRaw(
-    serverId: ServerId,
-    queueNumber: string,
-    startDate: Date,
-    endDate: Date,
-    timezone: string = "Europe/Zurich",
-    origin: CallOrigin = "both"
-): Promise<TrendRow[]> {
-    const prisma = getPrismaCdr(serverId);
-    const table = cdrTable(await getClassificationRules());
-    const cdr = Prisma.raw(table);
-    // Provenance : valeur d'énumération contrôlée, jamais une entrée libre.
-    const originCond = Prisma.raw(buildOriginConditionSQL(origin, "call_history_id", table));
-    // ⚠️ Composée avec Prisma.sql PUIS passée en argument : dans la forme
-    // « tagged template », un fragment Prisma.raw serait lié comme une VALEUR
-    // ($2) au lieu d'être injecté dans le SQL -> "syntax error at or near $2"
-    // (cf. note sur getHeatmapDataRaw).
-    const query = Prisma.sql`
-        WITH unique_queue_calls AS (
-            SELECT DISTINCT ON (call_history_id)
-                call_history_id, cdr_id, DATE(cdr_started_at AT TIME ZONE ${timezone}) as call_date
-            FROM ${cdr}
-            WHERE destination_dn_number = ${queueNumber}
-              AND destination_dn_type = 'queue'
-              AND cdr_started_at >= ${startDate}
-              AND cdr_started_at <= ${endDate}
-              AND ${originCond}
-            ORDER BY call_history_id, cdr_started_at ASC, cdr_id ASC
-        ),
-        daily_stats AS (
-            SELECT uqc.call_date,
-                   COUNT(DISTINCT uqc.call_history_id) as received,
-                   COUNT(DISTINCT CASE WHEN c.cdr_answered_at IS NOT NULL AND c.destination_dn_type = 'extension'
-                                  THEN uqc.call_history_id END) as answered,
-                   COUNT(DISTINCT CASE WHEN c.termination_reason_details = 'terminated_by_originator'
-                                  AND c.cdr_answered_at IS NULL THEN uqc.call_history_id END) as abandoned
-            FROM unique_queue_calls uqc
-            LEFT JOIN ${cdr} c ON c.originating_cdr_id = uqc.cdr_id
-            GROUP BY uqc.call_date
-        )
-        SELECT * FROM daily_stats ORDER BY call_date;
-    `;
-    return prisma.$queryRaw<TrendRow[]>(query);
-}
-
-export async function getHourlyTrendRaw(
-    serverId: ServerId,
-    queueNumber: string,
-    startDate: Date,
-    endDate: Date,
-    timezone: string = "Europe/Zurich",
-    origin: CallOrigin = "both"
-): Promise<TrendRow[]> {
-    const prisma = getPrismaCdr(serverId);
-    const table = cdrTable(await getClassificationRules());
-    const cdr = Prisma.raw(table);
-    const originCond = Prisma.raw(buildOriginConditionSQL(origin, "call_history_id", table));
-    // ⚠️ Même précaution que getDailyTrendRaw : Prisma.sql puis appel en argument.
-    const query = Prisma.sql`
-        WITH unique_queue_calls AS (
-            SELECT DISTINCT ON (call_history_id)
-                call_history_id, cdr_id, EXTRACT(HOUR FROM cdr_started_at AT TIME ZONE ${timezone}) as call_hour
-            FROM ${cdr}
-            WHERE destination_dn_number = ${queueNumber}
-              AND destination_dn_type = 'queue'
-              AND cdr_started_at >= ${startDate}
-              AND cdr_started_at <= ${endDate}
-              AND ${originCond}
-            ORDER BY call_history_id, cdr_started_at ASC, cdr_id ASC
-        ),
-        hourly_stats AS (
-            SELECT uqc.call_hour,
-                   COUNT(DISTINCT uqc.call_history_id) as received,
-                   COUNT(DISTINCT CASE WHEN c.cdr_answered_at IS NOT NULL AND c.destination_dn_type = 'extension'
-                                  THEN uqc.call_history_id END) as answered,
-                   COUNT(DISTINCT CASE WHEN c.termination_reason_details = 'terminated_by_originator'
-                                  AND c.cdr_answered_at IS NULL THEN uqc.call_history_id END) as abandoned
-            FROM unique_queue_calls uqc
-            LEFT JOIN ${cdr} c ON c.originating_cdr_id = uqc.cdr_id
-            GROUP BY uqc.call_hour
-        )
-        SELECT * FROM hourly_stats ORDER BY call_hour;
-    `;
-    return prisma.$queryRaw<TrendRow[]>(query);
 }
 
 // ============================================
