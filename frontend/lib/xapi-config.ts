@@ -16,17 +16,34 @@ import type { ServerId } from "./prisma-cdr";
  * `key: null` n'est pas une panne, c'est le mode nominal d'un tenant sans
  * licence XAPI, et le chemin sans XAPI doit rester complet.
  */
-export async function getServerXapiConfig(
-    serverId: ServerId,
-): Promise<{ enabled: boolean; key: string | null }> {
+export interface XapiConfig {
+    enabled: boolean;
+    baseUrl: string | null;
+    clientId: string | null;
+    key: string | null;
+}
+
+const XAPI_OFF: XapiConfig = { enabled: false, baseUrl: null, clientId: null, key: null };
+
+export async function getServerXapiConfig(serverId: ServerId): Promise<XapiConfig> {
     try {
         const settings = await prismaAuth.tenantSettings.findUnique({
             where: { serverId },
         });
-        if (!settings?.xapiEnabled) return { enabled: false, key: null };
-        return { enabled: true, key: openSecret(settings.xapiKeyEncrypted) };
+        if (!settings?.xapiEnabled) return XAPI_OFF;
+        return {
+            enabled: true,
+            baseUrl: settings.xapiBaseUrl,
+            clientId: settings.xapiClientId,
+            key: openSecret(settings.xapiKeyEncrypted),
+        };
     } catch {
         // Réglages illisibles : on retombe sur le socle CDR, jamais d'erreur.
-        return { enabled: false, key: null };
+        return XAPI_OFF;
     }
+}
+
+/** La surcouche est-elle réellement exploitable (allumée ET complète) ? */
+export function isXapiUsable(config: XapiConfig): boolean {
+    return config.enabled && Boolean(config.baseUrl && config.clientId && config.key);
 }

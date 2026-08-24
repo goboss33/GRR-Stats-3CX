@@ -25,6 +25,9 @@ interface TenantInfo {
     trunkThreshold: number;
     /** Surcouche XAPI : interrupteur par tenant, éteint par défaut. */
     xapiEnabled: boolean;
+    /** Adresse du PBX et ID client — pas des secrets, ils s'affichent. */
+    xapiBaseUrl: string;
+    xapiClientId: string;
     /** Une clé est-elle enregistrée ? Sa valeur ne quitte jamais le serveur. */
     xapiKeyConfigured: boolean;
     xapiKeyUpdatedAt: string | null;
@@ -58,6 +61,9 @@ export function TenantTab() {
     // rechargé depuis le serveur (la clé enregistrée n'en redescend jamais).
     const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
     const [savingKey, setSavingKey] = useState<string | null>(null);
+    // Test de connexion au PBX : en cours, et dernier verdict par tenant.
+    const [testing, setTesting] = useState<string | null>(null);
+    const [testResults, setTestResults] = useState<Record<string, { ok: boolean; reason?: string }>>({});
     // Adaptateur : route les appels setMessage(...) existants vers les toasts.
     const setMessage = (m: { type: "success" | "error"; text: string } | null) => {
         if (!m) return;
@@ -234,6 +240,56 @@ export function TenantTab() {
         }
     };
 
+    // Adresse du PBX et ID client : enregistrés à la sortie du champ, comme
+    // les autres réglages textuels. Le serveur normalise l'adresse et peut la
+    // renvoyer corrigée (« /5001 » → origine seule), d'où la relecture.
+    const handleXapiFieldSave = async (serverId: string, field: "xapiBaseUrl" | "xapiClientId", value: string) => {
+        setSaving(true);
+        try {
+            const res = await fetch("/api/admin/tenants", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ serverId, [field]: value }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setMessage({ type: "error", text: data.error || "Erreur lors de la sauvegarde" });
+            } else {
+                setAvailableServers(prev => prev.map(s => s.id === serverId ? { ...s, [field]: data[field] ?? value } : s));
+                setTestResults(prev => ({ ...prev, [serverId]: undefined as never }));
+                setMessage({ type: "success", text: field === "xapiBaseUrl" ? "Adresse du PBX enregistrée" : "ID client enregistré" });
+            }
+        } catch {
+            setMessage({ type: "error", text: "Erreur lors de la sauvegarde" });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // Test de connexion : le serveur utilise les identifiants ENREGISTRÉS, la
+    // clé ne repasse jamais par le navigateur.
+    const handleXapiTest = async (serverId: string) => {
+        setTesting(serverId);
+        setTestResults(prev => ({ ...prev, [serverId]: undefined as never }));
+        try {
+            const res = await fetch("/api/admin/tenants/xapi-test", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ serverId }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setTestResults(prev => ({ ...prev, [serverId]: { ok: false, reason: data.error || "Échec du test" } }));
+            } else {
+                setTestResults(prev => ({ ...prev, [serverId]: { ok: data.ok, reason: data.reason } }));
+            }
+        } catch {
+            setTestResults(prev => ({ ...prev, [serverId]: { ok: false, reason: "Test impossible (application injoignable)" } }));
+        } finally {
+            setTesting(null);
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center py-12">
@@ -383,8 +439,37 @@ export function TenantTab() {
 
                                         {server.xapiEnabled && (
                                             <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+                                                <Label htmlFor={`xapiurl-${server.id}`} className="text-xs text-slate-600">
+                                                    Adresse du PBX
+                                                </Label>
+                                                <Input
+                                                    id={`xapiurl-${server.id}`}
+                                                    type="url"
+                                                    inputMode="url"
+                                                    placeholder="https://exemple.3cx.ch:5001"
+                                                    value={server.xapiBaseUrl}
+                                                    onChange={(e) => setAvailableServers(prev => prev.map(s => s.id === server.id ? { ...s, xapiBaseUrl: e.target.value } : s))}
+                                                    onBlur={(e) => handleXapiFieldSave(server.id, "xapiBaseUrl", e.target.value)}
+                                                    disabled={saving}
+                                                    className="font-mono text-xs"
+                                                />
+
+                                                <Label htmlFor={`xapiclient-${server.id}`} className="text-xs text-slate-600">
+                                                    ID client
+                                                </Label>
+                                                <Input
+                                                    id={`xapiclient-${server.id}`}
+                                                    placeholder="stats"
+                                                    autoComplete="off"
+                                                    value={server.xapiClientId}
+                                                    onChange={(e) => setAvailableServers(prev => prev.map(s => s.id === server.id ? { ...s, xapiClientId: e.target.value } : s))}
+                                                    onBlur={(e) => handleXapiFieldSave(server.id, "xapiClientId", e.target.value)}
+                                                    disabled={saving}
+                                                    className="font-mono text-xs"
+                                                />
+
                                                 <Label htmlFor={`xapikey-${server.id}`} className="text-xs text-slate-600">
-                                                    Clé XAPI
+                                                    Clé API
                                                 </Label>
                                                 <div className="flex items-center gap-2">
                                                     <Input
@@ -429,6 +514,33 @@ export function TenantTab() {
                                                         >
                                                             Supprimer
                                                         </button>
+                                                    )}
+                                                </div>
+
+                                                {/* Le test se fait avec les identifiants ENREGISTRÉS : il
+                                                    valide la configuration réelle, pas ce qui est à l'écran. */}
+                                                <div className="flex flex-wrap items-center gap-3 border-t border-slate-200 pt-3">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => handleXapiTest(server.id)}
+                                                        disabled={testing === server.id || !server.xapiKeyConfigured || !server.xapiBaseUrl || !server.xapiClientId}
+                                                    >
+                                                        {testing === server.id
+                                                            ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Test en cours…</>
+                                                            : "Tester la connexion"}
+                                                    </Button>
+                                                    {testResults[server.id] && (
+                                                        testResults[server.id].ok ? (
+                                                            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                                                                <CheckCircle2 className="h-4 w-4" />
+                                                                Connexion établie — le PBX a délivré un jeton
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-xs text-red-700">
+                                                                {testResults[server.id].reason || "Échec de la connexion"}
+                                                            </span>
+                                                        )
                                                     )}
                                                 </div>
                                             </div>

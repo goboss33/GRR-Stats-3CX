@@ -5,6 +5,7 @@ import { getAvailableServers } from "@/lib/servers";
 import { prismaAuth } from "@/lib/prisma-auth";
 import { requireApiRole } from "@/lib/auth-guard";
 import { sealSecret } from "@/lib/secret-box";
+import { normalizeXapiBaseUrl } from "@/lib/xapi-client";
 
 export async function GET() {
     const guard = await requireApiRole(["ADMIN"]);
@@ -27,6 +28,9 @@ export async function GET() {
             licenceThreshold: settingsMap.get(id)?.licenceThreshold ?? servers[id].licenceThreshold,
             trunkThreshold: settingsMap.get(id)?.trunkThreshold ?? servers[id].trunkThreshold,
             xapiEnabled: settingsMap.get(id)?.xapiEnabled ?? false,
+            // Adresse et ID client ne sont pas des secrets : ils s'affichent.
+            xapiBaseUrl: settingsMap.get(id)?.xapiBaseUrl ?? "",
+            xapiClientId: settingsMap.get(id)?.xapiClientId ?? "",
             // La clé elle-même ne sort JAMAIS du serveur : l'écran n'a besoin
             // que de savoir si elle est posée, et depuis quand.
             xapiKeyConfigured: Boolean(settingsMap.get(id)?.xapiKeyEncrypted),
@@ -51,7 +55,7 @@ export async function POST(request: Request) {
     if (!guard.ok) return guard.response;
 
     try {
-        const { serverId, timezone, licenceThreshold, trunkThreshold, xapiEnabled, xapiKey } = await request.json();
+        const { serverId, timezone, licenceThreshold, trunkThreshold, xapiEnabled, xapiKey, xapiBaseUrl, xapiClientId } = await request.json();
         
         if (!serverId || typeof serverId !== "string") {
             return NextResponse.json(
@@ -135,6 +139,49 @@ export async function POST(request: Request) {
             });
 
             return NextResponse.json({ success: true, serverId, xapiEnabled });
+        }
+
+        // Adresse du PBX — normalisée à l'origine HTTPS : « /5001 » saisi au
+        // lieu de « :5001 » est une faute de frappe courante, et un chemin
+        // résiduel casserait tous les appels.
+        if (xapiBaseUrl !== undefined) {
+            if (typeof xapiBaseUrl !== "string") {
+                return NextResponse.json({ error: "Invalid xapiBaseUrl" }, { status: 400 });
+            }
+            const raw = xapiBaseUrl.trim();
+            const normalized = raw ? normalizeXapiBaseUrl(raw) : "";
+            if (raw && !normalized) {
+                return NextResponse.json(
+                    { error: "Adresse invalide : attendu une URL HTTPS complète, port compris (ex. https://exemple.3cx.ch:5001)." },
+                    { status: 400 },
+                );
+            }
+
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: { xapiBaseUrl: normalized || null },
+                create: { serverId, xapiBaseUrl: normalized || null },
+            });
+
+            return NextResponse.json({ success: true, serverId, xapiBaseUrl: normalized });
+        }
+
+        if (xapiClientId !== undefined) {
+            if (typeof xapiClientId !== "string") {
+                return NextResponse.json({ error: "Invalid xapiClientId" }, { status: 400 });
+            }
+            const trimmedId = xapiClientId.trim();
+            if (trimmedId.length > 200) {
+                return NextResponse.json({ error: "ID client trop long" }, { status: 400 });
+            }
+
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: { xapiClientId: trimmedId || null },
+                create: { serverId, xapiClientId: trimmedId || null },
+            });
+
+            return NextResponse.json({ success: true, serverId, xapiClientId: trimmedId });
         }
 
         // La clé XAPI : chiffrée avant stockage, jamais relue par le client.
