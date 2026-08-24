@@ -348,7 +348,9 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <PhoneIncoming className="h-4 w-4 text-blue-600" />
-                                        <span className="text-xs font-medium text-slate-600">Total reçus</span>
+                                        <Tip content="Tous les appels arrivés pour l'équipe sur la période.">
+                                            <span className="text-xs font-medium text-slate-600">Appels reçus</span>
+                                        </Tip>
                                     </div>
                                     <TrendPill current={totalReceived} previous={prevOf((t) => t.totalReceived)} sense="neutral" />
                                 </div>
@@ -367,7 +369,9 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <Phone className="h-4 w-4 text-emerald-600" />
-                                        <span className="text-xs font-medium text-emerald-900">Répondus</span>
+                                        <Tip content="Appels décrochés par un membre de l'équipe — y compris ceux ensuite transférés.">
+                                            <span className="text-xs font-medium text-emerald-900">Appels répondus</span>
+                                        </Tip>
                                     </div>
                                     <TrendPill current={totalAnswered} previous={prevOf((t) => t.totalAnswered)} sense="higher-better" />
                                 </div>
@@ -391,7 +395,9 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <ArrowRightLeft className="h-4 w-4 text-amber-600" />
-                                        <span className="text-xs font-medium text-amber-900">Débordements</span>
+                                        <Tip content="Appels renvoyés automatiquement vers une autre équipe, personne n'ayant décroché ici à temps.">
+                                            <span className="text-xs font-medium text-amber-900">Appels débordés</span>
+                                        </Tip>
                                     </div>
                                     <TrendPill current={totalOverflow} previous={prevOf((t) => t.totalRedirected)} sense="neutral" />
                                 </div>
@@ -410,7 +416,9 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <PhoneMissed className="h-4 w-4 text-red-600" />
-                                        <span className="text-xs font-medium text-red-900">Perdus</span>
+                                        <Tip content="Appels restés sans réponse : l'appelant a raccroché sans avoir été servi.">
+                                            <span className="text-xs font-medium text-red-900">Appels perdus</span>
+                                        </Tip>
                                     </div>
                                     <TrendPill current={totalLost} previous={prevOf((t) => t.totalLost)} sense="lower-better" />
                                 </div>

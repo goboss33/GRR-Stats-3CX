@@ -60,11 +60,22 @@ export function PeriodComparisonToggle({ checked, onCheckedChange, loading = fal
     return (
         <Tip content={loading ? "Chargement en arrière-plan…"
             : unavailable ? "Comparaison indisponible — actualisez pour réessayer"
-                : undefined}
+                : checked ? "Les courbes traitillées reprennent la période précédente de même durée, alignée sur les jours de semaine."
+                    : undefined}
         >
             <label className={`flex shrink-0 select-none items-center gap-2 text-sm font-medium ${
                 disabled ? "text-slate-400" : "cursor-pointer text-slate-500"
             }`}>
+                {/* Échantillon de traitillé : matérialise le lien entre ce
+                    toggle et les courbes en pointillés du graphique — la
+                    question « les traitillés, c'est quoi ? » ne devrait plus
+                    se poser. Neutre en gris : les courbes N-1 reprennent la
+                    couleur de leur série, l'échantillon dit juste le STYLE. */}
+                {checked && !disabled && (
+                    <svg width="22" height="8" aria-hidden className="shrink-0">
+                        <line x1="1" y1="4" x2="21" y2="4" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5 3" />
+                    </svg>
+                )}
                 Période précédente
                 {loading && <Loader2 className="h-3 w-3 animate-spin text-slate-400" />}
                 {/* Span relais : un switch désactivé n'émet pas de survol,
