@@ -688,9 +688,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 <div className="flex items-end gap-4 text-sm">
                                     <div className="text-center">
                                         <div className="text-lg font-bold text-blue-700">{kpis.teamDirectReceived}</div>
-                                        <Tip content="Tous les appels de ce canal.">
-                                            <div className="text-[10px] text-blue-600">Reçus</div>
-                                        </Tip>
+                                        <div className="text-[10px] text-blue-600">Reçus</div>
                                     </div>
                                     <div className="flex items-end gap-4 self-stretch border-x border-blue-200 px-4">
                                         <div className="text-center">
@@ -751,9 +749,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 <div className="flex items-end gap-4 text-sm">
                                     <div className="text-center">
                                         <div className="text-lg font-bold text-violet-700">{kpis.callsReceived}</div>
-                                        <Tip content="Tous les appels de ce canal.">
-                                            <div className="text-[10px] text-violet-600">Reçus</div>
-                                        </Tip>
+                                        <div className="text-[10px] text-violet-600">Reçus</div>
                                     </div>
                                     <div className="flex items-end gap-4 self-stretch border-x border-violet-200 px-4">
                                         <div className="text-center">
