@@ -8,7 +8,7 @@ import { QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tip } from "@/components/ui/tooltip";
 import { TrendPill } from "@/components/stats-v2/trend-arrow";
-import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, AlertTriangle } from "lucide-react";
+import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, AlertTriangle, Info } from "lucide-react";
 import { outcomesForBucket, sumBucket, type CallOrigin } from "@/services/domain/call-classification";
 import { computeTeamTotals, lossVerdict, type TeamTotals } from "@/services/domain/team-totals";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
@@ -545,9 +545,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <PhoneIncoming className="h-4 w-4 text-blue-600" />
-                                        <Tip content="Tous les appels arrivés pour l'équipe sur la période.">
-                                            <span className="text-xs font-medium text-slate-600">Appels reçus</span>
-                                        </Tip>
+                                        <span className="text-xs font-medium text-slate-600">Appels reçus</span>
                                     </div>
                                     <TrendPill current={totalReceived} previous={prevOf((t) => t.totalReceived)} sense="neutral" />
                                 </div>
@@ -555,9 +553,18 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 {/* Paires label:valeur insécables : quand la ligne
                                     se coupe, elle se coupe AVANT une paire entière
                                     — « Transférés: 13 » passe à la ligne d'un
-                                    bloc, jamais le nombre seul. */}
-                                <div className="mt-auto pt-0.5 text-[10px] text-slate-500">
-                                    Directs:&nbsp;{kpis.teamDirectReceived}&nbsp;· Équipe:&nbsp;{kpis.callsReceived}
+                                    bloc, jamais le nombre seul. Le « i » du coin
+                                    inférieur droit porte la définition de la
+                                    vignette (avant : infobulle invisible sur le
+                                    libellé) — même icône que dans les colonnes du
+                                    tableau des agents. */}
+                                <div className="mt-auto flex items-end justify-between gap-1.5 pt-0.5">
+                                    <div className="text-[10px] text-slate-500">
+                                        Directs:&nbsp;{kpis.teamDirectReceived}&nbsp;· Équipe:&nbsp;{kpis.callsReceived}
+                                    </div>
+                                    <Tip content="Tous les appels arrivés pour l'équipe sur la période.">
+                                        <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
+                                    </Tip>
                                 </div>
                             </TileShell>
                             </div>
@@ -572,15 +579,18 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <Phone className="h-4 w-4 text-emerald-600" />
-                                        <Tip content="Appels décrochés par un membre de l'équipe — y compris ceux ensuite transférés.">
-                                            <span className="text-xs font-medium text-emerald-900">Appels répondus</span>
-                                        </Tip>
+                                        <span className="text-xs font-medium text-emerald-900">Appels répondus</span>
                                     </div>
                                     <TrendPill current={totalAnswered} previous={prevOf((t) => t.totalAnswered)} sense="higher-better" />
                                 </div>
                                 <div className="text-2xl font-bold text-emerald-700">{totalAnswered}</div>
-                                <div className="mt-auto pt-0.5 text-[10px] text-emerald-600">
-                                    Directs:&nbsp;{kpis.teamDirectAnswered}&nbsp;· Équipe:&nbsp;{kpis.callsAnswered}{totalHandedOff > 0 && <>&nbsp;· Transférés:&nbsp;{totalHandedOff}</>}
+                                <div className="mt-auto flex items-end justify-between gap-1.5 pt-0.5">
+                                    <div className="text-[10px] text-emerald-600">
+                                        Directs:&nbsp;{kpis.teamDirectAnswered}&nbsp;· Équipe:&nbsp;{kpis.callsAnswered}{totalHandedOff > 0 && <>&nbsp;· Transférés:&nbsp;{totalHandedOff}</>}
+                                    </div>
+                                    <Tip content="Appels décrochés par un membre de l'équipe — y compris ceux ensuite transférés.">
+                                        <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
+                                    </Tip>
                                 </div>
                             </TileShell>
                             </div>
@@ -600,15 +610,18 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <ArrowRightLeft className="h-4 w-4 text-amber-600" />
-                                        <Tip content="Appels renvoyés automatiquement vers une autre équipe, personne n'ayant décroché ici à temps.">
-                                            <span className="text-xs font-medium text-amber-900">Appels débordés</span>
-                                        </Tip>
+                                        <span className="text-xs font-medium text-amber-900">Appels débordés</span>
                                     </div>
                                     <TrendPill current={totalOverflow} previous={prevOf((t) => t.totalRedirected)} sense="neutral" />
                                 </div>
                                 <div className="text-2xl font-bold text-amber-700">{totalOverflow}</div>
-                                <div className="mt-auto pt-0.5 text-[10px] text-amber-600">
-                                    Directs:&nbsp;{kpis.directOverflow}&nbsp;· Équipe:&nbsp;{kpis.callsOverflow}
+                                <div className="mt-auto flex items-end justify-between gap-1.5 pt-0.5">
+                                    <div className="text-[10px] text-amber-600">
+                                        Directs:&nbsp;{kpis.directOverflow}&nbsp;· Équipe:&nbsp;{kpis.callsOverflow}
+                                    </div>
+                                    <Tip content="Appels renvoyés automatiquement vers une autre équipe, personne n'ayant décroché ici à temps.">
+                                        <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
+                                    </Tip>
                                 </div>
                             </TileShell>
                             </div>
@@ -623,15 +636,18 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
                                         <PhoneMissed className="h-4 w-4 text-red-600" />
-                                        <Tip content="Appels restés sans réponse : l'appelant a raccroché sans avoir été servi.">
-                                            <span className="text-xs font-medium text-red-900">Appels perdus</span>
-                                        </Tip>
+                                        <span className="text-xs font-medium text-red-900">Appels perdus</span>
                                     </div>
                                     <TrendPill current={totalLost} previous={prevOf((t) => t.totalLost)} sense="lower-better" />
                                 </div>
                                 <div className="text-2xl font-bold text-red-700">{totalLost}</div>
-                                <div className="mt-auto pt-0.5 text-[10px] text-red-600">
-                                    Directs:&nbsp;{kpis.directLost}&nbsp;· Équipe:&nbsp;{sumBucket(kpis.outcomeCounts, "lost")}
+                                <div className="mt-auto flex items-end justify-between gap-1.5 pt-0.5">
+                                    <div className="text-[10px] text-red-600">
+                                        Directs:&nbsp;{kpis.directLost}&nbsp;· Équipe:&nbsp;{sumBucket(kpis.outcomeCounts, "lost")}
+                                    </div>
+                                    <Tip content="Appels restés sans réponse : l'appelant a raccroché sans avoir été servi.">
+                                        <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
+                                    </Tip>
                                 </div>
                             </TileShell>
                             </div>
@@ -648,34 +664,51 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             >
                                 <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                                        {/* Le « i » remplace la pastille de couleur :
+                                            le fond teinté suffit à dire le canal, la
+                                            légende vit désormais sur les chiffres. */}
+                                        <Tip content="Appels arrivés directement sur la ligne d'un collaborateur, sans passer par le numéro commun de l'équipe.">
+                                            <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
+                                        </Tip>
                                         <span className="text-sm font-medium text-blue-900">Appels Directs</span>
                                         <span className="text-xs font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
                                             {totalReceived > 0 ? Math.round((kpis.teamDirectReceived / totalReceived) * 100) : 0}%
                                         </span>
                                     </div>
-                                    {/* Légende de l'anneau intérieur, côté bleu : la
-                                        grammaire teinte/texture enfin écrite. */}
-                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-[18px] text-[10px] text-blue-700">
-                                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500" />Répondus</span>
-                                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-300" />Transférés</span>
-                                        <Tip content="Ni répondus ici, ni transférés : les perdus et les débordés de ce canal.">
-                                            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "repeating-linear-gradient(45deg, #3b82f6 0 1.5px, transparent 1.5px 3.5px)" }} />Non aboutis</span>
-                                        </Tip>
-                                    </div>
                                 </div>
-                                <div className="flex items-center gap-6 text-sm">
+                                {/* La légende de l'anneau vit SUR les chiffres :
+                                    chaque segment (plein, clair, hachuré) porte sa
+                                    pastille devant son nombre. « Reçus » n'en a pas
+                                    — c'est la somme, pas un segment. Et la ligne se
+                                    vérifie d'elle-même :
+                                    Répondus + Transférés + Non aboutis = Reçus. */}
+                                <div className="flex items-center gap-5 text-sm">
                                     <div className="text-center">
                                         <div className="font-bold text-blue-700">{kpis.teamDirectReceived}</div>
                                         <div className="text-[10px] text-blue-600">Reçus</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className="font-bold text-blue-700">{kpis.teamDirectAnswered}</div>
+                                        <div className="flex items-center justify-center gap-1">
+                                            <span className="h-2 w-2 rounded-full bg-blue-500" />
+                                            <span className="font-bold text-blue-700">{kpis.teamDirectAnswered}</span>
+                                        </div>
                                         <div className="text-[10px] text-blue-600">Répondus</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className="font-bold text-blue-400">{kpis.directHandedOff}</div>
+                                        <div className="flex items-center justify-center gap-1">
+                                            <span className="h-2 w-2 rounded-full bg-blue-300" />
+                                            <span className="font-bold text-blue-400">{kpis.directHandedOff}</span>
+                                        </div>
                                         <div className="text-[10px] text-blue-600">Transférés</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="flex items-center justify-center gap-1">
+                                            <span className="h-2 w-2 rounded-full" style={{ background: "repeating-linear-gradient(45deg, #3b82f6 0 1.5px, transparent 1.5px 3.5px)" }} />
+                                            <span className="font-bold text-blue-700">{directUnanswered}</span>
+                                        </div>
+                                        <Tip content="Ni répondus ici, ni transférés : les perdus et les débordés de ce canal.">
+                                            <div className="text-[10px] text-blue-600">Non aboutis</div>
+                                        </Tip>
                                     </div>
                                     <div className="text-center">
                                         {/* Le taux garde la couleur de son bloc et ne
@@ -702,32 +735,42 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             >
                                 <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />
+                                        <Tip content="Appels arrivés sur le numéro commun de l'équipe, puis présentés à ses collaborateurs.">
+                                            <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
+                                        </Tip>
                                         <span className="text-sm font-medium text-violet-900">Appels d'équipe</span>
                                         <span className="text-xs font-semibold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">
                                             {totalReceived > 0 ? Math.round((kpis.callsReceived / totalReceived) * 100) : 0}%
                                         </span>
                                     </div>
-                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-[18px] text-[10px] text-violet-700">
-                                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-violet-500" />Répondus</span>
-                                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-violet-300" />Transférés</span>
-                                        <Tip content="Ni répondus ici, ni transférés : les perdus et les débordés de ce canal.">
-                                            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "repeating-linear-gradient(45deg, #8b5cf6 0 1.5px, transparent 1.5px 3.5px)" }} />Non aboutis</span>
-                                        </Tip>
-                                    </div>
                                 </div>
-                                <div className="flex items-center gap-6 text-sm">
+                                <div className="flex items-center gap-5 text-sm">
                                     <div className="text-center">
                                         <div className="font-bold text-violet-700">{kpis.callsReceived}</div>
                                         <div className="text-[10px] text-violet-600">Reçus</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className="font-bold text-violet-700">{kpis.callsAnswered}</div>
+                                        <div className="flex items-center justify-center gap-1">
+                                            <span className="h-2 w-2 rounded-full bg-violet-500" />
+                                            <span className="font-bold text-violet-700">{kpis.callsAnswered}</span>
+                                        </div>
                                         <div className="text-[10px] text-violet-600">Répondus</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className="font-bold text-violet-400">{kpis.callsHandedOff}</div>
+                                        <div className="flex items-center justify-center gap-1">
+                                            <span className="h-2 w-2 rounded-full bg-violet-300" />
+                                            <span className="font-bold text-violet-400">{kpis.callsHandedOff}</span>
+                                        </div>
                                         <div className="text-[10px] text-violet-600">Transférés</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="flex items-center justify-center gap-1">
+                                            <span className="h-2 w-2 rounded-full" style={{ background: "repeating-linear-gradient(45deg, #8b5cf6 0 1.5px, transparent 1.5px 3.5px)" }} />
+                                            <span className="font-bold text-violet-700">{queueUnanswered}</span>
+                                        </div>
+                                        <Tip content="Ni répondus ici, ni transférés : les perdus et les débordés de ce canal.">
+                                            <div className="text-[10px] text-violet-600">Non aboutis</div>
+                                        </Tip>
                                     </div>
                                     <div className="text-center">
                                         <Tip content="Prise en charge du bloc : (répondus + transférés) / reçus">
