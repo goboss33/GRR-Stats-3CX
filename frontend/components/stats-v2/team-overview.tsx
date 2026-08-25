@@ -509,9 +509,11 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                                 {/* Zone RONDE du trou : survoler le total illumine
                                     la vignette « Appels reçus » — et rien ne
-                                    s'estompe, tout appartient au total. */}
+                                    s'estompe, tout appartient au total. Le disque
+                                    se grise légèrement en retour, y compris quand
+                                    c'est la vignette qui est survolée. */}
                                 <div
-                                    className="pointer-events-auto flex h-20 w-20 cursor-default flex-col items-center justify-center rounded-full text-center"
+                                    className={`pointer-events-auto flex h-20 w-20 cursor-default flex-col items-center justify-center rounded-full text-center transition-colors ${focus?.kind === "total" ? "bg-slate-100" : ""}`}
                                     {...focusHandlers({ kind: "total" })}
                                 >
                                     <div className="text-3xl font-bold text-slate-900">{totalReceived}</div>
@@ -550,8 +552,12 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <TrendPill current={totalReceived} previous={prevOf((t) => t.totalReceived)} sense="neutral" />
                                 </div>
                                 <div className="text-2xl font-bold text-slate-900">{totalReceived}</div>
+                                {/* Paires label:valeur insécables : quand la ligne
+                                    se coupe, elle se coupe AVANT une paire entière
+                                    — « Transférés: 13 » passe à la ligne d'un
+                                    bloc, jamais le nombre seul. */}
                                 <div className="mt-auto pt-0.5 text-[10px] text-slate-500">
-                                    Directs: {kpis.teamDirectReceived} · Équipe: {kpis.callsReceived}
+                                    Directs:&nbsp;{kpis.teamDirectReceived}&nbsp;· Équipe:&nbsp;{kpis.callsReceived}
                                 </div>
                             </TileShell>
                             </div>
@@ -574,7 +580,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 </div>
                                 <div className="text-2xl font-bold text-emerald-700">{totalAnswered}</div>
                                 <div className="mt-auto pt-0.5 text-[10px] text-emerald-600">
-                                    Directs: {kpis.teamDirectAnswered} · Équipe: {kpis.callsAnswered}{totalHandedOff > 0 && <> · Transférés: {totalHandedOff}</>}
+                                    Directs:&nbsp;{kpis.teamDirectAnswered}&nbsp;· Équipe:&nbsp;{kpis.callsAnswered}{totalHandedOff > 0 && <>&nbsp;· Transférés:&nbsp;{totalHandedOff}</>}
                                 </div>
                             </TileShell>
                             </div>
@@ -602,7 +608,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 </div>
                                 <div className="text-2xl font-bold text-amber-700">{totalOverflow}</div>
                                 <div className="mt-auto pt-0.5 text-[10px] text-amber-600">
-                                    Directs: {kpis.directOverflow} · Équipe: {kpis.callsOverflow}
+                                    Directs:&nbsp;{kpis.directOverflow}&nbsp;· Équipe:&nbsp;{kpis.callsOverflow}
                                 </div>
                             </TileShell>
                             </div>
@@ -625,7 +631,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 </div>
                                 <div className="text-2xl font-bold text-red-700">{totalLost}</div>
                                 <div className="mt-auto pt-0.5 text-[10px] text-red-600">
-                                    Directs: {kpis.directLost} · Équipe: {sumBucket(kpis.outcomeCounts, "lost")}
+                                    Directs:&nbsp;{kpis.directLost}&nbsp;· Équipe:&nbsp;{sumBucket(kpis.outcomeCounts, "lost")}
                                 </div>
                             </TileShell>
                             </div>
