@@ -197,7 +197,7 @@ export async function POST(request: Request) {
             }
 
             const payload = trimmed
-                ? { xapiKeyEncrypted: sealSecret(trimmed), xapiKeyUpdatedAt: new Date() }
+                ? { xapiKeyEncrypted: await sealSecret(trimmed), xapiKeyUpdatedAt: new Date() }
                 : { xapiKeyEncrypted: null, xapiKeyUpdatedAt: null };
 
             await prismaAuth.tenantSettings.upsert({

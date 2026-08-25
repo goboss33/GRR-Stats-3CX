@@ -34,4 +34,14 @@ export async function register() {
     } catch (error) {
         console.error("[annuaire postes] préchauffage non lancé :", error);
     }
+
+    // Relevé nocturne du journal d'équipe (surcouche XAPI) : n'agit que pour
+    // les tenants dont la surcouche est active et configurée — les autres ne
+    // paient rien, pas même une ligne de log.
+    try {
+        const { registerXapiJournalScheduler } = await import("@/lib/xapi-journal-scheduler");
+        registerXapiJournalScheduler();
+    } catch (error) {
+        console.error("[journal-xapi] déclencheur non armé :", error);
+    }
 }

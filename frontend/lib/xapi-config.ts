@@ -35,7 +35,7 @@ export async function getServerXapiConfig(serverId: ServerId): Promise<XapiConfi
             enabled: true,
             baseUrl: settings.xapiBaseUrl,
             clientId: settings.xapiClientId,
-            key: openSecret(settings.xapiKeyEncrypted),
+            key: await openSecret(settings.xapiKeyEncrypted),
         };
     } catch {
         // Réglages illisibles : on retombe sur le socle CDR, jamais d'erreur.

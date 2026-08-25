@@ -358,3 +358,43 @@ model SearchPreset {
 
   @@index([userId, page])
 }
+
+/// SURCOUCHE XAPI — journal de composition des équipes, relevé chaque nuit.
+/// Un enregistrement = un intervalle CONTINU d'appartenance d'un poste à une
+/// file, avec le nom porté pendant l'intervalle. Un changement de titulaire
+/// (Nicole → Martine sur le même poste) FERME l'intervalle et en ouvre un
+/// nouveau : les noms d'époque restent des données de première classe, comme
+/// dans le socle CDR. Le journal ne réécrit jamais le passé — il l'enregistre.
+model QueueMembershipInterval {
+  id          String    @id @default(cuid())
+  serverId    String
+  queueNumber String
+  extension   String
+  agentName   String
+  /// Premier relevé où le poste a été vu membre de la file.
+  firstSeenAt DateTime
+  /// Dernier relevé où il l'était encore.
+  lastSeenAt  DateTime
+  /// Relevé qui a constaté la disparition ; null = membre à ce jour.
+  closedAt    DateTime?
+
+  @@index([serverId, queueNumber, closedAt])
+  @@index([serverId, closedAt])
+}
+
+/// Trace de chaque relevé XAPI — l'onglet des réglages s'en nourrit, et un
+/// échec y laisse son motif exact plutôt que de disparaître dans les logs.
+model XapiSnapshotRun {
+  id       String   @id @default(cuid())
+  serverId String
+  ranAt    DateTime @default(now())
+  ok       Boolean
+  /// Files lues, postes membres vus, et mouvements (apparitions + départs
+  /// + changements de titulaire) par rapport au relevé précédent.
+  queues   Int      @default(0)
+  members  Int      @default(0)
+  changes  Int      @default(0)
+  error    String?
+
+  @@index([serverId, ranAt(sort: Desc)])
+}

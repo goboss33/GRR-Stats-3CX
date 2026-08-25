@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Users, Phone, AlertCircle, KeyRound, Settings, Building2, Bell } from "lucide-react";
+import { Users, Phone, AlertCircle, KeyRound, Settings, Building2, Bell, BookOpenCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PersonalInfoTab } from "./tabs/personal-info-tab";
 import { UsersTab } from "./tabs/users-tab";
@@ -11,8 +11,9 @@ import { TenantTab } from "./tabs/tenant-tab";
 import { BusinessRulesTab } from "./tabs/business-rules-tab";
 import { ApiKeysTab } from "./tabs/api-keys-tab";
 import { AlertsTab } from "./tabs/alerts-tab";
+import { XapiJournalTab } from "./tabs/xapi-journal-tab";
 
-type TabId = "personal" | "users" | "queues" | "business-rules" | "alerts" | "api-keys" | "tenant" | "diagnostic";
+type TabId = "personal" | "users" | "queues" | "business-rules" | "alerts" | "api-keys" | "tenant" | "xapi-journal" | "diagnostic";
 
 // Rôles autorisés par onglet (cf. PRD droits d'accès §4.1).
 // ⚠️ Ce filtrage est une commodité d'affichage : la sécurité réelle est assurée
@@ -27,6 +28,7 @@ const tabs: { id: TabId; label: string; icon: React.ComponentType<{ className?: 
     { id: "alerts", label: "Alertes", icon: Bell, roles: ["ADMIN"] },
     { id: "api-keys", label: "Clés API", icon: KeyRound, roles: ["ADMIN", "MODERATOR"] },
     { id: "tenant", label: "Tenant", icon: Building2, roles: ["ADMIN"] },
+    { id: "xapi-journal", label: "Journal des équipes (XAPI)", icon: BookOpenCheck, roles: ["ADMIN"] },
     { id: "diagnostic", label: "Diagnostic", icon: AlertCircle, roles: ["ADMIN"] },
 ];
 
@@ -46,6 +48,7 @@ export default function SettingsPage({ userRole }: { userRole: string }) {
             case "alerts": return <AlertsTab />;
             case "api-keys": return <ApiKeysTab />;
             case "tenant": return <TenantTab />;
+            case "xapi-journal": return <XapiJournalTab />;
             case "diagnostic": return <DiagnosticTab />;
         }
     };

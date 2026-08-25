@@ -1,5 +1,3 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-
 /**
  * Coffre à secrets — chiffrement réversible des credentials SORTANTS.
  *
@@ -7,6 +5,13 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
  * bcrypt) : une clé qu'on reçoit se vérifie sans jamais être relue, alors
  * qu'une clé qu'on PRÉSENTE à un tiers (la clé XAPI du 3CX) doit pouvoir être
  * relue en clair au moment de l'appel. D'où AES-256-GCM plutôt qu'un hachage.
+ *
+ * Implémenté sur l'API WebCrypto (globalThis.crypto.subtle), disponible dans
+ * Node comme dans le runtime edge : AUCUN import — le module `node:crypto`
+ * cassait la compilation edge d'instrumentation.ts (schéma « node: » que
+ * webpack ne résout pas), alors que le format produit ici est identique octet
+ * pour octet (« iv.tag.chiffré » en base64url) : les valeurs déjà stockées
+ * restent lisibles.
  *
  * Le GCM authentifie le chiffré : une valeur trafiquée en base est rejetée au
  * déchiffrement au lieu de produire une clé silencieusement fausse.
@@ -18,10 +23,24 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
  * Poser `XAPI_ENCRYPTION_KEY` en propre isole les deux cycles de vie.
  */
 
-const ALGO = "aes-256-gcm";
 const IV_BYTES = 12;
+const TAG_BYTES = 16;
 
-function encryptionKey(): Buffer {
+function toBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function fromBase64Url(text: string): Uint8Array<ArrayBuffer> {
+    const base64 = text.replace(/-/g, "+").replace(/_/g, "/");
+    const binary = atob(base64);
+    const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+}
+
+async function encryptionKey(): Promise<CryptoKey> {
     const secret = process.env.XAPI_ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET;
     if (!secret) {
         throw new Error(
@@ -30,15 +49,22 @@ function encryptionKey(): Buffer {
     }
     // SHA-256 du secret : ramène n'importe quelle longueur aux 32 octets
     // exigés par AES-256, de façon déterministe.
-    return createHash("sha256").update(secret).digest();
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+    return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
 /** Chiffre une valeur ; format « iv.tag.chiffré », le tout en base64url. */
-export function sealSecret(plain: string): string {
-    const iv = randomBytes(IV_BYTES);
-    const cipher = createCipheriv(ALGO, encryptionKey(), iv);
-    const sealed = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
-    return [iv, cipher.getAuthTag(), sealed].map((b) => b.toString("base64url")).join(".");
+export async function sealSecret(plain: string): Promise<string> {
+    const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+    const key = await encryptionKey();
+    // WebCrypto renvoie « chiffré || tag » concaténés : on sépare le tag pour
+    // conserver le format historique à trois segments.
+    const sealed = new Uint8Array(await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv }, key, new TextEncoder().encode(plain),
+    ));
+    const payload = sealed.slice(0, sealed.length - TAG_BYTES);
+    const tag = sealed.slice(sealed.length - TAG_BYTES);
+    return [iv, tag, payload].map(toBase64Url).join(".");
 }
 
 /**
@@ -47,15 +73,18 @@ export function sealSecret(plain: string): string {
  * de chiffrement changé — jamais d'exception : un credential illisible doit
  * dégrader vers « non configuré », pas casser l'écran des réglages.
  */
-export function openSecret(sealed: string | null | undefined): string | null {
+export async function openSecret(sealed: string | null | undefined): Promise<string | null> {
     if (!sealed) return null;
     const parts = sealed.split(".");
     if (parts.length !== 3) return null;
     try {
-        const [iv, tag, payload] = parts.map((p) => Buffer.from(p, "base64url"));
-        const decipher = createDecipheriv(ALGO, encryptionKey(), iv);
-        decipher.setAuthTag(tag);
-        return Buffer.concat([decipher.update(payload), decipher.final()]).toString("utf8");
+        const [iv, tag, payload] = parts.map(fromBase64Url);
+        const combined = new Uint8Array(new ArrayBuffer(payload.length + tag.length));
+        combined.set(payload);
+        combined.set(tag, payload.length);
+        const key = await encryptionKey();
+        const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, combined);
+        return new TextDecoder().decode(plain);
     } catch {
         return null;
     }
