@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
 
@@ -11,7 +11,7 @@ import { TrendPill } from "@/components/stats-v2/trend-arrow";
 import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, AlertTriangle } from "lucide-react";
 import { outcomesForBucket, sumBucket, type CallOrigin } from "@/services/domain/call-classification";
 import { computeTeamTotals, lossVerdict, type TeamTotals } from "@/services/domain/team-totals";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import Link from "next/link";
 
 interface TeamOverviewProps {
@@ -64,39 +64,56 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
     // de sort illumine son arc ; survoler un arc illumine sa vignette ou son
     // bloc ; tout ce qui n'appartient pas à la famille survolée s'estompe.
     // Pur état d'affichage — aucun chiffre ne change.
-    type Focus = { kind: "outcome"; key: "answered" | "overflow" | "lost" } | { kind: "channel"; key: "direct" | "queue" };
+    type Focus =
+        | { kind: "outcome"; key: "answered" | "overflow" | "lost" }
+        | { kind: "channel"; key: "direct" | "queue" }
+        | { kind: "total" };
     const [focus, setFocus] = useState<Focus | null>(null);
-    const cellOpacity = (kind: Focus["kind"], key: string): number =>
-        !focus ? 1 : focus.kind === kind && focus.key === key ? 1 : 0.25;
+    // Relâchement DIFFÉRÉ : la sortie d'une zone n'éteint pas tout de suite,
+    // l'entrée dans la suivante annule l'extinction — traverser un espace
+    // blanc (entre deux blocs, entre deux arcs) ne fait donc jamais repasser
+    // l'écran par l'état « rien », ce qui clignotait.
+    const focusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const setFocusNow = (f: Focus) => {
+        if (focusTimer.current) { clearTimeout(focusTimer.current); focusTimer.current = null; }
+        setFocus(f);
+    };
+    const clearFocusSoon = () => {
+        if (focusTimer.current) clearTimeout(focusTimer.current);
+        focusTimer.current = setTimeout(() => setFocus(null), 140);
+    };
+    // Survoler le TOTAL (centre du donut, vignette « Appels reçus ») ne doit
+    // rien estomper : tout appartient au total.
+    const cellOpacity = (kind: "outcome" | "channel", key: string): number =>
+        !focus || focus.kind === "total" ? 1 : focus.kind === kind && focus.key === key ? 1 : 0.25;
     const focusHandlers = (f: Focus) => ({
-        onMouseEnter: () => setFocus(f),
-        onMouseLeave: () => setFocus(null),
+        onMouseEnter: () => setFocusNow(f),
+        onMouseLeave: () => clearFocusSoon(),
     });
     const OUTCOME_KEYS: Record<string, "answered" | "overflow" | "lost"> = {
         "Répondus": "answered", "Débordements": "overflow", "Perdus": "lost",
     };
-
-    // Accessibilité : les utilisateurs qui désactivent les animations système
-    // ne voient ni fondu ni détachement — seuls les anneaux de surbrillance.
-    const [reduceMotion] = useState(() =>
-        typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
     // Animation d'ENTRÉE du donut : une fois par contexte (équipe + période +
     // provenance), jamais au rafraîchissement du même contexte — c'était le
     // « petit souci » historique : l'animation rejouait à chaque polling et
     // Recharts masque les étiquettes pendant qu'elle tourne, donc les
     // pourcentages clignotaient toutes les 10-15 s.
+    // NB : pas de garde prefers-reduced-motion ici — c'était le premier jet,
+    // et le poste de l'utilisateur principal a les animations système
+    // désactivées : le balayage et les transitions devenaient invisibles.
+    // Produit interne, animations courtes : on les assume.
     const contextKey = `${queueNumber}|${startDate}|${endDate}|${origin}`;
     const [animatedKey, setAnimatedKey] = useState<string | null>(null);
-    const entryAnimation = !reduceMotion && animatedKey !== contextKey;
+    const entryAnimation = animatedKey !== contextKey;
 
     // Détachement de l'arc survolé : mise à l'échelle autour du CENTRE du
     // graphique (conteneur 320×256 → 160,128). Le rayon gagne ~4 %, l'arc
     // « sort de la tarte » — pur CSS, aucun recalcul Recharts.
     const DONUT_CENTER = "160px 128px";
     const arcStyle = (focused: boolean, pop: number) => ({
-        transition: reduceMotion ? undefined : "opacity 150ms ease, transform 150ms ease",
-        transform: focused && !reduceMotion ? `scale(${pop})` : "scale(1)",
+        transition: "opacity 150ms ease, transform 150ms ease",
+        transform: focused ? `scale(${pop})` : "scale(1)",
         transformOrigin: DONUT_CENTER,
         outline: "none",
     });
@@ -309,7 +326,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                         (320×256) pour que le chip du taux de perte ait sa place
                         même quand le segment rouge pointe à l'horizontale. */}
                     <div className="lg:col-span-4 flex items-center justify-center">
-                        <div className="relative w-80 h-64">
+                        <div className="relative w-80 h-64" onMouseLeave={() => clearFocusSoon()}>
                             {/* SVG Patterns pour hachures */}
                             <svg width="0" height="0" className="absolute">
                                 <defs>
@@ -339,9 +356,9 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         onAnimationEnd={() => setAnimatedKey(contextKey)}
                                         onMouseEnter={(entry: { name?: string; payload?: { name?: string } }) => {
                                             const key = OUTCOME_KEYS[entry?.name ?? entry?.payload?.name ?? ""];
-                                            if (key) setFocus({ kind: "outcome", key });
+                                            if (key) setFocusNow({ kind: "outcome", key });
                                         }}
-                                        onMouseLeave={() => setFocus(null)}
+                                        onMouseLeave={() => clearFocusSoon()}
                                     >
                                         {outcomeData.map((entry, index) => {
                                             const key = OUTCOME_KEYS[entry.name];
@@ -370,10 +387,10 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         isAnimationActive={entryAnimation}
                                         onMouseEnter={(entry: { name?: string; payload?: { name?: string } }) => {
                                             const name = entry?.name ?? entry?.payload?.name ?? "";
-                                            if (name.startsWith("Directs")) setFocus({ kind: "channel", key: "direct" });
-                                            else if (name.startsWith("File")) setFocus({ kind: "channel", key: "queue" });
+                                            if (name.startsWith("Directs")) setFocusNow({ kind: "channel", key: "direct" });
+                                            else if (name.startsWith("File")) setFocusNow({ kind: "channel", key: "queue" });
                                         }}
-                                        onMouseLeave={() => setFocus(null)}
+                                        onMouseLeave={() => clearFocusSoon()}
                                     >
                                         {innerData.map((entry, index) => {
                                             const channel = entry.name.startsWith("Directs") ? "direct"
@@ -389,13 +406,6 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                             );
                                         })}
                                     </Pie>
-                                    <RechartsTooltip
-                                        formatter={(value, name) => [
-                                            `${value} appels${totalReceived > 0 ? ` (${Math.round((Number(value) / totalReceived) * 100)} %)` : ""}`,
-                                            name,
-                                        ]}
-                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                    />
                                 </PieChart>
                             </ResponsiveContainer>
                             {/* Centre du Donut */}
@@ -405,7 +415,13 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 réciprocité constaté). Le contenu réel les
                                 réactive pour rester interactif. */}
                             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                                <div className="pointer-events-auto text-center">
+                                {/* Zone RONDE du trou : survoler le total illumine
+                                    la vignette « Appels reçus » — et rien ne
+                                    s'estompe, tout appartient au total. */}
+                                <div
+                                    className="pointer-events-auto flex h-20 w-20 cursor-default flex-col items-center justify-center rounded-full text-center"
+                                    {...focusHandlers({ kind: "total" })}
+                                >
                                     <div className="text-3xl font-bold text-slate-900">{totalReceived}</div>
                                     <div className="text-xs text-slate-500">Total</div>
                                 </div>
@@ -422,8 +438,9 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 réservé au canal « directs ». */}
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("received"))}
-                                toneClass="bg-slate-50 border-slate-200"
+                                toneClass={`bg-slate-50 border-slate-200 ${focus?.kind === "total" ? "ring-2 ring-slate-400 -translate-y-px shadow-md" : ""}`}
                                 hoverClass="hover:border-blue-300"
+                                interaction={focusHandlers({ kind: "total" })}
                             >
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
@@ -443,7 +460,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             {/* Répondus */}
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("answered"))}
-                                toneClass={`bg-emerald-50/50 border-emerald-200 ${focus?.kind === "outcome" && focus.key === "answered" ? "ring-2 ring-emerald-400 motion-safe:-translate-y-px motion-safe:shadow-md" : ""}`}
+                                toneClass={`bg-emerald-50/50 border-emerald-200 ${focus?.kind === "outcome" && focus.key === "answered" ? "ring-2 ring-emerald-400 -translate-y-px shadow-md" : ""}`}
                                 interaction={focusHandlers({ kind: "outcome", key: "answered" })}
                                 hoverClass="hover:border-emerald-300"
                             >
@@ -470,7 +487,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 des segments de la barre (vert, ambre, rouge). */}
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("overflow"))}
-                                toneClass={`bg-amber-50/50 border-amber-200 ${focus?.kind === "outcome" && focus.key === "overflow" ? "ring-2 ring-amber-400 motion-safe:-translate-y-px motion-safe:shadow-md" : ""}`}
+                                toneClass={`bg-amber-50/50 border-amber-200 ${focus?.kind === "outcome" && focus.key === "overflow" ? "ring-2 ring-amber-400 -translate-y-px shadow-md" : ""}`}
                                 interaction={focusHandlers({ kind: "outcome", key: "overflow" })}
                                 hoverClass="hover:border-amber-300"
                             >
@@ -492,7 +509,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             {/* Perdus */}
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("lost"))}
-                                toneClass={`bg-red-50/50 border-red-200 ${focus?.kind === "outcome" && focus.key === "lost" ? "ring-2 ring-red-400 motion-safe:-translate-y-px motion-safe:shadow-md" : ""}`}
+                                toneClass={`bg-red-50/50 border-red-200 ${focus?.kind === "outcome" && focus.key === "lost" ? "ring-2 ring-red-400 -translate-y-px shadow-md" : ""}`}
                                 interaction={focusHandlers({ kind: "outcome", key: "lost" })}
                                 hoverClass="hover:border-red-300"
                             >
@@ -517,7 +534,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                         <div className="space-y-2">
                             {/* Directs */}
                             <div
-                                className={`flex items-center justify-between p-2.5 rounded-lg bg-blue-50/50 border border-blue-100 transition-all ${focus?.kind === "channel" && focus.key === "direct" ? "ring-2 ring-blue-400 motion-safe:-translate-y-px motion-safe:shadow-md" : ""}`}
+                                className={`flex items-center justify-between p-2.5 rounded-lg bg-blue-50/50 border border-blue-100 transition-all ${focus?.kind === "channel" && focus.key === "direct" ? "ring-2 ring-blue-400 -translate-y-px shadow-md" : ""}`}
                                 {...focusHandlers({ kind: "channel", key: "direct" })}
                             >
                                 <div className="flex flex-col gap-1">
@@ -570,7 +587,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
 
                             {/* File */}
                             <div
-                                className={`flex items-center justify-between p-2.5 rounded-lg bg-violet-50/50 border border-violet-100 transition-all ${focus?.kind === "channel" && focus.key === "queue" ? "ring-2 ring-violet-400 motion-safe:-translate-y-px motion-safe:shadow-md" : ""}`}
+                                className={`flex items-center justify-between p-2.5 rounded-lg bg-violet-50/50 border border-violet-100 transition-all ${focus?.kind === "channel" && focus.key === "queue" ? "ring-2 ring-violet-400 -translate-y-px shadow-md" : ""}`}
                                 {...focusHandlers({ kind: "channel", key: "queue" })}
                             >
                                 <div className="flex flex-col gap-1">
