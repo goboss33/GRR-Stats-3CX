@@ -252,7 +252,9 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
     // Vignette KPI : lien vers les journaux quand l'utilisateur y a droit,
     // simple carte sinon — même contenu, sans affordance de clic mensongère.
     // `toneClass` teinte le fond aux couleurs du segment correspondant de la
-    // barre de répartition : les vignettes SONT la légende de la barre.
+    // barre de répartition : les vignettes SONT la légende de la barre. Colonne flex étirée
+    // dans son enveloppe : les vignettes d'une même rangée partagent leur
+    // hauteur et la ligne « Directs / Équipe » s'ancre en bas (mt-auto).
     const TileShell = ({ href, toneClass, hoverClass, interaction, children }: {
         href: string;
         toneClass: string;
@@ -265,13 +267,13 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className={`block group p-3 rounded-xl border hover:shadow-md transition-all cursor-pointer ${toneClass} ${hoverClass}`}
+            className={`group flex w-full flex-col p-3 rounded-xl border hover:shadow-md transition-all cursor-pointer ${toneClass} ${hoverClass}`}
             {...interaction}
         >
             {children}
         </Link>
     ) : (
-        <div className={`p-3 rounded-xl border transition-all ${toneClass}`} {...interaction}>{children}</div>
+        <div className={`flex w-full flex-col p-3 rounded-xl border transition-all ${toneClass}`} {...interaction}>{children}</div>
     ));
 
     const innerData = [
@@ -284,6 +286,60 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
         { name: "File (non aboutis)", value: queueUnanswered, color: COLORS.queueUnanswered, hatched: true },
         { name: "Gap", value: gapValue, color: "transparent", hatched: false },
     ].filter(d => d.value > 0);
+
+    // MATRICE DE DÉTECTION — données « jointives ». Les Pie transparents qui
+    // captent la souris ne doivent avoir AUCUN trou : les zones s'étendent
+    // jusqu'au MILIEU de chaque espace blanc du donut.
+    //
+    // Anneau externe : recharts, sur un cercle complet, fait démarrer le
+    // premier secteur pile à startAngle, place une gouttière de paddingAngle
+    // APRÈS chaque secteur non nul, et répartit 360 − n×padding au prorata
+    // (cf. Pie.js : totalPaddingAngle = notZeroItemCount × paddingAngle ;
+    // padding forcé à 0 quand il n'y a qu'un secteur). On reproduit ce calcul
+    // en degrés puis chaque zone gagne une demi-gouttière de chaque côté, et
+    // l'ensemble démarre une demi-gouttière plus tôt : somme = 360 pile.
+    const OUTER_PADDING = 2;
+    const outerPad = outcomeData.length <= 1 ? 0 : OUTER_PADDING;
+    const outcomeHitData = (() => {
+        const total = outcomeData.reduce((sum, d) => sum + d.value, 0);
+        if (total <= 0) return [];
+        const usable = 360 - outerPad * outcomeData.length;
+        return outcomeData.map(d => ({ name: d.name, value: (d.value / total) * usable + outerPad }));
+    })();
+
+    // Anneau interne : les séparations sont des secteurs « Gap » transparents
+    // (padding 0, spans purement proportionnels). Chaque voisin en absorbe la
+    // moitié — survoler l'espace entre Directs et File sélectionne le canal
+    // le plus proche, jamais rien. Les frontières entre secteurs pleins
+    // voisins ne bougent pas (leurs valeurs sont inchangées).
+    const innerHit = (() => {
+        const entries = innerData.map((d, i) => ({ i, name: d.name, value: d.value, spacer: d.color === "transparent" }));
+        const total = entries.reduce((sum, d) => sum + d.value, 0);
+        if (total <= 0 || !entries.some(d => !d.spacer)) return { data: [], startAngle: -90 };
+        const values = entries.map(d => (d.spacer ? 0 : d.value));
+        const n = entries.length;
+        entries.forEach((d, i) => {
+            if (!d.spacer) return;
+            let prev = (i + n - 1) % n;
+            while (entries[prev].spacer) prev = (prev + n - 1) % n;
+            let next = (i + 1) % n;
+            while (entries[next].spacer) next = (next + 1) % n;
+            values[prev] += d.value / 2;
+            values[next] += d.value / 2;
+        });
+        // Départ décalé : les « Gap » qui touchent la ligne de départ (queue
+        // du tableau, puis tête) forment UNE zone blanche à cheval sur -90° ;
+        // la première zone de détection doit commencer en son MILIEU, sinon
+        // toutes les frontières glissent d'autant (bug attrapé par la preuve
+        // géométrique : décalage uniforme d'une demi-gouttière).
+        let lead = 0;
+        for (const d of entries) { if (!d.spacer) break; lead += d.value; }
+        let trail = 0;
+        for (let i = n - 1; i >= 0 && entries[i].spacer; i--) trail += entries[i].value;
+        const toDeg = (v: number) => (v / total) * 360;
+        const startAngle = -90 + toDeg(lead) - toDeg(lead + trail) / 2;
+        return { data: entries.filter(d => !d.spacer).map(d => ({ name: d.name, value: values[d.i] })), startAngle };
+    })();
 
     return (
         <Card>
@@ -338,7 +394,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         cy="50%"
                                         innerRadius={70}
                                         outerRadius={95}
-                                        paddingAngle={2}
+                                        paddingAngle={OUTER_PADDING}
                                         dataKey="value"
                                         stroke="none"
                                         label={renderOutcomeLabel}
@@ -387,21 +443,27 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         })}
                                     </Pie>
                                     {/* MATRICE DE DÉTECTION (croquis utilisateur) :
-                                        deux anneaux transparents, jointifs du bord
-                                        du centre (r=38) à au-delà de l'anneau
-                                        externe (r=100) — l'espace entre les anneaux
-                                        visuels et les liserés n'est plus une zone
-                                        morte. Aucun rendu : fill transparent. */}
+                                        deux anneaux transparents et JOINTIFS, du
+                                        bord du centre (r=38, le disque HTML couvre
+                                        jusqu'à 40) à juste au-delà de l'anneau
+                                        externe (r=100). Frontière radiale à 67.5 :
+                                        le MILIEU du blanc entre les anneaux
+                                        visuels (65 → 70). Les données `*HitData`
+                                        absorbent gouttières et « Gap » : aucun
+                                        trou angulaire non plus — chaque pixel du
+                                        disque appartient à une zone. Aucun rendu,
+                                        fill transparent. */}
                                     <Pie
-                                        data={innerData}
+                                        data={innerHit.data}
                                         cx="50%"
                                         cy="50%"
                                         innerRadius={38}
-                                        outerRadius={57.5}
+                                        outerRadius={67.5}
                                         paddingAngle={0}
                                         dataKey="value"
                                         stroke="none"
-                                        startAngle={-90}
+                                        startAngle={innerHit.startAngle}
+                                        endAngle={innerHit.startAngle + 360}
                                         isAnimationActive={false}
                                         onMouseEnter={(entry: { name?: string; payload?: { name?: string } }) => {
                                             const name = entry?.name ?? entry?.payload?.name ?? "";
@@ -410,19 +472,21 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         }}
                                         onMouseLeave={() => setFocus(null)}
                                     >
-                                        {innerData.map((entry, index) => (
+                                        {innerHit.data.map((entry, index) => (
                                             <Cell key={`hit-inner-${index}`} fill="transparent" style={{ outline: "none" }} />
                                         ))}
                                     </Pie>
                                     <Pie
-                                        data={outcomeData}
+                                        data={outcomeHitData}
                                         cx="50%"
                                         cy="50%"
-                                        innerRadius={57.5}
+                                        innerRadius={67.5}
                                         outerRadius={100}
-                                        paddingAngle={2}
+                                        paddingAngle={0}
                                         dataKey="value"
                                         stroke="none"
+                                        startAngle={-outerPad / 2}
+                                        endAngle={360 - outerPad / 2}
                                         isAnimationActive={false}
                                         onMouseEnter={(entry: { name?: string; payload?: { name?: string } }) => {
                                             const key = OUTCOME_KEYS[entry?.name ?? entry?.payload?.name ?? ""];
@@ -430,7 +494,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         }}
                                         onMouseLeave={() => setFocus(null)}
                                     >
-                                        {outcomeData.map((entry, index) => (
+                                        {outcomeHitData.map((entry, index) => (
                                             <Cell key={`hit-outer-${index}`} fill="transparent" style={{ outline: "none" }} />
                                         ))}
                                     </Pie>
@@ -470,7 +534,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             {/* Total Reçus — le dénominateur reste NEUTRE : un
                                 volume n'est ni bon ni mauvais, et le bleu est
                                 réservé au canal « directs ». */}
-                            <div className="p-1.5" {...focusHandlers({ kind: "total" })}>
+                            <div className="flex p-1.5" {...focusHandlers({ kind: "total" })}>
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("received"))}
                                 toneClass={`bg-slate-50 border-slate-200 ${focus?.kind === "total" ? "ring-2 ring-slate-400 -translate-y-px shadow-md" : ""}`}
@@ -486,14 +550,14 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <TrendPill current={totalReceived} previous={prevOf((t) => t.totalReceived)} sense="neutral" />
                                 </div>
                                 <div className="text-2xl font-bold text-slate-900">{totalReceived}</div>
-                                <div className="mt-0.5 text-[10px] text-slate-500">
+                                <div className="mt-auto pt-0.5 text-[10px] text-slate-500">
                                     Directs: {kpis.teamDirectReceived} · Équipe: {kpis.callsReceived}
                                 </div>
                             </TileShell>
                             </div>
 
                             {/* Répondus */}
-                            <div className="p-1.5" {...focusHandlers({ kind: "outcome", key: "answered" })}>
+                            <div className="flex p-1.5" {...focusHandlers({ kind: "outcome", key: "answered" })}>
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("answered"))}
                                 toneClass={`bg-emerald-50/50 border-emerald-200 ${focus?.kind === "outcome" && focus.key === "answered" ? "ring-2 ring-emerald-400 -translate-y-px shadow-md" : ""}`}
@@ -509,7 +573,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <TrendPill current={totalAnswered} previous={prevOf((t) => t.totalAnswered)} sense="higher-better" />
                                 </div>
                                 <div className="text-2xl font-bold text-emerald-700">{totalAnswered}</div>
-                                <div className="mt-0.5 text-[10px] text-emerald-600">
+                                <div className="mt-auto pt-0.5 text-[10px] text-emerald-600">
                                     Directs: {kpis.teamDirectAnswered} · Équipe: {kpis.callsAnswered}{totalHandedOff > 0 && <> · Transférés: {totalHandedOff}</>}
                                 </div>
                             </TileShell>
@@ -521,7 +585,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 accomplis vivent dans la vignette Répondus.
                                 AVANT Perdus : l'ordre des vignettes suit celui
                                 des segments de la barre (vert, ambre, rouge). */}
-                            <div className="p-1.5" {...focusHandlers({ kind: "outcome", key: "overflow" })}>
+                            <div className="flex p-1.5" {...focusHandlers({ kind: "outcome", key: "overflow" })}>
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("overflow"))}
                                 toneClass={`bg-amber-50/50 border-amber-200 ${focus?.kind === "outcome" && focus.key === "overflow" ? "ring-2 ring-amber-400 -translate-y-px shadow-md" : ""}`}
@@ -537,14 +601,14 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <TrendPill current={totalOverflow} previous={prevOf((t) => t.totalRedirected)} sense="neutral" />
                                 </div>
                                 <div className="text-2xl font-bold text-amber-700">{totalOverflow}</div>
-                                <div className="mt-0.5 text-[10px] text-amber-600">
+                                <div className="mt-auto pt-0.5 text-[10px] text-amber-600">
                                     Directs: {kpis.directOverflow} · Équipe: {kpis.callsOverflow}
                                 </div>
                             </TileShell>
                             </div>
 
                             {/* Perdus */}
-                            <div className="p-1.5" {...focusHandlers({ kind: "outcome", key: "lost" })}>
+                            <div className="flex p-1.5" {...focusHandlers({ kind: "outcome", key: "lost" })}>
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("lost"))}
                                 toneClass={`bg-red-50/50 border-red-200 ${focus?.kind === "outcome" && focus.key === "lost" ? "ring-2 ring-red-400 -translate-y-px shadow-md" : ""}`}
@@ -560,7 +624,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <TrendPill current={totalLost} previous={prevOf((t) => t.totalLost)} sense="lower-better" />
                                 </div>
                                 <div className="text-2xl font-bold text-red-700">{totalLost}</div>
-                                <div className="mt-0.5 text-[10px] text-red-600">
+                                <div className="mt-auto pt-0.5 text-[10px] text-red-600">
                                     Directs: {kpis.directLost} · Équipe: {sumBucket(kpis.outcomeCounts, "lost")}
                                 </div>
                             </TileShell>
