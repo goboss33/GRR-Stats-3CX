@@ -888,7 +888,7 @@ function sqlRosterValues(members: readonly RosterMember[]): string | null {
         .filter((m) => /^\d+$/.test(m.extension))
         .map((m) => {
             const name = (m.name || m.extension)
-                .replace(/[ -]/g, "")
+                .replace(/[\x00-\x1f]/g, "")
                 .slice(0, 80)
                 .replace(/'/g, "''");
             return `('${m.extension}', '${name}')`;
