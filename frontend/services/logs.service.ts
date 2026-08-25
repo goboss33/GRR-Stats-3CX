@@ -10,11 +10,13 @@ import {
     DEFAULT_CLASSIFICATION_RULES,
     buildQueueOutcomeSubquery,
     buildTeamCTEChain,
+    type RosterMember,
     cdrTable,
     type ClassificationRules,
     type PassageOutcome,
 } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
+import { resolveRosterForRules } from "@/services/xapi-journal.service";
 import type {
     AggregatedCallLog,
     CallStatus,
@@ -91,6 +93,19 @@ function buildOrderByClause(sort?: LogsSort, timezone: string = "Europe/Zurich")
 // QUERY BUILDER — shared parts (filters + pagination)
 // ============================================
 
+/** Roster fermé de la vue file courante — même règle que les vignettes. */
+async function resolveLogsRoster(
+    serverId: ServerId,
+    filters: LogsFilters,
+    startDate: Date,
+    endDate: Date,
+    rules: ClassificationRules,
+): Promise<RosterMember[] | null> {
+    const viewQueue = filters.queueView ?? filters.queueOutcomeFilter?.queueNumber;
+    if (!viewQueue) return null;
+    return resolveRosterForRules(rules, serverId, viewQueue, startDate, endDate);
+}
+
 function buildAggregatedQueryParts(
     startDate: Date,
     endDate: Date,
@@ -102,6 +117,10 @@ function buildAggregatedQueryParts(
     // Passées en paramètre plutôt que lues ici : ce constructeur est synchrone,
     // et le rendre asynchrone pour un réglage contaminerait tous ses appelants.
     rules: ClassificationRules = DEFAULT_CLASSIFICATION_RULES,
+    // Roster FERMÉ de la vue file (règle « source de l'équipe », résolu par
+    // l'appelant) : le même que celui des vignettes, sans quoi le clic sur un
+    // KPI ne ramènerait plus exactement le chiffre affiché.
+    rosterMembers: readonly RosterMember[] | null = null,
 ): {
     whereClause: string;
     dateOnlyWhereClause: string;
@@ -271,7 +290,7 @@ function buildAggregatedQueryParts(
         // n'affiche plus de statut de file. Elle donne aussi l'appartenance à
         // l'équipe, qui sert à distinguer « Direct » d'un appel étranger.
         queueViewCTE = `,
-        ${buildTeamCTEChain(rules, { queueExpr: qExpr, startExpr: startP, endExpr: endP })},
+        ${buildTeamCTEChain(rules, { queueExpr: qExpr, startExpr: startP, endExpr: endP, rosterMembers })},
         answering_queue AS (
             SELECT DISTINCT ON (c.call_history_id)
                 c.call_history_id,
@@ -319,6 +338,7 @@ function buildAggregatedQueryParts(
             endExpr: endP,
             outcomes: outcomeFilter.outcomes,
             includeTeamDirect: outcomeFilter.includeTeamDirect,
+            rosterMembers,
         });
         whereConditions.push(`call_history_id IN ${subquery}`);
     }
@@ -334,6 +354,7 @@ function buildAggregatedQueryParts(
             endExpr: endP,
             outcomes: filters.queueOriginFilter === "queue" ? ALL_OUTCOMES : [],
             includeTeamDirect: filters.queueOriginFilter === "direct",
+            rosterMembers,
         });
         whereConditions.push(`call_history_id IN ${originSubquery}`);
     }
@@ -821,8 +842,9 @@ export async function getCallLogsSQL(
     await requireActionRole(["ADMIN"]);
     const timezone = await getServerTimezone(serverId);
     const rules = await getClassificationRules();
+    const logsRoster = await resolveLogsRoster(serverId, filters, startDate, endDate, rules);
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause } =
-        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, undefined, rules);
+        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, undefined, rules, logsRoster);
 
     return buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, "", cdrTable(rules), rules.minSignificantDurationSeconds)
         + buildDataSelect("")
@@ -1249,9 +1271,10 @@ export async function getAggregatedCallLogs(
         throw new Error("L'accès aux logs d'appels ne vous est pas autorisé");
     }
     const rules = await getClassificationRules();
+    const logsRoster = await resolveLogsRoster(serverId, filters, startDate, endDate, rules);
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, limit, skip, sortClause, params,
         queueViewCTE, queueViewJoin, queueViewSelect, viewQueue } =
-        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, scope, rules);
+        buildAggregatedQueryParts(startDate, endDate, filters, pagination, sort, timezone, scope, rules, logsRoster);
     const pageNumber = Math.max(1, pagination.page);
 
     try {
@@ -1544,8 +1567,9 @@ export async function getExtensionAggregatedStats(
 
     const scope = await resolveAccessScope(serverId);
     const rules = await getClassificationRules();
+    const logsRoster = await resolveLogsRoster(serverId, filters, startDate, endDate, rules);
     const { whereClause, dateOnlyWhereClause, aggregatedWhereConditions, calleeFilterCTE, calleeFilterJoin, params } =
-        buildAggregatedQueryParts(startDate, endDate, filters, { page: 1, pageSize: 1 }, undefined, undefined, scope, rules);
+        buildAggregatedQueryParts(startDate, endDate, filters, { page: 1, pageSize: 1 }, undefined, undefined, scope, rules, logsRoster);
 
     const ctes = buildAggregateCTEs(whereClause, dateOnlyWhereClause, calleeFilterCTE, "", cdrTable(rules), rules.minSignificantDurationSeconds);
 

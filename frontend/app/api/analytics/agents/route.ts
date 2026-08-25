@@ -11,6 +11,7 @@ import {
     type CallOrigin,
 } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
+import { resolveRosterForRules } from "@/services/xapi-journal.service";
 
 export async function GET(request: NextRequest) {
     const authResult = await validateApiKey(request);
@@ -46,6 +47,9 @@ export async function GET(request: NextRequest) {
         // d'équipe (socle de classement) : sans cela, un appel exclu du bloc
         // « file » par la règle du premier contact resterait compté ici.
         const rules = await getClassificationRules();
+        // Même roster que les vignettes : le tableau par collaborateur et les
+        // cartes doivent parler de la même équipe.
+        const rosterMembers = await resolveRosterForRules(rules, serverId, queueNumber, start, end);
 
         // Provenance : même filtre que les vignettes, pour que la somme du
         // tableau reste égale aux cartes.
@@ -59,7 +63,7 @@ export async function GET(request: NextRequest) {
         // une ligne PAR titulaire, chacune avec ses propres chiffres — jamais
         // le nom du titulaire actuel appliqué rétroactivement à l'historique.
         const query = `
-            WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
+            WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin, rosterMembers })},
             ${buildAgentCTEChain(rules)}
             SELECT
                 ar.extension,

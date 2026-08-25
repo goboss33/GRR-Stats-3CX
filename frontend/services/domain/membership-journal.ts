@@ -84,3 +84,37 @@ export function planJournalChanges(open: OpenInterval[], snapshot: SnapshotMembe
     // l'ouverture puisque matchedKeys la marque dès le premier passage.
     return plan;
 }
+
+// ============================================
+// FRONTIÈRE DE BASCULE — à partir de quand le journal fait foi
+//
+// La règle « rosterSource: journalAuto » ne s'applique qu'aux fenêtres
+// entièrement postérieures au PREMIER MOIS CALENDAIRE COMPLET couvert par le
+// journal (fuseau du tenant). Un journal né le 25 août ne gouverne que
+// septembre et au-delà : août reste un mois de l'ancien régime, entier et
+// cohérent avec lui-même — jamais un mois hybride.
+// ============================================
+
+/** Clé de date locale yyyymmdd d'un instant, dans le fuseau donné. */
+export function localDateKey(instant: Date, timeZone: string): number {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+    }).formatToParts(instant);
+    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+    return get("year") * 10000 + get("month") * 100 + get("day");
+}
+
+/** Premier jour (clé yyyymmdd) du premier mois ENTIÈREMENT couvert. */
+export function journalCutoverKey(firstRunAt: Date, timeZone: string): number {
+    const key = localDateKey(firstRunAt, timeZone);
+    const year = Math.floor(key / 10000);
+    const month = Math.floor((key % 10000) / 100);
+    const day = key % 100;
+    if (day === 1) return year * 10000 + month * 100 + 1;
+    return month === 12 ? (year + 1) * 10000 + 100 + 1 : year * 10000 + (month + 1) * 100 + 1;
+}
+
+/** La fenêtre demandée est-elle entièrement sous le régime du journal ? */
+export function windowReachesCutover(windowStart: Date, firstRunAt: Date, timeZone: string): boolean {
+    return localDateKey(windowStart, timeZone) >= journalCutoverKey(firstRunAt, timeZone);
+}

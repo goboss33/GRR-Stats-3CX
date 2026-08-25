@@ -23,6 +23,7 @@ import {
     type CallOrigin,
 } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
+import { resolveRosterForRules } from "@/services/xapi-journal.service";
 import {
     SQL_SYSTEM_DEST_TYPES,
     SQL_REAL_PARTY_DEST_TYPES,
@@ -790,6 +791,9 @@ export async function getQueueTimelineDataRaw(
 ): Promise<TimelineRow[]> {
     const prisma = getPrismaCdr(serverId);
     const rules = await getClassificationRules();
+    // Même roster que les vignettes (règle « source de l'équipe ») : la courbe
+    // et les KPI doivent compter les mêmes appels directs.
+    const rosterMembers = await resolveRosterForRules(rules, serverId, queueNumber, startDate, endDate);
     const diffDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
     const interval = diffDays <= 2 ? "hour" : "day";
 
@@ -804,7 +808,7 @@ export async function getQueueTimelineDataRaw(
     const overflowList = outcomesForBucket("overflow").map((o) => `'${o}'`).join(", ");
 
     return prisma.$queryRawUnsafe<TimelineRow[]>(
-        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
+        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin, rosterMembers })},
          team_calls AS (${TEAM_CALLS_UNION_SQL})
          SELECT
              date_trunc($4, started_at AT TIME ZONE $5) AS date_group,
@@ -907,9 +911,10 @@ export async function getQueueHeatmapDataRaw(
 ): Promise<HeatmapRow[]> {
     const prisma = getPrismaCdr(serverId);
     const rules = await getClassificationRules();
+    const rosterMembers = await resolveRosterForRules(rules, serverId, queueNumber, startDate, endDate);
 
     return prisma.$queryRawUnsafe<HeatmapRow[]>(
-        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin })},
+        `WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin, rosterMembers })},
          team_calls AS (${TEAM_CALLS_UNION_SQL})
          SELECT
              EXTRACT(ISODOW FROM started_at AT TIME ZONE $4)::int AS day_of_week,

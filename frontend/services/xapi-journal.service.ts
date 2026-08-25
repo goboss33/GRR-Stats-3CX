@@ -4,9 +4,11 @@ import { requestXapiToken, decodeTokenClaims } from "@/lib/xapi-client";
 import { getAvailableServers } from "@/lib/servers";
 import type { ServerId } from "@/lib/prisma-cdr";
 import {
-    normalizeSnapshot, planJournalChanges,
+    normalizeSnapshot, planJournalChanges, windowReachesCutover,
     type SnapshotMember,
 } from "@/services/domain/membership-journal";
+import { getServerTimezone } from "@/lib/servers";
+import type { ClassificationRules, RosterMember } from "@/services/domain/call-classification";
 
 /**
  * JOURNAL DE COMPOSITION DES ÉQUIPES — la couche d'entrée-sortie.
@@ -278,4 +280,81 @@ export async function getQueueJournal(serverId: ServerId, queueNumber: string) {
         lastSeenAt: i.lastSeenAt.toISOString(),
         closedAt: i.closedAt?.toISOString() ?? null,
     }));
+}
+
+/**
+ * ROSTER FERMÉ pour le socle de classement (règle rosterSource=journalAuto).
+ *
+ * Renvoie la composition de l'équipe selon le journal si — et seulement si —
+ * la fenêtre est entièrement postérieure au premier mois calendaire complet
+ * couvert (fuseau du tenant). Sinon null : le socle retombe sur le roster
+ * déduit de l'activité, comme depuis toujours. Un tenant sans journal (pas de
+ * relevé réussi) renvoie donc null pour toute fenêtre — edifea ne change pas.
+ *
+ * Le nom renvoyé est celui du dernier intervalle chevauchant la fenêtre : un
+ * simple SECOURS d'affichage — les noms d'époque des statistiques restent
+ * portés par les segments CDR.
+ */
+export async function resolveJournalRoster(
+    serverId: ServerId,
+    queueNumber: string,
+    start: Date,
+    end: Date,
+): Promise<RosterMember[] | null> {
+    // Doctrine surcouche : le journal INDISPONIBLE (base auth en panne,
+    // table absente…) n'est pas une erreur des statistiques — on retombe sur
+    // le roster déduit de l'activité, comme un tenant sans XAPI. Vérifié le
+    // 25.08 : sans ce filet, une panne de la base auth cassait les écrans de
+    // stats qui ne dépendaient jusqu'ici que de la base CDR.
+    try {
+        return await resolveJournalRosterUnsafe(serverId, queueNumber, start, end);
+    } catch (error) {
+        console.error("[journal-xapi] roster indisponible, repli sur l'activité :", error instanceof Error ? error.message : error);
+        return null;
+    }
+}
+
+async function resolveJournalRosterUnsafe(
+    serverId: ServerId,
+    queueNumber: string,
+    start: Date,
+    end: Date,
+): Promise<RosterMember[] | null> {
+    const firstOk = await prismaAuth.xapiSnapshotRun.findFirst({
+        where: { serverId, ok: true },
+        orderBy: { ranAt: "asc" },
+        select: { ranAt: true },
+    });
+    if (!firstOk) return null;
+    const timezone = await getServerTimezone(serverId);
+    if (!windowReachesCutover(start, firstOk.ranAt, timezone)) return null;
+
+    const intervals = await prismaAuth.queueMembershipInterval.findMany({
+        where: {
+            serverId, queueNumber,
+            firstSeenAt: { lte: end },
+            OR: [{ closedAt: null }, { closedAt: { gte: start } }],
+        },
+        orderBy: { lastSeenAt: "desc" },
+        select: { extension: true, agentName: true },
+    });
+    const byExtension = new Map<string, RosterMember>();
+    for (const interval of intervals) {
+        if (!byExtension.has(interval.extension)) {
+            byExtension.set(interval.extension, { extension: interval.extension, name: interval.agentName });
+        }
+    }
+    return [...byExtension.values()];
+}
+
+/** Raccourci : applique la règle avant de résoudre. */
+export async function resolveRosterForRules(
+    rules: Pick<ClassificationRules, "rosterSource">,
+    serverId: ServerId,
+    queueNumber: string,
+    start: Date,
+    end: Date,
+): Promise<RosterMember[] | null> {
+    if (rules.rosterSource !== "journalAuto") return null;
+    return resolveJournalRoster(serverId, queueNumber, start, end);
 }

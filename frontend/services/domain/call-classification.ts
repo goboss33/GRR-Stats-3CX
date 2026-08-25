@@ -125,6 +125,24 @@ export interface ClassificationRules {
     multiPassage: "best" | "last" | "each";
 
     /**
+     * Source de l'ÉQUIPE (appels directs comptés, appartenance, tableau par
+     * collaborateur).
+     * - "activity"    : déduite des sollicitations de la file DANS la fenêtre
+     *                   filtrée — l'historique, et la seule option sans XAPI.
+     * - "journalAuto" : journal de composition XAPI pour toute fenêtre
+     *                   entièrement postérieure au premier mois calendaire
+     *                   complet couvert par le journal ; les fenêtres
+     *                   antérieures et les tenants sans journal restent sur
+     *                   "activity". Sur une base sans journal, cette valeur
+     *                   est donc STRICTEMENT équivalente à "activity" — d'où
+     *                   son statut de défaut malgré la doctrine des défauts
+     *                   conservateurs.
+     * Appliquée par la COUCHE SERVICE (résolution puis injection via
+     * PassageCTEParams.rosterMembers) : le SQL ne lit pas cette règle.
+     */
+    rosterSource: "activity" | "journalAuto";
+
+    /**
      * Appel non pris qui déborde vers une autre file et y est répondu.
      * - "neutral"  : catégorie « débordé », ni répondu ni perdu
      * - "lost"     : compté comme perdu pour la file d'origine
@@ -317,6 +335,7 @@ export function cdrTable(rules: ClassificationRules): string {
  */
 export const DEFAULT_CLASSIFICATION_RULES: ClassificationRules = {
     multiPassage: "best",
+    rosterSource: "journalAuto",
     overflow: "neutral",
     shortAbandonThresholdSeconds: 10,
     directAndQueue: "firstContact",
@@ -538,6 +557,14 @@ export function buildOriginConditionSQL(
     return origin === "internal" ? `${firstIsInternal} = TRUE` : `${firstIsInternal} IS NOT TRUE`;
 }
 
+/** Membre d'un roster FERMÉ (journal de composition XAPI) : poste + nom de secours. */
+export interface RosterMember {
+    extension: string;
+    /** Nom relevé par le journal — n'est affiché que si aucun segment de la
+     *  période ne porte de nom d'époque pour ce poste. */
+    name: string;
+}
+
 export interface PassageCTEParams {
     /** Placeholder ou littéral SQL désignant la file ; `null` = toutes les files. */
     queueExpr: string | null;
@@ -545,6 +572,15 @@ export interface PassageCTEParams {
     endExpr: string;
     /** Provenance des appels retenus ; absent ou "both" = pas de filtre. */
     origin?: CallOrigin;
+    /**
+     * Équipe FERMÉE fournie par la couche service (règle rosterSource =
+     * "journalAuto", journal de composition XAPI). Présente — même vide —,
+     * elle REMPLACE la déduction par l'activité : l'appartenance devient
+     * indépendante de la fenêtre filtrée, ce qui rend « somme des jours » et
+     * « mois » cohérents côté appels directs. Absente ou null : comportement
+     * historique (roster déduit des sollicitations de la fenêtre).
+     */
+    rosterMembers?: readonly RosterMember[] | null;
 }
 
 /**
@@ -841,6 +877,25 @@ export function buildDirectCallsCTE(
  *
  * À insérer derrière un `WITH`.
  */
+/**
+ * Lignes VALUES sûres pour un roster fermé : postes strictement numériques
+ * (tout le reste est écarté), noms débarrassés des caractères de contrôle,
+ * bornés à 80 caractères, apostrophes doublées. Renvoie null si la liste
+ * filtrée est vide.
+ */
+function sqlRosterValues(members: readonly RosterMember[]): string | null {
+    const rows = members
+        .filter((m) => /^\d+$/.test(m.extension))
+        .map((m) => {
+            const name = (m.name || m.extension)
+                .replace(/[ -]/g, "")
+                .slice(0, 80)
+                .replace(/'/g, "''");
+            return `('${m.extension}', '${name}')`;
+        });
+    return rows.length > 0 ? rows.join(", ") : null;
+}
+
 export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTEParams): string {
     if (!params.queueExpr) throw new Error("buildTeamCTEChain : une file doit être précisée");
     const cdr = cdrTable(rules);
@@ -891,8 +946,42 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
     // ⚠️ L'ordre des CTE est contraint : queue_agents d'abord (served_in_team
     // la référence), puis team_direct_segments AVANT les passages — l'horloge
     // d'équipe (clock_seconds) lit team_direct_secs, qui en dérive.
-    return `
-    queue_agents AS (
+    // Roster : par défaut, l'équipe est DÉDUITE de l'activité de la fenêtre.
+    // Quand la couche service fournit un roster FERMÉ (journal de composition
+    // XAPI), l'appartenance devient indépendante de la fenêtre — correctif de
+    // l'écart « somme des jours ≠ mois » — tandis que les NOMS d'époque
+    // restent portés par les segments, le nom du journal ne servant que de
+    // secours pour un membre sans aucune sollicitation sur la période. (Coin
+    // assumé : un membre jamais sollicité par la file mais joint en direct
+    // sous un nom CDR différent du nom du journal produit une ligne de roster
+    // au nom du journal EN PLUS de la paire d'époque des segments directs.)
+    const rosterValues = params.rosterMembers != null ? sqlRosterValues(params.rosterMembers) : null;
+    const queueAgentsCTE = params.rosterMembers != null
+        ? (rosterValues
+            ? `queue_agents AS (
+        SELECT v.extension, COALESCE(n.agent_name, v.journal_name) AS agent_name
+        FROM (VALUES ${rosterValues}) AS v(extension, journal_name)
+        LEFT JOIN LATERAL (
+            SELECT DISTINCT
+                COALESCE(child.destination_dn_name, child.destination_participant_name, child.destination_dn_number) AS agent_name
+            FROM ${cdr} child
+            JOIN ${cdr} parent ON child.originating_cdr_id = parent.cdr_id
+            WHERE child.creation_method = 'route_to'
+              AND child.creation_forward_reason = 'polling'
+              AND parent.destination_dn_type = 'queue'
+              AND parent.destination_dn_number = ${params.queueExpr}
+              AND child.destination_dn_number = v.extension
+              AND child.cdr_started_at >= ${params.startExpr}
+              AND child.cdr_started_at <= ${params.endExpr}
+        ) n ON true
+    )`
+            : `queue_agents AS (
+        -- Journal actif mais équipe vide sur la période : roster fermé VIDE
+        -- (une file sans membre n'a ni appels directs d'équipe, ni service
+        -- « dans l'équipe »).
+        SELECT NULL::text AS extension, NULL::text AS agent_name WHERE false
+    )`)
+        : `queue_agents AS (
         -- Le nom retenu est celui porté par le segment AU MOMENT de l'appel :
         -- un poste réattribué sur la période produit une paire (extension,
         -- nom) PAR titulaire — chacun ne répond que de ses propres appels.
@@ -907,7 +996,10 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
           AND parent.destination_dn_number = ${params.queueExpr}
           AND child.cdr_started_at >= ${params.startExpr}
           AND child.cdr_started_at <= ${params.endExpr}
-    ),
+    )`;
+
+    return `
+    ${queueAgentsCTE},
     team_direct_segments AS (
         SELECT
             c.call_history_id,

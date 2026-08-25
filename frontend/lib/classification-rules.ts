@@ -39,6 +39,7 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
             where: { id: "global" },
             select: {
                 ruleMultiPassage: true,
+                ruleRosterSource: true,
                 ruleOverflow: true,
                 ruleShortAbandonSec: true,
                 ruleDirectAndQueue: true,
@@ -59,6 +60,7 @@ export async function getClassificationRules(): Promise<ClassificationRules> {
         if (row) {
             rules = {
                 multiPassage: pick(row.ruleMultiPassage, ["best", "last", "each"] as const, "best"),
+                rosterSource: pick(row.ruleRosterSource, ["activity", "journalAuto"] as const, "journalAuto"),
                 overflow: pick(row.ruleOverflow, ["neutral", "lost", "answered"] as const, "neutral"),
                 // `null` est une valeur légitime : elle désactive la règle.
                 shortAbandonThresholdSeconds: row.ruleShortAbandonSec ?? null,

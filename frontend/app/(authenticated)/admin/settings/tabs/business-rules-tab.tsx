@@ -26,6 +26,7 @@ function toRules(data: Record<string, unknown>, current: ClassificationRules): C
     const pick = <T,>(value: unknown, fallback: T): T => (value === undefined || value === null ? fallback : (value as T));
     return {
         multiPassage: pick(data.ruleMultiPassage, current.multiPassage),
+        rosterSource: pick(data.ruleRosterSource, current.rosterSource),
         overflow: pick(data.ruleOverflow, current.overflow),
         // `null` est légitime ici : il désactive la distinction des abandons courts.
         shortAbandonThresholdSeconds: (data.ruleShortAbandonSec as number | null) ?? null,
@@ -84,6 +85,7 @@ export function BusinessRulesTab() {
                 body: JSON.stringify({
                     minSignificantDurationSec: rules.minSignificantDurationSeconds,
                     ruleMultiPassage: rules.multiPassage,
+                    ruleRosterSource: rules.rosterSource,
                     ruleOverflow: rules.overflow,
                     ruleShortAbandonSec: rules.shortAbandonThresholdSeconds,
                     ruleDirectAndQueue: rules.directAndQueue,

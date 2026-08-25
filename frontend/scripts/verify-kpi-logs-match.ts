@@ -8,6 +8,7 @@
 // Usage : npx tsx scripts/verify-kpi-logs-match.ts [file] [début ISO] [fin ISO]
 import { getPrismaCdr } from "@/lib/prisma-cdr";
 import { getClassificationRules } from "@/lib/classification-rules";
+import { resolveRosterForRules } from "@/services/xapi-journal.service";
 import {
     buildTeamCTEChain,
     buildAgentCTEChain,
@@ -41,7 +42,10 @@ async function main() {
     // Règles VIVANTES, pas les valeurs par défaut : c'est cet angle mort qui
     // avait caché l'écart 616/586 de juillet 2026.
     const rules = await getClassificationRules();
-    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
+    // Même roster que l'application (règle « source de l'équipe ») : sans lui,
+    // l'invariant casserait dès la première période sous le régime du journal.
+    const rosterMembers = await resolveRosterForRules(rules, "gerofinance", QUEUE, START, END);
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3", rosterMembers };
 
     console.log(`\nFile ${QUEUE} — ${START.toISOString().slice(0, 10)} → ${END.toISOString().slice(0, 10)}\n`);
 

@@ -38,7 +38,8 @@ export type ChoiceRuleKey =
     | "callGrain" | "voicemail" | "shortAbandonDisposition" | "answeredThenTransferred"
     | "multiPassage" | "overflow" | "agentCredit" | "handedOffInPerformance"
     | "outOfScopeFinalStatus" | "directAndQueue"
-    | "shortAbandonClock" | "unansweredDirectOverflow";
+    | "shortAbandonClock" | "unansweredDirectOverflow"
+    | "rosterSource";
 
 export interface ChoiceOption {
     value: string;
@@ -305,6 +306,19 @@ export const RULE_SPECS: RuleSpec[] = [
               summary: "Un appel direct puis en file compte dans les deux blocs" },
         ],
     },
+    {
+        kind: "choice", key: "rosterSource", section: "advanced",
+        question: "Qui fait partie de l'équipe d'un groupe ?",
+        more: "Sans registre, l'équipe est déduite de l'activité : les postes que la file a sollicités DANS la période regardée. Revers découvert en août 2026 : un membre réel non sollicité un jour donné disparaît des filtres de ce jour — ses appels directs comptent au mois mais dans aucun jour pris un à un (cas du poste 140, membre de la 904). Le journal de composition (surcouche XAPI, relevé chaque nuit) fournit une appartenance datée, indépendante de la fenêtre. La bascule est automatique et sans effet rétroactif : elle ne s'applique qu'aux fenêtres entièrement postérieures au premier mois calendaire complet couvert par le journal — les périodes antérieures et les tenants sans surcouche restent sur l'activité.",
+        options: [
+            { value: "journalAuto", label: "La composition relevée par le journal (XAPI), dès qu'il couvre la période",
+              consequence: "Les filtres du jour, de la semaine et du mois voient les MÊMES membres — donc les mêmes appels directs. Sans journal (période ancienne, tenant sans XAPI), comportement identique à l'autre option.",
+              summary: "L'équipe vient du journal XAPI dès qu'il couvre la période, de l'activité sinon" },
+            { value: "activity", label: "Toujours déduite de l'activité de la période",
+              consequence: "Un membre non sollicité par la file un jour donné disparaît des filtres de ce jour : la somme des jours peut s'écarter du mois sur les appels directs.",
+              summary: "L'équipe est déduite des sollicitations de la période filtrée" },
+        ],
+    },
 ];
 
 /**
@@ -324,6 +338,7 @@ export const RECOMMENDED_RULES: ClassificationRules = {
     shortAbandonThresholdSeconds: 5,
     shortAbandonDisposition: "excluded",
     shortAbandonClock: "team",
+    rosterSource: "journalAuto",
     // 3. Comment juge-t-on un appel ?
     answeredThenTransferred: "overflow",
     unansweredDirectOverflow: "overflow",

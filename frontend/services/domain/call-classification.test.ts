@@ -475,3 +475,49 @@ describe("réduction SQL des passages", () => {
         expect(sql).toContain(`WHEN 'answered' THEN ${OUTCOME_RANK.answered}`);
     });
 });
+
+describe("roster fermé (règle « source de l'équipe », journal XAPI)", () => {
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" } as const;
+
+    it("sans rosterMembers : le roster reste déduit des sollicitations de la fenêtre", () => {
+        const sql = buildTeamCTEChain(rules(), P);
+        expect(sql).toContain("creation_forward_reason = 'polling'");
+        expect(sql).not.toContain("VALUES");
+    });
+
+    it("avec rosterMembers : appartenance FERMÉE, indépendante de la fenêtre", () => {
+        const sql = buildTeamCTEChain(rules(), {
+            ...P,
+            rosterMembers: [
+                { extension: "140", name: "Patera, Naomi" },
+                { extension: "147", name: "Futa, Marcio" },
+            ],
+        });
+        expect(sql).toContain("(VALUES ('140', 'Patera, Naomi'), ('147', 'Futa, Marcio'))");
+        // Les noms d'époque restent tirés des segments : le LATERAL de secours
+        // interroge toujours les sollicitations, mais l'APPARTENANCE vient de
+        // la liste — le filtre de fenêtre ne borne plus qui est de l'équipe.
+        expect(sql).toContain("COALESCE(n.agent_name, v.journal_name)");
+    });
+
+    it("liste vide : roster fermé VIDE, jamais un retour à l'activité", () => {
+        const sql = buildTeamCTEChain(rules(), { ...P, rosterMembers: [] });
+        // Le mot « polling » vit aussi dans d'autres CTE de la chaîne : on
+        // vérifie la forme du SEUL roster — ensemble vide, pas de VALUES, pas
+        // de déduction par l'activité.
+        expect(sql).toContain("SELECT NULL::text AS extension, NULL::text AS agent_name WHERE false");
+        expect(sql).not.toContain("VALUES");
+    });
+
+    it("hygiène : postes non numériques écartés, apostrophes doublées", () => {
+        const sql = buildTeamCTEChain(rules(), {
+            ...P,
+            rosterMembers: [
+                { extension: "152'; DROP TABLE x; --", name: "peu importe" },
+                { extension: "152", name: "D'Angelo, Marie" },
+            ],
+        });
+        expect(sql).not.toContain("DROP TABLE");
+        expect(sql).toContain("('152', 'D''Angelo, Marie')");
+    });
+});

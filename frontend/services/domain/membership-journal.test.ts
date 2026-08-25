@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeSnapshot, planJournalChanges, type OpenInterval } from "./membership-journal";
+import { normalizeSnapshot, planJournalChanges, localDateKey, journalCutoverKey, windowReachesCutover, type OpenInterval } from "./membership-journal";
 
 const interval = (id: string, queueNumber: string, extension: string, agentName: string): OpenInterval =>
     ({ id, queueNumber, extension, agentName });
@@ -84,5 +84,37 @@ describe("planJournalChanges — les mouvements du journal", () => {
         );
         expect(plan.toOpen).toEqual([]);
         expect(plan.toTouch.sort()).toEqual(["a", "a2"]);
+    });
+});
+
+describe("frontière de bascule — le premier mois entièrement couvert", () => {
+    const TZ = "Europe/Zurich";
+
+    it("clé de date locale : minuit local d'été = veille en UTC", () => {
+        // Le 1er septembre 00:00 à Zurich (UTC+2) est le 31 août 22:00 UTC.
+        expect(localDateKey(new Date("2026-08-31T22:00:00.000Z"), TZ)).toBe(20260901);
+        expect(localDateKey(new Date("2026-08-31T21:59:59.999Z"), TZ)).toBe(20260831);
+    });
+
+    it("journal né le 25 août → la bascule est le 1er septembre", () => {
+        expect(journalCutoverKey(new Date("2026-08-25T07:06:00.000Z"), TZ)).toBe(20260901);
+    });
+
+    it("journal né un 1er du mois → ce mois est déjà entier", () => {
+        // 1er septembre 03:00 locale = 01:00 UTC.
+        expect(journalCutoverKey(new Date("2026-09-01T01:00:00.000Z"), TZ)).toBe(20260901);
+    });
+
+    it("passage d'année : journal né le 15 décembre → bascule au 1er janvier", () => {
+        expect(journalCutoverKey(new Date("2026-12-15T10:00:00.000Z"), TZ)).toBe(20270101);
+    });
+
+    it("fenêtre de septembre → journal ; fenêtre d'août ou à cheval → activité", () => {
+        const firstRun = new Date("2026-08-25T07:06:00.000Z");
+        // Filtre « 1er septembre » : commence le 31 août 22:00 UTC (minuit local).
+        expect(windowReachesCutover(new Date("2026-08-31T22:00:00.000Z"), firstRun, TZ)).toBe(true);
+        // Filtre « 30 août » ou « août entier » : ancien régime.
+        expect(windowReachesCutover(new Date("2026-08-29T22:00:00.000Z"), firstRun, TZ)).toBe(false);
+        expect(windowReachesCutover(new Date("2026-07-31T22:00:00.000Z"), firstRun, TZ)).toBe(false);
     });
 });

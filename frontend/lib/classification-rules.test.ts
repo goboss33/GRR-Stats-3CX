@@ -43,6 +43,7 @@ describe("lecture des réglages", () => {
         db.appSettings.findUnique.mockResolvedValue(ROW_COMPLETE);
         expect(await getClassificationRules()).toEqual({
             multiPassage: "last",
+            rosterSource: "journalAuto",
             overflow: "lost",
             shortAbandonThresholdSeconds: 25,
             directAndQueue: "queueWins",

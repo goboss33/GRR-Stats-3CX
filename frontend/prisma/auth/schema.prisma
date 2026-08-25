@@ -151,6 +151,11 @@ model AppSettings {
   ruleUnansweredDirectOverflow String  @default("lost")
   /// Durée minimale d'une conversation pour qu'un décroché compte comme répondu.
   ruleMinAnswerSec            Int      @default(1)
+  /// Source de l'équipe : "activity" (déduite des sollicitations de la
+  /// fenêtre — l'historique) | "journalAuto" (journal de composition XAPI dès
+  /// le premier mois calendaire entièrement couvert ; strictement équivalent
+  /// à "activity" tant qu'aucun journal n'existe, d'où ce défaut).
+  ruleRosterSource            String   @default("journalAuto")
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 }
