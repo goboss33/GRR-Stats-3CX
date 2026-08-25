@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
 
@@ -69,26 +69,17 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
         | { kind: "channel"; key: "direct" | "queue" }
         | { kind: "total" };
     const [focus, setFocus] = useState<Focus | null>(null);
-    // Relâchement DIFFÉRÉ : la sortie d'une zone n'éteint pas tout de suite,
-    // l'entrée dans la suivante annule l'extinction — traverser un espace
-    // blanc (entre deux blocs, entre deux arcs) ne fait donc jamais repasser
-    // l'écran par l'état « rien », ce qui clignotait.
-    const focusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const setFocusNow = (f: Focus) => {
-        if (focusTimer.current) { clearTimeout(focusTimer.current); focusTimer.current = null; }
-        setFocus(f);
-    };
-    const clearFocusSoon = () => {
-        if (focusTimer.current) clearTimeout(focusTimer.current);
-        focusTimer.current = setTimeout(() => setFocus(null), 140);
-    };
+    // Pas de délai de relâchement : une MATRICE de détection invisible couvre
+    // les zones SANS espace blanc (anneaux jointifs sur le donut, enveloppes
+    // bord à bord autour des vignettes et des blocs). La souris est toujours
+    // « quelque part », le focus passe d'une zone à l'autre sans état vide.
     // Survoler le TOTAL (centre du donut, vignette « Appels reçus ») ne doit
     // rien estomper : tout appartient au total.
     const cellOpacity = (kind: "outcome" | "channel", key: string): number =>
         !focus || focus.kind === "total" ? 1 : focus.kind === kind && focus.key === key ? 1 : 0.25;
     const focusHandlers = (f: Focus) => ({
-        onMouseEnter: () => setFocusNow(f),
-        onMouseLeave: () => clearFocusSoon(),
+        onMouseEnter: () => setFocus(f),
+        onMouseLeave: () => setFocus(null),
     });
     const OUTCOME_KEYS: Record<string, "answered" | "overflow" | "lost"> = {
         "Répondus": "answered", "Débordements": "overflow", "Perdus": "lost",
@@ -326,7 +317,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                         (320×256) pour que le chip du taux de perte ait sa place
                         même quand le segment rouge pointe à l'horizontale. */}
                     <div className="lg:col-span-4 flex items-center justify-center">
-                        <div className="relative w-80 h-64" onMouseLeave={() => clearFocusSoon()}>
+                        <div className="relative w-80 h-64" onMouseLeave={() => setFocus(null)}>
                             {/* SVG Patterns pour hachures */}
                             <svg width="0" height="0" className="absolute">
                                 <defs>
@@ -354,11 +345,6 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         labelLine={false}
                                         isAnimationActive={entryAnimation}
                                         onAnimationEnd={() => setAnimatedKey(contextKey)}
-                                        onMouseEnter={(entry: { name?: string; payload?: { name?: string } }) => {
-                                            const key = OUTCOME_KEYS[entry?.name ?? entry?.payload?.name ?? ""];
-                                            if (key) setFocusNow({ kind: "outcome", key });
-                                        }}
-                                        onMouseLeave={() => clearFocusSoon()}
                                     >
                                         {outcomeData.map((entry, index) => {
                                             const key = OUTCOME_KEYS[entry.name];
@@ -385,12 +371,6 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         stroke="none"
                                         startAngle={-90}
                                         isAnimationActive={entryAnimation}
-                                        onMouseEnter={(entry: { name?: string; payload?: { name?: string } }) => {
-                                            const name = entry?.name ?? entry?.payload?.name ?? "";
-                                            if (name.startsWith("Directs")) setFocusNow({ kind: "channel", key: "direct" });
-                                            else if (name.startsWith("File")) setFocusNow({ kind: "channel", key: "queue" });
-                                        }}
-                                        onMouseLeave={() => clearFocusSoon()}
                                     >
                                         {innerData.map((entry, index) => {
                                             const channel = entry.name.startsWith("Directs") ? "direct"
@@ -405,6 +385,54 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                                 />
                                             );
                                         })}
+                                    </Pie>
+                                    {/* MATRICE DE DÉTECTION (croquis utilisateur) :
+                                        deux anneaux transparents, jointifs du bord
+                                        du centre (r=38) à au-delà de l'anneau
+                                        externe (r=100) — l'espace entre les anneaux
+                                        visuels et les liserés n'est plus une zone
+                                        morte. Aucun rendu : fill transparent. */}
+                                    <Pie
+                                        data={innerData}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius={38}
+                                        outerRadius={57.5}
+                                        paddingAngle={0}
+                                        dataKey="value"
+                                        stroke="none"
+                                        startAngle={-90}
+                                        isAnimationActive={false}
+                                        onMouseEnter={(entry: { name?: string; payload?: { name?: string } }) => {
+                                            const name = entry?.name ?? entry?.payload?.name ?? "";
+                                            if (name.startsWith("Directs")) setFocus({ kind: "channel", key: "direct" });
+                                            else if (name.startsWith("File")) setFocus({ kind: "channel", key: "queue" });
+                                        }}
+                                        onMouseLeave={() => setFocus(null)}
+                                    >
+                                        {innerData.map((entry, index) => (
+                                            <Cell key={`hit-inner-${index}`} fill="transparent" style={{ outline: "none" }} />
+                                        ))}
+                                    </Pie>
+                                    <Pie
+                                        data={outcomeData}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius={57.5}
+                                        outerRadius={100}
+                                        paddingAngle={2}
+                                        dataKey="value"
+                                        stroke="none"
+                                        isAnimationActive={false}
+                                        onMouseEnter={(entry: { name?: string; payload?: { name?: string } }) => {
+                                            const key = OUTCOME_KEYS[entry?.name ?? entry?.payload?.name ?? ""];
+                                            if (key) setFocus({ kind: "outcome", key });
+                                        }}
+                                        onMouseLeave={() => setFocus(null)}
+                                    >
+                                        {outcomeData.map((entry, index) => (
+                                            <Cell key={`hit-outer-${index}`} fill="transparent" style={{ outline: "none" }} />
+                                        ))}
                                     </Pie>
                                 </PieChart>
                             </ResponsiveContainer>
@@ -432,15 +460,21 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                     {/* Colonne droite : KPIs + Détails */}
                     <div className="lg:col-span-8 space-y-4">
                         {/* KPI Cards Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {/* MATRICE DE DÉTECTION (croquis utilisateur) : les
+                            enveloppes de survol se touchent bord à bord — la
+                            gouttière visuelle vient du padding des enveloppes,
+                            plus d'espace mort entre vignettes ni entre blocs.
+                            Le -m-1.5 compense pour un rendu au pixel près. */}
+                        <div className="-m-1.5">
+                        <div className="grid grid-cols-2 md:grid-cols-4">
                             {/* Total Reçus — le dénominateur reste NEUTRE : un
                                 volume n'est ni bon ni mauvais, et le bleu est
                                 réservé au canal « directs ». */}
+                            <div className="p-1.5" {...focusHandlers({ kind: "total" })}>
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("received"))}
                                 toneClass={`bg-slate-50 border-slate-200 ${focus?.kind === "total" ? "ring-2 ring-slate-400 -translate-y-px shadow-md" : ""}`}
                                 hoverClass="hover:border-blue-300"
-                                interaction={focusHandlers({ kind: "total" })}
                             >
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-1.5">
@@ -456,12 +490,13 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     Directs: {kpis.teamDirectReceived} · Équipe: {kpis.callsReceived}
                                 </div>
                             </TileShell>
+                            </div>
 
                             {/* Répondus */}
+                            <div className="p-1.5" {...focusHandlers({ kind: "outcome", key: "answered" })}>
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("answered"))}
                                 toneClass={`bg-emerald-50/50 border-emerald-200 ${focus?.kind === "outcome" && focus.key === "answered" ? "ring-2 ring-emerald-400 -translate-y-px shadow-md" : ""}`}
-                                interaction={focusHandlers({ kind: "outcome", key: "answered" })}
                                 hoverClass="hover:border-emerald-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
@@ -478,6 +513,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     Directs: {kpis.teamDirectAnswered} · Équipe: {kpis.callsAnswered}{totalHandedOff > 0 && <> · Transférés: {totalHandedOff}</>}
                                 </div>
                             </TileShell>
+                            </div>
 
                             {/* Débordements — partis SANS décroché ici, file +
                                 directs : le lien inclut les directs (team) pour
@@ -485,10 +521,10 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 accomplis vivent dans la vignette Répondus.
                                 AVANT Perdus : l'ordre des vignettes suit celui
                                 des segments de la barre (vert, ambre, rouge). */}
+                            <div className="p-1.5" {...focusHandlers({ kind: "outcome", key: "overflow" })}>
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("overflow"))}
                                 toneClass={`bg-amber-50/50 border-amber-200 ${focus?.kind === "outcome" && focus.key === "overflow" ? "ring-2 ring-amber-400 -translate-y-px shadow-md" : ""}`}
-                                interaction={focusHandlers({ kind: "outcome", key: "overflow" })}
                                 hoverClass="hover:border-amber-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
@@ -505,12 +541,13 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     Directs: {kpis.directOverflow} · Équipe: {kpis.callsOverflow}
                                 </div>
                             </TileShell>
+                            </div>
 
                             {/* Perdus */}
+                            <div className="p-1.5" {...focusHandlers({ kind: "outcome", key: "lost" })}>
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("lost"))}
                                 toneClass={`bg-red-50/50 border-red-200 ${focus?.kind === "outcome" && focus.key === "lost" ? "ring-2 ring-red-400 -translate-y-px shadow-md" : ""}`}
-                                interaction={focusHandlers({ kind: "outcome", key: "lost" })}
                                 hoverClass="hover:border-red-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
@@ -527,15 +564,17 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     Directs: {kpis.directLost} · Équipe: {sumBucket(kpis.outcomeCounts, "lost")}
                                 </div>
                             </TileShell>
+                            </div>
 
                         </div>
 
-                        {/* Détails Directs vs File (compact) */}
-                        <div className="space-y-2">
+                        {/* Détails Directs vs File (compact) — enveloppes
+                            jointives : pb 6 px de la grille + pt 10 px = les
+                            16 px d'avant ; 4 px + 4 px = les 8 px entre blocs. */}
+                        <div className="px-1.5 pt-2.5 pb-1" {...focusHandlers({ kind: "channel", key: "direct" })}>
                             {/* Directs */}
                             <div
                                 className={`flex items-center justify-between p-2.5 rounded-lg bg-blue-50/50 border border-blue-100 transition-all ${focus?.kind === "channel" && focus.key === "direct" ? "ring-2 ring-blue-400 -translate-y-px shadow-md" : ""}`}
-                                {...focusHandlers({ kind: "channel", key: "direct" })}
                             >
                                 <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
@@ -585,10 +624,11 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 </div>
                             </div>
 
+                        </div>
+                        <div className="px-1.5 pt-1 pb-1.5" {...focusHandlers({ kind: "channel", key: "queue" })}>
                             {/* File */}
                             <div
                                 className={`flex items-center justify-between p-2.5 rounded-lg bg-violet-50/50 border border-violet-100 transition-all ${focus?.kind === "channel" && focus.key === "queue" ? "ring-2 ring-violet-400 -translate-y-px shadow-md" : ""}`}
-                                {...focusHandlers({ kind: "channel", key: "queue" })}
                             >
                                 <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
@@ -629,6 +669,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     </div>
                                 </div>
                             </div>
+                        </div>
                         </div>
                     </div>
                 </div>
