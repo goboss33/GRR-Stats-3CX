@@ -675,17 +675,16 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 </div>
                                 {/* La légende de l'anneau vit SUR les chiffres :
                                     chaque segment (plein, clair, hachuré cerclé)
-                                    porte sa pastille devant son nombre ; « Reçus »
-                                    porte un anneau vide — le contour qui contient
-                                    les trois segments, pas un segment de plus. La
-                                    ligne se vérifie d'elle-même :
+                                    porte sa pastille devant son nombre. « Reçus »
+                                    n'a PAS de pastille : ce n'est pas un segment,
+                                    c'est le total — il domine par la TAILLE, et
+                                    les colonnes s'alignent par le bas pour que
+                                    les libellés partagent la même ligne. La ligne
+                                    se vérifie d'elle-même :
                                     Répondus + Transférés + Non aboutis = Reçus. */}
-                                <div className="flex items-center gap-5 text-sm">
+                                <div className="flex items-end gap-5 text-sm">
                                     <div className="text-center">
-                                        <div className="flex items-center justify-center gap-1">
-                                            <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-blue-500" />
-                                            <span className="font-bold text-blue-700">{kpis.teamDirectReceived}</span>
-                                        </div>
+                                        <div className="text-lg font-bold text-blue-700">{kpis.teamDirectReceived}</div>
                                         <Tip content="Tout le canal : répondus + transférés + non aboutis.">
                                             <div className="text-[10px] text-blue-600">Reçus</div>
                                         </Tip>
@@ -744,12 +743,9 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         <span className="text-sm font-medium text-violet-900">Appels d'équipe</span>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-5 text-sm">
+                                <div className="flex items-end gap-5 text-sm">
                                     <div className="text-center">
-                                        <div className="flex items-center justify-center gap-1">
-                                            <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-violet-500" />
-                                            <span className="font-bold text-violet-700">{kpis.callsReceived}</span>
-                                        </div>
+                                        <div className="text-lg font-bold text-violet-700">{kpis.callsReceived}</div>
                                         <Tip content="Tout le canal : répondus + transférés + non aboutis.">
                                             <div className="text-[10px] text-violet-600">Reçus</div>
                                         </Tip>
