@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
 
 import { QueueKPIs } from "@/types/statistics.types";
@@ -56,6 +58,23 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
         totalRedirected: totalOverflow, lossRate,
     } = computeTeamTotals(kpis);
     const handedOffCounts = kpis.handedOffInPerformance === "success";
+
+    // LIAISON vignettes <-> donut <-> blocs de canal (retour du cadre testeur :
+    // « à quoi correspondent les cercles intérieurs ? »). Survoler une vignette
+    // de sort illumine son arc ; survoler un arc illumine sa vignette ou son
+    // bloc ; tout ce qui n'appartient pas à la famille survolée s'estompe.
+    // Pur état d'affichage — aucun chiffre ne change.
+    type Focus = { kind: "outcome"; key: "answered" | "overflow" | "lost" } | { kind: "channel"; key: "direct" | "queue" };
+    const [focus, setFocus] = useState<Focus | null>(null);
+    const cellOpacity = (kind: Focus["kind"], key: string): number =>
+        !focus ? 1 : focus.kind === kind && focus.key === key ? 1 : 0.25;
+    const focusHandlers = (f: Focus) => ({
+        onMouseEnter: () => setFocus(f),
+        onMouseLeave: () => setFocus(null),
+    });
+    const OUTCOME_KEYS: Record<string, "answered" | "overflow" | "lost"> = {
+        "Répondus": "answered", "Débordements": "overflow", "Perdus": "lost",
+    };
 
     // Pastilles N-1 : mêmes formules et mêmes règles que les cartes de
     // l'aperçu — une période précédente sans aucun appel ne compare rien.
@@ -201,10 +220,12 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
     // simple carte sinon — même contenu, sans affordance de clic mensongère.
     // `toneClass` teinte le fond aux couleurs du segment correspondant de la
     // barre de répartition : les vignettes SONT la légende de la barre.
-    const TileShell = ({ href, toneClass, hoverClass, children }: {
+    const TileShell = ({ href, toneClass, hoverClass, interaction, children }: {
         href: string;
         toneClass: string;
         hoverClass: string;
+        /** Liaison vignette <-> donut : survol + surbrillance quand l'arc l'est. */
+        interaction?: React.HTMLAttributes<HTMLElement>;
         children: React.ReactNode;
     }) => (logsEnabled ? (
         <Link
@@ -212,11 +233,12 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
             target="_blank"
             rel="noopener noreferrer"
             className={`group p-3 rounded-xl border hover:shadow-md transition-all cursor-pointer ${toneClass} ${hoverClass}`}
+            {...interaction}
         >
             {children}
         </Link>
     ) : (
-        <div className={`p-3 rounded-xl border ${toneClass}`}>{children}</div>
+        <div className={`p-3 rounded-xl border transition-all ${toneClass}`} {...interaction}>{children}</div>
     ));
 
     const innerData = [
@@ -291,7 +313,14 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         isAnimationActive={false}
                                     >
                                         {outcomeData.map((entry, index) => (
-                                            <Cell key={`outer-${index}`} fill={entry.color} />
+                                            <Cell
+                                                key={`outer-${index}`}
+                                                fill={entry.color}
+                                                opacity={cellOpacity("outcome", OUTCOME_KEYS[entry.name])}
+                                                style={{ transition: "opacity 150ms ease", outline: "none" }}
+                                                onMouseEnter={() => setFocus({ kind: "outcome", key: OUTCOME_KEYS[entry.name] })}
+                                                onMouseLeave={() => setFocus(null)}
+                                            />
                                         ))}
                                     </Pie>
                                     {/* Anneau interne : Directs vs File avec hachuré et gaps */}
@@ -307,12 +336,20 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         startAngle={-90}
                                         isAnimationActive={false}
                                     >
-                                        {innerData.map((entry, index) => (
-                                            <Cell
-                                                key={`inner-${index}`}
-                                                fill={entry.color === "transparent" ? "transparent" : (entry.hatched ? (entry.color === COLORS.directUnanswered ? "url(#hatch-blue)" : "url(#hatch-violet)") : entry.color)}
-                                            />
-                                        ))}
+                                        {innerData.map((entry, index) => {
+                                            const channel = entry.name.startsWith("Directs") ? "direct"
+                                                : entry.name.startsWith("File") ? "queue" : null;
+                                            return (
+                                                <Cell
+                                                    key={`inner-${index}`}
+                                                    fill={entry.color === "transparent" ? "transparent" : (entry.hatched ? (entry.color === COLORS.directUnanswered ? "url(#hatch-blue)" : "url(#hatch-violet)") : entry.color)}
+                                                    opacity={channel ? cellOpacity("channel", channel) : 1}
+                                                    style={{ transition: "opacity 150ms ease", outline: "none" }}
+                                                    onMouseEnter={channel ? () => setFocus({ kind: "channel", key: channel }) : undefined}
+                                                    onMouseLeave={channel ? () => setFocus(null) : undefined}
+                                                />
+                                            );
+                                        })}
                                     </Pie>
                                     <RechartsTooltip
                                         formatter={(value, name) => [
@@ -363,7 +400,8 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             {/* Répondus */}
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("answered"))}
-                                toneClass="bg-emerald-50/50 border-emerald-200"
+                                toneClass={`bg-emerald-50/50 border-emerald-200 ${focus?.kind === "outcome" && focus.key === "answered" ? "ring-2 ring-emerald-400" : ""}`}
+                                interaction={focusHandlers({ kind: "outcome", key: "answered" })}
                                 hoverClass="hover:border-emerald-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
@@ -389,7 +427,8 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 des segments de la barre (vert, ambre, rouge). */}
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("overflow"))}
-                                toneClass="bg-amber-50/50 border-amber-200"
+                                toneClass={`bg-amber-50/50 border-amber-200 ${focus?.kind === "outcome" && focus.key === "overflow" ? "ring-2 ring-amber-400" : ""}`}
+                                interaction={focusHandlers({ kind: "outcome", key: "overflow" })}
                                 hoverClass="hover:border-amber-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
@@ -410,7 +449,8 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             {/* Perdus */}
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("lost"))}
-                                toneClass="bg-red-50/50 border-red-200"
+                                toneClass={`bg-red-50/50 border-red-200 ${focus?.kind === "outcome" && focus.key === "lost" ? "ring-2 ring-red-400" : ""}`}
+                                interaction={focusHandlers({ kind: "outcome", key: "lost" })}
                                 hoverClass="hover:border-red-300"
                             >
                                 <div className="flex items-center justify-between mb-1">
@@ -433,13 +473,27 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                         {/* Détails Directs vs File (compact) */}
                         <div className="space-y-2">
                             {/* Directs */}
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50/50 border border-blue-100">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-                                    <span className="text-sm font-medium text-blue-900">Appels Directs</span>
-                                    <span className="text-xs font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
-                                        {totalReceived > 0 ? Math.round((kpis.teamDirectReceived / totalReceived) * 100) : 0}%
-                                    </span>
+                            <div
+                                className={`flex items-center justify-between p-2.5 rounded-lg bg-blue-50/50 border border-blue-100 transition-all ${focus?.kind === "channel" && focus.key === "direct" ? "ring-2 ring-blue-400" : ""}`}
+                                {...focusHandlers({ kind: "channel", key: "direct" })}
+                            >
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                                        <span className="text-sm font-medium text-blue-900">Appels Directs</span>
+                                        <span className="text-xs font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
+                                            {totalReceived > 0 ? Math.round((kpis.teamDirectReceived / totalReceived) * 100) : 0}%
+                                        </span>
+                                    </div>
+                                    {/* Légende de l'anneau intérieur, côté bleu : la
+                                        grammaire teinte/texture enfin écrite. */}
+                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-[18px] text-[10px] text-blue-700">
+                                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500" />Répondus</span>
+                                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-300" />Transférés</span>
+                                        <Tip content="Ni répondus ici, ni transférés : les perdus et les débordés de ce canal.">
+                                            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "repeating-linear-gradient(45deg, #3b82f6 0 1.5px, transparent 1.5px 3.5px)" }} />Non aboutis</span>
+                                        </Tip>
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-6 text-sm">
                                     <div className="text-center">
@@ -472,13 +526,25 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             </div>
 
                             {/* File */}
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-violet-50/50 border border-violet-100">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />
-                                    <span className="text-sm font-medium text-violet-900">Appels d'équipe</span>
-                                    <span className="text-xs font-semibold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">
-                                        {totalReceived > 0 ? Math.round((kpis.callsReceived / totalReceived) * 100) : 0}%
-                                    </span>
+                            <div
+                                className={`flex items-center justify-between p-2.5 rounded-lg bg-violet-50/50 border border-violet-100 transition-all ${focus?.kind === "channel" && focus.key === "queue" ? "ring-2 ring-violet-400" : ""}`}
+                                {...focusHandlers({ kind: "channel", key: "queue" })}
+                            >
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />
+                                        <span className="text-sm font-medium text-violet-900">Appels d'équipe</span>
+                                        <span className="text-xs font-semibold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">
+                                            {totalReceived > 0 ? Math.round((kpis.callsReceived / totalReceived) * 100) : 0}%
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-[18px] text-[10px] text-violet-700">
+                                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-violet-500" />Répondus</span>
+                                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-violet-300" />Transférés</span>
+                                        <Tip content="Ni répondus ici, ni transférés : les perdus et les débordés de ce canal.">
+                                            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "repeating-linear-gradient(45deg, #8b5cf6 0 1.5px, transparent 1.5px 3.5px)" }} />Non aboutis</span>
+                                        </Tip>
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-6 text-sm">
                                     <div className="text-center">
