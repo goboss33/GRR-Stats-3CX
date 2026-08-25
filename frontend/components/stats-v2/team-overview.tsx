@@ -667,43 +667,46 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         {/* Le « i » remplace la pastille de couleur :
                                             le fond teinté suffit à dire le canal, la
                                             légende vit désormais sur les chiffres. */}
-                                        <Tip content="Appels arrivés directement sur la ligne d'un collaborateur, sans passer par le numéro commun de l'équipe.">
+                                        <Tip content="Appels arrivés sur la ligne directe d'un collaborateur, jamais distribués au reste de l'équipe.">
                                             <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                         </Tip>
                                         <span className="text-sm font-medium text-blue-900">Appels Directs</span>
-                                        <span className="text-xs font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
-                                            {totalReceived > 0 ? Math.round((kpis.teamDirectReceived / totalReceived) * 100) : 0}%
-                                        </span>
                                     </div>
                                 </div>
                                 {/* La légende de l'anneau vit SUR les chiffres :
-                                    chaque segment (plein, clair, hachuré) porte sa
-                                    pastille devant son nombre. « Reçus » n'en a pas
-                                    — c'est la somme, pas un segment. Et la ligne se
-                                    vérifie d'elle-même :
+                                    chaque segment (plein, clair, hachuré cerclé)
+                                    porte sa pastille devant son nombre ; « Reçus »
+                                    porte un anneau vide — le contour qui contient
+                                    les trois segments, pas un segment de plus. La
+                                    ligne se vérifie d'elle-même :
                                     Répondus + Transférés + Non aboutis = Reçus. */}
                                 <div className="flex items-center gap-5 text-sm">
                                     <div className="text-center">
-                                        <div className="font-bold text-blue-700">{kpis.teamDirectReceived}</div>
-                                        <div className="text-[10px] text-blue-600">Reçus</div>
+                                        <div className="flex items-center justify-center gap-1">
+                                            <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-blue-500" />
+                                            <span className="font-bold text-blue-700">{kpis.teamDirectReceived}</span>
+                                        </div>
+                                        <Tip content="Tout le canal : répondus + transférés + non aboutis.">
+                                            <div className="text-[10px] text-blue-600">Reçus</div>
+                                        </Tip>
                                     </div>
                                     <div className="text-center">
                                         <div className="flex items-center justify-center gap-1">
-                                            <span className="h-2 w-2 rounded-full bg-blue-500" />
+                                            <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
                                             <span className="font-bold text-blue-700">{kpis.teamDirectAnswered}</span>
                                         </div>
                                         <div className="text-[10px] text-blue-600">Répondus</div>
                                     </div>
                                     <div className="text-center">
                                         <div className="flex items-center justify-center gap-1">
-                                            <span className="h-2 w-2 rounded-full bg-blue-300" />
+                                            <span className="h-2.5 w-2.5 rounded-full bg-blue-300" />
                                             <span className="font-bold text-blue-400">{kpis.directHandedOff}</span>
                                         </div>
                                         <div className="text-[10px] text-blue-600">Transférés</div>
                                     </div>
                                     <div className="text-center">
                                         <div className="flex items-center justify-center gap-1">
-                                            <span className="h-2 w-2 rounded-full" style={{ background: "repeating-linear-gradient(45deg, #3b82f6 0 1.5px, transparent 1.5px 3.5px)" }} />
+                                            <span className="h-2.5 w-2.5 rounded-full border border-blue-400" style={{ background: "repeating-linear-gradient(45deg, #3b82f6 0 1.5px, transparent 1.5px 3.5px)" }} />
                                             <span className="font-bold text-blue-700">{directUnanswered}</span>
                                         </div>
                                         <Tip content="Ni répondus ici, ni transférés : les perdus et les débordés de ce canal.">
@@ -735,37 +738,39 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             >
                                 <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
-                                        <Tip content="Appels arrivés sur le numéro commun de l'équipe, puis présentés à ses collaborateurs.">
+                                        <Tip content="Appels distribués à toute l'équipe — le plus souvent après avoir sonné sans réponse sur une ligne directe, parfois en arrivant directement sur le numéro commun.">
                                             <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                         </Tip>
                                         <span className="text-sm font-medium text-violet-900">Appels d'équipe</span>
-                                        <span className="text-xs font-semibold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">
-                                            {totalReceived > 0 ? Math.round((kpis.callsReceived / totalReceived) * 100) : 0}%
-                                        </span>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-5 text-sm">
                                     <div className="text-center">
-                                        <div className="font-bold text-violet-700">{kpis.callsReceived}</div>
-                                        <div className="text-[10px] text-violet-600">Reçus</div>
+                                        <div className="flex items-center justify-center gap-1">
+                                            <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-violet-500" />
+                                            <span className="font-bold text-violet-700">{kpis.callsReceived}</span>
+                                        </div>
+                                        <Tip content="Tout le canal : répondus + transférés + non aboutis.">
+                                            <div className="text-[10px] text-violet-600">Reçus</div>
+                                        </Tip>
                                     </div>
                                     <div className="text-center">
                                         <div className="flex items-center justify-center gap-1">
-                                            <span className="h-2 w-2 rounded-full bg-violet-500" />
+                                            <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
                                             <span className="font-bold text-violet-700">{kpis.callsAnswered}</span>
                                         </div>
                                         <div className="text-[10px] text-violet-600">Répondus</div>
                                     </div>
                                     <div className="text-center">
                                         <div className="flex items-center justify-center gap-1">
-                                            <span className="h-2 w-2 rounded-full bg-violet-300" />
+                                            <span className="h-2.5 w-2.5 rounded-full bg-violet-300" />
                                             <span className="font-bold text-violet-400">{kpis.callsHandedOff}</span>
                                         </div>
                                         <div className="text-[10px] text-violet-600">Transférés</div>
                                     </div>
                                     <div className="text-center">
                                         <div className="flex items-center justify-center gap-1">
-                                            <span className="h-2 w-2 rounded-full" style={{ background: "repeating-linear-gradient(45deg, #8b5cf6 0 1.5px, transparent 1.5px 3.5px)" }} />
+                                            <span className="h-2.5 w-2.5 rounded-full border border-violet-400" style={{ background: "repeating-linear-gradient(45deg, #8b5cf6 0 1.5px, transparent 1.5px 3.5px)" }} />
                                             <span className="font-bold text-violet-700">{queueUnanswered}</span>
                                         </div>
                                         <Tip content="Ni répondus ici, ni transférés : les perdus et les débordés de ce canal.">
