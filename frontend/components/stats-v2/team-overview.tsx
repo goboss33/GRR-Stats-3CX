@@ -140,13 +140,8 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
     // plus quand l'objectif est tenu.
     const verdict = lossVerdict(lossRate);
 
-    // Infobulle du chip de perte : la définition, et l'écart N-1 en points
-    // quand la comparaison est disponible.
-    const prevLoss = prevOf((t) => t.lossRate);
-    const lossTip = "Part des appels raccrochés par le client."
-        + (typeof prevLoss === "number"
-            ? ` — période précédente : ${prevLoss} % (${lossRate - prevLoss > 0 ? "+" : ""}${lossRate - prevLoss} pts)`
-            : "");
+    // Infobulle du chip de perte : une phrase, sans comparaison N-1.
+    const lossTip = "Part des appels raccrochés par le client.";
 
     // Étiquettes des trois zones de l'anneau extérieur, posées à l'EXTÉRIEUR
     // de l'arc, sans ligne de rappel : la position et la couleur (fixe, celle
@@ -562,7 +557,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <div className="text-[10px] text-slate-500">
                                         Directs:&nbsp;{kpis.teamDirectReceived}&nbsp;· Équipe:&nbsp;{kpis.callsReceived}
                                     </div>
-                                    <Tip content="Tous les appels arrivés pour l'équipe.">
+                                    <Tip content="Total des appels entrants de l'équipe.">
                                         <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                     </Tip>
                                 </div>
@@ -588,7 +583,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <div className="text-[10px] text-emerald-600">
                                         Directs:&nbsp;{kpis.teamDirectAnswered}&nbsp;· Équipe:&nbsp;{kpis.callsAnswered}{totalHandedOff > 0 && <>&nbsp;· Transférés:&nbsp;{totalHandedOff}</>}
                                     </div>
-                                    <Tip content="Appels traités par un membre de l'équipe.">
+                                    <Tip content="Total d'appels répondus par l'équipe.">
                                         <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                     </Tip>
                                 </div>
@@ -619,7 +614,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <div className="text-[10px] text-amber-600">
                                         Directs:&nbsp;{kpis.directOverflow}&nbsp;· Équipe:&nbsp;{kpis.callsOverflow}
                                     </div>
-                                    <Tip content="Appels redirigés automatiquement vers une autre équipe après le temps d'attente configuré.">
+                                    <Tip content="Appels non répondus dans les délais et redirigés automatiquement vers une autre équipe ou le service client.">
                                         <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                     </Tip>
                                 </div>
@@ -667,7 +662,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         {/* Le « i » remplace la pastille de couleur :
                                             le fond teinté suffit à dire le canal, la
                                             légende vit désormais sur les chiffres. */}
-                                        <Tip content="Appels arrivés sur la ligne directe d'un collaborateur, jamais distribués au reste de l'équipe.">
+                                        <Tip content="Appels arrivés sur les lignes directes des collaborateurs de l'équipe.">
                                             <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                         </Tip>
                                         <span className="text-sm font-medium text-blue-900">Appels Directs</span>
@@ -710,9 +705,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                                 <span className="h-2.5 w-2.5 rounded-full border border-blue-400" style={{ background: "repeating-linear-gradient(45deg, #3b82f6 0 1.5px, transparent 1.5px 3.5px)" }} />
                                                 <span className="font-bold text-blue-700">{directUnanswered}</span>
                                             </div>
-                                            <Tip content="Appels perdus ou redirigés vers une autre équipe.">
-                                                <div className="text-[10px] text-blue-600">Non aboutis</div>
-                                            </Tip>
+                                            <div className="text-[10px] text-blue-600">Non aboutis</div>
                                         </div>
                                     </div>
                                     <div className="text-center">
@@ -740,7 +733,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             >
                                 <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
-                                        <Tip content="Appels distribués à toute l'équipe — le plus souvent après avoir sonné sans réponse sur une ligne directe, parfois en arrivant directement sur le numéro commun.">
+                                        <Tip content="Appels initialement destinés à un collaborateur puis proposés à l'ensemble de l'équipe en l'absence de réponse.">
                                             <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                         </Tip>
                                         <span className="text-sm font-medium text-violet-900">Appels d'équipe</span>
@@ -771,9 +764,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                                 <span className="h-2.5 w-2.5 rounded-full border border-violet-400" style={{ background: "repeating-linear-gradient(45deg, #8b5cf6 0 1.5px, transparent 1.5px 3.5px)" }} />
                                                 <span className="font-bold text-violet-700">{queueUnanswered}</span>
                                             </div>
-                                            <Tip content="Appels perdus ou redirigés vers une autre équipe.">
-                                                <div className="text-[10px] text-violet-600">Non aboutis</div>
-                                            </Tip>
+                                            <div className="text-[10px] text-violet-600">Non aboutis</div>
                                         </div>
                                     </div>
                                     <div className="text-center">
