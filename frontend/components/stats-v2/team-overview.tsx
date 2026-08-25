@@ -265,7 +265,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className={`group p-3 rounded-xl border hover:shadow-md transition-all cursor-pointer ${toneClass} ${hoverClass}`}
+            className={`block group p-3 rounded-xl border hover:shadow-md transition-all cursor-pointer ${toneClass} ${hoverClass}`}
             {...interaction}
         >
             {children}
