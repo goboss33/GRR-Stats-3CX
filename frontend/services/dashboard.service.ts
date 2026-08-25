@@ -1,6 +1,7 @@
 "use server";
 
 import { ServerId } from "@/lib/prisma-cdr";
+import { enumerateWallBuckets } from "@/services/domain/timeline-fill";
 import {
     getTimelineDataRaw,
     getHeatmapDataRaw,
@@ -401,8 +402,15 @@ export async function getQueueTimelineData(
 
     const rawData = await getQueueTimelineDataRaw(serverId, queueNumber, startDate, endDate, timezone, origin);
 
-    return rawData.map((row) => {
-        const date = new Date(row.date_group);
+    // Densification : le SQL (GROUP BY) ne produit AUCUNE ligne pour un seau
+    // sans appel — les week-ends sortaient de l'axe et la courbe N-1 se
+    // trouait au lieu de descendre à zéro. On énumère TOUS les seaux de la
+    // fenêtre et on comble à zéro. Clé commune : le temps mural du tenant
+    // encodé UTC — la convention de date_group, déjà lue en getUTC* ci-après.
+    const byWall = new Map(rawData.map((row) => [new Date(row.date_group).getTime(), row]));
+    return enumerateWallBuckets(startDate, endDate, timezone, interval).map((wallMs) => {
+        const row = byWall.get(wallMs);
+        const date = new Date(wallMs);
         let label = "";
         if (interval === "hour") {
             label = `${String(date.getUTCHours()).padStart(2, "0")}:00`;
@@ -412,9 +420,9 @@ export async function getQueueTimelineData(
         return {
             date: date.toISOString(),
             label,
-            answered: Number(row.answered),
-            missed: Number(row.missed),
-            overflow: row.overflow === undefined ? undefined : Number(row.overflow),
+            answered: row ? Number(row.answered) : 0,
+            missed: row ? Number(row.missed) : 0,
+            overflow: row ? (row.overflow === undefined ? undefined : Number(row.overflow)) : 0,
         };
     });
 }

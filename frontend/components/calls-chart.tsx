@@ -115,9 +115,10 @@ const CustomTooltip = ({
 
 export function CallsChart({ data, previousData, previousOffsetMs = 0 }: CallsChartProps) {
     // Alignement N-1 par date décalée : chaque point N cherche son vis-à-vis
-    // exactement previousOffsetMs plus tôt. Un jour absent d'une série (SQL ne
-    // produit pas de ligne sans appel) laisse simplement un trou dans la
-    // courbe pointillée, sans décaler les jours suivants.
+    // exactement previousOffsetMs plus tôt. Les deux séries arrivent
+    // densifiées (un seau par jour ou heure, à zéro sans appel — voir
+    // enumerateWallBuckets) : la courbe pointillée descend à zéro au lieu
+    // de se trouer, et les week-ends restent sur l'axe.
     const prevByTime = new Map<number, TimelineDataPoint>();
     if (previousData && previousOffsetMs > 0) {
         for (const p of previousData) {
