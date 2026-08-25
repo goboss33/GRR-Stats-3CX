@@ -4,7 +4,7 @@ import { getAvailableServers } from "@/lib/servers";
 import { ServerId } from "@/lib/prisma-cdr";
 import { requireApiRole } from "@/lib/auth-guard";
 import { getServerXapiConfig } from "@/lib/xapi-config";
-import { requestXapiToken } from "@/lib/xapi-client";
+import { requestXapiToken, decodeTokenClaims } from "@/lib/xapi-client";
 
 /**
  * « Tester la connexion » — demande un jeton au PBX avec les identifiants
@@ -48,11 +48,15 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, reason: result.reason });
         }
 
+        // Jamais le jeton lui-même — mais ses CLAIMS déclaratives (rôle,
+        // principal) sont la pièce à conviction des 403 : les montrer ici
+        // évite d'aller décoder un JWT à la main pour comprendre un refus.
+        const claims = decodeTokenClaims(result.accessToken);
         return NextResponse.json({
             ok: true,
-            // Jamais le jeton lui-même : sa durée de vie suffit à prouver que
-            // l'échange a réussi.
             expiresInSeconds: result.expiresInSeconds,
+            role: claims.role ?? null,
+            principal: claims.sub ?? claims.client_id ?? null,
         });
     } catch (error) {
         console.error("[xapi-test] Error:", error);

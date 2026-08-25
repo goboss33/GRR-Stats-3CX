@@ -1,6 +1,6 @@
 import { prismaAuth } from "@/lib/prisma-auth";
 import { getServerXapiConfig, isXapiUsable } from "@/lib/xapi-config";
-import { requestXapiToken } from "@/lib/xapi-client";
+import { requestXapiToken, decodeTokenClaims } from "@/lib/xapi-client";
 import { getAvailableServers } from "@/lib/servers";
 import type { ServerId } from "@/lib/prisma-cdr";
 import {
@@ -56,7 +56,10 @@ async function fetchQueueMembers(
 ): Promise<{ ok: true; queues: number; members: SnapshotMember[] } | { ok: false; reason: string }> {
     const members: SnapshotMember[] = [];
     let queues = 0;
-    let url: string | null = `${baseUrl}/xapi/v1/Queues?%24expand=Agents&%24top=200`;
+    // Plafond OData du PBX : 100 elements par page (verifie sur le 3CX v20
+    // reel — au-dela, HTTP 400 « The limit of 100 for Top query has been
+    // exceeded ») ; la pagination @odata.nextLink enchaine les pages.
+    let url: string | null = `${baseUrl}/xapi/v1/Queues?%24expand=Agents&%24top=100`;
     let firstShape = "";
 
     for (let page = 0; url && page < PAGE_LIMIT; page++) {
@@ -71,8 +74,30 @@ async function fetchQueueMembers(
             return { ok: false, reason: `PBX injoignable pendant la lecture des files (${error instanceof Error ? error.message : String(error)})` };
         }
         if (!res.ok) {
-            const body = await res.text().catch(() => "");
-            return { ok: false, reason: `Lecture des files refusée (HTTP ${res.status}${body ? ` — ${body.slice(0, 200)}` : ""})` };
+            const body = (await res.text().catch(() => "")).trim();
+            const authHeader = res.headers.get("www-authenticate");
+            const parts = [
+                `Lecture des files refusée (HTTP ${res.status})`,
+                `corps: ${body ? body.slice(0, 200) : "vide"}`,
+            ];
+            if (authHeader) parts.push(`www-authenticate: ${authHeader.slice(0, 120)}`);
+            // Contre-test : une autre entité répond-elle ? Discrimine « tout
+            // est interdit » (rôle du principal insuffisant) d'un blocage
+            // propre à l'entité Queues.
+            try {
+                const users = await fetch(`${baseUrl}/xapi/v1/Users?%24top=1&%24select=Id`, {
+                    headers: { Authorization: `Bearer ${accessToken}` },
+                    signal: AbortSignal.timeout(10_000),
+                    cache: "no-store",
+                });
+                parts.push(`contre-test Users: HTTP ${users.status}`);
+            } catch {
+                parts.push("contre-test Users: injoignable");
+            }
+            const claims = decodeTokenClaims(accessToken);
+            if (claims.role) parts.push(`rôle du jeton: ${claims.role}`);
+            if (claims.sub || claims.client_id) parts.push(`principal: ${claims.sub ?? claims.client_id}`);
+            return { ok: false, reason: parts.join(" · ") };
         }
 
         let payload: unknown;

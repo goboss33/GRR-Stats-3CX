@@ -105,3 +105,32 @@ export async function requestXapiToken(
         expiresInSeconds: typeof expires === "number" ? expires : null,
     };
 }
+
+/**
+ * Claims utiles d'un jeton XAPI, décodés SANS vérification de signature —
+ * outil de diagnostic, pas de sécurité : on lit ce que le PBX déclare avoir
+ * accordé (rôle du principal de service, sujet, expiration). C'est la pièce
+ * à conviction des erreurs 403 : « lecture refusée » + « rôle: Reports »
+ * désigne la cause sans deviner.
+ */
+export function decodeTokenClaims(accessToken: string): Record<string, string> {
+    const parts = accessToken.split(".");
+    if (parts.length !== 3) return {};
+    try {
+        const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+        const payload = JSON.parse(atob(base64)) as Record<string, unknown>;
+        const out: Record<string, string> = {};
+        for (const [key, value] of Object.entries(payload)) {
+            const flat = Array.isArray(value) ? value.join(", ") : value;
+            if (typeof flat !== "string" && typeof flat !== "number") continue;
+            // Les claims parlantes : rôle (nom complet schéma inclus), sujet,
+            // identifiant client. Le reste (nbf, iat, jti…) est du bruit.
+            if (/role/i.test(key)) out.role = String(flat);
+            else if (key === "sub" || key === "client_id" || key === "name") out[key] = String(flat);
+            else if (key === "exp") out.exp = new Date(Number(flat) * 1000).toISOString();
+        }
+        return out;
+    } catch {
+        return {};
+    }
+}

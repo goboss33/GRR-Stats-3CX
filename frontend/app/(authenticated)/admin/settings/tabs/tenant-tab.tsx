@@ -63,7 +63,7 @@ export function TenantTab() {
     const [savingKey, setSavingKey] = useState<string | null>(null);
     // Test de connexion au PBX : en cours, et dernier verdict par tenant.
     const [testing, setTesting] = useState<string | null>(null);
-    const [testResults, setTestResults] = useState<Record<string, { ok: boolean; reason?: string }>>({});
+    const [testResults, setTestResults] = useState<Record<string, { ok: boolean; reason?: string; role?: string | null }>>({});
     // Adaptateur : route les appels setMessage(...) existants vers les toasts.
     const setMessage = (m: { type: "success" | "error"; text: string } | null) => {
         if (!m) return;
@@ -281,7 +281,7 @@ export function TenantTab() {
             if (!res.ok) {
                 setTestResults(prev => ({ ...prev, [serverId]: { ok: false, reason: data.error || "Échec du test" } }));
             } else {
-                setTestResults(prev => ({ ...prev, [serverId]: { ok: data.ok, reason: data.reason } }));
+                setTestResults(prev => ({ ...prev, [serverId]: { ok: data.ok, reason: data.reason, role: data.role } }));
             }
         } catch {
             setTestResults(prev => ({ ...prev, [serverId]: { ok: false, reason: "Test impossible (application injoignable)" } }));
@@ -535,6 +535,7 @@ export function TenantTab() {
                                                             <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-700">
                                                                 <CheckCircle2 className="h-4 w-4" />
                                                                 Connexion établie — le PBX a délivré un jeton
+                                                                {testResults[server.id].role ? ` (rôle : ${testResults[server.id].role})` : ""}
                                                             </span>
                                                         ) : (
                                                             <span className="text-xs text-red-700">
