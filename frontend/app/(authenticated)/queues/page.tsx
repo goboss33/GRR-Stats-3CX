@@ -92,7 +92,7 @@ export default function QueuesPage() {
                             <UserCheck className="h-6 w-6" />
                         </div>
                         <div>
-                            <p className="text-sm font-medium text-slate-500">Agents Identifiés</p>
+                            <p className="text-sm font-medium text-slate-500">Collaborateurs Identifiés</p>
                             <h3 className="text-2xl font-bold text-slate-900">
                                 {new Set(queues.flatMap(q => q.members.map(m => m.agentExtension))).size}
                             </h3>

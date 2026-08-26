@@ -314,7 +314,7 @@ export default function AlertsClient() {
                             <tr className="border-b bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
                                 <th className="px-4 py-3 text-center">Type</th>
                                 <th className="px-4 py-3">Équipe</th>
-                                <th className="px-4 py-3">Agent(s) concerné(s)</th>
+                                <th className="px-4 py-3">Collaborateur(s) concerné(s)</th>
                                 <th className="px-4 py-3">Dernier signal</th>
                                 <th className="px-4 py-3 text-right">{tab === "ignored" ? "Ignorée" : ""}</th>
                             </tr>

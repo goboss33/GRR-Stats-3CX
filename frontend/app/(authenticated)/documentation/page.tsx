@@ -42,8 +42,8 @@ const decisions: Decision[] = [
         title: "Le transfert accompli est un Répondu ; « Redirigés » devient « Débordements »",
         date: "7 août 2026",
         summary: "Un appel décroché par l'équipe puis servi ailleurs (statut fin « Transféré ») est compté dans la vignette Répondus, en sous-catégorie visible (File · Directs · Transférés). La vignette orange, renommée « Débordements », ne contient plus que les appels partis SANS décroché. Dans les entrées plus anciennes de cette page, « Redirigés » se lit désormais « Débordements ».",
-        justification: "L'ancienne vignette orange mélangeait du travail accompli (décrocher puis transférer — le métier des réceptions) et de la vraie fuite (personne n'a décroché). Ce mélange rendait la couleur d'alerte mensongère et créait un écart inexpliqué entre les Répondus du haut de page et la « Prise en charge totale » du tableau des agents (ex. 421 vs 426). Revers assumé : un appel transféré est répondu chez l'équipe qui a décroché ET chez celle qui a servi en dernier — la somme des répondus par équipe n'est plus additive entre équipes (les vues multi-équipes de l'app dédupliquent par préséance).",
-        impact: "DEFAULT_OUTCOME_GROUPING (handed_off → answered) et computeTeamTotals : vignettes, donuts, courbe de volume et liens vers les logs suivent la même table. Le statut fin « Transféré » reste visible partout (badge des logs en vert clair, colonne du tableau des agents, sous-ligne de la vignette). Les consommateurs de l'API analytics voient leurs « répondus » augmenter du nombre de transferts accomplis.",
+        justification: "L'ancienne vignette orange mélangeait du travail accompli (décrocher puis transférer — le métier des réceptions) et de la vraie fuite (personne n'a décroché). Ce mélange rendait la couleur d'alerte mensongère et créait un écart inexpliqué entre les Répondus du haut de page et la « Prise en charge totale » du tableau des collaborateurs (ex. 421 vs 426). Revers assumé : un appel transféré est répondu chez l'équipe qui a décroché ET chez celle qui a servi en dernier — la somme des répondus par équipe n'est plus additive entre équipes (les vues multi-équipes de l'app dédupliquent par préséance).",
+        impact: "DEFAULT_OUTCOME_GROUPING (handed_off → answered) et computeTeamTotals : vignettes, donuts, courbe de volume et liens vers les logs suivent la même table. Le statut fin « Transféré » reste visible partout (badge des logs en vert clair, colonne du tableau des collaborateurs, sous-ligne de la vignette). Les consommateurs de l'API analytics voient leurs « répondus » augmenter du nombre de transferts accomplis.",
     },
     {
         id: "1.10",
@@ -59,8 +59,8 @@ const decisions: Decision[] = [
         category: "Statistiques Queue",
         title: "Overflow 'yo-yo' : un appel qui revient n'est pas redirigé",
         date: "12 mai 2026",
-        summary: "Un appel qui quitte la file (overflow vers une autre file) mais revient ensuite et est traité par un agent de la file d'origine est compté comme 'Répondu', pas comme 'Redirigé'.",
-        justification: "Analyse du scénario N°1 : un appel passe par 993 → 900 (Lucia répond) → transfert → retour en 993 → Aude (164) répond. La file 993 a fait son travail : un de ses agents a décroché. Le classer 'Redirigé' serait incorrect car l'appel a été traité par la file.",
+        summary: "Un appel qui quitte la file (overflow vers une autre file) mais revient ensuite et est traité par un collaborateur de la file d'origine est compté comme 'Répondu', pas comme 'Redirigé'.",
+        justification: "Analyse du scénario N°1 : un appel passe par 993 → 900 (Lucia répond) → transfert → retour en 993 → Aude (164) répond. La file 993 a fait son travail : un de ses collaborateurs a décroché. Le classer 'Redirigé' serait incorrect car l'appel a été traité par la file.",
         impact: "Modification du CTE call_outcomes dans route.ts : ajout de la condition `AND NOT bool_or(was_answered)` avant de classer un appel comme overflow. Élimine ~10 appels de double-comptage sur un mois.",
     },
     {
@@ -68,8 +68,8 @@ const decisions: Decision[] = [
         category: "Statistiques Queue",
         title: "Perdus = File abandonnée + Directs non répondus",
         date: "12 mai 2026",
-        summary: "Le KPI 'Perdus' englobe désormais les appels abandonnés dans la file ET les appels directs non répondus par les agents de l'équipe. Le détail affiche 'File: X · Directs: Y' au lieu de '<10s: X · ≥10s: Y'.",
-        justification: "Le détail <10s/≥10s n'était pas pertinent pour le management. En revanche, distinguer les perdus par canal (file vs direct) permet d'identifier si le problème vient du routage (file) ou de la disponibilité des agents (directs).",
+        summary: "Le KPI 'Perdus' englobe désormais les appels abandonnés dans la file ET les appels directs non répondus par les collaborateurs de l'équipe. Le détail affiche 'File: X · Directs: Y' au lieu de '<10s: X · ≥10s: Y'.",
+        justification: "Le détail <10s/≥10s n'était pas pertinent pour le management. En revanche, distinguer les perdus par canal (file vs direct) permet d'identifier si le problème vient du routage (file) ou de la disponibilité des collaborateurs (directs).",
         impact: "Ajout du CTE direct_calls_stats dans route.ts. Le composant team-overview.tsx calcule totalLost = kpis.callsAbandoned + kpis.directLost. Le sous-titre de la carte Perdus affiche 'File: 83 · Directs: 700' au lieu de '<10s: 60 · ≥10s: 23'.",
     },
     {
@@ -77,16 +77,16 @@ const decisions: Decision[] = [
         category: "Statistiques Queue",
         title: "Déduplication des directs au niveau équipe",
         date: "12 mai 2026",
-        summary: "Le nombre d'appels directs reçus est compté au niveau équipe (COUNT DISTINCT call_history_id) et non par somme des agents. Un appel transféré entre deux agents de la même équipe compte comme 1 seul appel direct.",
-        justification: "L'ancienne logique sommant les directReceived par agent gonflait le total de ~71 appels (77 appels multi-agents identifiés). Un appel transféré de Lucia → Maxime était compté 1x pour Lucia + 1x pour Maxime = 2, alors qu'il s'agit d'un seul appel.",
-        impact: "Le CTE direct_calls_stats utilise COUNT(DISTINCT c.call_history_id). Le tableau des agents affiche les totaux dédupliqués de l'équipe (1347 au lieu de 1418), avec un tooltip explicatif. Les chiffres individuels par agent restent inchangés.",
+        summary: "Le nombre d'appels directs reçus est compté au niveau équipe (COUNT DISTINCT call_history_id) et non par somme des collaborateurs. Un appel transféré entre deux collaborateurs de la même équipe compte comme 1 seul appel direct.",
+        justification: "L'ancienne logique sommant les directReceived par collaborateur gonflait le total de ~71 appels (77 appels multi-collaborateurs identifiés). Un appel transféré de Lucia → Maxime était compté 1x pour Lucia + 1x pour Maxime = 2, alors qu'il s'agit d'un seul appel.",
+        impact: "Le CTE direct_calls_stats utilise COUNT(DISTINCT c.call_history_id). Le tableau des collaborateurs affiche les totaux dédupliqués de l'équipe (1347 au lieu de 1418), avec un tooltip explicatif. Les chiffres individuels par collaborateur restent inchangés.",
     },
     {
         id: "1.14",
         category: "Statistiques Queue",
         title: "Redirigé = sorti SANS retour traité",
         date: "12 mai 2026",
-        summary: "Un appel n'est classé 'Redirigé' que s'il a quitté la file et n'est JAMAIS revenu y être traité. Si l'appel revient (par file ou par direct) et est décroché par un agent de la file, le statut 'Redirigé' est annulé au profit de 'Répondu'.",
+        summary: "Un appel n'est classé 'Redirigé' que s'il a quitté la file et n'est JAMAIS revenu y être traité. Si l'appel revient (par file ou par direct) et est décroché par un collaborateur de la file, le statut 'Redirigé' est annulé au profit de 'Répondu'.",
         justification: "Analyse du scénario N°3 : un appel arrive sur le DID de Maxime (forward_all activé) → ring group → script → file 993 → timeout → overflow vers 900 → Lucia répond → transfère à Maxime → Maxime répond. Maxime faisant partie de 993, l'appel est 'Répondu' pour 993, pas 'Redirigé'.",
         impact: "La logique SQL vérifie bool_or(was_answered) au niveau du call_history_id global, pas au niveau du passage. Un appel yo-yo (993 → 900 → retour 993 → répondu) est correctement classé 'answered'.",
     },
@@ -96,7 +96,7 @@ const decisions: Decision[] = [
         title: "Direct = premier destinataire extension OU transfert vers extension",
         date: "12 mai 2026",
         summary: "Un appel est compté comme 'Direct' si son premier destinataire est une extension (DID direct) OU s'il est transféré vers une extension (peu importe le parcours précédent). Les forward_all, transferts, et appels en occupation comptent tous comme 'Direct'.",
-        justification: "Même si Maxime a forward_all activé (statut absent), l'appel lui était destiné. Le comptabiliser comme direct reflète la charge potentielle de l'agent. Exclure les forward_all diminuerait artificiellement le nombre de directs reçus.",
+        justification: "Même si Maxime a forward_all activé (statut absent), l'appel lui était destiné. Le comptabiliser comme direct reflète la charge potentielle du collaborateur. Exclure les forward_all diminuerait artificiellement le nombre de directs reçus.",
         impact: "Le CTE direct_calls_stats inclut tous les segments vers une extension avec creation_forward_reason IS DISTINCT FROM 'polling'. Le filtre de bruit système (<1s non répondus) reste actif pour exclure les artefacts de routage.",
     },
     {
@@ -114,7 +114,7 @@ const decisions: Decision[] = [
         title: "Phénomène du Ping-Pong",
         date: "12 février 2026",
         summary: "Un même appel peut passer plusieurs fois par la même queue (client mal dirigé, retour à la réception). Cette réalité est rendue visible via deux métriques : 'appels uniques' et 'total passages'.",
-        justification: "Ce n'est pas un cas exceptionnel mais un comportement quotidien (ex: client appuie 2, parle au mauvais service, retourne à la réception, est redirigé correctement). Masquer ce phénomène sous-estime la charge réelle des agents.",
+        justification: "Ce n'est pas un cas exceptionnel mais un comportement quotidien (ex: client appuie 2, parle au mauvais service, retourne à la réception, est redirigé correctement). Masquer ce phénomène sous-estime la charge réelle des collaborateurs.",
         impact: "Le taux de ping-pong (passages supplémentaires / total passages) devient un KPI stratégique pour identifier les problèmes de routage. Exemple : 3.8% sur la queue 993 = bon routage ; 37.5% sur une autre = problème à investiguer.",
     },
     {
@@ -122,9 +122,9 @@ const decisions: Decision[] = [
         category: "Statistiques Queue",
         title: "Distinction répondus vs transférés",
         date: "Initial",
-        summary: "Un appel transféré par un agent est comptabilisé comme 'répondu' dans le donut. Le nombre de transferts apparaît séparément comme information complémentaire.",
-        justification: "L'appel a bien été décroché : le client n'est pas resté sans interlocuteur. Le transfert est une action volontaire de l'agent après avoir pris l'appel. Séparer 'transférés' comme catégorie à part créerait un donut dont la somme des parts dépasserait 100%.",
-        impact: "Le taux de réponse de la queue n'est pas artificiellement gonflé ni dégonflé. Les transferts sont visibles dans le tableau agents (colonne abandonnée au profit du format X/Total).",
+        summary: "Un appel transféré par un collaborateur est comptabilisé comme 'répondu' dans le donut. Le nombre de transferts apparaît séparément comme information complémentaire.",
+        justification: "L'appel a bien été décroché : le client n'est pas resté sans interlocuteur. Le transfert est une action volontaire du collaborateur après avoir pris l'appel. Séparer 'transférés' comme catégorie à part créerait un donut dont la somme des parts dépasserait 100%.",
+        impact: "Le taux de réponse de la queue n'est pas artificiellement gonflé ni dégonflé. Les transferts sont visibles dans le tableau collaborateurs (colonne abandonnée au profit du format X/Total).",
     },
     {
         id: "1.9",
@@ -132,7 +132,7 @@ const decisions: Decision[] = [
         title: "Bandeau 'Bilan de l'équipe'",
         date: "3 mars 2026",
         summary: "Bandeau affiché au-dessus du donut combinant les appels queue et les appels directs de l'équipe, avec leurs taux respectifs.",
-        justification: "Un agent peu actif en queue peut être très chargé en directs. Sans cette vue d'ensemble, le manager pourrait conclure à tort qu'un agent est inactif.",
+        justification: "Un collaborateur peu actif en queue peut être très chargé en directs. Sans cette vue d'ensemble, le manager pourrait conclure à tort qu'un collaborateur est inactif.",
         impact: "Affichage : '89 appels répondus · Queue: 42/55 (76%) · Directs: 47/55 (85%)'. Le manager dispose d'une vision consolidée de l'activité totale.",
     },
     {
@@ -140,8 +140,8 @@ const decisions: Decision[] = [
         category: "Statistiques Queue",
         title: "Redirections = Overflow automatique",
         date: "Initial",
-        summary: "Différenciation stricte entre 'redirigé' (débordement automatique du système : timeout, règle de routage) et 'transféré' (action manuelle d'un agent après avoir décroché).",
-        justification: "Ce sont deux mécanismes fondamentalement différents : automatique vs volontaire. Le manager doit pouvoir distinguer 'personne n'a répondu' de 'l'agent a répondu puis a choisi de transférer'.",
+        summary: "Différenciation stricte entre 'redirigé' (débordement automatique du système : timeout, règle de routage) et 'transféré' (action manuelle d'un collaborateur après avoir décroché).",
+        justification: "Ce sont deux mécanismes fondamentalement différents : automatique vs volontaire. Le manager doit pouvoir distinguer 'personne n'a répondu' de 'le collaborateur a répondu puis a choisi de transférer'.",
         impact: "Les appels redirigés vers une autre queue apparaissent dans la catégorie 'Redirigés' (orange) du donut. Les transferts manuels restent dans 'Répondus'.",
     },
     {
@@ -150,44 +150,44 @@ const decisions: Decision[] = [
         title: "Exclusion des destinations techniques",
         date: "Initial",
         summary: "Les transferts pointant vers des entrées techniques (ring groups, IVR) sont exclus du comptage des transferts affichés.",
-        justification: "Ces destinations sont des artefacts du système 3CX, pas des actions volontaires d'un agent. Les inclure fausserait le comptage des 'vrais' transferts vers des personnes.",
+        justification: "Ces destinations sont des artefacts du système 3CX, pas des actions volontaires d'un collaborateur. Les inclure fausserait le comptage des 'vrais' transferts vers des personnes.",
         impact: "Seuls les transferts vers des extensions ou des queues externes sont comptabilisés comme tels.",
     },
     {
         id: "2.1",
-        category: "Performance Agents",
+        category: "Activité des Collaborateurs",
         title: "Absence de taux de réponse individuel sur la queue",
         date: "Initial",
-        summary: "Le tableau agents n'affiche pas de 'taux de réponse' basé sur les appels queue car ce chiffre est structurellement biaisé à la baisse.",
-        justification: "Dans une queue à 9 agents, chaque appel fait sonner ~5 agents simultanément. Une agent peut recevoir 534 sonneries et n'en décrocher que 116 (22%). Mais les 418 autres ont été décrochées par des collègues : elle ne les a pas 'ratées'. Afficher 22% serait trompeur.",
+        summary: "Le tableau collaborateurs n'affiche pas de 'taux de réponse' basé sur les appels queue car ce chiffre est structurellement biaisé à la baisse.",
+        justification: "Dans une queue à 9 collaborateurs, chaque appel fait sonner ~5 collaborateurs simultanément. Une collaboratrice peut recevoir 534 sonneries et n'en décrocher que 116 (22%). Mais les 418 autres ont été décrochées par des collègues : elle ne les a pas 'ratées'. Afficher 22% serait trompeur.",
         impact: "Le taux de réponse individuel est remplacé par le Score de performance (0-100) qui compare le volume relatif à la moyenne de l'équipe.",
     },
     {
         id: "2.3",
-        category: "Performance Agents",
+        category: "Activité des Collaborateurs",
         title: "Score de performance (0-100)",
         date: "Initial",
-        summary: "Score composite calculé sur chaque agent : 60% volume relatif (appels traités / moyenne équipe, plafonné à 60 points) + 40% réactivité directe (taux de décroché sur les appels directs).",
-        justification: "Le volume est relatif à la moyenne de l'équipe : un agent à mi-temps n'est pas pénalisé par rapport à un temps plein. La réactivité directe est un ratio individuel non dilué par le partage de la queue.",
-        impact: "Un agent sans appel direct reçoit les 40 points de réactivité (pas de pénalisation). Score < 40 = signal d'attention ; 40-69 = moyenne ; 70-100 = performant.",
+        summary: "Score composite calculé sur chaque collaborateur : 60% volume relatif (appels traités / moyenne équipe, plafonné à 60 points) + 40% réactivité directe (taux de décroché sur les appels directs).",
+        justification: "Le volume est relatif à la moyenne de l'équipe : un collaborateur à mi-temps n'est pas pénalisé par rapport à un temps plein. La réactivité directe est un ratio individuel non dilué par le partage de la queue.",
+        impact: "Un collaborateur sans appel direct reçoit les 40 points de réactivité (pas de pénalisation). Score < 40 = signal d'attention ; 40-69 = moyenne ; 70-100 = performant.",
     },
     {
         id: "2.9",
-        category: "Performance Agents",
+        category: "Activité des Collaborateurs",
         title: "Résolveur Final",
         date: "3 mars 2026",
-        summary: "Quand un appel passe plusieurs fois par la même queue et est décroché par différents agents, seul le dernier agent à décrocher est crédité dans la colonne 'Queue (résolu)'.",
-        justification: "C'est le dernier agent qui a effectivement résolu la demande du client. Cette règle garantit l'invariant mathématique : la somme des colonnes 'Queue (résolu)' des agents = le nombre dans le donut 'Répondus'.",
-        impact: "Cohérence parfaite entre le donut et le tableau agents. Le manager ne voit jamais de divergence entre les deux vues.",
+        summary: "Quand un appel passe plusieurs fois par la même queue et est décroché par différents collaborateurs, seul le dernier collaborateur à décrocher est crédité dans la colonne 'Queue (résolu)'.",
+        justification: "C'est le dernier collaborateur qui a effectivement résolu la demande du client. Cette règle garantit l'invariant mathématique : la somme des colonnes 'Queue (résolu)' des collaborateurs = le nombre dans le donut 'Répondus'.",
+        impact: "Cohérence parfaite entre le donut et le tableau collaborateurs. Le manager ne voit jamais de divergence entre les deux vues.",
     },
     {
         id: "2.7",
-        category: "Performance Agents",
+        category: "Activité des Collaborateurs",
         title: "Transferts reçus = Appels directs",
         date: "Initial",
-        summary: "Un appel transféré vers un agent (qu'il provienne d'une autre queue ou du sein de la même queue) est comptabilisé comme un appel direct pour l'agent receveur.",
-        justification: "Du point de vue de la charge de travail de l'agent receveur, un transfert et un direct sont identiques : il décroche et traite la demande. Côté queue, l'appel reste crédité à l'agent initial (pas de double comptage).",
-        impact: "La jauge de charge et le score reflètent fidèlement le travail réel de chaque agent, quelle que soit l'origine de l'appel.",
+        summary: "Un appel transféré vers un collaborateur (qu'il provienne d'une autre queue ou du sein de la même queue) est comptabilisé comme un appel direct pour le collaborateur receveur.",
+        justification: "Du point de vue de la charge de travail du collaborateur receveur, un transfert et un direct sont identiques : il décroche et traite la demande. Côté queue, l'appel reste crédité au collaborateur initial (pas de double comptage).",
+        impact: "La jauge de charge et le score reflètent fidèlement le travail réel de chaque collaborateur, quelle que soit l'origine de l'appel.",
     },
     {
         id: "3.3",
@@ -461,7 +461,7 @@ export default function DocumentationPage() {
                                     <div className="space-y-2 text-sm">
                                         <div className="flex items-center gap-2">
                                             <span className="text-emerald-600 font-bold">Répondu : 1</span>
-                                            <span className="text-slate-400">Aude (agent 993) a décroché au 2ème passage</span>
+                                            <span className="text-slate-400">Aude (collaborateur 993) a décroché au 2ème passage</span>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <span className="text-slate-400">Perdu : 0</span>
@@ -505,7 +505,7 @@ export default function DocumentationPage() {
                                     <div className="space-y-2 text-sm">
                                         <div className="flex items-center gap-2">
                                             <span className="text-slate-400">Répondu : 0</span>
-                                            <span className="text-slate-400">— aucun agent 993 n'a décroché</span>
+                                            <span className="text-slate-400">— aucun collaborateur 993 n'a décroché</span>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <span className="text-slate-400">Perdu : 0</span>
@@ -547,7 +547,7 @@ export default function DocumentationPage() {
                                     <div className="space-y-2 text-sm">
                                         <div className="flex items-center gap-2">
                                             <span className="text-emerald-600 font-bold">Répondu : 1</span>
-                                            <span className="text-slate-400">Maxime (agent 993) a répondu via transfert</span>
+                                            <span className="text-slate-400">Maxime (collaborateur 993) a répondu via transfert</span>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <span className="text-slate-400">Perdu : 0</span>
@@ -590,7 +590,7 @@ export default function DocumentationPage() {
                                     <div className="space-y-2 text-sm">
                                         <div className="flex items-center gap-2">
                                             <span className="text-slate-400">Répondu : 0</span>
-                                            <span className="text-slate-400">— aucun agent 993 n'a décroché</span>
+                                            <span className="text-slate-400">— aucun collaborateur 993 n'a décroché</span>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <span className="text-red-600 font-bold">Perdu : 1</span>

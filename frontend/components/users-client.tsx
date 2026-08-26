@@ -44,7 +44,7 @@ const roleLabels: Record<Role, string> = {
     ADMIN: "Administrateur",
     MANAGER: "Manager",
     MODERATOR: "Modérateur",
-    AGENT: "Agent",
+    AGENT: "Collaborateur",
 };
 
 interface UsersClientProps {

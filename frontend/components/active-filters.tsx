@@ -61,7 +61,7 @@ function formatConditionLabel(
     if (condition.negate) parts.push("PAS");
     if (condition.type) parts.push(typeLabels[condition.type] || condition.type);
     if (condition.queueNumber) parts.push(`Q${condition.queueNumber}`);
-    if (condition.agentNumber) parts.push(`Agent ${condition.agentNumber}`);
+    if (condition.agentNumber) parts.push(`Collaborateur ${condition.agentNumber}`);
     if (condition.result) parts.push(resultLabels[condition.result] || condition.result);
     return parts.length > 0 ? parts.join(" ") : "Tous";
 }

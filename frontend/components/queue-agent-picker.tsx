@@ -107,9 +107,9 @@ export function QueueAgentPicker({
             case "queues":
                 return "Rechercher une file...";
             case "agents":
-                return "Rechercher un agent...";
+                return "Rechercher un collaborateur...";
             default:
-                return "Rechercher une file ou un agent...";
+                return "Rechercher une file ou un collaborateur...";
         }
     }, [show]);
 
@@ -141,8 +141,8 @@ export function QueueAgentPicker({
                     type: "any-agent",
                     queueNumber: "",
                     queueName: "",
-                    label: "L'un des agents de la file",
-                    sublabel: "N'importe quel agent ayant répondu",
+                    label: "L'un des collaborateurs de la file",
+                    sublabel: "N'importe quel collaborateur ayant répondu",
                 });
             }
             if (show === "queues" || show === "both") {
@@ -185,7 +185,7 @@ export function QueueAgentPicker({
                     queueName: queue.queueName,
                     queueDepartment: queue.queueDepartment,
                     label: queue.queueName,
-                    sublabel: `File ${queue.queueNumber} • ${queue.memberCount} agent${queue.memberCount > 1 ? "s" : ""}`,
+                    sublabel: `File ${queue.queueNumber} • ${queue.memberCount} collaborateur${queue.memberCount > 1 ? "s" : ""}`,
                 });
             }
 

@@ -52,10 +52,10 @@ export function assessQueueHealth(queue: QueueHealthInput, now: number = Date.no
 
     if (queue.agents.length === 0) {
         level = "critical";
-        reasons.push("Aucun agent rattaché : les appels ne peuvent aboutir");
+        reasons.push("Aucun collaborateur rattaché : les appels ne peuvent aboutir");
     } else if (activeAgents === 0) {
         level = "critical";
-        reasons.push(`Aucun agent actif depuis ${AGENT_ACTIVE_DAYS} jours`);
+        reasons.push(`Aucun collaborateur actif depuis ${AGENT_ACTIVE_DAYS} jours`);
     }
 
     if (idleDays === null) {
@@ -68,11 +68,11 @@ export function assessQueueHealth(queue: QueueHealthInput, now: number = Date.no
 
     if (staleAgents > 0) {
         if (level === "ok") level = "warning";
-        reasons.push(`${staleAgents} agent(s) inactif(s) depuis plus de ${AGENT_STALE_DAYS} jours`);
+        reasons.push(`${staleAgents} collaborateur(s) inactif(s) depuis plus de ${AGENT_STALE_DAYS} jours`);
     }
 
     if (level === "ok") {
-        reasons.push(`${activeAgents} agent(s) actif(s), appels récents`);
+        reasons.push(`${activeAgents} collaborateur(s) actif(s), appels récents`);
     }
 
     return { level, reasons, activeAgents, staleAgents, idleDays };

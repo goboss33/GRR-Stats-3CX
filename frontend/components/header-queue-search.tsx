@@ -78,7 +78,7 @@ export function HeaderQueueSearch() {
                 show="both"
                 selectedQueueNumber={displayedQueue}
                 onSelect={(item) => selectQueue(item.queueNumber)}
-                placeholder="Rechercher un groupe ou un agent…"
+                placeholder="Rechercher un groupe ou un collaborateur…"
                 size="compact"
                 inputClassName="h-10"
             />

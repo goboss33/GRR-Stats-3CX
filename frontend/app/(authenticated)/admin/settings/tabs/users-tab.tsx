@@ -207,7 +207,7 @@ export function UsersTab() {
                                                         user.role === "AGENT" && "bg-green-50 text-green-700 border-green-200"
                                                     )}
                                                 >
-                                                    {user.role === "ADMIN" ? "Administrateur" : user.role === "MANAGER" ? "Manager" : user.role === "MODERATOR" ? "Modérateur" : "Agent"}
+                                                    {user.role === "ADMIN" ? "Administrateur" : user.role === "MANAGER" ? "Manager" : user.role === "MODERATOR" ? "Modérateur" : "Collaborateur"}
                                                 </Badge>
                                             </td>
                                             <td className="py-3 px-4">
@@ -320,7 +320,7 @@ export function UsersTab() {
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="AGENT">Agent</SelectItem>
+                                    <SelectItem value="AGENT">Collaborateur</SelectItem>
                                     <SelectItem value="MODERATOR">Modérateur</SelectItem>
                                     <SelectItem value="MANAGER">Manager</SelectItem>
                                     {currentUserRole === "ADMIN" && <SelectItem value="ADMIN">Administrateur</SelectItem>}
@@ -369,7 +369,7 @@ export function UsersTab() {
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="AGENT">Agent</SelectItem>
+                                    <SelectItem value="AGENT">Collaborateur</SelectItem>
                                     <SelectItem value="MODERATOR">Modérateur</SelectItem>
                                     <SelectItem value="MANAGER">Manager</SelectItem>
                                     {currentUserRole === "ADMIN" && <SelectItem value="ADMIN">Administrateur</SelectItem>}

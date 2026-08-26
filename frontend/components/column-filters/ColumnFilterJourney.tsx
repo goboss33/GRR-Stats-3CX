@@ -425,8 +425,8 @@ export function ColumnFilterJourney({
             }
 
             if (c.queueNumber) parts.push(<span key="q">Q{c.queueNumber}</span>);
-            if (c.queueAgentNumber) parts.push(<span key="qa">Ag.{c.queueAgentNumber}</span>);
-            if (c.agentNumber) parts.push(<span key="ag">Ag.{c.agentNumber}</span>);
+            if (c.queueAgentNumber) parts.push(<span key="qa">Col.{c.queueAgentNumber}</span>);
+            if (c.agentNumber) parts.push(<span key="ag">Col.{c.agentNumber}</span>);
             const resultOpt = RESULT_OPTIONS.find(o => o.value === c.result);
             if (resultOpt && c.result) parts.push(<span key="res">{resultOpt.label}</span>);
             if (c.firstSegment) parts.push(<span key="first">1er</span>);
@@ -595,7 +595,7 @@ export function ColumnFilterJourney({
                                                 handleQueueAgentChange(groupIndex, conditionIndex, item.agentExtension);
                                             }
                                         }}
-                                        placeholder="Sélectionner un agent..."
+                                        placeholder="Sélectionner un collaborateur..."
                                         displayValue={condition.queueAgentNumber === '*' ? 'L\'un des agents de la file' : getQueueAgentDisplayValue(condition.queueAgentNumber, queues)}
                                         inputClassName="h-7 text-xs"
                                         showAnyOption={true}

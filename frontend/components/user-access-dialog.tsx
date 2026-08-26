@@ -220,7 +220,7 @@ export function UserAccessDialog({
                         {" — ne verra que les files cochées ci-dessous"}
                         {isGlobalRole
                             ? ", plus tous les postes du tenant (y compris hors file)."
-                            : ", et les agents qui en dépendent."}
+                            : ", et les collaborateurs qui en dépendent."}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -425,7 +425,7 @@ export function UserAccessDialog({
                             {/* Ratios du tableau des agents — trois niveaux, pas un interrupteur. */}
                             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
                                 <div className="min-w-0">
-                                    <p className="text-sm font-medium">Ratios du tableau des agents</p>
+                                    <p className="text-sm font-medium">Ratios du tableau des collaborateurs</p>
                                     <p className="text-xs text-slate-500">
                                         Les dénominateurs (« 85/111 ») du tableau de performance des équipes.
                                         Par défaut : Partout pour ADMIN et MODERATOR, Aucun pour MANAGER
@@ -473,7 +473,7 @@ export function UserAccessDialog({
                                 {
                                     key: "canViewNotifications" as const,
                                     label: "Voir la cloche d'alertes",
-                                    hint: "Anomalies détectées dans son périmètre (agents déconnectés de leur file…). Par défaut : activé pour ADMIN et MODERATOR, désactivé pour MANAGER",
+                                    hint: "Anomalies détectées dans son périmètre (collaborateurs déconnectés de leur file…). Par défaut : activé pour ADMIN et MODERATOR, désactivé pour MANAGER",
                                 },
                             ].map((p) => (
                                 <div key={p.key} className="flex items-center justify-between rounded-lg border p-3">

@@ -156,7 +156,7 @@ export function UserFormDialog({
                             <SelectContent>
                                 <SelectItem value="ADMIN">Administrateur</SelectItem>
                                 <SelectItem value="MANAGER">Manager</SelectItem>
-                                <SelectItem value="AGENT">Agent</SelectItem>
+                                <SelectItem value="AGENT">Collaborateur</SelectItem>
                             </SelectContent>
                         </Select>
                         {isSelf && (

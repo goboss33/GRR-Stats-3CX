@@ -138,7 +138,7 @@ export const RULE_SPECS: RuleSpec[] = [
               consequence: "Déconseillé : chez vous l'appelant ne peut pas laisser de message, l'appel se termine simplement.",
               summary: "Les messageries comptent comme Répondus" },
         ],
-        more: "Le critère est le sort final : l'appel a été « traité » par la messagerie vocale. Un appel répondu par un agent puis passé en messagerie reste Répondu — la préséance protège le travail fait.",
+        more: "Le critère est le sort final : l'appel a été « traité » par la messagerie vocale. Un appel répondu par un collaborateur puis passé en messagerie reste Répondu — la préséance protège le travail fait.",
     },
     {
         kind: "shortAbandon", key: "shortAbandonThresholdSeconds", section: 2,
@@ -161,16 +161,16 @@ export const RULE_SPECS: RuleSpec[] = [
         kind: "choice", key: "shortAbandonClock", section: 2,
         question: "Sur quelle durée juge-t-on cet abandon court ?",
         caseKind: "team_clock",
-        caseQuestion: "Cet appelant a longuement sonné chez un agent avant de raccrocher vite en file : son appel doit-il compter pour {queue} ?",
+        caseQuestion: "Cet appelant a longuement sonné chez un collaborateur avant de raccrocher vite en file : son appel doit-il compter pour {queue} ?",
         options: [
             { value: "passage", label: "Le passage en file seul",
-              consequence: "Seul le temps passé dans la file est jugé. Angle mort : l'appelant qui a déjà sonné ~30 s sur la ligne directe d'un agent puis raccroche en 2 s de file est traité comme un fantôme — c'est le motif dominant des abandons courts (~45 % mesuré).",
+              consequence: "Seul le temps passé dans la file est jugé. Angle mort : l'appelant qui a déjà sonné ~30 s sur la ligne directe d'un collaborateur puis raccroche en 2 s de file est traité comme un fantôme — c'est le motif dominant des abandons courts (~45 % mesuré).",
               summary: "L'abandon court est jugé sur le seul passage en file" },
             { value: "team", label: "Toute la sollicitation de l'équipe",
-              consequence: "On cumule sonneries directes sur les agents du groupe + passages dans sa file. L'appelant qui a sonné 30 s chez un agent avant la file compte (Perdu) ; l'équipe qui ne l'a vu que 2 s en débordement reste non pénalisée — chaque équipe a sa propre horloge.",
+              consequence: "On cumule sonneries directes sur les collaborateurs du groupe + passages dans sa file. L'appelant qui a sonné 30 s chez un collaborateur avant la file compte (Perdu) ; l'équipe qui ne l'a vu que 2 s en débordement reste non pénalisée — chaque équipe a sa propre horloge.",
               summary: "L'abandon court est jugé sur toute la sollicitation de l'équipe (sonneries directes + file)" },
         ],
-        more: "Chaque équipe a sa propre horloge : on n'y compte que le temps passé avec ELLE (ses agents en direct + sa file). Le même appel peut donc être Perdu chez l'équipe qui l'a laissé filer 30 secondes, et rester invisible chez la réception qui ne l'a vu que 2 secondes en débordement. Mesuré en juillet 2026 : ~1 250 appels/mois redeviendraient visibles avec l'horloge d'équipe.",
+        more: "Chaque équipe a sa propre horloge : on n'y compte que le temps passé avec ELLE (ses collaborateurs en direct + sa file). Le même appel peut donc être Perdu chez l'équipe qui l'a laissé filer 30 secondes, et rester invisible chez la réception qui ne l'a vu que 2 secondes en débordement. Mesuré en juillet 2026 : ~1 250 appels/mois redeviendraient visibles avec l'horloge d'équipe.",
     },
 
     // ── 3. Comment juge-t-on un appel ? ────────────────────────────────────
@@ -181,7 +181,7 @@ export const RULE_SPECS: RuleSpec[] = [
         caseQuestion: "Pour {queue}, cet appel doit-il compter comme répondu ?",
         options: [
             { value: "overflow", label: "Non — Transféré chez l'origine",
-              consequence: "L'appel garde le statut « Transféré » chez l'équipe qui a décroché (visible dans le tableau des agents et les logs) et « Répondu » chez celle qui a servi le client en dernier. La vignette Répondus des deux équipes le compte : le transfert accompli est du travail fait. Un transfert qui échoue laisse l'appel Répondu ici.",
+              consequence: "L'appel garde le statut « Transféré » chez l'équipe qui a décroché (visible dans le tableau des collaborateurs et les logs) et « Répondu » chez celle qui a servi le client en dernier. La vignette Répondus des deux équipes le compte : le transfert accompli est du travail fait. Un transfert qui échoue laisse l'appel Répondu ici.",
               summary: "Le transfert accompli reste visible comme Transféré chez l'équipe d'origine" },
             { value: "answered", label: "Oui — Répondu partout",
               consequence: "Chaque équipe est jugée sur son décroché ; un même client peut être « répondu » chez deux équipes.",
@@ -193,10 +193,10 @@ export const RULE_SPECS: RuleSpec[] = [
         kind: "choice", key: "unansweredDirectOverflow", section: 3,
         question: "Une sonnerie directe non répondue qui part vers la file d'une autre équipe, c'est… ?",
         caseKind: "direct_overflow",
-        caseQuestion: "Cet appel a sonné chez un agent de {queue} sans réponse, puis est parti vers une autre file : Perdu ou Débordé pour {queue} ?",
+        caseQuestion: "Cet appel a sonné chez un collaborateur de {queue} sans réponse, puis est parti vers une autre file : Perdu ou Débordé pour {queue} ?",
         options: [
             { value: "lost", label: "Perdu",
-              consequence: "L'équipe de l'agent est jugée comme si l'appel était mort chez elle, même s'il a continué — et peut-être abouti — ailleurs.",
+              consequence: "L'équipe du collaborateur est jugée comme si l'appel était mort chez elle, même s'il a continué — et peut-être abouti — ailleurs.",
               summary: "Une sonnerie directe non répondue partie vers une autre file compte Perdue" },
             { value: "overflow", label: "Débordé",
               consequence: "La même case que le débordement de file : « l'appel nous a échappé ». Ne change ni les reçus ni la prise en charge — seulement la ventilation Perdus → Débordements. Symétrique du transfert accompli, côté non-décroché.",
@@ -247,14 +247,14 @@ export const RULE_SPECS: RuleSpec[] = [
     // ── 4. Crédit & performance ────────────────────────────────────────────
     {
         kind: "choice", key: "agentCredit", section: 4,
-        question: "Plusieurs agents décrochent le même appel : qui a le crédit ?",
+        question: "Plusieurs collaborateurs décrochent le même appel : qui a le crédit ?",
         options: [
             { value: "lastAnswer", label: "Le dernier décrocheur",
-              consequence: "Un appel = un agent crédité (celui qui a servi le client en dernier) ; les transferts accomplis sont crédités à part, dans la colonne Transférés. La somme du tableau par agent égale les vignettes.",
-              summary: "Le crédit d'un appel va au dernier décrocheur — la somme du tableau agents égale les vignettes" },
+              consequence: "Un appel = un collaborateur crédité (celui qui a servi le client en dernier) ; les transferts accomplis sont crédités à part, dans la colonne Transférés. La somme du tableau par collaborateur égale les vignettes.",
+              summary: "Le crédit d'un appel va au dernier décrocheur — la somme du tableau collaborateurs égale les vignettes" },
             { value: "each", label: "Chaque décrocheur",
               consequence: "On lit l'activité de chacun, mais un appel partagé compte dans plusieurs lignes : la somme du tableau dépasse le total.",
-              summary: "Chaque agent décrocheur est crédité (la somme du tableau dépasse le total)" },
+              summary: "Chaque collaborateur décrocheur est crédité (la somme du tableau dépasse le total)" },
         ],
     },
     {
@@ -356,7 +356,7 @@ export const RECOMMENDED_RULES: ClassificationRules = {
 
 /** Pastilles du glossaire — mêmes couleurs que les vignettes des statistiques. */
 export const GLOSSARY = [
-    { label: "Répondu", className: "bg-emerald-50 text-emerald-700 border-emerald-200", title: "Un agent du groupe a servi le client en dernier" },
+    { label: "Répondu", className: "bg-emerald-50 text-emerald-700 border-emerald-200", title: "Un collaborateur du groupe a servi le client en dernier" },
     { label: "Transféré", className: "bg-emerald-50 text-emerald-600 border-emerald-200", title: "Décroché ici, puis client servi ailleurs — le transfert accompli, compté dans Répondus" },
     { label: "Débordé", className: "bg-orange-50 text-orange-700 border-orange-200", title: "Parti vers une autre file SANS décroché ici" },
     { label: "Perdu", className: "bg-red-50 text-red-700 border-red-200", title: "Personne n'a servi le client" },

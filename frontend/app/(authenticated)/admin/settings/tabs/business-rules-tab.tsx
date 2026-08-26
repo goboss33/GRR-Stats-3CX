@@ -156,7 +156,7 @@ export function BusinessRulesTab() {
                         </p>
                         <p className="text-xs text-slate-500">
                             {perimeterEnforcementEnabled
-                                ? "Chaque manager ne voit que ses groupes et ses agents. Les ADMIN et MODERATOR gardent un accès global."
+                                ? "Chaque manager ne voit que ses groupes et ses collaborateurs. Les ADMIN et MODERATOR gardent un accès global."
                                 : "Tout le monde voit l'ensemble des données. À activer une fois les groupes classés et les périmètres attribués."}
                         </p>
                     </div>

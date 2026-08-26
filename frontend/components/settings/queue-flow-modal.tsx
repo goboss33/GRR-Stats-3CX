@@ -71,7 +71,7 @@ const KIND_LABELS: Record<FlowKind, string> = {
 
 const REASON_LABELS: Record<string, string> = {
     no_answer: "non-réponse",
-    no_destinations: "aucun agent",
+    no_destinations: "aucun collaborateur",
     busy: "occupé",
     timeout: "délai dépassé",
     none: "renvoi",
@@ -446,7 +446,7 @@ export function QueueFlowModal({ queueNumber, queueName, onClose }: {
                                 Agents sollicités (12 derniers mois) — répondus sur {topology.windowDays} jours
                             </p>
                             {topology.agents.length === 0 ? (
-                                <p className="text-sm text-slate-400">Aucun agent sollicité.</p>
+                                <p className="text-sm text-slate-400">Aucun collaborateur sollicité.</p>
                             ) : (
                                 <div className="flex flex-wrap gap-1.5">
                                     {topology.agents.map((agent) => (

@@ -371,7 +371,7 @@ export function CallChainTimeline({ segments }: { segments: CallChainSegment[] }
                     </span>
                     <div className="flex items-center gap-1">
                         {isTransfer && (
-                            <Tip content="Transfert - Appel transféré par un agent">
+                            <Tip content="Transfert - Appel transféré par un collaborateur">
                                 <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300">
                                     <ArrowRightLeft className="h-3 w-3 mr-1" />
                                     Transfert
@@ -387,7 +387,7 @@ export function CallChainTimeline({ segments }: { segments: CallChainSegment[] }
                             </Tip>
                         )}
                         {retryCount > 0 && (
-                            <Tip content={`Tentative #${retryCount + 1} - Agent était occupé précédemment`}>
+                            <Tip content={`Tentative #${retryCount + 1} — le collaborateur était occupé précédemment`}>
                                 <Badge variant="outline" className="bg-violet-100 text-violet-700 border-violet-300">
                                     <RefreshCw className="h-3 w-3 mr-1" />
                                     Retry #{retryCount + 1}
@@ -506,7 +506,7 @@ export function CallChainTimeline({ segments }: { segments: CallChainSegment[] }
                                 key={seg.id}
                                 content={
                                     answeredNext ? 'A répondu juste après' :
-                                        isBusy ? 'Agent occupé - sera retenté' :
+                                        isBusy ? 'Collaborateur occupé - sera retenté' :
                                             retryCount > 0 ? `Tentative #${retryCount + 1}` :
                                                 undefined
                                 }

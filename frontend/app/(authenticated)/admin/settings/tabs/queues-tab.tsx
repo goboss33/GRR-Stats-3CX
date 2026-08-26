@@ -123,7 +123,7 @@ export function QueuesTab() {
             if (!res.ok) throw new Error(data.error || "Découverte impossible");
 
             toast.success(
-                `${data.discovered} file(s) analysée(s) — ${data.created} nouvelle(s), ${data.agentLinks} rattachement(s) d'agents`,
+                `${data.discovered} file(s) analysée(s) — ${data.created} nouvelle(s), ${data.agentLinks} rattachement(s) de collaborateurs`,
             );
             if (data.renamed?.length > 0) {
                 for (const r of data.renamed) {
@@ -327,7 +327,7 @@ export function QueuesTab() {
                         <Input
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Rechercher par numéro, nom, région, entité ou agent…"
+                            placeholder="Rechercher par numéro, nom, région, entité ou collaborateur…"
                             className="pl-9"
                         />
                     </div>
@@ -432,7 +432,7 @@ export function QueuesTab() {
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Entité</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Région</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Service</th>
-                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Agents</th>
+                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Collaborateurs</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Dernier appel</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Statut</th>
                                     </tr>
@@ -446,7 +446,7 @@ export function QueuesTab() {
                                                 "cursor-pointer hover:bg-slate-50",
                                                 q.status === "ARCHIVED" && "opacity-60",
                                             )}
-                                            title="Voir le détail (agents, historique)"
+                                            title="Voir le détail (collaborateurs, historique)"
                                         >
                                             {/* Les cellules interactives stoppent la propagation pour ne pas
                                                 ouvrir la fiche à chaque édition d'étiquette. */}
@@ -581,7 +581,7 @@ export function QueuesTab() {
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                     <p className="mb-2 font-medium text-slate-700">À savoir :</p>
                     <ul className="list-inside list-disc space-y-1">
-                        <li>Cliquez sur le nom d&apos;une file pour voir ses agents et l&apos;historique de ses noms.</li>
+                        <li>Cliquez sur le nom d&apos;une file pour voir ses collaborateurs et l&apos;historique de ses noms.</li>
                         <li>Les files sont découvertes via l&apos;historique des appels : une nouvelle file n&apos;apparaît qu&apos;après son premier appel traité.</li>
                         <li>Une file supprimée dans 3CX ne disparaît pas d&apos;elle-même : elle passe en « Archivée » après 90 jours sans appel.</li>
                         <li>Les étiquettes servent à composer les périmètres ; elles ne donnent aucun droit par elles-mêmes.</li>

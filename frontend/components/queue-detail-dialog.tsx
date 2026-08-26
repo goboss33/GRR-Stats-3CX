@@ -179,7 +179,7 @@ export function QueueDetailDialog({
                         {/* Repères d'activité */}
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                             {[
-                                { label: "Agents", value: detail.agents.length, icon: Users },
+                                { label: "Collaborateurs", value: detail.agents.length, icon: Users },
                                 { label: "Actifs (7j)", value: activeCount, icon: Phone },
                                 { label: "Sollicitations", value: totalAttempts.toLocaleString("fr-CH"), icon: BarChart3 },
                                 {
@@ -216,7 +216,7 @@ export function QueueDetailDialog({
                         {/* Agents */}
                         <div className="space-y-2">
                             <div className="flex items-center justify-between gap-3">
-                                <h3 className="text-sm font-medium text-slate-900">Agents sollicités par cette file</h3>
+                                <h3 className="text-sm font-medium text-slate-900">Collaborateurs sollicités par cette file</h3>
                                 <div className="relative w-48">
                                     <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                                     <Input
@@ -253,8 +253,8 @@ export function QueueDetailDialog({
                                 {agents.length === 0 && (
                                     <p className="py-8 text-center text-sm text-slate-500">
                                         {detail.agents.length === 0
-                                            ? "Aucun agent n'a été sollicité par cette file"
-                                            : "Aucun agent ne correspond"}
+                                            ? "Aucun collaborateur n'a été sollicité par cette file"
+                                            : "Aucun collaborateur ne correspond"}
                                     </p>
                                 )}
                             </div>

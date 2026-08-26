@@ -40,9 +40,9 @@ type SortDirection = "asc" | "desc";
 
 const columnTooltips: Record<string, string> = {
     name: "La pastille compare ses appels pris en charge à la période précédente",
-    queueAnswered: "Contribution de l'agent aux appels d'équipe",
+    queueAnswered: "Contribution du collaborateur aux appels d'équipe",
     directAnswered: "Appels directs répondus",
-    transferred: "Appels transférés par l'agent à une autre équipe",
+    transferred: "Appels transférés par le collaborateur à une autre équipe",
     totalAnswered: "La somme : appels directs + appels d'équipe + appels transférés",
     totalHandlingTimeSeconds: "Temps total en conversation",
     avgHandlingTimeSeconds: "Durée moyenne d'une conversation",
@@ -208,7 +208,7 @@ export function AgentPerformanceTableV2({
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Users className="h-5 w-5 text-blue-600" />
-                        Performance des Agents
+                        Activité des Collaborateurs
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -226,7 +226,7 @@ export function AgentPerformanceTableV2({
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Users className="h-5 w-5 text-blue-600" />
-                        Performance des Agents
+                        Activité des Collaborateurs
                         <span className="text-sm font-normal text-slate-500">
                             ({agents.length} agent{agents.length > 1 ? "s" : ""})
                         </span>
@@ -237,7 +237,7 @@ export function AgentPerformanceTableV2({
                         <table className="w-full">
                             <thead className="bg-slate-50 border-y">
                                 <tr>
-                                    <SortHeader field="name" label="Agent" className="w-[22%]" />
+                                    <SortHeader field="name" label="Collaborateur" className="w-[22%]" />
                                     {/* Hiérarchie : les 3 composantes en petit et centrées, leur
                                         somme « Prise en charge totale » en gros sur colonne
                                         bleutée, sa décomposition en barre tricolore. */}

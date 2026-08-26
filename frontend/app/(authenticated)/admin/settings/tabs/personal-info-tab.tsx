@@ -167,7 +167,7 @@ export function PersonalInfoTab() {
                         <Label htmlFor="role">Rôle</Label>
                         <Input
                             id="role"
-                            value={profile?.role === "ADMIN" ? "Administrateur" : profile?.role === "MANAGER" ? "Manager" : profile?.role === "MODERATOR" ? "Modérateur" : "Agent"}
+                            value={profile?.role === "ADMIN" ? "Administrateur" : profile?.role === "MANAGER" ? "Manager" : profile?.role === "MODERATOR" ? "Modérateur" : "Collaborateur"}
                             disabled
                             className="bg-slate-100"
                         />

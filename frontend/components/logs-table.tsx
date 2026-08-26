@@ -293,7 +293,7 @@ export function LogsTable({
                                     <ColumnFilterInput
                                         value={handledBySearch}
                                         onChange={onHandledBySearchChange}
-                                        placeholder="Agent..."
+                                        placeholder="Collaborateur..."
                                     />
                                 </TableHead>
                             )}
