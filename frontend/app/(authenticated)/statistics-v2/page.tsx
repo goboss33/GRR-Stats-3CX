@@ -4,6 +4,7 @@ import { getSelectedServer } from "@/lib/selected-server";
 import { logger } from "@/lib/logger";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { FilDeProgression, ZoneEnEchec, ContenuPerime } from "@/components/ui/etat-chargement";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
@@ -47,17 +48,36 @@ export default function StatisticsV2Page() {
     // les deux autres suivent en tâche de fond — le toggle bascule alors sans
     // rechargement. Le jeton de contexte écarte les réponses devenues
     // obsolètes (changement de groupe ou de période en cours de route).
-    const [statsCache, setStatsCache] = useState<Partial<Record<CallOrigin, QueueStatistics>>>({});
+    // Le cache PORTE le contexte auquel il appartient : il n'est plus vidé au
+    // changement de période ou de groupe, seulement remplacé à l'arrivée des
+    // nouvelles données. C'est ce qui permet de garder les chiffres à l'écran
+    // pendant le recalcul au lieu de le vider.
+    const [statsCache, setStatsCache] = useState<{
+        contexte: string;
+        parProvenance: Partial<Record<CallOrigin, QueueStatistics>>;
+    }>({ contexte: "", parProvenance: {} });
+    // Message d'échec de la variante AFFICHÉE. Les préchargements silencieux
+    // n'alertent pas : leur échec ne prive de rien tant qu'on ne bascule pas.
+    const [erreur, setErreur] = useState<string | null>(null);
     const contextKeyRef = useRef<string>("");
     const originRef = useRef<CallOrigin>(origin);
     originRef.current = origin;
 
-    const statistics = statsCache[origin] ?? null;
+    // Ce qui est demandé maintenant…
+    const statsDemandees = statsCache.parProvenance[origin] ?? null;
+    // …et ce qui reste affiché en attendant. Un écran qui se vide fait perdre
+    // le repère ET saute ; on garde donc le dernier rendu, estompé.
+    const dernierAffiche = useRef<QueueStatistics | null>(null);
+    useEffect(() => {
+        if (statsDemandees) dernierAffiche.current = statsDemandees;
+    }, [statsDemandees]);
+    const statistics = statsDemandees ?? dernierAffiche.current;
+    const perime = statsDemandees === null && statistics !== null;
 
     // Remonte au header les provenances déjà consultables (spinners du
     // toggle). Sans groupe choisi, rien n'est à charger : la bascule est une
     // simple présélection, tout reste cliquable.
-    useReportLoadedOrigins(selectedQueueNumber ? ORIGINS.filter((o) => !!statsCache[o]) : ORIGINS);
+    useReportLoadedOrigins(selectedQueueNumber ? ORIGINS.filter((o) => !!statsCache.parProvenance[o]) : ORIGINS);
 
     // Default to current month
     // La période vient de l'URL (cf. lib/url-state).
@@ -145,9 +165,21 @@ export default function StatisticsV2Page() {
         try {
             const data = await getQueueStatistics(serverId, selectedQueueNumber, dateRange.startDate, dateRange.endDate, o);
             if (contextKeyRef.current !== ctxKey) return;
-            setStatsCache((cache) => ({ ...cache, [o]: data }));
+            // Premier résultat d'un nouveau contexte : il remplace le cache
+            // entier (les autres provenances décrivaient l'ancienne période).
+            setStatsCache((cache) => cache.contexte === ctxKey
+                ? { contexte: ctxKey, parProvenance: { ...cache.parProvenance, [o]: data } }
+                : { contexte: ctxKey, parProvenance: { [o]: data } });
+            if (withSpinner) setErreur(null);
         } catch (error) {
             logger.error("[StatisticsV2] getQueueStatistics error:", { origin: o, error });
+            // Un échec doit SE VOIR. Le message vient du service : il distingue
+            // notamment un dépassement de délai d'une panne quelconque.
+            if (withSpinner && contextKeyRef.current === ctxKey) {
+                setErreur(error instanceof Error && error.message
+                    ? error.message
+                    : "Les statistiques n'ont pas pu être calculées.");
+            }
         } finally {
             if (withSpinner && contextKeyRef.current === ctxKey) setIsLoading(false);
         }
@@ -165,7 +197,9 @@ export default function StatisticsV2Page() {
         // doit lui aussi périmer les réponses encore en vol.
         const ctxKey = `${getSelectedServer()}|${selectedQueueNumber}|${dateRange.startDate.toISOString()}|${dateRange.endDate.toISOString()}|${Date.now()}`;
         contextKeyRef.current = ctxKey;
-        setStatsCache({});
+        // Volontairement PAS de setStatsCache({}) : les chiffres précédents
+        // restent affichés, estompés, jusqu'à l'arrivée des nouveaux.
+        setErreur(null);
         setPrevTimelineCache({});
         setPrevStatsCache({});
         void (async () => {
@@ -193,7 +227,7 @@ export default function StatisticsV2Page() {
     // Bascule par le header : instantanée quand la variante est en cache ;
     // sinon chargement classique (clic plus rapide que le préchargement).
     useEffect(() => {
-        if (!statsCache[origin] && contextKeyRef.current && selectedQueueNumber) {
+        if (!statsCache.parProvenance[origin] && contextKeyRef.current && selectedQueueNumber) {
             void fetchIntoCache(contextKeyRef.current, origin, true);
         }
         // statsCache volontairement absent : ne réagir qu'à la bascule.
@@ -231,19 +265,26 @@ export default function StatisticsV2Page() {
                 <NoPerimeterNotice context="Les statistiques portent sur les groupes qui vous sont attribués, et aucun ne l'est pour le moment." />
             )}
 
-            {/* Loading */}
-            {isLoading && selectedQueueNumber && (
-                <div className="flex items-center justify-center py-20">
-                    <div className="flex flex-col items-center gap-4">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-                        <p className="text-slate-500">Chargement des statistiques...</p>
-                    </div>
+            {/* L'écran dit ce qu'il fait : un fil tant que ça calcule, un
+                message quand ça échoue, et les chiffres qui restent en place
+                entre les deux. */}
+            <FilDeProgression actif={isLoading && !!selectedQueueNumber} libelle="Calcul des statistiques" />
+
+            {erreur && (
+                <ZoneEnEchec message={erreur} onReessayer={handleRefresh} enCours={isLoading} />
+            )}
+
+            {/* Première visite : rien à garder à l'écran. Le fil ci-dessus
+                porte déjà le signal ; ce bloc réserve la place. */}
+            {!statistics && !erreur && isLoading && selectedQueueNumber && (
+                <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-500">
+                    Calcul des statistiques…
                 </div>
             )}
 
             {/* Statistics content */}
-            {statistics && !isLoading && (
-                <>
+            {statistics && (
+                <ContenuPerime perime={perime} className="space-y-6">
                     {/* Team Overview - KPIs + Répartition fusionnés */}
                     <TeamOverview
                         kpis={statistics.kpis}
@@ -303,7 +344,7 @@ export default function StatisticsV2Page() {
                             </div>
                         </div>
                     </div>
-                </>
+                </ContenuPerime>
             )}
         </div>
     );

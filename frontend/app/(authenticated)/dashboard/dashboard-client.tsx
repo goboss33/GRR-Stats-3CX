@@ -13,6 +13,7 @@ import { useReportLoadedOrigins, useRegisterHeaderRefresh } from "@/components/h
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FilDeProgression, ZoneEnEchec, ContenuPerime } from "@/components/ui/etat-chargement";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
 import { PeriodComparisonToggle, usePeriodComparisonPreference } from "@/components/period-comparison-toggle";
@@ -77,16 +78,30 @@ export default function DashboardClient() {
     // null = pas encore su : les vignettes NAISSENT sans lien, qui apparaît à
     // la confirmation — l'inverse (lien actif puis retiré) faisait scintiller.
     const [canViewLogs, setCanViewLogs] = useState<boolean | null>(null);
-    const [dataCache, setDataCache] = useState<Partial<Record<CallOrigin, DashboardData>>>({});
+    // Même doctrine que l'écran de détail : le cache porte son contexte et
+    // n'est remplacé qu'à l'arrivée des nouvelles données — l'écran ne se vide
+    // jamais, il s'estompe le temps du recalcul.
+    const [dataCache, setDataCache] = useState<{
+        contexte: string;
+        parProvenance: Partial<Record<CallOrigin, DashboardData>>;
+    }>({ contexte: "", parProvenance: {} });
+    const [erreur, setErreur] = useState<string | null>(null);
     // Le jeton de contexte écarte les réponses devenues obsolètes (changement
     // de période — ou « Rafraîchir » — pendant un préchargement en vol).
     const contextKeyRef = useRef<string>("");
     const originRef = useRef<CallOrigin>(origin);
     originRef.current = origin;
 
-    useReportLoadedOrigins(ORIGINS.filter((o) => !!dataCache[o]));
+    useReportLoadedOrigins(ORIGINS.filter((o) => !!dataCache.parProvenance[o]));
 
-    const current = dataCache[origin] ?? null;
+    // Ce qui est demandé, et ce qui reste affiché en attendant.
+    const donneesDemandees = dataCache.parProvenance[origin] ?? null;
+    const dernierAffiche = useRef<DashboardData | null>(null);
+    useEffect(() => {
+        if (donneesDemandees) dernierAffiche.current = donneesDemandees;
+    }, [donneesDemandees]);
+    const current = donneesDemandees ?? dernierAffiche.current;
+    const perime = donneesDemandees === null && current !== null;
     const metrics = current?.metrics ?? null;
     const timelineData = current?.timelineData ?? [];
     const heatmapData = current?.heatmapData ?? [];
@@ -141,17 +156,24 @@ export default function DashboardClient() {
     const reloadAll = useCallback(() => {
         const ctxKey = `${getSelectedServer()}|${dateRange.startDate.toISOString()}|${dateRange.endDate.toISOString()}|${Date.now()}`;
         contextKeyRef.current = ctxKey;
-        setDataCache({});
+        // Volontairement PAS de setDataCache({}) : les chiffres précédents
+        // tiennent l'écran, estompés, jusqu'aux nouveaux.
+        setErreur(null);
         setIsLoading(true);
         getDashboardAllOrigins(getSelectedServer(), dateRange.startDate, dateRange.endDate)
             .then((all) => {
                 if (contextKeyRef.current !== ctxKey) return;
-                setDataCache(all);
+                setDataCache({ contexte: ctxKey, parProvenance: all });
                 setIsInitialLoad(false);
             })
             .catch((error) => {
                 console.error("Error fetching dashboard data:", error);
-                if (contextKeyRef.current === ctxKey) setIsInitialLoad(false);
+                if (contextKeyRef.current !== ctxKey) return;
+                // Un échec doit se voir et se rejouer.
+                setErreur(error instanceof Error && error.message
+                    ? error.message
+                    : "Le tableau de bord n'a pas pu être calculé.");
+                setIsInitialLoad(false);
             })
             .finally(() => {
                 if (contextKeyRef.current === ctxKey) setIsLoading(false);
@@ -203,9 +225,21 @@ export default function DashboardClient() {
 
     return (
         <div className="space-y-6">
+            {/* L'écran dit ce qu'il fait : un fil tant que ça calcule, un
+                message quand ça échoue. */}
+            <FilDeProgression actif={isLoading} libelle="Calcul du tableau de bord" />
+
+            {erreur && (
+                <ZoneEnEchec message={erreur} onReessayer={reloadAll} enCours={isLoading} />
+            )}
+
             {/* Pas de titre ici : le header de l'application le porte déjà
                 (cf. components/header). Le répéter volait une hauteur d'écran
                 aux chiffres, qui sont le sujet. */}
+            {/* Estompage pendant le recalcul : ce bloc-ci seulement. La
+                grille des équipes, plus bas, se remplit carte par carte de son
+                côté — l'assombrir effacerait justement ce qui va bien. */}
+            <ContenuPerime perime={perime} className="space-y-6">
             {/* Chiffres-clés. Une seule vignette réutilisée : le balisage n'est
                 plus recopié, donc plus de divergences de mise en forme. */}
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
@@ -324,6 +358,7 @@ export default function DashboardClient() {
                     </CardContent>
                 </Card>
             </div>
+            </ContenuPerime>
 
             {/* Mes équipes — l'aperçu du périmètre, favorites d'abord. Le
                 clin d'œil du manager : pastille rouge = équipe à aller voir. */}

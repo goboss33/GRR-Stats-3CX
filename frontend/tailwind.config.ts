@@ -49,6 +49,18 @@ const config: Config = {
                 md: "calc(var(--radius) - 2px)",
                 sm: "calc(var(--radius) - 4px)",
             },
+            keyframes: {
+                // Fil de progression indéterminé : un segment traverse la
+                // barre. Aucune promesse de durée — on ne sait pas combien de
+                // temps le calcul prendra, et un pourcentage inventé mentirait.
+                glissement: {
+                    "0%": { transform: "translateX(-100%)" },
+                    "100%": { transform: "translateX(400%)" },
+                },
+            },
+            animation: {
+                glissement: "glissement 1.4s ease-in-out infinite",
+            },
         },
     },
     plugins: [],
