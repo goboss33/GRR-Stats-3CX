@@ -1,4 +1,5 @@
 "use client";
+import { Attente } from "@/components/ui/etat-chargement";
 
 import { getSelectedServer } from "@/lib/selected-server";
 
@@ -51,7 +52,7 @@ export function CallChainModal({ callHistoryId, onClose }: CallChainModalProps) 
 
                 {isLoading ? (
                     <div className="h-48 flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900" />
+                        <Attente libelle="Chargement du parcours…" />
                     </div>
                 ) : segments.length === 0 ? (
                     <div className="text-center py-8 text-slate-500">

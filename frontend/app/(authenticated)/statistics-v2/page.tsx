@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FilDeProgression, ZoneEnEchec, ContenuPerime } from "@/components/ui/etat-chargement";
+import { SqueletteEcranStats } from "@/components/stats-v2/squelettes";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
@@ -250,11 +251,9 @@ export default function StatisticsV2Page() {
 
     if (isLoadingQueues) {
         return (
-            <div className="flex items-center justify-center h-screen text-slate-500">
-                <div className="flex flex-col items-center gap-4">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900" />
-                    <p>Chargement des files d'attente...</p>
-                </div>
+            <div className="mx-auto max-w-[1800px] space-y-6 p-6">
+                <FilDeProgression actif libelle="Chargement des files d'attente" />
+                <SqueletteEcranStats />
             </div>
         );
     }
@@ -274,12 +273,10 @@ export default function StatisticsV2Page() {
                 <ZoneEnEchec message={erreur} onReessayer={handleRefresh} enCours={isLoading} />
             )}
 
-            {/* Première visite : rien à garder à l'écran. Le fil ci-dessus
-                porte déjà le signal ; ce bloc réserve la place. */}
+            {/* Première visite : rien à garder à l'écran. La silhouette
+                exacte tient la place, le fil ci-dessus porte le signal. */}
             {!statistics && !erreur && isLoading && selectedQueueNumber && (
-                <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-500">
-                    Calcul des statistiques…
-                </div>
+                <SqueletteEcranStats />
             )}
 
             {/* Statistics content */}

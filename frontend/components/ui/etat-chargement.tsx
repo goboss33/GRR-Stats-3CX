@@ -104,6 +104,37 @@ export function ZoneEnEchec({
 }
 
 /**
+ * Attente COURTE et localisée : un bouton qui travaille, le contenu d'une
+ * fenêtre modale, une liste qui se remplit.
+ *
+ * Le seul indicateur tournant de l'application. Il remplace les arcs
+ * dessinés à la main (un cercle à bord unique, `border-b-2`) qui traînaient
+ * dans six fichiers avec chacun sa taille et sa couleur.
+ *
+ * ⚠️ À ne PAS utiliser au niveau d'une page : là, un squelette fidèle plus le
+ * fil de progression disent la même chose sans faire disparaître l'écran ni
+ * en changer les dimensions.
+ */
+export function Attente({
+    libelle,
+    className,
+    taille = "normale",
+}: {
+    /** Texte affiché à côté ; omis, l'indicateur reste seul mais annoncé. */
+    libelle?: string;
+    className?: string;
+    taille?: "petite" | "normale";
+}) {
+    const px = taille === "petite" ? "h-4 w-4" : "h-5 w-5";
+    return (
+        <span className={cn("inline-flex items-center gap-2 text-sm text-slate-500", className)}>
+            <Loader2 className={cn(px, "motion-safe:animate-spin")} aria-hidden="true" />
+            {libelle ? <span>{libelle}</span> : <span className="sr-only">Chargement en cours</span>}
+        </span>
+    );
+}
+
+/**
  * Enveloppe des chiffres encore affichés pendant un recalcul.
  *
  * Changer de période ne doit pas vider l'écran : les chiffres précédents

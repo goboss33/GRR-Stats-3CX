@@ -1,4 +1,5 @@
 "use client";
+import { Attente } from "@/components/ui/etat-chargement";
 
 import { getSelectedServer } from "@/lib/selected-server";
 
@@ -248,8 +249,7 @@ function StatisticsExtensionPageInner() {
                         >
                             {isLoading ? (
                                 <>
-                                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2" />
-                                    Analyse en cours...
+                                    <Attente libelle="Analyse en cours…" className="text-white" />
                                 </>
                             ) : (
                                 <>

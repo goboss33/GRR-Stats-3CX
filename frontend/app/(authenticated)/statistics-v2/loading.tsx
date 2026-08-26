@@ -1,10 +1,18 @@
+import { SqueletteEcranStats } from "@/components/stats-v2/squelettes";
+import { FilDeProgression } from "@/components/ui/etat-chargement";
+
+/**
+ * Première peinture de l'écran de statistiques (repli Suspense).
+ *
+ * Auparavant : un arc tournant centré sur toute la hauteur de fenêtre, puis
+ * l'écran surgissait d'un coup. Désormais la page arrive à sa taille
+ * définitive, cadres et titres compris ; seuls les chiffres manquent.
+ */
 export default function Loading() {
     return (
-        <div className="flex items-center justify-center h-screen text-slate-500">
-            <div className="flex flex-col items-center gap-4">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-                <p>Chargement des statistiques...</p>
-            </div>
+        <div className="mx-auto max-w-[1800px] space-y-6 p-6">
+            <FilDeProgression actif libelle="Calcul des statistiques" />
+            <SqueletteEcranStats />
         </div>
     );
 }

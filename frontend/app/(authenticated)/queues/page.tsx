@@ -1,4 +1,5 @@
 "use client";
+import { FilDeProgression } from "@/components/ui/etat-chargement";
 
 import { getSelectedServer } from "@/lib/selected-server";
 
@@ -52,11 +53,11 @@ export default function QueuesPage() {
 
     if (isLoading) {
         return (
-            <div className="flex items-center justify-center h-screen text-slate-500">
-                <div className="flex flex-col items-center gap-4">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900" />
-                    <p>Chargement des files d'attente...</p>
-                </div>
+            <div className="space-y-6">
+                {/* Attente de PAGE : un fil, et la place réservée — le contenu
+                    ne « saute » donc pas à son arrivée. */}
+                <FilDeProgression actif libelle="Chargement des files d'attente" />
+                <div className="h-64 rounded-xl border border-slate-200 bg-white" />
             </div>
         );
     }

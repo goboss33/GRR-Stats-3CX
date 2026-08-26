@@ -319,14 +319,12 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent>
                         {isLoading && !isInitialLoad ? (
-                            <div className="h-[425px] space-y-3 pt-4">
-                                <div className="flex gap-2 items-end h-[380px]">
-                                    {Array.from({ length: 14 }).map((_, i) => (
-                                        <Skeleton
-                                            key={i}
-                                            className="flex-1 rounded-sm"
-                                            style={{ height: `${25 + Math.random() * 75}%` }}
-                                        />
+                            /* Silhouette FIXE : des hauteurs tirées au sort
+                               changeaient à chaque rendu et trahissaient le faux. */
+                            <div className="h-[425px] pt-4">
+                                <div className="flex h-[380px] items-end gap-2">
+                                    {[42, 58, 51, 66, 47, 72, 61, 55, 78, 64, 49, 70, 57, 45].map((h, i) => (
+                                        <Skeleton key={i} className="flex-1 rounded-sm" style={{ height: `${h}%` }} />
                                     ))}
                                 </div>
                             </div>
@@ -347,10 +345,28 @@ export default function DashboardClient() {
                     </CardHeader>
                     <CardContent className="px-4">
                         {isLoading && !isInitialLoad ? (
-                            <div className="h-[425px] grid grid-cols-7 gap-1 pt-4">
-                                {Array.from({ length: 7 * 11 }).map((_, i) => (
-                                    <Skeleton key={i} className="rounded-sm" style={{ opacity: 0.3 + Math.random() * 0.7 }} />
-                                ))}
+                            /* Mêmes jours, mêmes heures, même densité que la
+                               vraie carte — et une opacité uniforme : le
+                               scintillement aléatoire lisait comme du bruit. */
+                            <div className="flex h-[425px] w-full flex-col pb-2">
+                                <div className="mb-1 flex gap-[2px]">
+                                    <div className="w-8 shrink-0" />
+                                    {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((j) => (
+                                        <div key={j} className="flex-1 text-center text-[10px] font-bold uppercase tracking-wider text-slate-400 sm:text-xs">
+                                            {j}
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex flex-1 flex-col gap-[2px]">
+                                    {Array.from({ length: 24 }).map((_, h) => (
+                                        <div key={h} className="flex flex-1 items-center gap-[2px]">
+                                            <div className="w-8 shrink-0 pr-2 text-right text-[10px] font-medium text-slate-400">{h}h</div>
+                                            {Array.from({ length: 7 }).map((_, j) => (
+                                                <Skeleton key={j} className="h-full flex-1 rounded-[2px]" />
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         ) : (
                             <HeatmapChart data={heatmapData} />
