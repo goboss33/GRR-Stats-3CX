@@ -153,8 +153,32 @@ describe("répondu puis servi hors du groupe (answeredThenTransferred)", () => {
 describe("crédit du tableau par agent (agentCredit)", () => {
     it("« lastAnswer » : crédit au dernier décrocheur, restreint aux appels Répondus", () => {
         const sql = buildAgentCTEChain(rules({ agentCredit: "lastAnswer" }));
-        expect(sql).toContain("la.last_agent = qp.agent_ext AND qp.outcome = 'answered'");
-        expect(sql).toContain("dla.last_ext = d.extension AND dc.outcome = 'answered'");
+        expect(sql).toContain("qp.rang_decroche = 1 AND qp.was_answered = 1 AND qp.outcome = 'answered'");
+        expect(sql).toContain("d.rang_direct = 1 AND d.cdr_answered_at IS NOT NULL AND dc.outcome = 'answered'");
+    });
+
+    it("le dernier décrocheur de la file se lit sur la ligne, jamais par jointure", () => {
+        // Garde-fou de performance : une table intermédiaire jointe ici privait
+        // le planificateur de toute statistique (1 ligne estimée contre 16 478
+        // réelles) et faisait passer la requête de 2,7 s à 65 s. Le rang est
+        // calculé en un passage dans queue_polling.
+        const sql = buildAgentCTEChain(rules({ agentCredit: "lastAnswer" }));
+        expect(sql).toContain("ROW_NUMBER() OVER (");
+        expect(sql).toContain("PARTITION BY p.call_history_id");
+        // Ni la table intermédiaire, ni sa jointure. (Le nom subsiste dans le
+        // commentaire d'avertissement du SQL : on vise la syntaxe, pas le mot.)
+        expect(sql).not.toContain("last_answered_agent AS (");
+        expect(sql).not.toContain("JOIN last_answered_agent");
+    });
+
+    it("le dernier décrocheur DIRECT se lit aussi sur la ligne", () => {
+        // Même garde-fou côté appels directs : la jointure y coûtait 141 s sur
+        // trois mois du groupe 901.
+        const sql = buildAgentCTEChain(rules({ agentCredit: "lastAnswer" }));
+        expect(sql).toContain("direct_segments_ranked AS (");
+        expect(sql).toContain("PARTITION BY d.call_history_id");
+        expect(sql).not.toContain("direct_last_answer AS (");
+        expect(sql).not.toContain("JOIN direct_last_answer");
     });
 
     it("« each » : chaque décrocheur compte l'appel", () => {

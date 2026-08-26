@@ -1,26 +1,32 @@
-// PROTOTYPE (aucun code de production touché) : mesure le gain d'une réécriture
-// de la requête des collaborateurs, et PROUVE qu'elle rend les mêmes chiffres.
+// GARDE-FOU D'ÉQUIVALENCE — la requête des collaborateurs, forme actuelle
+// contre forme historique, sur des données réelles.
 //
-// Le défaut, lu dans le plan d'exécution (cf. scripts/explain-agents.ts) :
+// Le 26 août 2026, deux tables intermédiaires jointes ont été supprimées de
+// la chaîne des collaborateurs :
 //
-//     Nested Loop Left Join ... (actual time=230..19435 rows=16478)
-//         Join Filter: (qp.call_history_id = queue_polling.call_history_id)
-//         Rows Removed by Join Filter: 45022756
+//   - « last_answered_agent » (file)    LEFT JOIN sur call_history_id
+//   - « direct_last_answer »  (directs) LEFT JOIN sur call_history_id
 //
-// `last_answered_agent` est un CTE rejoint à `queue_polling`. Postgres n'a
-// aucune statistique sur un CTE : il estime « 1 ligne » là où il y en a 16 478,
-// choisit une boucle imbriquée, et recalcule le CTE pour CHAQUE ligne — d'où
-// 45 millions de comparaisons.
+// PostgreSQL n'a aucune statistique sur une table intermédiaire : il estimait
+// UNE ligne là où il y en a des milliers, choisissait une boucle imbriquée et
+// recalculait la table entière pour chaque ligne. Le plan affichait
+// « Rows Removed by Join Filter: 45022756 ». Coût mesuré sur trois mois :
+// 65 s pour le groupe 958, 141 s pour le 901.
 //
-// La réécriture supprime la jointure : le rang du décroché se calcule en un
-// seul passage, dans queue_polling, par fonction de fenêtrage. Le tri par
-// cdr_id rend même le départage des ex æquo déterministe, ce que le
-// DISTINCT ON d'origine ne garantissait pas.
+// Les deux rangs se calculent désormais en un passage (ROW_NUMBER) dans la
+// table qui porte déjà les lignes. Ce script reconstruit la forme historique
+// à partir du SQL engendré aujourd'hui, exécute les deux, et compare les
+// résultats colonne par colonne. Lecture seule.
 //
-// Usage : npx tsx scripts/proto-agents-sans-jointure.ts [file=958] [mois|plage=2026-07]
+// Usage : npx tsx scripts/proto-agents-sans-jointure.ts [file=958] [mois|plage=2026-07] [origin=external]
 import { getPrismaCdr } from "@/lib/prisma-cdr";
 import { getClassificationRules } from "@/lib/classification-rules";
-import { buildTeamCTEChain, buildAgentCTEChain, type CallOrigin } from "@/services/domain/call-classification";
+import {
+    buildTeamCTEChain,
+    buildAgentCTEChain,
+    buildDirectExclusionSQL,
+    type CallOrigin,
+} from "@/services/domain/call-classification";
 import { resolveRosterForRules } from "@/services/xapi-journal.service";
 
 const SERVER = "gerofinance" as const;
@@ -51,47 +57,79 @@ const SELECTION = `
     LEFT JOIN agent_direct ad ON ar.extension = ad.extension AND ar.name = ad.name
     ORDER BY ar.extension, ar.name`;
 
-/** Applique la réécriture au SQL engendré, sans toucher au constructeur. */
-function reecrire(sql: string): string {
+/**
+ * Reconstruit la forme HISTORIQUE (avec les deux jointures) à partir du SQL
+ * engendré aujourd'hui. Chaque étape est assertée : si la chaîne évolue au
+ * point que l'ancre disparaît, le script échoue au lieu de comparer deux
+ * requêtes identiques et de conclure à tort à l'équivalence.
+ */
+function formeHistorique(sql: string, exclusionDirecte: string): string {
     let out = sql;
+    const exigence = (condition: boolean, quoi: string) => {
+        if (!condition) throw new Error(`ancre introuvable : ${quoi}`);
+    };
 
-    // 1) queue_polling calcule lui-même le rang du décroché dans l'appel.
-    const ancre = `            p.cdr_answered_at,
-            qc.outcome`;
-    if (!out.includes(ancre)) throw new Error("ancre queue_polling introuvable");
-    out = out.replace(ancre, `            p.cdr_answered_at,
-            ROW_NUMBER() OVER (
-                PARTITION BY p.call_history_id
-                ORDER BY (p.cdr_answered_at IS NULL), p.cdr_answered_at DESC, p.cdr_id
-            ) AS rang_decroche,
-            qc.outcome`);
+    // --- File : le rang redevient une table intermédiaire jointe -----------
+    const blocRang = /\n\s*-- Rang du décroché DANS l'appel[\s\S]*?\) AS rang_decroche,/;
+    exigence(blocRang.test(out), "colonne rang_decroche");
+    out = out.replace(blocRang, "");
 
-    // 2) « c'est lui le dernier décrocheur » se lit sur la ligne, sans jointure.
-    const avantResolu = `la.last_agent = qp.agent_ext AND qp.outcome = 'answered'`;
-    const avantTransfere = `la.last_agent = qp.agent_ext AND qp.outcome = 'handed_off'`;
-    if (!out.includes(avantResolu) || !out.includes(avantTransfere)) {
-        throw new Error("la règle de crédit n'est pas « dernier décrocheur » : rien à réécrire");
+    exigence(out.includes("    agent_queue_stats AS ("), "CTE agent_queue_stats");
+    out = out.replace("    agent_queue_stats AS (", `    last_answered_agent AS (
+        SELECT DISTINCT ON (call_history_id)
+            call_history_id,
+            agent_ext AS last_agent
+        FROM queue_polling
+        WHERE was_answered = 1
+        ORDER BY call_history_id, cdr_answered_at DESC
+    ),
+    agent_queue_stats AS (`);
+
+    exigence(out.includes("        FROM queue_polling qp\n        WHERE qp.agent_ext IN"), "FROM queue_polling");
+    out = out.replace("        FROM queue_polling qp\n        WHERE qp.agent_ext IN",
+        "        FROM queue_polling qp\n        LEFT JOIN last_answered_agent la ON qp.call_history_id = la.call_history_id\n        WHERE qp.agent_ext IN");
+
+    for (const sort of ["answered", "handed_off"]) {
+        const neuf = `qp.rang_decroche = 1 AND qp.was_answered = 1 AND qp.outcome = '${sort}'`;
+        exigence(out.includes(neuf), `prédicat file « ${sort} »`);
+        out = out.replace(neuf, `la.last_agent = qp.agent_ext AND qp.outcome = '${sort}'`);
     }
-    out = out.replace(avantResolu, `qp.rang_decroche = 1 AND qp.was_answered = 1 AND qp.outcome = 'answered'`);
-    out = out.replace(avantTransfere, `qp.rang_decroche = 1 AND qp.was_answered = 1 AND qp.outcome = 'handed_off'`);
 
-    // 3) La jointure coupable disparaît.
-    const jointure = `        LEFT JOIN last_answered_agent la ON qp.call_history_id = la.call_history_id\n`;
-    if (!out.includes(jointure)) throw new Error("jointure last_answered_agent introuvable");
-    out = out.replace(jointure, "");
+    // --- Directs : idem ----------------------------------------------------
+    const blocDirect = /    direct_segments_ranked AS \([\s\S]*?\n    \),/;
+    exigence(blocDirect.test(out), "CTE direct_segments_ranked");
+    out = out.replace(blocDirect, `    direct_last_answer AS (
+        SELECT DISTINCT ON (d.call_history_id)
+            d.call_history_id,
+            d.extension AS last_ext
+        FROM team_direct_segments d
+        WHERE ${exclusionDirecte}
+          AND d.cdr_answered_at IS NOT NULL
+        ORDER BY d.call_history_id, d.cdr_answered_at DESC, d.cdr_ended_at DESC
+    ),`);
+
+    exigence(out.includes("        FROM direct_segments_ranked d"), "FROM direct_segments_ranked");
+    out = out.replace("        FROM direct_segments_ranked d", "        FROM team_direct_segments d");
+
+    exigence(out.includes("        JOIN direct_calls dc ON dc.call_history_id = d.call_history_id\n        GROUP BY d.extension"), "JOIN direct_calls");
+    out = out.replace("        JOIN direct_calls dc ON dc.call_history_id = d.call_history_id\n        GROUP BY d.extension",
+        `        JOIN direct_calls dc ON dc.call_history_id = d.call_history_id
+        LEFT JOIN direct_last_answer dla ON dla.call_history_id = d.call_history_id
+        WHERE ${exclusionDirecte}
+        GROUP BY d.extension`);
+
+    for (const sort of ["answered", "handed_off"]) {
+        const neuf = `d.rang_direct = 1 AND d.cdr_answered_at IS NOT NULL AND dc.outcome = '${sort}'`;
+        exigence(out.includes(neuf), `prédicat direct « ${sort} »`);
+        out = out.replace(neuf, `dla.last_ext = d.extension AND dc.outcome = '${sort}'`);
+    }
 
     return out;
 }
 
 type Ligne = Record<string, unknown>;
 
-async function chrono(prisma: ReturnType<typeof getPrismaCdr>, sql: string) {
-    const t0 = Date.now();
-    const rows = await prisma.$queryRawUnsafe<Ligne[]>(sql, QUEUE, START, END);
-    return { ms: Date.now() - t0, rows };
-}
-
-/** Comparaison stricte, colonne par colonne (les BigInt sont normalisés). */
+/** Comparaison stricte, colonne par colonne (BigInt et dates normalisés). */
 function comparer(a: Ligne[], b: Ligne[]): string[] {
     const ecarts: string[] = [];
     if (a.length !== b.length) ecarts.push(`nombre de lignes : ${a.length} vs ${b.length}`);
@@ -108,29 +146,37 @@ function comparer(a: Ligne[], b: Ligne[]): string[] {
 async function main() {
     const prisma = getPrismaCdr(SERVER);
     const rules = await getClassificationRules();
+    if (rules.agentCredit !== "lastAnswer") {
+        console.log(`\n  Règle de crédit « ${rules.agentCredit} » : aucune jointure de ce type n'est engendrée, rien à comparer.\n`);
+        process.exit(0);
+    }
     const rosterMembers = await resolveRosterForRules(rules, SERVER, QUEUE, START, END);
     const socle = buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin: ORIGIN, rosterMembers });
     const chaine = buildAgentCTEChain(rules);
 
-    const actuel = `WITH ${socle},\n${chaine}\n${SELECTION}`;
-    const propose = `WITH ${socle},\n${reecrire(chaine)}\n${SELECTION}`;
+    const actuelle = `WITH ${socle},\n${chaine}\n${SELECTION}`;
+    const historique = `WITH ${socle},\n${formeHistorique(chaine, buildDirectExclusionSQL(rules, "d"))}\n${SELECTION}`;
 
-    console.log(`\n  Prototype — file ${QUEUE}, ${PERIODE}, provenance « ${ORIGIN} »`);
+    console.log(`\n  Équivalence — file ${QUEUE}, ${PERIODE}, provenance « ${ORIGIN} »`);
     console.log(`  ${START.toISOString()} → ${END.toISOString()}\n`);
 
-    const a = await chrono(prisma, actuel);
-    console.log(`  requête ACTUELLE   ${`${(a.ms / 1000).toFixed(2)} s`.padStart(9)}   ${a.rows.length} collaborateurs`);
-    const b = await chrono(prisma, propose);
-    console.log(`  requête RÉÉCRITE   ${`${(b.ms / 1000).toFixed(2)} s`.padStart(9)}   ${b.rows.length} collaborateurs`);
+    const chrono = async (sql: string) => {
+        const t0 = Date.now();
+        const rows = await prisma.$queryRawUnsafe<Ligne[]>(sql, QUEUE, START, END);
+        return { ms: Date.now() - t0, rows };
+    };
 
-    const gain = a.ms > 0 ? (a.ms / Math.max(b.ms, 1)) : 0;
-    console.log(`\n  → ${gain.toFixed(1)} fois plus rapide (${((a.ms - b.ms) / 1000).toFixed(2)} s de moins)\n`);
+    const neuf = await chrono(actuelle);
+    console.log(`  forme ACTUELLE     ${`${(neuf.ms / 1000).toFixed(2)} s`.padStart(9)}   ${neuf.rows.length} collaborateurs`);
+    const vieux = await chrono(historique);
+    console.log(`  forme HISTORIQUE   ${`${(vieux.ms / 1000).toFixed(2)} s`.padStart(9)}   ${vieux.rows.length} collaborateurs`);
+    console.log(`\n  → ${(vieux.ms / Math.max(neuf.ms, 1)).toFixed(1)} fois plus rapide (${((vieux.ms - neuf.ms) / 1000).toFixed(2)} s de moins)\n`);
 
-    const ecarts = comparer(a.rows, b.rows);
+    const ecarts = comparer(vieux.rows, neuf.rows);
     if (ecarts.length === 0) {
-        console.log(`  ✔ CHIFFRES IDENTIQUES sur les ${a.rows.length} lignes et toutes leurs colonnes.\n`);
+        console.log(`  ✔ CHIFFRES IDENTIQUES sur les ${neuf.rows.length} lignes et toutes leurs colonnes.\n`);
     } else {
-        console.log(`  ✘ ${ecarts.length} écart(s) — la réécriture CHANGE les chiffres :`);
+        console.log(`  ✘ ${ecarts.length} écart(s) — la forme actuelle CHANGE les chiffres :`);
         for (const e of ecarts.slice(0, 20)) console.log(`      ${e}`);
         console.log("");
     }

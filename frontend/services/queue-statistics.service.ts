@@ -25,15 +25,39 @@ import type { TimelineDataPoint } from "@/services/domain/call.types";
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:3000";
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
 
+/**
+ * Délai au-delà duquel un appel interne est abandonné.
+ *
+ * Sans borne explicite, `fetch` laisse courir jusqu'à son propre délai de
+ * 300 s puis échoue par un laconique « fetch failed » — cinq minutes d'attente
+ * pour un écran qui, jusqu'au lot 2, ne montrait alors rien du tout. Après la
+ * correction des requêtes du 26 août 2026, la pire fenêtre mesurée coûte
+ * quelques secondes : 45 s laissent une marge confortable tout en transformant
+ * un incident en message, et non plus en attente indéfinie.
+ */
+const INTERNAL_API_TIMEOUT_MS = 45_000;
+
 async function fetchApi<T>(endpoint: string, params: Record<string, string>): Promise<T> {
     const url = new URL(`${INTERNAL_API_URL}${endpoint}`);
     Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
 
     logger.debug("[fetchApi] Calling:", url.toString());
 
-    const res = await fetch(url.toString(), {
-        headers: { "X-API-Key": INTERNAL_API_KEY },
-    });
+    let res: Response;
+    try {
+        res = await fetch(url.toString(), {
+            headers: { "X-API-Key": INTERNAL_API_KEY },
+            signal: AbortSignal.timeout(INTERNAL_API_TIMEOUT_MS),
+        });
+    } catch (error) {
+        // Un dépassement doit se lire comme tel : « fetch failed » ne dit ni
+        // ce qui a échoué, ni qu'il s'agit d'une question de durée.
+        const depassement = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+        logger.error("[fetchApi] Échec réseau :", { endpoint, url: url.toString(), depassement, error });
+        throw new Error(depassement
+            ? `Le calcul a dépassé ${INTERNAL_API_TIMEOUT_MS / 1000} s. Réduisez la période demandée, puis réessayez.`
+            : `Les données n'ont pas pu être récupérées (${endpoint}).`);
+    }
 
     if (!res.ok) {
         const errorText = await res.text().catch(() => "Unknown error");

@@ -1059,8 +1059,11 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
 
     // File : crédit au dernier décrocheur (restreint aux appels Répondus), ou
     // à chaque décrocheur.
+    //
+    // « Dernier décrocheur » se lit sur la ligne elle-même (rang_decroche = 1),
+    // jamais par jointure — voir la note de performance sur queue_polling.
     const queueResolved = lastAnswerCredit
-        ? `COUNT(DISTINCT CASE WHEN la.last_agent = qp.agent_ext AND qp.outcome = 'answered'
+        ? `COUNT(DISTINCT CASE WHEN qp.rang_decroche = 1 AND qp.was_answered = 1 AND qp.outcome = 'answered'
                 THEN qp.call_history_id END) AS resolved`
         : `COUNT(DISTINCT CASE WHEN qp.was_answered = 1 THEN qp.call_history_id END) AS resolved`;
 
@@ -1069,7 +1072,7 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
     // C'est le travail des réceptions ; il a sa propre colonne, jamais mélangé
     // aux résolus. Invariant : la somme égale la vignette « Transférés ».
     const queueTransferred = lastAnswerCredit
-        ? `COUNT(DISTINCT CASE WHEN la.last_agent = qp.agent_ext AND qp.outcome = 'handed_off'
+        ? `COUNT(DISTINCT CASE WHEN qp.rang_decroche = 1 AND qp.was_answered = 1 AND qp.outcome = 'handed_off'
                 THEN qp.call_history_id END) AS transferred`
         : `COUNT(DISTINCT CASE WHEN qp.was_answered = 1 AND qp.outcome = 'handed_off'
                 THEN qp.call_history_id END) AS transferred`;
@@ -1078,12 +1081,12 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
     // répondu via la file n'a pas de décroché direct — il reste alors sans
     // crédit dans le tableau (cas marginal, documenté).
     const directAnswered = lastAnswerCredit
-        ? `COUNT(DISTINCT CASE WHEN dla.last_ext = d.extension AND dc.outcome = 'answered'
+        ? `COUNT(DISTINCT CASE WHEN d.rang_direct = 1 AND d.cdr_answered_at IS NOT NULL AND dc.outcome = 'answered'
                 THEN d.call_history_id END) AS direct_answered`
         : `COUNT(DISTINCT CASE WHEN d.cdr_answered_at IS NOT NULL THEN d.call_history_id END) AS direct_answered`;
 
     const directTransferred = lastAnswerCredit
-        ? `COUNT(DISTINCT CASE WHEN dla.last_ext = d.extension AND dc.outcome = 'handed_off'
+        ? `COUNT(DISTINCT CASE WHEN d.rang_direct = 1 AND d.cdr_answered_at IS NOT NULL AND dc.outcome = 'handed_off'
                 THEN d.call_history_id END) AS direct_transferred`
         : `COUNT(DISTINCT CASE WHEN d.cdr_answered_at IS NOT NULL AND dc.outcome = 'handed_off'
                 THEN d.call_history_id END) AS direct_transferred`;
@@ -1098,20 +1101,33 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
             CASE WHEN p.cdr_answered_at IS NOT NULL THEN 1 ELSE 0 END AS was_answered,
             EXTRACT(EPOCH FROM (p.cdr_ended_at - p.cdr_answered_at)) AS talk_seconds,
             p.cdr_answered_at,
+            -- Rang du décroché DANS l'appel : les sonneries décrochées d'abord,
+            -- la plus tardive en tête. Le rang 1 désigne donc le dernier
+            -- décrocheur, lisible sur la ligne, SANS jointure.
+            --
+            -- ⚠️ Ne pas revenir à une table intermédiaire jointe ici. C'est ce
+            -- que faisait « last_answered_agent » (LEFT JOIN sur call_history_id)
+            -- jusqu'au 26 août 2026 : PostgreSQL n'ayant aucune statistique sur
+            -- une table intermédiaire, il estimait UNE ligne là où il y en a
+            -- 16 478, choisissait une boucle imbriquée et recalculait la table
+            -- entière pour chaque ligne. Le plan affichait
+            -- « Rows Removed by Join Filter: 45022756 » et la requête coûtait
+            -- 65 s sur trois mois du groupe 958, contre 2,7 s ici — à chiffres
+            -- rigoureusement identiques (cf. scripts/proto-agents-sans-jointure.ts).
+            --
+            -- Le départage par cdr_id rend le rang déterministe quand deux
+            -- sonneries portent le même horodatage de décroché ; le DISTINCT ON
+            -- d'origine, lui, tranchait de façon arbitraire.
+            ROW_NUMBER() OVER (
+                PARTITION BY p.call_history_id
+                ORDER BY (p.cdr_answered_at IS NULL), p.cdr_answered_at DESC, p.cdr_id
+            ) AS rang_decroche,
             qc.outcome
         FROM ${cdrTable(rules)} p
         JOIN queue_passages qp ON qp.cdr_id = p.originating_cdr_id
         JOIN queue_calls qc ON qc.call_history_id = p.call_history_id
         WHERE p.creation_forward_reason = 'polling'
           AND p.destination_dn_type = 'extension'
-    ),
-    last_answered_agent AS (
-        SELECT DISTINCT ON (call_history_id)
-            call_history_id,
-            agent_ext AS last_agent
-        FROM queue_polling
-        WHERE was_answered = 1
-        ORDER BY call_history_id, cdr_answered_at DESC
     ),
     agent_queue_stats AS (
         SELECT
@@ -1122,19 +1138,25 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
             ${queueTransferred},
             SUM(CASE WHEN qp.was_answered = 1 THEN qp.talk_seconds ELSE 0 END) AS queue_talk_time
         FROM queue_polling qp
-        LEFT JOIN last_answered_agent la ON qp.call_history_id = la.call_history_id
         WHERE qp.agent_ext IN (SELECT extension FROM queue_agents)
         GROUP BY qp.agent_ext, qp.agent_name
     ),
-    direct_last_answer AS (
-        -- Dernier décrocheur DIRECT de chaque appel du bloc directs.
-        SELECT DISTINCT ON (d.call_history_id)
-            d.call_history_id,
-            d.extension AS last_ext
+    direct_segments_ranked AS (
+        -- Rang du décroché DIRECT dans l'appel : décrochés d'abord, le plus
+        -- tardif en tête. Le rang 1 désigne le dernier décrocheur direct.
+        --
+        -- ⚠️ Même piège que pour la file : une table intermédiaire jointe ici
+        -- (« direct_last_answer », jusqu'au 26 août 2026) privait le
+        -- planificateur de toute statistique et faisait payer 141 s au groupe
+        -- 901 sur trois mois. Le rang se calcule en un passage, sans jointure.
+        SELECT d.*,
+            ROW_NUMBER() OVER (
+                PARTITION BY d.call_history_id
+                ORDER BY (d.cdr_answered_at IS NULL), d.cdr_answered_at DESC,
+                         d.cdr_ended_at DESC, d.extension
+            ) AS rang_direct
         FROM team_direct_segments d
         WHERE ${buildDirectExclusionSQL(rules, "d")}
-          AND d.cdr_answered_at IS NOT NULL
-        ORDER BY d.call_history_id, d.cdr_answered_at DESC, d.cdr_ended_at DESC
     ),
     agent_direct AS (
         SELECT
@@ -1145,12 +1167,11 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
             ${directTransferred},
             SUM(CASE WHEN d.cdr_answered_at IS NOT NULL
                 THEN EXTRACT(EPOCH FROM (d.cdr_ended_at - d.cdr_answered_at)) ELSE 0 END) AS direct_talk_time
-        FROM team_direct_segments d
+        -- Segments déjà filtrés par l'exclusion et porteurs de leur rang.
+        FROM direct_segments_ranked d
         -- Même population que la vignette « Directs » : un appel écarté du bloc
         -- (messagerie exclue, provenance) ne compte pas au débit d'un agent.
         JOIN direct_calls dc ON dc.call_history_id = d.call_history_id
-        LEFT JOIN direct_last_answer dla ON dla.call_history_id = d.call_history_id
-        WHERE ${buildDirectExclusionSQL(rules, "d")}
         GROUP BY d.extension, d.agent_name
     ),
     agent_roster AS (
