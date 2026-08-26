@@ -1,26 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { Users, Phone, AlertCircle, KeyRound, Settings, Building2, Bell, BookOpenCheck } from "lucide-react";
+import { Users, Phone, KeyRound, Settings, Building2, Bell, BookOpenCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PersonalInfoTab } from "./tabs/personal-info-tab";
 import { UsersTab } from "./tabs/users-tab";
 import { QueuesTab } from "./tabs/queues-tab";
-import { DiagnosticTab } from "./tabs/diagnostic-tab";
 import { TenantTab } from "./tabs/tenant-tab";
 import { BusinessRulesTab } from "./tabs/business-rules-tab";
 import { ApiKeysTab } from "./tabs/api-keys-tab";
 import { AlertsTab } from "./tabs/alerts-tab";
 import { XapiJournalTab } from "./tabs/xapi-journal-tab";
 
-type TabId = "personal" | "users" | "queues" | "business-rules" | "alerts" | "api-keys" | "tenant" | "xapi-journal" | "diagnostic";
+type SectionId = "personal" | "users" | "queues" | "business-rules" | "alerts" | "api-keys" | "tenant" | "xapi-journal";
 
-// Rôles autorisés par onglet (cf. PRD droits d'accès §4.1).
+// Rôles autorisés par section (cf. PRD droits d'accès §4.1).
 // ⚠️ Ce filtrage est une commodité d'affichage : la sécurité réelle est assurée
 // par les gardes serveur des routes API correspondantes.
 const ALL_ROLES = ["ADMIN", "MODERATOR", "MANAGER", "AGENT"];
 
-const tabs: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }>; roles: string[] }[] = [
+const sections: { id: SectionId; label: string; icon: React.ComponentType<{ className?: string }>; roles: string[] }[] = [
     { id: "personal", label: "Informations personnelles", icon: Users, roles: ALL_ROLES },
     { id: "users", label: "Utilisateurs", icon: Users, roles: ["ADMIN"] },
     { id: "queues", label: "Files d'attente", icon: Phone, roles: ["ADMIN"] },
@@ -29,18 +28,17 @@ const tabs: { id: TabId; label: string; icon: React.ComponentType<{ className?: 
     { id: "api-keys", label: "Clés API", icon: KeyRound, roles: ["ADMIN", "MODERATOR"] },
     { id: "tenant", label: "Tenant", icon: Building2, roles: ["ADMIN"] },
     { id: "xapi-journal", label: "Journal des équipes (XAPI)", icon: BookOpenCheck, roles: ["ADMIN"] },
-    { id: "diagnostic", label: "Diagnostic", icon: AlertCircle, roles: ["ADMIN"] },
 ];
 
 export default function SettingsPage({ userRole }: { userRole: string }) {
-    const visibleTabs = tabs.filter((tab) => tab.roles.includes(userRole));
-    const [activeTab, setActiveTab] = useState<TabId>("personal");
+    const visibleSections = sections.filter((section) => section.roles.includes(userRole));
+    const [activeSection, setActiveSection] = useState<SectionId>("personal");
 
-    const renderTabContent = () => {
-        // Ceinture et bretelles : un onglet non autorisé n'affiche rien.
-        if (!visibleTabs.some((tab) => tab.id === activeTab)) return null;
+    const renderSection = () => {
+        // Ceinture et bretelles : une section non autorisée n'affiche rien.
+        if (!visibleSections.some((section) => section.id === activeSection)) return null;
 
-        switch (activeTab) {
+        switch (activeSection) {
             case "personal": return <PersonalInfoTab />;
             case "users": return <UsersTab />;
             case "queues": return <QueuesTab />;
@@ -49,38 +47,49 @@ export default function SettingsPage({ userRole }: { userRole: string }) {
             case "api-keys": return <ApiKeysTab />;
             case "tenant": return <TenantTab />;
             case "xapi-journal": return <XapiJournalTab />;
-            case "diagnostic": return <DiagnosticTab />;
         }
     };
 
     return (
-        <div className="space-y-6">
-            {/* Tabs */}
-            <div className="border-b border-slate-200">
-                <nav className="flex gap-1 -mb-px overflow-x-auto">
-                    {visibleTabs.map((tab) => {
-                        const Icon = tab.icon;
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+            {/* MENU LATÉRAL SECONDAIRE — remplace la rangée d'onglets : les
+                intitulés sont longs et nombreux, ils débordaient en scroll
+                horizontal. En colonne, ils se lisent d'un coup d'œil.
+                Panneau clair : la barre principale de l'app est sombre, ce
+                second niveau ne doit pas lui faire concurrence.
+                Sur petit écran il redevient une rangée défilante — une pile
+                de huit entrées repousserait le contenu hors de vue. */}
+            <nav aria-label="Sections des réglages" className="lg:sticky lg:top-0 lg:w-64 lg:flex-shrink-0">
+                <ul className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-2 lg:flex-col lg:gap-0.5 lg:overflow-visible">
+                    {visibleSections.map((section) => {
+                        const Icon = section.icon;
+                        const active = activeSection === section.id;
                         return (
-                            <button
-                                key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
-                                className={cn(
-                                    "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors",
-                                    activeTab === tab.id
-                                        ? "border-blue-600 text-blue-600"
-                                        : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
-                                )}
-                            >
-                                <Icon className="h-4 w-4" />
-                                {tab.label}
-                            </button>
+                            <li key={section.id} className="lg:w-full">
+                                <button
+                                    onClick={() => setActiveSection(section.id)}
+                                    aria-current={active ? "page" : undefined}
+                                    className={cn(
+                                        "flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm transition-colors lg:whitespace-normal",
+                                        active
+                                            ? "bg-blue-50 font-medium text-blue-700"
+                                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                    )}
+                                >
+                                    <Icon className={cn("h-4 w-4 flex-shrink-0", active ? "text-blue-600" : "text-slate-400")} />
+                                    {section.label}
+                                </button>
+                            </li>
                         );
                     })}
-                </nav>
-            </div>
+                </ul>
+            </nav>
 
-            {/* Tab Content */}
-            {renderTabContent()}
+            {/* min-w-0 : sans lui, un tableau large de section élargirait la
+                colonne au-delà de la fenêtre au lieu de défiler chez lui. */}
+            <div className="min-w-0 flex-1">
+                {renderSection()}
+            </div>
         </div>
     );
 }

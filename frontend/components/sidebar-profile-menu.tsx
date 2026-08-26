@@ -114,14 +114,19 @@ export function SidebarProfileMenu({ user, userRole, authProvider, profilePictur
                         <p className="text-xs text-slate-400 truncate">{roleLabel}</p>
                     </div>
                     <div className="py-1">
-                        <Link
-                            href="/documentation"
-                            className="flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
-                            onClick={() => setOpen(false)}
-                        >
-                            <BookOpen className="h-4 w-4 flex-shrink-0" />
-                            <span>Documentation</span>
-                        </Link>
+                        {/* La documentation technique est réservée à l'ADMIN.
+                            Masquer l'entrée ne suffirait pas : le layout de
+                            /documentation refuse aussi l'URL tapée à la main. */}
+                        {userRole === "ADMIN" && (
+                            <Link
+                                href="/documentation"
+                                className="flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+                                onClick={() => setOpen(false)}
+                            >
+                                <BookOpen className="h-4 w-4 flex-shrink-0" />
+                                <span>Documentation</span>
+                            </Link>
+                        )}
                         <Link
                             href="/admin/settings"
                             className="flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
