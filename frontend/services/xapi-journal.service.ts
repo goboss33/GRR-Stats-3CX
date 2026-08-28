@@ -290,9 +290,11 @@ export async function getJournalOverview(serverId: ServerId) {
             return {
                 queueNumber,
                 queueName: fiche?.currentName ?? `File ${queueNumber}`,
-                // Étiquettes de l'annuaire : elles servent à la RECHERCHE du
-                // sélecteur, jamais affichées seules.
-                queueDepartment: [fiche?.entity, fiche?.region, fiche?.service].filter(Boolean).join(" · ") || null,
+                // Regroupement du sélecteur, au niveau du SITE (entité · région).
+                // Y ajouter le service donnait 90 groupes pour 93 équipes : un
+                // titre par ligne, donc aucun regroupement. Le service, lui,
+                // reste lisible dans le nom de l'équipe.
+                queueDepartment: [fiche?.entity, fiche?.region].filter(Boolean).join(" · ") || null,
                 members: lignes.length,
                 membres: lignes.map((l) => ({
                     extension: l.extension,
