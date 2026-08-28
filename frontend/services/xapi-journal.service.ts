@@ -1,5 +1,6 @@
 import { prismaAuth } from "@/lib/prisma-auth";
 import { getServerXapiConfig, isXapiUsable } from "@/lib/xapi-config";
+import { releveAttendu } from "@/services/domain/journal-cadence";
 import { requestXapiToken, decodeTokenClaims } from "@/lib/xapi-client";
 import { getAvailableServers } from "@/lib/servers";
 import type { ServerId } from "@/lib/prisma-cdr";
@@ -237,8 +238,9 @@ export async function isSnapshotDue(serverId: ServerId, now = new Date()): Promi
         orderBy: { ranAt: "desc" },
         select: { ranAt: true },
     });
-    if (!last) return true; // jamais relevé : on démarre l'histoire tout de suite
-    return now.getTime() - last.ranAt.getTime() > 24 * 3600 * 1000;
+    // Cadence NOCTURNE : le prochain relevé est le premier 3 h qui suit le
+    // dernier — et non « dernier + 24 h », qui faisait dériver l'heure.
+    return releveAttendu(last?.ranAt ?? null, now);
 }
 
 /** Vue d'ensemble pour l'onglet des réglages. */
@@ -250,20 +252,55 @@ export async function getJournalOverview(serverId: ServerId) {
             take: 10,
         }),
         prismaAuth.queueMembershipInterval.count({ where: { serverId, closedAt: null } }),
-        prismaAuth.queueMembershipInterval.groupBy({
-            by: ["queueNumber"],
+        // Les appartenances EN COURS, membres compris : le sélecteur de
+        // l'onglet cherche aussi par nom de collaborateur, comme la recherche
+        // du header. Une file vidée de tous ses membres n'apparaît donc plus
+        // ici — c'est l'écart que le nombre d'équipes du relevé (vues au PBX)
+        // rend visible.
+        prismaAuth.queueMembershipInterval.findMany({
             where: { serverId, closedAt: null },
-            _count: { _all: true },
-            orderBy: { queueNumber: "asc" },
+            select: { queueNumber: true, extension: true, agentName: true, lastSeenAt: true },
+            orderBy: [{ queueNumber: "asc" }, { agentName: "asc" }],
         }),
     ]);
+
+    // Nom d'équipe : l'annuaire des files vit dans la même base. Sans lui,
+    // le sélecteur n'offrait qu'un numéro — illisible pour un manager.
+    const annuaire = await prismaAuth.queueRegistry.findMany({
+        where: { tenantId: serverId },
+        select: { queueNumber: true, currentName: true, entity: true, region: true, service: true },
+    });
+    const nomDe = new Map(annuaire.map((q) => [q.queueNumber, q]));
+
+    const parFile = new Map<string, typeof queues>();
+    for (const ligne of queues) {
+        const existant = parFile.get(ligne.queueNumber);
+        if (existant) existant.push(ligne);
+        else parFile.set(ligne.queueNumber, [ligne]);
+    }
+
     return {
         runs: runs.map((r) => ({
             ranAt: r.ranAt.toISOString(), ok: r.ok,
             queues: r.queues, members: r.members, changes: r.changes, error: r.error,
         })),
         openCount,
-        queues: queues.map((q) => ({ queueNumber: q.queueNumber, members: q._count._all })),
+        queues: [...parFile.entries()].map(([queueNumber, lignes]) => {
+            const fiche = nomDe.get(queueNumber);
+            return {
+                queueNumber,
+                queueName: fiche?.currentName ?? `File ${queueNumber}`,
+                // Étiquettes de l'annuaire : elles servent à la RECHERCHE du
+                // sélecteur, jamais affichées seules.
+                queueDepartment: [fiche?.entity, fiche?.region, fiche?.service].filter(Boolean).join(" · ") || null,
+                members: lignes.length,
+                membres: lignes.map((l) => ({
+                    extension: l.extension,
+                    name: l.agentName,
+                    lastSeenAt: l.lastSeenAt.toISOString(),
+                })),
+            };
+        }),
     };
 }
 

@@ -6,9 +6,13 @@ import { getAvailableServers } from "@/lib/servers";
  * Pas de cron système : le conteneur est seul maître à bord, un réveil
  * horaire en mémoire suffit pour une cadence quotidienne. Règles :
  *  - jamais relevé → relevé immédiat (l'histoire commence tout de suite) ;
- *  - sinon, relevé quand le dernier date de plus de 24 h ET qu'il est au
- *    moins 3 h du matin (heure serveur) — cadence nocturne, rattrapage
- *    automatique dans la journée si le conteneur dormait à 3 h.
+ *  - sinon, relevé au premier 3 h qui suit le dernier (cf.
+ *    services/domain/journal-cadence) — avec rattrapage au réveil si le
+ *    conteneur dormait à cette heure-là, puis retour à la cadence nocturne.
+ *
+ * L'heure est jugée à UN SEUL endroit, isSnapshotDue. Le déclencheur se
+ * contente de réveiller : il portait autrefois sa propre condition d'heure,
+ * qui contredisait la première et laissait la cadence dériver.
  *
  * Tolérance aux pannes : tout échec est journalisé (table XapiSnapshotRun et
  * console) et réessayé au réveil suivant. Un tenant sans surcouche est
@@ -17,22 +21,16 @@ import { getAvailableServers } from "@/lib/servers";
 
 const CHECK_EVERY_MS = 60 * 60 * 1000;
 const FIRST_CHECK_AFTER_MS = 2 * 60 * 1000;
-const NIGHT_HOUR = 3;
 
 // Garde anti-double-enregistrement : le rechargement à chaud de next dev
 // réévalue les modules, mais globalThis survit.
 const FLAG = Symbol.for("grr-stats.xapi-journal-scheduler");
 
-async function checkAndRun(force = false): Promise<void> {
+async function checkAndRun(): Promise<void> {
     try {
         const { isSnapshotDue, runQueueMembershipSnapshot } = await import("@/services/xapi-journal.service");
         for (const serverId of getAvailableServers()) {
-            const due = await isSnapshotDue(serverId);
-            if (!due) continue;
-            const { prismaAuth } = await import("@/lib/prisma-auth");
-            const hasHistory = (await prismaAuth.xapiSnapshotRun.count({ where: { serverId } })) > 0;
-            // Première fois : tout de suite. Ensuite : cadence nocturne.
-            if (!force && hasHistory && new Date().getHours() < NIGHT_HOUR) continue;
+            if (!await isSnapshotDue(serverId)) continue;
             const summary = await runQueueMembershipSnapshot(serverId);
             if (summary.ran) {
                 console.log(`[journal-xapi] ${serverId} : ${summary.ok

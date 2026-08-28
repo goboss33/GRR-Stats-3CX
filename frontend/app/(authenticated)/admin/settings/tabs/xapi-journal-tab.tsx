@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { BookOpenCheck, Loader2, Moon, RefreshCw, XCircle, CheckCircle2 } from "lucide-react";
 
 import { getSelectedServer } from "@/lib/selected-server";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { QueueAgentPicker } from "@/components/queue-agent-picker";
+import type { QueueInfo } from "@/types/queues.types";
 import { Tip } from "@/components/ui/tooltip";
 
 /**
@@ -23,7 +24,14 @@ import { Tip } from "@/components/ui/tooltip";
 interface RunRow {
     ranAt: string; ok: boolean; queues: number; members: number; changes: number; error: string | null;
 }
-interface QueueRow { queueNumber: string; members: number }
+interface MembreRow { extension: string; name: string; lastSeenAt: string }
+interface QueueRow {
+    queueNumber: string;
+    queueName: string;
+    queueDepartment: string | null;
+    members: number;
+    membres: MembreRow[];
+}
 interface IntervalRow {
     extension: string; agentName: string;
     firstSeenAt: string; lastSeenAt: string; closedAt: string | null;
@@ -44,6 +52,27 @@ export function XapiJournalTab() {
     const [selectedQueue, setSelectedQueue] = useState<string>("");
     const [intervals, setIntervals] = useState<IntervalRow[] | null>(null);
     const [intervalsLoading, setIntervalsLoading] = useState(false);
+
+    // Le sélecteur partagé parle en QueueInfo : on lui traduit le journal.
+    // `attemptsCount` n'a pas de sens ici (le journal ne compte pas les
+    // sollicitations) — il ne sert qu'au tri des autres écrans.
+    const queuesPourSelecteur: QueueInfo[] = useMemo(() => queues.map((q) => ({
+        queueNumber: q.queueNumber,
+        queueName: q.queueName,
+        queueDepartment: q.queueDepartment,
+        memberCount: q.members,
+        members: q.membres.map((m) => ({
+            agentExtension: m.extension,
+            agentName: m.name,
+            attemptsCount: 0,
+            lastSeenAt: m.lastSeenAt,
+        })),
+    })), [queues]);
+
+    const equipeChoisie = useMemo(
+        () => queues.find((q) => q.queueNumber === selectedQueue) ?? null,
+        [queues, selectedQueue],
+    );
 
     const reload = useCallback(async () => {
         try {
@@ -153,7 +182,9 @@ export function XapiJournalTab() {
                                 Relevé automatique chaque nuit dès 3 h
                             </span>
                             <span><span className="font-semibold text-slate-900">{openCount}</span> appartenances en cours</span>
-                            <span><span className="font-semibold text-slate-900">{queues.length}</span> équipes au journal</span>
+                            <Tip content="Équipes ayant au moins un membre aujourd'hui. Une équipe vidée de tous ses membres reste dans l'historique mais sort de ce compte — d'où l'écart possible avec le nombre d'équipes vues au 3CX lors du relevé.">
+                                <span><span className="font-semibold text-slate-900">{queues.length}</span> équipes avec un membre</span>
+                            </Tip>
                         </div>
                     )}
 
@@ -174,7 +205,7 @@ export function XapiJournalTab() {
                                         <span className="w-32 tabular-nums text-slate-700">{dateTime(run.ranAt)}</span>
                                         {run.ok ? (
                                             <span className="text-slate-600">
-                                                {run.members} membres · {run.queues} équipes ·{" "}
+                                                {run.members} membres · {run.queues} équipes vues au 3CX ·{" "}
                                                 <span className={run.changes > 0 ? "font-medium text-violet-700" : ""}>
                                                     {run.changes} mouvement{run.changes > 1 ? "s" : ""}
                                                 </span>
@@ -201,18 +232,22 @@ export function XapiJournalTab() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <Select value={selectedQueue} onValueChange={setSelectedQueue}>
-                        <SelectTrigger className="w-72">
-                            <SelectValue placeholder={queues.length ? "Choisir une équipe…" : "Journal encore vide"} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {queues.map((q) => (
-                                <SelectItem key={q.queueNumber} value={q.queueNumber}>
-                                    {q.queueNumber} — {q.members} membre{q.members > 1 ? "s" : ""}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                    {/* Le MÊME sélecteur que la recherche du header : on trouve
+                        une équipe par son nom, son numéro, son étiquette — ou par
+                        le nom d'un collaborateur, qui mène à son équipe. Les
+                        membres viennent du journal lui-même, pas des CDR : la
+                        recherche décrit donc exactement ce que l'onglet montre. */}
+                    <QueueAgentPicker
+                        queues={queuesPourSelecteur}
+                        show="both"
+                        selectedQueueNumber={selectedQueue || null}
+                        onSelect={(item) => setSelectedQueue(item.queueNumber)}
+                        placeholder={queues.length ? "Chercher une équipe ou un collaborateur…" : "Journal encore vide"}
+                        displayValue={equipeChoisie
+                            ? `${equipeChoisie.queueName} · ${equipeChoisie.queueNumber} · ${equipeChoisie.members} membre${equipeChoisie.members > 1 ? "s" : ""}`
+                            : undefined}
+                        className="w-full max-w-xl"
+                    />
 
                     {intervalsLoading ? (
                         <div className="flex items-center gap-2 py-4 text-sm text-slate-500">
