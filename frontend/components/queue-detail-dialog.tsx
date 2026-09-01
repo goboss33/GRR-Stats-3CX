@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Loader2, Users, History, BarChart3, Search, Phone } from "lucide-react";
+import { Users, History, BarChart3, Search, Phone } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ShieldCheck, Plus, X } from "lucide-react";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tip } from "@/components/ui/tooltip";
+import { Attente } from "@/components/ui/etat-chargement";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -50,11 +51,19 @@ function activityStatus(lastSeenIso: string) {
 
 export function QueueDetailDialog({
     queueId,
+    queueNumber,
+    queueName,
     serverId,
     open,
     onOpenChange,
 }: {
     queueId: string | null;
+    /* Numéro et nom sont déjà affichés par la ligne cliquée : les passer
+       permet de coiffer la fiche AVANT la fin du chargement. Sans eux, le
+       titre n'existait pas au montage — Radix le signalait en console, et
+       l'utilisateur voyait une fenêtre anonyme pendant la requête. */
+    queueNumber: string;
+    queueName: string;
     serverId: string;
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -150,32 +159,49 @@ export function QueueDetailDialog({
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+                {/* L'en-tête est HORS de la branche de chargement, et c'est le fond
+                    du correctif : une fenêtre doit porter son titre dès qu'elle
+                    s'ouvre. Il vient des propriétés tant que la requête n'a pas
+                    répondu, puis de la fiche chargée. */}
+                <DialogHeader>
+                    <DialogTitle className="flex flex-wrap items-center gap-2">
+                        <span className="rounded border bg-slate-50 px-1.5 py-0.5 font-mono text-sm text-slate-600">
+                            {detail?.queueNumber ?? queueNumber}
+                        </span>
+                        {detail?.currentName ?? queueName}
+                        {detail?.isNew && (
+                            <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                                Nouvelle
+                            </Badge>
+                        )}
+                        {detail?.status === "ARCHIVED" && (
+                            <Badge variant="outline" className="bg-slate-100 text-slate-500">Archivée</Badge>
+                        )}
+                    </DialogTitle>
+                    <DialogDescription asChild>
+                        {detail ? (
+                            <span>
+                                {[detail.entity, detail.region, detail.service].filter(Boolean).join(" · ") || "Aucune étiquette"}
+                            </span>
+                        ) : (
+                            /* Un gabarit de la bonne taille plutôt qu'un texte
+                               provisoire : rien ne saute quand la vraie ligne
+                               arrive, et on n'annonce pas « Aucune étiquette »
+                               à une file qui en a. */
+                            <span className="flex h-5 items-center">
+                                <span className="h-3 w-40 rounded bg-slate-100" />
+                                <span className="sr-only">Chargement des informations de la file</span>
+                            </span>
+                        )}
+                    </DialogDescription>
+                </DialogHeader>
+
                 {loading || !detail ? (
                     <div className="flex items-center justify-center py-16">
-                        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                        <Attente libelle="Chargement de la fiche…" />
                     </div>
                 ) : (
                     <>
-                        <DialogHeader>
-                            <DialogTitle className="flex flex-wrap items-center gap-2">
-                                <span className="rounded border bg-slate-50 px-1.5 py-0.5 font-mono text-sm text-slate-600">
-                                    {detail.queueNumber}
-                                </span>
-                                {detail.currentName}
-                                {detail.isNew && (
-                                    <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
-                                        Nouvelle
-                                    </Badge>
-                                )}
-                                {detail.status === "ARCHIVED" && (
-                                    <Badge variant="outline" className="bg-slate-100 text-slate-500">Archivée</Badge>
-                                )}
-                            </DialogTitle>
-                            <DialogDescription>
-                                {[detail.entity, detail.region, detail.service].filter(Boolean).join(" · ") || "Aucune étiquette"}
-                            </DialogDescription>
-                        </DialogHeader>
-
                         {/* Repères d'activité */}
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                             {[

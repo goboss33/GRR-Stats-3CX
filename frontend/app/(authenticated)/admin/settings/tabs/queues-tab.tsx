@@ -90,7 +90,9 @@ export function QueuesTab() {
     const [changements, setChangements] = useState<Changement[] | "chargement" | "échec" | null>(null);
     const [healthFilter, setHealthFilter] = useState<HealthLevel | "ALL">("ALL");
     const [selected, setSelected] = useState<Set<string>>(new Set());
-    const [detailQueueId, setDetailQueueId] = useState<string | null>(null);
+    // Numéro et nom voyagent avec l'identifiant : la fiche peut ainsi
+    // s'annoncer dès l'ouverture, sans attendre sa requête (cf. flowQueue).
+    const [detailQueue, setDetailQueue] = useState<{ id: string; number: string; name: string } | null>(null);
     const [bulkBusy, setBulkBusy] = useState(false);
     const load = useCallback(async () => {
         try {
@@ -387,7 +389,7 @@ export function QueuesTab() {
                                     {filtered.map((q) => (
                                         <tr
                                             key={q.id}
-                                            onClick={() => setDetailQueueId(q.id)}
+                                            onClick={() => setDetailQueue({ id: q.id, number: q.queueNumber, name: q.currentName })}
                                             className={cn(
                                                 "cursor-pointer hover:bg-slate-50",
                                                 q.status === "ARCHIVED" && "opacity-60",
@@ -572,10 +574,12 @@ export function QueuesTab() {
                 onClose={() => setFlowQueue(null)}
             />
             <QueueDetailDialog
-                queueId={detailQueueId}
+                queueId={detailQueue?.id ?? null}
+                queueNumber={detailQueue?.number ?? ""}
+                queueName={detailQueue?.name ?? ""}
                 serverId={getSelectedServer()}
-                open={!!detailQueueId}
-                onOpenChange={(open) => !open && setDetailQueueId(null)}
+                open={!!detailQueue}
+                onOpenChange={(open) => !open && setDetailQueue(null)}
             />
 
             {onglet === "changements" && <PanneauChangements etat={changements} />}
