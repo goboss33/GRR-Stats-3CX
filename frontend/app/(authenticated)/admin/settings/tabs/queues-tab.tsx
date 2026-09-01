@@ -170,7 +170,9 @@ export function QueuesTab() {
     };
 
     const newQueues = queues.filter((q) => q.isNew).length;
-    const renamedQueues = queues.filter((q) => q.previousNames.length > 0);
+    // Plus de bandeau des renommages ici : il listait les 65 files renommées
+    // à chaque visite, sans date ni ordre — l'onglet « Changements » les
+    // raconte désormais chronologiquement, avec leur source.
 
     // Santé calculée côté client à partir de l'activité réelle des agents.
     const health = useMemo(() => {
@@ -311,22 +313,6 @@ export function QueuesTab() {
                     <Button size="sm" variant="outline" className="bg-white" onClick={() => markReviewed()}>
                         J&apos;ai vu
                     </Button>
-                </div>
-            )}
-
-            {renamedQueues.length > 0 && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-                    <p className="mb-2 text-sm font-medium text-blue-900">
-                        {renamedQueues.length} file(s) renommée(s) dans 3CX — vérifiez que les périmètres restent corrects
-                    </p>
-                    <ul className="space-y-1 text-xs text-blue-800">
-                        {renamedQueues.map((q) => (
-                            <li key={q.id}>
-                                <span className="font-mono">{q.queueNumber}</span> : « {q.previousNames.join(" », « ")} » →{" "}
-                                <strong>« {q.currentName} »</strong>
-                            </li>
-                        ))}
-                    </ul>
                 </div>
             )}
 
