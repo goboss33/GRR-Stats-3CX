@@ -13,7 +13,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { getSelectedServer } from "@/lib/selected-server";
-import { KNOWN_REGIONS } from "@/services/domain/queue-naming";
 import { QueueDetailDialog } from "@/components/queue-detail-dialog";
 import { Attente } from "@/components/ui/etat-chargement";
 import type { Changement } from "@/services/queue-changelog.service";
@@ -181,8 +180,7 @@ export function QueuesTab() {
             return (
                 q.queueNumber.includes(term) ||
                 q.currentName.toLowerCase().includes(term) ||
-                (q.region ?? "").toLowerCase().includes(term) ||
-                (q.entity ?? "").toLowerCase().includes(term) ||
+                (q.department ?? "").toLowerCase().includes(term) ||
                 // Recherche par agent : retrouve les files où il est sollicité.
                 q.agents.some((a) => a.name.toLowerCase().includes(term) || a.extension.includes(term))
             );
@@ -301,7 +299,7 @@ export function QueuesTab() {
                         <Input
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Rechercher par numéro, nom, région, entité ou collaborateur…"
+                            placeholder="Rechercher par numéro, nom, département ou collaborateur…"
                             className="pl-9"
                         />
                     </div>
@@ -322,18 +320,6 @@ export function QueuesTab() {
             {selected.size > 0 && (
                 <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
                     <span className="text-sm font-medium text-blue-900">{selected.size} sélectionnée(s)</span>
-                    <Select onValueChange={(region) => patchSelection({ region })}>
-                        <SelectTrigger className="h-9 w-48 bg-white">
-                            <SelectValue placeholder="Attribuer une région…" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {KNOWN_REGIONS.map((r) => (
-                                <SelectItem key={r} value={r}>{r}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                    <div className="h-6 w-px bg-blue-200" />
-
                     <Button
                         size="sm"
                         variant="outline"
@@ -382,9 +368,7 @@ export function QueuesTab() {
                                         </th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">N°</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Nom actuel</th>
-                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Entité</th>
-                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Région</th>
-                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Service</th>
+                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Département</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Collaborateurs</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Dernier appel</th>
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Statut</th>
@@ -426,19 +410,25 @@ export function QueuesTab() {
                                                         </Badge>
                                                     </Tip>
                                                 )}
-                                                {/* Le vrai signal d'alerte : une file ACTIVE hors de
-                                                    tout périmètre n'apparaît nulle part, pour
-                                                    personne — ses appels sont comptés mais
-                                                    invisibles.
-                                                    Restreint aux actives à dessein : une file
-                                                    archivée sans périmètre est le cas NORMAL — on
-                                                    l'archive justement parce que personne n'en a
-                                                    besoin. Mesuré le 1er septembre 2026 : 30 files
-                                                    sans périmètre, toutes archivées. Sans ce garde-fou,
-                                                    le badge aurait crié trente fois pour rien. */}
-                                                {q.status === "ACTIVE" && q.perimeterCount === 0 && (
-                                                    <Tip content="Cette file n'est dans le périmètre d'aucun utilisateur : elle n'apparaît sur aucun écran, pour personne. Ajoutez-la depuis la fiche d'un utilisateur.">
-                                                        <Badge variant="outline" className="ml-2 border-amber-200 bg-amber-50 text-[10px] text-amber-700">
+                                                {/* Une file hors de tout périmètre n'apparaît nulle
+                                                    part, pour personne — le périmètre gouverne aussi
+                                                    les rôles globaux. Le badge le dit sur les DEUX
+                                                    onglets, pour que les deux vues se lisent pareil.
+                                                    La COULEUR, elle, dit la gravité : sur une file
+                                                    active c'est un défaut à corriger (ambre) ; sur
+                                                    une archivée c'est l'état attendu et rassurant
+                                                    (neutre). Mesuré le 1er septembre 2026 :
+                                                    30 files sans périmètre, toutes archivées. */}
+                                                {q.perimeterCount === 0 && (
+                                                    <Tip content={q.status === "ACTIVE"
+                                                        ? "Cette file active n'est dans le périmètre d'aucun utilisateur : elle reçoit des appels que personne ne voit. Ajoutez-la depuis la fiche d'un utilisateur."
+                                                        : "Cette file archivée n'est dans aucun périmètre — c'est l'état attendu."}>
+                                                        <Badge variant="outline" className={cn(
+                                                            "ml-2 text-[10px]",
+                                                            q.status === "ACTIVE"
+                                                                ? "border-amber-200 bg-amber-50 text-amber-700"
+                                                                : "border-slate-200 bg-slate-50 text-slate-500",
+                                                        )}>
                                                             Aucun périmètre
                                                         </Badge>
                                                     </Tip>
@@ -450,9 +440,6 @@ export function QueuesTab() {
                                                         </span>
                                                     </Tip>
                                                 )}
-                                                {q.department && (
-                                                    <p className="mt-0.5 text-xs text-slate-400">Département {q.department}</p>
-                                                )}
                                                 {/* Explique pourquoi la file remonte lors d'une recherche par agent */}
                                                 {matchedAgents(q).length > 0 && (
                                                     <p className="mt-0.5 text-xs text-blue-600">
@@ -460,38 +447,17 @@ export function QueuesTab() {
                                                     </p>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
-                                                <Input
-                                                    defaultValue={q.entity ?? ""}
-                                                    onBlur={(e) => {
-                                                        const v = e.target.value.trim() || null;
-                                                        if (v !== q.entity) patchQueue(q.id, { entity: v });
-                                                    }}
-                                                    className="h-8 w-24 text-xs"
-                                                    placeholder="—"
-                                                />
-                                            </td>
-                                            <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
-                                                <Input
-                                                    defaultValue={q.region ?? ""}
-                                                    onBlur={(e) => {
-                                                        const v = e.target.value.trim().toUpperCase() || null;
-                                                        if (v !== q.region) patchQueue(q.id, { region: v });
-                                                    }}
-                                                    className="h-8 w-32 text-xs"
-                                                    placeholder="—"
-                                                />
-                                            </td>
-                                            <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
-                                                <Input
-                                                    defaultValue={q.service ?? ""}
-                                                    onBlur={(e) => {
-                                                        const v = e.target.value.trim() || null;
-                                                        if (v !== q.service) patchQueue(q.id, { service: v });
-                                                    }}
-                                                    className="h-8 w-40 text-xs"
-                                                    placeholder="—"
-                                                />
+                                            {/* Le département REMPLACE les trois étiquettes
+                                                Entité / Région / Service, qui étaient devinées en
+                                                analysant le nom de la file puis figées. Il est
+                                                déclaré par le 3CX, couvre 100 % des files actives
+                                                (contre 98 % pour les étiquettes, et la lacune était
+                                                justement une file au nouveau format de nommage).
+                                                Volontairement NON modifiable : cette valeur n'est
+                                                pas la nôtre. Si elle est fausse, elle se corrige au
+                                                3CX, et l'application suit. */}
+                                            <td className="px-4 py-2">
+                                                <span className="text-xs text-slate-600">{q.department ?? "—"}</span>
                                             </td>
                                             <td className="px-4 py-2">
                                                 <Tip content={`${health.get(q.id)?.activeAgents ?? 0} actif(s) · ${health.get(q.id)?.staleAgents ?? 0} inactif(s) > 30j`}>

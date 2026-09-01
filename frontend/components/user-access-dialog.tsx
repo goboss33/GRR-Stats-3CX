@@ -25,8 +25,8 @@ interface RegistryQueue {
     id: string;
     queueNumber: string;
     currentName: string;
-    entity: string | null;
-    region: string | null;
+    /** Département 3CX — remplace les étiquettes entité/région, devinées puis figées. */
+    department: string | null;
     status: string;
     isNew: boolean;
     tenantId?: string;
@@ -81,7 +81,7 @@ export function UserAccessDialog({
     const [scope, setScope] = useState<ScopePreview | null>(null);
 
     const [queueSearch, setQueueSearch] = useState("");
-    const [regionFilter, setRegionFilter] = useState<string>("ALL");
+    const [departementFiltre, setDepartementFiltre] = useState<string>("ALL");
     const [newOverrideExt, setNewOverrideExt] = useState("");
 
     // Rôle « global » : voit aussi les postes qui n'appartiennent à aucune
@@ -147,20 +147,24 @@ export function UserAccessDialog({
         return [...selectedTenants].flatMap((t) => queuesByTenant[t] ?? []);
     }, [selectedTenants, queuesByTenant]);
 
-    const regions = useMemo(() => {
+    // Filtrer par DÉPARTEMENT plutôt que par région : le département est
+    // déclaré par le 3CX et couvre toutes les files actives, là où la région
+    // était déduite du nom — et manquante dès qu'une file ne suivait plus la
+    // convention de nommage.
+    const departements = useMemo(() => {
         const set = new Set<string>();
-        visibleQueues.forEach((q) => q.region && set.add(q.region));
-        return [...set].sort();
+        visibleQueues.forEach((q) => q.department && set.add(q.department));
+        return [...set].sort((a, b) => a.localeCompare(b, "fr"));
     }, [visibleQueues]);
 
     const filteredQueues = useMemo(() => {
         const term = queueSearch.trim().toLowerCase();
         return visibleQueues.filter((q) => {
-            if (regionFilter !== "ALL" && q.region !== regionFilter) return false;
+            if (departementFiltre !== "ALL" && q.department !== departementFiltre) return false;
             if (!term) return true;
             return q.queueNumber.includes(term) || q.currentName.toLowerCase().includes(term);
         });
-    }, [visibleQueues, queueSearch, regionFilter]);
+    }, [visibleQueues, queueSearch, departementFiltre]);
 
     const toggleQueue = (id: string) => {
         setSelectedQueues((s) => {
@@ -278,14 +282,14 @@ export function UserAccessDialog({
                                                     className="h-9 pl-9"
                                                 />
                                             </div>
-                                            <Select value={regionFilter} onValueChange={setRegionFilter}>
-                                                <SelectTrigger className="h-9 w-full sm:w-44">
+                                            <Select value={departementFiltre} onValueChange={setDepartementFiltre}>
+                                                <SelectTrigger className="h-9 w-full sm:w-52">
                                                     <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="ALL">Toutes les régions</SelectItem>
-                                                    {regions.map((r) => (
-                                                        <SelectItem key={r} value={r}>{r}</SelectItem>
+                                                    <SelectItem value="ALL">Tous les départements</SelectItem>
+                                                    {departements.map((d) => (
+                                                        <SelectItem key={d} value={d}>{d}</SelectItem>
                                                     ))}
                                                 </SelectContent>
                                             </Select>
@@ -331,8 +335,8 @@ export function UserAccessDialog({
                                                     <Checkbox checked={selectedQueues.has(q.id)} onCheckedChange={() => toggleQueue(q.id)} />
                                                     <span className="font-mono text-xs text-slate-500">{q.queueNumber}</span>
                                                     <span className="flex-1 truncate text-sm">{q.currentName}</span>
-                                                    {q.region && (
-                                                        <Badge variant="outline" className="text-[10px]">{q.region}</Badge>
+                                                    {q.department && (
+                                                        <Badge variant="outline" className="text-[10px]">{q.department}</Badge>
                                                     )}
                                                     {q.isNew && (
                                                         <Badge variant="outline" className="border-blue-200 bg-blue-50 text-[10px] text-blue-700">
