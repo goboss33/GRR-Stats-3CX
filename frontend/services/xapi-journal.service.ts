@@ -3,6 +3,7 @@ import { getServerXapiConfig, isXapiUsable } from "@/lib/xapi-config";
 import { releveAttendu } from "@/services/domain/journal-cadence";
 import { requestXapiToken, decodeTokenClaims } from "@/lib/xapi-client";
 import { getAvailableServers } from "@/lib/servers";
+import { getQueueMembersRaw } from "@/services/repositories/cdr.repository";
 import type { ServerId } from "@/lib/prisma-cdr";
 import {
     normalizeSnapshot, planJournalChanges, windowReachesCutover,
@@ -264,13 +265,39 @@ export async function getJournalOverview(serverId: ServerId) {
         }),
     ]);
 
-    // Nom d'équipe : l'annuaire des files vit dans la même base. Sans lui,
-    // le sélecteur n'offrait qu'un numéro — illisible pour un manager.
-    const annuaire = await prismaAuth.queueRegistry.findMany({
-        where: { tenantId: serverId },
-        select: { queueNumber: true, currentName: true, entity: true, region: true, service: true },
-    });
+    // Nom et département : LA MÊME source que la recherche du header, c'est-à-dire
+    // les CDR — nom vu sur l'appel le plus récent, département 3CX du moment.
+    //
+    // ⚠️ Ne pas revenir aux étiquettes entity/region/service de QueueRegistry.
+    // Elles sont analysées UNE SEULE FOIS, au nom qu'avait la file lors de sa
+    // découverte, et jamais recalculées (à dessein : un ADMIN peut les avoir
+    // corrigées). Sur une file renommée elles décrivent donc un passé disparu —
+    // la file 807 affichait « RC · NEUCHATEL » alors qu'elle s'appelle
+    // « Gérance NE-G01 + NE-G02 » et que le 3CX la place dans « NEUCHATEL ».
+    // Ces étiquettes servent à l'écran d'administration des files (filtrer,
+    // attribuer des périmètres en masse), pas à afficher un département.
+    const [annuaire, filesCdr] = await Promise.all([
+        prismaAuth.queueRegistry.findMany({
+            where: { tenantId: serverId },
+            select: { queueNumber: true, currentName: true },
+        }),
+        // Version NON filtrée par périmètre : la variante filtrée résout la
+        // portée du consultant, ce qui exige une requête HTTP — un script de
+        // contrôle ou une tâche de fond n'en a pas, et l'appel renverrait
+        // silencieusement une liste vide. L'onglet est de toute façon réservé
+        // à l'ADMIN par la garde de sa route.
+        // Mise en cache côté repository : cet annuaire bouge à l'échelle de la
+        // semaine.
+        getQueueMembersRaw(serverId),
+    ]);
     const nomDe = new Map(annuaire.map((q) => [q.queueNumber, q]));
+    // Une ligne par (file, collaborateur) : on ne garde que la première de
+    // chaque file, le nom et le département y sont déjà résolus.
+    const ficheCdr = new Map<string, { queueName: string; queueDepartment: string | null }>();
+    for (const row of filesCdr) {
+        if (ficheCdr.has(row.queue_number)) continue;
+        ficheCdr.set(row.queue_number, { queueName: row.queue_name, queueDepartment: row.queue_department });
+    }
 
     const parFile = new Map<string, typeof queues>();
     for (const ligne of queues) {
@@ -286,15 +313,16 @@ export async function getJournalOverview(serverId: ServerId) {
         })),
         openCount,
         queues: [...parFile.entries()].map(([queueNumber, lignes]) => {
-            const fiche = nomDe.get(queueNumber);
+            const cdr = ficheCdr.get(queueNumber);
             return {
                 queueNumber,
-                queueName: fiche?.currentName ?? `File ${queueNumber}`,
-                // Regroupement du sélecteur, au niveau du SITE (entité · région).
-                // Y ajouter le service donnait 90 groupes pour 93 équipes : un
-                // titre par ligne, donc aucun regroupement. Le service, lui,
-                // reste lisible dans le nom de l'équipe.
-                queueDepartment: [fiche?.entity, fiche?.region].filter(Boolean).join(" · ") || null,
+                // Repli en cascade : nom vu dans les CDR, puis nom du registre
+                // (une file du journal peut n'avoir aucune sollicitation
+                // récente), puis le numéro seul.
+                queueName: cdr?.queueName ?? nomDe.get(queueNumber)?.currentName ?? `File ${queueNumber}`,
+                // Département déclaré par le 3CX, tel quel. Une file sans
+                // département rejoint le groupe sans titre du sélecteur.
+                queueDepartment: cdr?.queueDepartment ?? null,
                 members: lignes.length,
                 membres: lignes.map((l) => ({
                     extension: l.extension,
