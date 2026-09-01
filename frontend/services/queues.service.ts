@@ -3,6 +3,7 @@
 import { ServerId } from "@/lib/prisma-cdr";
 import { prismaAuth } from "@/lib/prisma-auth";
 import { getQueueMembersRaw } from "@/services/repositories/cdr.repository";
+import { getAnnuaireXapi } from "@/services/queue-directory.service";
 import type { QueueInfo, QueueMember } from "@/services/domain/call.types";
 import { resolveAccessScope } from "@/lib/access-scope";
 import type { AgentRatiosLevel } from "@/lib/ratios-access";
@@ -16,7 +17,13 @@ import type { AgentRatiosLevel } from "@/lib/ratios-access";
 export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> {
     // Portée résolue ici (module "use server" : un paramètre serait forgeable).
     const scope = await resolveAccessScope(serverId);
-    const result = await getQueueMembersRaw(serverId);
+    // L'annuaire du PBX passe DEVANT les appels quand il connaît la file, et
+    // s'efface sinon (cf. queue-directory.service). Il vaut null quand la
+    // surcouche est éteinte : le comportement d'avant revient alors seul.
+    const [result, annuaire] = await Promise.all([
+        getQueueMembersRaw(serverId),
+        getAnnuaireXapi(serverId),
+    ]);
 
     const queuesMap = new Map<string, QueueInfo>();
     const queueMembersMap = new Map<string, Map<string, QueueMember>>();
@@ -28,8 +35,8 @@ export async function getQueueMembers(serverId: ServerId): Promise<QueueInfo[]> 
         if (!queuesMap.has(qNum)) {
             queuesMap.set(qNum, {
                 queueNumber: qNum,
-                queueName: row.queue_name,
-                queueDepartment: row.queue_department,
+                queueName: annuaire?.get(qNum)?.queueName || row.queue_name,
+                queueDepartment: annuaire?.get(qNum)?.department ?? row.queue_department,
                 members: [],
                 memberCount: 0
             });

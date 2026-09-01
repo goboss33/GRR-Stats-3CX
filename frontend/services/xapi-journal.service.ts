@@ -11,6 +11,7 @@ import {
 } from "@/services/domain/membership-journal";
 import { getServerTimezone } from "@/lib/servers";
 import type { ClassificationRules, RosterMember } from "@/services/domain/call-classification";
+import { invaliderCacheAnnuaire } from "@/services/queue-directory.service";
 
 /**
  * JOURNAL DE COMPOSITION DES ÉQUIPES — la couche d'entrée-sortie.
@@ -247,6 +248,11 @@ export async function runQueueMembershipSnapshot(serverId: ServerId): Promise<Sn
             where: { serverId, ranAt: { lt: new Date(now.getTime() - RUNS_RETENTION_DAYS * 24 * 3600 * 1000) } },
         }),
     ]);
+
+    // Les libellés servis à l'application viennent de l'annuaire qu'on vient
+    // d'écrire : sans cette invalidation, un renommage fait au 3CX attendrait
+    // encore la fin du cache pour apparaître à l'écran.
+    await invaliderCacheAnnuaire(serverId);
 
     return {
         ran: true, ok: true,

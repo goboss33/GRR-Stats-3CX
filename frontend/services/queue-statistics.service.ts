@@ -7,6 +7,7 @@ import {
     getQueueName,
     getQueueDepartment,
 } from "@/services/repositories/cdr.repository";
+import { getAnnuaireXapi } from "@/services/queue-directory.service";
 import {
     getQueueTimelineData,
     getQueueHeatmapData,
@@ -130,9 +131,12 @@ export async function getQueueStatistics(
         throw new Error("Cette file d'attente n'est pas dans votre périmètre");
     }
 
-    const [queueName, queueDepartment, kpis, agents, timelineData, heatmapData] = await Promise.all([
+    // Nom et département : l'annuaire du PBX passe devant quand il connaît la
+    // file, les appels prennent le relais sinon (cf. queue-directory.service).
+    const [nomCdr, departementCdr, annuaire, kpis, agents, timelineData, heatmapData] = await Promise.all([
         getQueueName(serverId, queueNumber),
         getQueueDepartment(serverId, queueNumber),
+        getAnnuaireXapi(serverId),
         computeQueueKPIs(serverId, queueNumber, startDate, endDate, origin),
         computeAgentStats(serverId, queueNumber, startDate, endDate, origin),
         getQueueTimelineData(serverId, queueNumber, startDate, endDate, origin),
@@ -141,8 +145,8 @@ export async function getQueueStatistics(
 
     return {
         queueNumber,
-        queueName,
-        queueDepartment,
+        queueName: annuaire?.get(queueNumber)?.queueName || nomCdr,
+        queueDepartment: annuaire?.get(queueNumber)?.department ?? departementCdr,
         period: {
             start: startDate.toISOString(),
             end: endDate.toISOString(),

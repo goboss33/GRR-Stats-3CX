@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -49,6 +50,8 @@ interface RegistryQueue {
     perimeterCount: number;
     /** Dernier renommage daté par les appels, et le nom porté avant. */
     lastRename: { date: string; avant: string } | null;
+    /** Le 3CX ne déclare plus cette file — faux si la surcouche est éteinte. */
+    absenteDuPbx: boolean;
     lastCallAt: string | null;
     agents: { extension: string; name: string; attempts: number; lastSeenAt: string }[];
     lastSeenAt: string;
@@ -102,6 +105,7 @@ const SIGNAUX = {
     renommee: { libelle: "Renommée", test: estRenommeeRecemment },
     sansPerimetre: { libelle: "Aucun périmètre", test: (q: RegistryQueue) => q.perimeterCount === 0 },
     sansCollaborateur: { libelle: "Sans collaborateur", test: (q: RegistryQueue) => q.agentCount === 0 },
+    absenteDuPbx: { libelle: "Absente du 3CX", test: (q: RegistryQueue) => q.absenteDuPbx },
 } as const;
 type Signal = keyof typeof SIGNAUX;
 
@@ -243,6 +247,9 @@ export function QueuesTab() {
     const [filtreSante, setFiltreSante] = useState<Set<string>>(new Set());
     const [filtreSignal, setFiltreSignal] = useState<Set<string>>(new Set());
     const [tri, setTri] = useState(TRI_PAR_DEFAUT);
+    // null tant que le serveur n'a pas répondu : l'interrupteur ne prétend pas
+    // connaître une valeur qu'il n'a pas encore lue.
+    const [masquerArchivees, setMasquerArchivees] = useState<boolean | null>(null);
     // Numéro et nom voyagent avec l'identifiant : la fiche peut ainsi
     // s'annoncer dès l'ouverture, sans attendre sa requête (cf. flowQueue).
     const [detailQueue, setDetailQueue] = useState<{ id: string; number: string; name: string } | null>(null);
@@ -262,6 +269,41 @@ export function QueuesTab() {
     useEffect(() => {
         load();
     }, [load]);
+
+    useEffect(() => {
+        fetch("/api/admin/settings")
+            .then((r) => (r.ok ? r.json() : {}) as Promise<Record<string, unknown>>)
+            .then((d) => setMasquerArchivees(d.hideArchivedQueues === true))
+            .catch(() => setMasquerArchivees(null));
+    }, []);
+
+    /**
+     * Masquage global des files archivées — bascule optimiste.
+     *
+     * Ce réglage gouverne TOUTE l'application, pas seulement cet écran : il
+     * retire les files archivées de la barre latérale, de la recherche et de
+     * l'aperçu des groupes, pour tout le monde. Il vit ici parce que c'est ici
+     * qu'on archive : séparer le geste de sa conséquence obligeait à changer
+     * d'écran pour comprendre ce qu'on venait de faire.
+     */
+    const enregistrerMasquage = async (valeur: boolean) => {
+        const precedent = masquerArchivees;
+        setMasquerArchivees(valeur);
+        try {
+            const res = await fetch("/api/admin/settings", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ hideArchivedQueues: valeur }),
+            });
+            if (!res.ok) throw new Error();
+            toast.success(valeur
+                ? "Les files archivées sont masquées des listes"
+                : "Les files archivées réapparaissent dans les listes");
+        } catch {
+            setMasquerArchivees(precedent);
+            toast.error("Enregistrement impossible");
+        }
+    };
 
 
     const runDiscovery = async () => {
@@ -488,10 +530,16 @@ export function QueuesTab() {
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
-                    {/* « Masquer les files archivées » a quitté cet écran : ce
-                        n'était pas un filtre de consultation mais un réglage qui
-                        gouverne TOUTE l'application (cf. queues.service). Il vit
-                        désormais dans Files d'attente > Réglage. */}
+                    <Tip content="Retire les files archivées de la barre latérale, de la recherche et de l'aperçu des groupes, pour tous les utilisateurs. Périmètres, statistiques passées et journaux restent intacts.">
+                        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                            <Switch
+                                checked={masquerArchivees === true}
+                                disabled={masquerArchivees === null}
+                                onCheckedChange={enregistrerMasquage}
+                            />
+                            Masquer les archivées partout
+                        </label>
+                    </Tip>
                     <Button onClick={runDiscovery} disabled={isDiscovering}>
                         {isDiscovering ? (
                             <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Découverte…</>
@@ -679,6 +727,23 @@ export function QueuesTab() {
                                                                 : "border-slate-200 bg-slate-50 text-slate-500",
                                                         )}>
                                                             Aucun périmètre
+                                                        </Badge>
+                                                    </Tip>
+                                                )}
+                                                {/* Le PBX ne déclare plus cette file : elle a été
+                                                    supprimée du 3CX, ses appels restent dans
+                                                    l'historique. Rouge parce qu'il y a quelque chose
+                                                    à faire — mais c'est VOUS qui archivez : un relevé
+                                                    incomplet archiverait sinon des dizaines de files
+                                                    d'un coup. Le badge est muet tant que la surcouche
+                                                    XAPI est éteinte : on ne signale pas une absence
+                                                    qu'on n'a pas les moyens de constater. */}
+                                                {q.absenteDuPbx && (
+                                                    <Tip content={q.status === "ACTIVE"
+                                                        ? "Le 3CX ne déclare plus cette file : elle y a probablement été supprimée. Ses appels passés restent consultables. Archivez-la si c'est bien le cas."
+                                                        : "Le 3CX ne déclare plus cette file — cohérent avec son archivage."}>
+                                                        <Badge variant="outline" className="ml-2 border-red-200 bg-red-50 text-[10px] text-red-700">
+                                                            Absente du 3CX
                                                         </Badge>
                                                     </Tip>
                                                 )}

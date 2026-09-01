@@ -6,6 +6,7 @@ import { prismaAuth } from "@/lib/prisma-auth";
 import { requireApiRole } from "@/lib/auth-guard";
 import { sealSecret } from "@/lib/secret-box";
 import { normalizeXapiBaseUrl } from "@/lib/xapi-client";
+import { invaliderCacheAnnuaire } from "@/services/queue-directory.service";
 
 export async function GET() {
     const guard = await requireApiRole(["ADMIN"]);
@@ -28,6 +29,7 @@ export async function GET() {
             licenceThreshold: settingsMap.get(id)?.licenceThreshold ?? servers[id].licenceThreshold,
             trunkThreshold: settingsMap.get(id)?.trunkThreshold ?? servers[id].trunkThreshold,
             xapiEnabled: settingsMap.get(id)?.xapiEnabled ?? false,
+            xapiDirectoryEnabled: settingsMap.get(id)?.xapiDirectoryEnabled ?? false,
             // Adresse et ID client ne sont pas des secrets : ils s'affichent.
             xapiBaseUrl: settingsMap.get(id)?.xapiBaseUrl ?? "",
             xapiClientId: settingsMap.get(id)?.xapiClientId ?? "",
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
     if (!guard.ok) return guard.response;
 
     try {
-        const { serverId, timezone, licenceThreshold, trunkThreshold, xapiEnabled, xapiKey, xapiBaseUrl, xapiClientId } = await request.json();
+        const { serverId, timezone, licenceThreshold, trunkThreshold, xapiEnabled, xapiDirectoryEnabled, xapiKey, xapiBaseUrl, xapiClientId } = await request.json();
         
         if (!serverId || typeof serverId !== "string") {
             return NextResponse.json(
@@ -138,7 +140,31 @@ export async function POST(request: Request) {
                 create: { serverId, xapiEnabled },
             });
 
+            // Éteindre la surcouche éteint aussi l'annuaire : les libellés
+            // reviennent aux appels immédiatement, sans laisser un réglage
+            // allumé qui ne pourrait plus rien faire.
+            await invaliderCacheAnnuaire(serverId as ServerId);
             return NextResponse.json({ success: true, serverId, xapiEnabled });
+        }
+
+        // Annuaire XAPI pour les noms et départements de TOUTE l'application.
+        // Distinct de l'interrupteur ci-dessus : on peut vouloir le journal
+        // des équipes sans confier les libellés au PBX.
+        if (xapiDirectoryEnabled !== undefined) {
+            if (typeof xapiDirectoryEnabled !== "boolean") {
+                return NextResponse.json({ error: "Invalid xapiDirectoryEnabled" }, { status: 400 });
+            }
+
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: { xapiDirectoryEnabled },
+                create: { serverId, xapiDirectoryEnabled },
+            });
+
+            // Le changement doit se voir au rechargement suivant, pas dans
+            // cinq minutes.
+            await invaliderCacheAnnuaire(serverId as ServerId);
+            return NextResponse.json({ success: true, serverId, xapiDirectoryEnabled });
         }
 
         // Adresse du PBX — normalisée à l'origine HTTPS : « /5001 » saisi au

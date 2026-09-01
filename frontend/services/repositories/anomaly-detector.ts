@@ -47,6 +47,7 @@
 
 import { getPrismaCdr, ServerId } from "@/lib/prisma-cdr";
 import { getQueueMembersRaw } from "@/services/repositories/cdr.repository";
+import { getAnnuaireXapi } from "@/services/queue-directory.service";
 import { logger } from "@/lib/logger";
 
 export type AnomalyAlert = {
@@ -275,6 +276,9 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
     // lien (une par nom d'époque) — on garde la plus récente, sinon la même
     // anomalie sortirait en double.
     const members = (await getQueueMembersRaw(serverId)).filter((m) => m.last_seen_at >= memberHorizon);
+    // Une alerte nomme une équipe : autant qu'elle porte le nom que le 3CX
+    // affiche aujourd'hui, pas celui de son dernier appel.
+    const annuaire = await getAnnuaireXapi(serverId);
     const latestLink = new Map<string, (typeof members)[number]>();
     for (const m of members) {
         const key = `${m.queue_number}:${m.agent_extension}`;
@@ -307,7 +311,7 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
     const alerts: AnomalyAlert[] = [];
     for (const [queueNumber, team] of byQueue) {
         const queuePolls = pollsByQueue.get(queueNumber);
-        const queueName = team[0].queue_name || queueNumber;
+        const queueName = annuaire?.get(queueNumber)?.queueName || team[0].queue_name || queueNumber;
 
         // Membres candidats à l'anomalie : actifs, sollicités nulle part, et
         // SANS signature Absent — le statut Absent explique à lui seul la
@@ -380,7 +384,7 @@ async function computeAlerts(serverId: ServerId, windowDays: number): Promise<An
             id: `away_forgotten:${homeQueue}:${extension}`,
             type: "away_forgotten",
             queueNumber: homeQueue,
-            queueName: link.queue_name || homeQueue,
+            queueName: annuaire?.get(homeQueue)?.queueName || link.queue_name || homeQueue,
             agentExtension: extension,
             agentName: displayName(extension, link.agent_name),
             lastPollAt: link.last_seen_at.toISOString(),

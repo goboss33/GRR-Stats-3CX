@@ -51,6 +51,9 @@ export async function GET(request: NextRequest) {
                 lastCallAt: q.lastCallAt,
                 // Département 3CX déduit des CDR — null si jamais observé.
                 department: q.department,
+                // Le PBX ne déclare plus cette file : signalé, jamais archivé
+                // d'office. Toujours faux tant que la surcouche est éteinte.
+                absenteDuPbx: q.absenteDuPbx,
                 agents: q.agents,
                 firstSeenAt: q.firstSeenAt.toISOString(),
                 lastSeenAt: q.lastSeenAt.toISOString(),

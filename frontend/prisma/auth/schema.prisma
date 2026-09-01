@@ -309,35 +309,42 @@ model QueueAgentLink {
 }
 
 model TenantSettings {
-  serverId           String    @id
-  timezone           String    @default("Europe/Zurich")
-  licenceThreshold   Int?
-  trunkThreshold     Int?
+  serverId             String    @id
+  timezone             String    @default("Europe/Zurich")
+  licenceThreshold     Int?
+  trunkThreshold       Int?
   /// SURCOUCHE XAPI (août 2026) — interrogation directe du 3CX, activable et
   /// désactivable par tenant. Le socle CDR reste la source de vérité en toute
   /// circonstance : rien de ce qui existe ne doit dépendre de cet
   /// interrupteur, XAPI ne fait qu'AJOUTER par-dessus.
-  xapiEnabled        Boolean   @default(false)
+  xapiEnabled          Boolean   @default(false)
+  /// Fait passer les NOMS et DÉPARTEMENTS de toute l'application par l'annuaire
+  /// XAPI quand il connaît la file, avec repli sur les appels sinon. Séparé de
+  /// xapiEnabled : on peut vouloir le journal des équipes sans confier les
+  /// libellés au PBX. Éteint, l'affichage reste exactement celui d'avant.
+  /// L'écran « Registre (CDR) » n'est PAS concerné — il montre à dessein ce
+  /// que les appels racontent, c'est là qu'on lit l'écart entre les deux.
+  xapiDirectoryEnabled Boolean   @default(false)
   /// Adresse du PBX, port compris (ex. https://exemple.3cx.ch:5001). En base
   /// et non en variable d'environnement : un tenant = un serveur, et
   /// l'administrateur doit pouvoir corriger une adresse sans redéploiement.
-  xapiBaseUrl        String?
+  xapiBaseUrl          String?
   /// « ID client » du principal de service 3CX (v20) — PAS un secret : la
   /// paire ID client + clé s'échange contre un jeton temporaire.
-  xapiClientId       String?
+  xapiClientId         String?
   /// Clé XAPI CHIFFRÉE (AES-256-GCM, cf. lib/secret-box) — jamais en clair en
   /// base, jamais renvoyée au navigateur. Credential SORTANT : contrairement
   /// aux clés API entrantes (ApiKey.keyHash, bcrypt), il faut pouvoir la
   /// relire pour appeler le 3CX, donc chiffrement réversible et non hachage.
-  xapiKeyEncrypted   String?
+  xapiKeyEncrypted     String?
   /// Date de dernière saisie de la clé — seule trace montrable à l'écran.
-  xapiKeyUpdatedAt   DateTime?
+  xapiKeyUpdatedAt     DateTime?
   /// DÉPRÉCIÉ (août 2026) — plus lu par aucun écran, voir
   /// QueueRegistry.excludedFromStats. Les postes hors file sont désormais
   /// visibles des seuls rôles globaux, via leur périmètre.
-  excludedExtensions String    @default("")
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  excludedExtensions   String    @default("")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 }
 
 model ApiKey {

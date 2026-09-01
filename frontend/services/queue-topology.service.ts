@@ -36,6 +36,7 @@
 import { requireActionRole } from "@/lib/auth-guard";
 import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import { getQueueName, getQueueDepartment } from "@/services/repositories/cdr.repository";
+import { getAnnuaireXapi } from "@/services/queue-directory.service";
 import { getAlertsForTenant } from "@/services/repositories/anomaly-detector";
 import { prismaAuth } from "@/lib/prisma-auth";
 
@@ -235,9 +236,12 @@ async function computeTopology(serverId: ServerId, queueNumber: string): Promise
     const memberSince = new Date(Date.now() - MEMBERSHIP_DAYS * 24 * 3600 * 1000);
     const connectedSince = new Date(Date.now() - CONNECTED_DAYS * 24 * 3600 * 1000);
 
-    const [queueName, department, upstreamRows, outcomes, agentRows, strategyRows] = await Promise.all([
+    // Nom et département : l'annuaire du PBX passe devant quand il connaît la
+    // file, les appels prennent le relais sinon (cf. queue-directory.service).
+    const [nomCdr, departementCdr, annuaire, upstreamRows, outcomes, agentRows, strategyRows] = await Promise.all([
         getQueueName(serverId, queueNumber),
         getQueueDepartment(serverId, queueNumber),
+        getAnnuaireXapi(serverId),
         prisma.$queryRaw<UpstreamRow[]>`
             SELECT p.destination_dn_type AS parent_type,
                    p.destination_dn_number AS parent_number,
@@ -427,8 +431,8 @@ async function computeTopology(serverId: ServerId, queueNumber: string): Promise
 
     return {
         queueNumber,
-        queueName,
-        department,
+        queueName: annuaire?.get(queueNumber)?.queueName || nomCdr,
+        department: annuaire?.get(queueNumber)?.department ?? departementCdr,
         windowDays: FLOW_WINDOW_DAYS,
         strategy,
         totalPassages: Number(outcomes.balance?.passages ?? 0),

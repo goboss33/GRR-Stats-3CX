@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Users, Phone, KeyRound, Settings, Building2, Bell, BookOpenCheck, Database, SlidersHorizontal } from "lucide-react";
+import { Users, Phone, KeyRound, Settings, Building2, Bell, BookOpenCheck, Database } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PersonalInfoTab } from "./tabs/personal-info-tab";
 import { UsersTab } from "./tabs/users-tab";
 import { QueuesTab } from "./tabs/queues-tab";
-import { QueuesReglageTab } from "./tabs/queues-reglage-tab";
 import { TenantTab } from "./tabs/tenant-tab";
 import { BusinessRulesTab } from "./tabs/business-rules-tab";
 import { ApiKeysTab } from "./tabs/api-keys-tab";
@@ -15,7 +14,7 @@ import { XapiJournalTab } from "./tabs/xapi-journal-tab";
 
 type SectionId =
     | "personal" | "users"
-    | "queues-reglage" | "queues-registre" | "queues-journal"
+    | "queues-registre" | "queues-journal"
     | "business-rules" | "alerts" | "api-keys" | "tenant";
 
 // Rôles autorisés par section (cf. PRD droits d'accès §4.1).
@@ -42,7 +41,6 @@ const sections: Entree[] = [
     {
         label: "Files d'attente", icon: Phone, roles: ["ADMIN"],
         enfants: [
-            { id: "queues-reglage", label: "Réglage", icon: SlidersHorizontal },
             { id: "queues-registre", label: "Registre (CDR)", icon: Database },
             { id: "queues-journal", label: "Journal (XAPI)", icon: BookOpenCheck },
         ],
@@ -67,7 +65,6 @@ export default function SettingsPage({ userRole }: { userRole: string }) {
         switch (activeSection) {
             case "personal": return <PersonalInfoTab />;
             case "users": return <UsersTab />;
-            case "queues-reglage": return <QueuesReglageTab />;
             case "queues-registre": return <QueuesTab />;
             case "queues-journal": return <XapiJournalTab />;
             case "business-rules": return <BusinessRulesTab />;

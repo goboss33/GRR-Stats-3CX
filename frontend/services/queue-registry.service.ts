@@ -22,6 +22,7 @@ import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import { prismaAuth } from "@/lib/prisma-auth";
 import { parseQueueName } from "@/services/domain/queue-naming";
 import { getDerniersRenommages } from "@/services/queue-changelog.service";
+import { filesAbsentesDuPbx } from "@/services/queue-directory.service";
 import { logger } from "@/lib/logger";
 
 interface DiscoveredQueue {
@@ -219,6 +220,11 @@ export async function listRegistryQueues(serverId: ServerId) {
     // Date RÉELLE du dernier renommage, lue dans les appels : le badge
     // « Renommée » s'efface passé un délai, il lui faut une vraie date.
     const renommages = await getDerniersRenommages(serverId);
+    // Files que le 3CX ne déclare plus. Mesuré sur la production : les 8 files
+    // absentes de l'annuaire étaient les 8 archivées, zéro faux positif —
+    // l'absence prédit la suppression bien mieux que le silence prolongé.
+    // C'est un SIGNAL, pas une action : l'archivage reste un geste.
+    const absentes = await filesAbsentesDuPbx(serverId, queues.map((q) => q.queueNumber));
 
     return queues.map((q) => ({
         ...q,
@@ -228,6 +234,7 @@ export async function listRegistryQueues(serverId: ServerId) {
         agents: live[q.queueNumber]?.agents ?? [],
         perimeterCount: perimetreParFile.get(q.id) ?? 0,
         lastRename: renommages[q.queueNumber] ?? null,
+        absenteDuPbx: absentes.has(q.queueNumber),
     }));
 }
 
