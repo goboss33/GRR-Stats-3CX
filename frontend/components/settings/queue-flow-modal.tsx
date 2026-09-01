@@ -25,6 +25,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tip } from "@/components/ui/tooltip";
 import { QIcon } from "@/components/q-icon";
 import { cn } from "@/lib/utils";
@@ -108,9 +109,11 @@ function NodeCard({ node, side, onNavigate }: {
 }) {
     const Icon = KIND_ICONS[node.kind];
     const clickable = node.kind === "queue" && node.number !== null && onNavigate !== undefined;
-    const grouped = node.grouped
-        ? `${node.grouped.slice(0, 15).map((g) => `${g.name} (${g.volume})`).join(", ")}${node.grouped.length > 15 ? "…" : ""}`
-        : undefined;
+    // La traîne s'ouvre dans un PANNEAU, jamais dans le diagramme : la
+    // déplier en blocs ferait déborder la carte, exactement le défaut qu'on
+    // vient de corriger. Et vingt chemins à un ou deux appels ne se lisent pas
+    // en courbes — une liste dit la même chose, plus vite.
+    const traine = node.grouped;
     const body = (
         <div
             onClick={clickable ? () => onNavigate!(node.number!, node.name) : undefined}
@@ -139,7 +142,52 @@ function NodeCard({ node, side, onNavigate }: {
             </span>
         </div>
     );
-    const tip = [grouped, lastSeenTip(node.lastSeenAt)].filter(Boolean).join(" — ");
+    if (traine && traine.length > 0) {
+        // Regroupé par catégorie : « 20 autres origines » perd la précision du
+        // type, le panneau la rend.
+        const parCategorie = new Map<FlowKind, Array<{ name: string; volume: number }>>();
+        for (const g of traine) {
+            const liste = parCategorie.get(g.kind) ?? [];
+            liste.push({ name: g.name, volume: g.volume });
+            parCategorie.set(g.kind, liste);
+        }
+        return (
+            <Popover>
+                <PopoverTrigger asChild>
+                    <div className="h-full cursor-pointer">{body}</div>
+                </PopoverTrigger>
+                <PopoverContent align={side === "left" ? "start" : "end"} className="w-80 p-0">
+                    <div className="border-b border-slate-100 px-3 py-2">
+                        <p className="text-sm font-medium text-slate-900">{node.name}</p>
+                        <p className="text-xs text-slate-500">
+                            {node.volume.toLocaleString("fr-CH")} passages au total
+                        </p>
+                    </div>
+                    {/* Hauteur bornée et défilement interne : le panneau ne peut
+                        pas déborder, quel que soit le nombre d'entrées. */}
+                    <div className="max-h-72 overflow-y-auto px-3 py-2">
+                        {[...parCategorie.entries()].map(([kind, entrees]) => (
+                            <div key={kind} className="mb-2 last:mb-0">
+                                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                    {KIND_LABELS[kind]}
+                                </p>
+                                <ul className="space-y-0.5">
+                                    {entrees.sort((a, b) => b.volume - a.volume).map((e, i) => (
+                                        <li key={`${e.name}-${i}`} className="flex items-baseline justify-between gap-3 text-xs">
+                                            <span className="min-w-0 flex-1 truncate text-slate-700">{e.name}</span>
+                                            <span className="shrink-0 tabular-nums text-slate-500">{e.volume.toLocaleString("fr-CH")}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ))}
+                    </div>
+                </PopoverContent>
+            </Popover>
+        );
+    }
+
+    const tip = lastSeenTip(node.lastSeenAt);
     return tip ? <Tip content={tip}>{body}</Tip> : body;
 }
 

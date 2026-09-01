@@ -46,7 +46,22 @@ const MEMBERSHIP_DAYS = 365;
 /** Sollicité plus récemment que ça = considéré connecté à la Q. */
 const CONNECTED_DAYS = 7;
 /** Par catégorie d'entrée/sortie : les N plus gros en satellites, le reste agrégé. */
-const TOP_PER_KIND = 5;
+/**
+ * Repli de la traîne : par POIDS, plus par catégorie.
+ *
+ * L'ancienne règle gardait les 5 plus gros de CHAQUE catégorie. Le total par
+ * colonne n'était donc borné par rien : une file drainant files, SDA, groupes
+ * d'appel, renvois et scripts affichait une vingtaine de blocs et débordait de
+ * la fenêtre. Mesuré sur la 958 : les huit plus petits blocs amont portaient
+ * 66 passages sur ~9 500 — 0,7 % du trafic pour 44 % de la hauteur.
+ *
+ * Désormais : ce qui porte au moins SEUIL_PART du trafic du côté reste un
+ * bloc, dans la limite de MAX_SATELLITES, et tout le reste devient UNE seule
+ * traîne. Au plus MAX_SATELLITES + 1 blocs par colonne, pour toute file —
+ * la hauteur est bornée par construction, sans exception.
+ */
+const SEUIL_PART = 0.01;
+const MAX_SATELLITES = 10;
 
 const CACHE_TTL_MS = 10 * 60_000;
 const topologyCache = new Map<string, { data: QueueTopology; fetchedAt: number }>();
@@ -69,8 +84,8 @@ export interface FlowNode {
     name: string;
     volume: number;
     lastSeenAt: string | null;
-    /** Regroupement de la longue traîne (« N autres SDA ») : le détail au survol. */
-    grouped?: Array<{ name: string; volume: number }>;
+    /** Traîne repliée : le détail complet, avec sa catégorie, s'ouvre au clic. */
+    grouped?: Array<{ kind: FlowKind; name: string; volume: number }>;
     /** Script traversé pour atteindre ce nœud (rotule de routage). */
     via?: string;
 }
@@ -188,35 +203,31 @@ function kindOfType(dnType: string | null): FlowKind {
     }
 }
 
-/** Replie une liste par catégorie : les TOP_PER_KIND plus gros restent des
- *  satellites, la traîne devient UN nœud agrégé — rien n'est masqué. */
-function foldLongTail(nodes: FlowNode[]): FlowNode[] {
-    const byKind = new Map<FlowKind, FlowNode[]>();
-    for (const node of nodes) {
-        if (!byKind.has(node.kind)) byKind.set(node.kind, []);
-        byKind.get(node.kind)!.push(node);
-    }
-    const out: FlowNode[] = [];
-    for (const [kind, list] of byKind) {
-        list.sort((a, b) => b.volume - a.volume);
-        out.push(...list.slice(0, TOP_PER_KIND));
-        const tail = list.slice(TOP_PER_KIND);
-        if (tail.length === 1) {
-            out.push(tail[0]);
-        } else if (tail.length > 1) {
-            out.push({
-                kind,
-                number: null,
-                name: `${tail.length} autres`,
-                volume: tail.reduce((acc, t) => acc + t.volume, 0),
-                lastSeenAt: tail.reduce<string | null>((acc, t) =>
-                    acc === null || (t.lastSeenAt !== null && t.lastSeenAt > acc) ? t.lastSeenAt : acc, null),
-                grouped: tail.map((t) => ({ name: t.name, volume: t.volume })),
-            });
-        }
-    }
-    return out.sort((a, b) => b.volume - a.volume);
+/**
+ * Replie une liste de nœuds : les significatifs restent, le reste fusionne.
+ *
+ * `faireTraine` construit le nœud agrégé — il diffère entre l'amont (FlowNode)
+ * et l'aval (DownstreamFlow, qui porte une raison de renvoi).
+ */
+function replierLaTraine<T extends FlowNode>(
+    nodes: T[],
+    faireTraine: (reste: T[], volume: number) => T,
+): T[] {
+    const tries = [...nodes].sort((a, b) => b.volume - a.volume);
+    const total = tries.reduce((acc, n) => acc + n.volume, 0);
+    if (total === 0) return tries;
+
+    const gardes = tries.filter((n) => n.volume / total >= SEUIL_PART).slice(0, MAX_SATELLITES);
+    const reste = tries.filter((n) => !gardes.includes(n));
+    // Une traîne d'UN seul élément ne mérite pas d'être masquée : on l'affiche
+    // tel quel plutôt que d'écrire « 1 autre ».
+    if (reste.length === 0) return gardes;
+    if (reste.length === 1) return [...gardes, reste[0]];
+
+    const volume = reste.reduce((acc, n) => acc + n.volume, 0);
+    return [...gardes, faireTraine(reste, volume)];
 }
+
 
 async function computeTopology(serverId: ServerId, queueNumber: string): Promise<QueueTopology> {
     const prisma = getPrismaCdr(serverId);
@@ -325,7 +336,15 @@ async function computeTopology(serverId: ServerId, queueNumber: string): Promise
             upstreamMap.set(key, { kind, number, name, volume: Number(r.n), lastSeenAt: lastAt, via });
         }
     }
-    const upstream = foldLongTail([...upstreamMap.values()]);
+    const upstream = replierLaTraine([...upstreamMap.values()], (reste, volume) => ({
+        kind: "other",
+        number: null,
+        name: `${reste.length} autres origines`,
+        volume,
+        lastSeenAt: reste.reduce<string | null>((acc, t) =>
+            acc === null || (t.lastSeenAt !== null && t.lastSeenAt > acc) ? t.lastSeenAt : acc, null),
+        grouped: reste.map((t) => ({ kind: t.kind, name: t.name, volume: t.volume })),
+    }));
 
     // ---- Aval : renvois groupés par destination (raison dominante affichée) ----
     const downstreamMap = new Map<string, DownstreamFlow>();
@@ -356,7 +375,17 @@ async function computeTopology(serverId: ServerId, queueNumber: string): Promise
             });
         }
     }
-    const downstream = [...downstreamMap.values()].sort((a, b) => b.volume - a.volume);
+    // L'aval n'était replié par RIEN : d'où la vingtaine de blocs à droite.
+    const downstream = replierLaTraine([...downstreamMap.values()], (reste, volume) => ({
+        kind: "other",
+        number: null,
+        name: `${reste.length} autres destinations`,
+        volume,
+        lastSeenAt: reste.reduce<string | null>((acc, t) =>
+            acc === null || (t.lastSeenAt !== null && t.lastSeenAt > acc) ? t.lastSeenAt : acc, null),
+        grouped: reste.map((t) => ({ kind: t.kind, name: t.name, volume: t.volume })),
+        reason: "divers",
+    }));
 
     // Profondeur 2 : les issues des files de destination les plus empruntées.
     await Promise.all(
