@@ -509,18 +509,21 @@ export function QueuesTab() {
                                                     ce qui va se passer, pas l'état actuel. D'où
                                                     l'absence de fond coloré, qui se lirait comme un
                                                     statut. */}
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="h-8 text-xs"
-                                                    onClick={() => patchQueue(q.id, {
-                                                        status: q.status === "ACTIVE" ? "ARCHIVED" : "ACTIVE",
-                                                    })}
-                                                >
-                                                    {q.status === "ACTIVE"
-                                                        ? <><EyeOff className="mr-1.5 h-3.5 w-3.5" /> Archiver</>
-                                                        : <><Eye className="mr-1.5 h-3.5 w-3.5" /> Réactiver</>}
-                                                </Button>
+                                                <Tip content={q.status === "ACTIVE" ? "Archiver" : "Réactiver"}>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="h-8 w-8 p-0"
+                                                        aria-label={q.status === "ACTIVE" ? "Archiver" : "Réactiver"}
+                                                        onClick={() => patchQueue(q.id, {
+                                                            status: q.status === "ACTIVE" ? "ARCHIVED" : "ACTIVE",
+                                                        })}
+                                                    >
+                                                        {q.status === "ACTIVE"
+                                                            ? <EyeOff className="h-4 w-4" />
+                                                            : <Eye className="h-4 w-4" />}
+                                                    </Button>
+                                                </Tip>
                                                 </div>
                                             </td>
                                         </tr>
