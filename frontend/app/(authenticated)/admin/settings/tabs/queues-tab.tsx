@@ -45,6 +45,16 @@ interface RegistryQueue {
     previousNames: string[];
 }
 
+/**
+ * Style commun aux boutons d'action d'une ligne.
+ *
+ * Les deux se ressemblaient de loin sans être identiques : l'un bordé et
+ * opaque, l'autre fantôme, pâle et bleuté au survol. Deux boutons voisins qui
+ * font la même sorte de chose doivent se ressembler exactement — sinon la
+ * différence se lit comme une intention.
+ */
+const BOUTON_ACTION = "h-8 w-8 p-0 border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-sky-600";
+
 const healthStyles: Record<HealthLevel, { dot: string; label: string }> = {
     ok: { dot: "bg-emerald-500", label: "OK" },
     warning: { dot: "bg-amber-500", label: "À surveiller" },
@@ -490,12 +500,13 @@ export function QueuesTab() {
                                             </td>
                                             <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                                                 <div className="flex items-center gap-1">
-                                                <Tip content="Parcours d'appel — configuration déduite des 90 derniers jours">
+                                                <Tip content="Parcours d'appel">
                                                     <Button
-                                                        variant="ghost"
-                                                        size="icon"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        aria-label="Parcours d'appel"
                                                         onClick={() => setFlowQueue({ number: q.queueNumber, name: q.currentName })}
-                                                        className="h-8 w-8 text-slate-400 hover:text-sky-600"
+                                                        className={BOUTON_ACTION}
                                                     >
                                                         <Workflow className="h-4 w-4" />
                                                     </Button>
@@ -513,7 +524,7 @@ export function QueuesTab() {
                                                     <Button
                                                         size="sm"
                                                         variant="outline"
-                                                        className="h-8 w-8 p-0"
+                                                        className={BOUTON_ACTION}
                                                         aria-label={q.status === "ACTIVE" ? "Archiver" : "Réactiver"}
                                                         onClick={() => patchQueue(q.id, {
                                                             status: q.status === "ACTIVE" ? "ARCHIVED" : "ACTIVE",
