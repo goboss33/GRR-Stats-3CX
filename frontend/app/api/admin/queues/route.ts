@@ -39,7 +39,11 @@ export async function GET(request: NextRequest) {
                 service: q.service,
                 status: q.status,
                 agentCount: q.agentCount,
-                isNew: q.reviewedAt === null,
+                // « Nouvelle » se juge désormais à l'ÂGE (firstSeenAt, plus bas)
+                // et non à un accusé de réception : un clic global éteignait le
+                // signal pour toujours.
+                // Zéro = personne ne voit cette file, nulle part.
+                perimeterCount: q.perimeterCount,
                 // Activité réelle (CDR), et non la date figée du registre.
                 lastCallAt: q.lastCallAt,
                 // Département 3CX déduit des CDR — null si jamais observé.

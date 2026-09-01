@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, AlertTriangle, Tag, Search, Users, CheckCircle2, Archive, Eye, Workflow } from "lucide-react";
+import { Loader2, RefreshCw, Tag, Search, Users, CheckCircle2, Archive, Workflow } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +34,10 @@ interface RegistryQueue {
     service: string | null;
     status: QueueStatus;
     agentCount: number;
-    isNew: boolean;
+    /** Premier appel reçu par la file : c'est l'âge qui fait la nouveauté. */
+    firstSeenAt: string;
+    /** Combien d'utilisateurs ont cette file dans leur périmètre. */
+    perimeterCount: number;
     lastCallAt: string | null;
     agents: { extension: string; name: string; attempts: number; lastSeenAt: string }[];
     lastSeenAt: string;
@@ -46,6 +49,16 @@ const healthStyles: Record<HealthLevel, { dot: string; label: string }> = {
     warning: { dot: "bg-amber-500", label: "À surveiller" },
     critical: { dot: "bg-red-500", label: "Problème" },
 };
+
+/**
+ * Au-delà de ce délai, une file n'est plus une nouveauté.
+ *
+ * Le signal reposait auparavant sur un accusé de réception (« J'ai vu »), qui
+ * s'éteignait d'un seul clic pour tout le registre — mesuré le 1er septembre
+ * 2026 : 0 file signalée sur 107, le bandeau ne pouvait plus jamais servir.
+ * L'âge, lui, ne se laisse pas éteindre : il dit la vérité tout seul.
+ */
+const JOURS_NOUVEAUTE = 30;
 
 const statusLabels: Record<QueueStatus, string> = {
     ACTIVE: "Active",
@@ -133,29 +146,6 @@ export function QueuesTab() {
         }
     };
 
-    /**
-     * Retire le signalement « nouvelle ».
-     * Sans identifiants, s'applique à toutes les files du tenant.
-     */
-    const markReviewed = async (ids?: string[]) => {
-        setBulkBusy(true);
-        try {
-            const res = await fetch(`/api/admin/queues?server=${getSelectedServer()}&action=review`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ids: ids ?? [] }),
-            });
-            if (!res.ok) throw new Error((await res.json()).error || "Action impossible");
-            const target = ids ? new Set(ids) : null;
-            setQueues((qs) => qs.map((q) => (!target || target.has(q.id) ? { ...q, isNew: false } : q)));
-            if (ids) setSelected(new Set());
-        } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Action impossible");
-        } finally {
-            setBulkBusy(false);
-        }
-    };
-
     /** Applique la même modification à toutes les files sélectionnées. */
     const patchSelection = async (patch: Partial<Pick<RegistryQueue, "region" | "entity" | "status">>) => {
         const ids = [...selected];
@@ -169,7 +159,8 @@ export function QueuesTab() {
         }
     };
 
-    const newQueues = queues.filter((q) => q.isNew).length;
+    const estNouvelle = (q: RegistryQueue) =>
+        Date.now() - new Date(q.firstSeenAt).getTime() < JOURS_NOUVEAUTE * 86400000;
     // Plus de bandeau des renommages ici : il listait les 65 files renommées
     // à chaque visite, sans date ni ordre — l'onglet « Changements » les
     // raconte désormais chronologiquement, avec leur source.
@@ -303,19 +294,6 @@ export function QueuesTab() {
                 </Card>
             )}
 
-            {onglet !== "changements" && newQueues > 0 && (
-                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4">
-                    <AlertTriangle className="h-5 w-5 flex-shrink-0 text-blue-600" />
-                    <p className="flex-1 text-sm text-blue-800">
-                        <strong>{newQueues} nouvelle(s) file(s) détectée(s).</strong> Vérifiez leurs étiquettes, puis
-                        ajoutez-les aux périmètres concernés depuis la fiche des utilisateurs.
-                    </p>
-                    <Button size="sm" variant="outline" className="bg-white" onClick={() => markReviewed()}>
-                        J&apos;ai vu
-                    </Button>
-                </div>
-            )}
-
             {onglet !== "changements" && queues.length > 0 && (
                 <div className="flex flex-col gap-3 md:flex-row md:items-center">
                     <div className="relative flex-1">
@@ -376,17 +354,6 @@ export function QueuesTab() {
                         <Archive className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
                         Archiver
                     </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        className="bg-white"
-                        disabled={bulkBusy}
-                        onClick={() => markReviewed([...selected])}
-                    >
-                        <Eye className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
-                        Marquer comme vues
-                    </Button>
-
                     <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSelected(new Set())}>
                         Annuler
                     </Button>
@@ -452,10 +419,29 @@ export function QueuesTab() {
                                             <td className="px-4 py-2 font-mono text-xs text-slate-600">{q.queueNumber}</td>
                                             <td className="px-4 py-2">
                                                 <span className="font-medium">{q.currentName}</span>
-                                                {q.isNew && (
-                                                    <Badge variant="outline" className="ml-2 border-blue-200 bg-blue-50 text-[10px] text-blue-700">
-                                                        Nouvelle
-                                                    </Badge>
+                                                {estNouvelle(q) && (
+                                                    <Tip content={`Premier appel ${formatDistanceToNow(new Date(q.firstSeenAt), { addSuffix: true, locale: fr })} — le badge s'efface au bout de ${JOURS_NOUVEAUTE} jours.`}>
+                                                        <Badge variant="outline" className="ml-2 border-blue-200 bg-blue-50 text-[10px] text-blue-700">
+                                                            Nouvelle
+                                                        </Badge>
+                                                    </Tip>
+                                                )}
+                                                {/* Le vrai signal d'alerte : une file ACTIVE hors de
+                                                    tout périmètre n'apparaît nulle part, pour
+                                                    personne — ses appels sont comptés mais
+                                                    invisibles.
+                                                    Restreint aux actives à dessein : une file
+                                                    archivée sans périmètre est le cas NORMAL — on
+                                                    l'archive justement parce que personne n'en a
+                                                    besoin. Mesuré le 1er septembre 2026 : 30 files
+                                                    sans périmètre, toutes archivées. Sans ce garde-fou,
+                                                    le badge aurait crié trente fois pour rien. */}
+                                                {q.status === "ACTIVE" && q.perimeterCount === 0 && (
+                                                    <Tip content="Cette file n'est dans le périmètre d'aucun utilisateur : elle n'apparaît sur aucun écran, pour personne. Ajoutez-la depuis la fiche d'un utilisateur.">
+                                                        <Badge variant="outline" className="ml-2 border-amber-200 bg-amber-50 text-[10px] text-amber-700">
+                                                            Aucun périmètre
+                                                        </Badge>
+                                                    </Tip>
                                                 )}
                                                 {q.previousNames.length > 0 && (
                                                     <Tip content={`Ancien(s) nom(s) : ${q.previousNames.join(", ")}`}>

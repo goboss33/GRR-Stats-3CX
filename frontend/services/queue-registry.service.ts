@@ -193,7 +193,7 @@ export async function discoverQueues(serverId: ServerId): Promise<DiscoveryResul
 
 /** Files du registre d'un tenant (pour l'écran d'administration). */
 export async function listRegistryQueues(serverId: ServerId) {
-    const [queues, agentCounts] = await Promise.all([
+    const [queues, agentCounts, perimeterCounts] = await Promise.all([
         prismaAuth.queueRegistry.findMany({
             where: { tenantId: serverId },
             orderBy: [{ status: "asc" }, { queueNumber: "asc" }],
@@ -205,9 +205,18 @@ export async function listRegistryQueues(serverId: ServerId) {
             where: { tenantId: serverId },
             _count: { extensionNumber: true },
         }),
+        // Combien d'utilisateurs ont cette file dans leur périmètre. Zéro
+        // signifie que PERSONNE ne la voit — le périmètre gouverne aussi les
+        // rôles globaux (cf. lib/access-scope) : une file hors de tout
+        // périmètre est absente de tous les écrans, pour tout le monde.
+        prismaAuth.userQueuePerimeter.groupBy({
+            by: ["queueId"],
+            _count: { userId: true },
+        }),
     ]);
 
     const countByQueue = new Map(agentCounts.map((c) => [c.queueNumber, c._count.extensionNumber]));
+    const perimetreParFile = new Map(perimeterCounts.map((p) => [p.queueId, p._count.userId]));
 
     // Activité en direct : permet d'afficher un état de santé fiable et de
     // rechercher une file par le nom d'un de ses agents.
@@ -219,6 +228,7 @@ export async function listRegistryQueues(serverId: ServerId) {
         lastCallAt: live[q.queueNumber]?.lastCallAt ?? null,
         department: live[q.queueNumber]?.department ?? null,
         agents: live[q.queueNumber]?.agents ?? [],
+        perimeterCount: perimetreParFile.get(q.id) ?? 0,
     }));
 }
 
