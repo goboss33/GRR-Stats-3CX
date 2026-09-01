@@ -802,19 +802,6 @@ export function QueuesTab() {
                 </Card>
             )}
 
-            {onglet !== "changements" && queues.length > 0 && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                    <p className="mb-2 font-medium text-slate-700">À savoir :</p>
-                    <ul className="list-inside list-disc space-y-1">
-                        <li>Cliquez sur le nom d&apos;une file pour voir ses collaborateurs et l&apos;historique de ses noms.</li>
-                        <li>Les files sont découvertes via l&apos;historique des appels : une nouvelle file n&apos;apparaît qu&apos;après son premier appel traité.</li>
-                        <li>Une file supprimée dans 3CX ne disparaît pas d&apos;elle-même : elle passe en « Archivée » après 90 jours sans appel.</li>
-                        <li>Les étiquettes servent à composer les périmètres ; elles ne donnent aucun droit par elles-mêmes.</li>
-                        <li>Le périmètre d&apos;un manager s&apos;appuie sur le numéro de file : un renommage dans 3CX ne modifie jamais ses accès.</li>
-                    </ul>
-                </div>
-            )}
-
             <QueueFlowModal
                 queueNumber={flowQueue?.number ?? null}
                 queueName={flowQueue?.name ?? ""}

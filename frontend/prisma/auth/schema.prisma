@@ -98,7 +98,10 @@ model AppSettings {
   /// Reste à false le temps de classer les files et d'affecter les périmètres :
   /// l'activer avant rendrait tous les écrans vides pour les non-ADMIN.
   perimeterEnforcementEnabled Boolean   @default(false)
-  /// Nombre de jours sans appel avant qu'une file passe en ARCHIVED.
+  /// PLUS UTILISÉ depuis le 1er septembre 2026 : l'archivage d'une file est
+  /// exclusivement manuel (bouton « Archiver » du registre). La colonne est
+  /// conservée pour ne pas imposer de migration destructive aux bases en
+  /// service ; plus aucun code ne la lit.
   queueArchiveAfterDays       Int       @default(90)
   /// Masquer les files ARCHIVED des listes (sidebar, sélecteur, aperçu des
   /// groupes). Filtre d'AFFICHAGE seulement : périmètres, statistiques des
@@ -222,7 +225,8 @@ model UserQueueFavorite {
 enum QueueStatus {
   /// File exploitable dans les périmètres
   ACTIVE
-  /// Sans appel depuis queueArchiveAfterDays — probablement supprimée dans 3CX
+  /// Retirée des écrans par un ADMIN. Jamais automatique : le passage se fait
+  /// au bouton, et laisse une ligne datée dans QueueStatusChange.
   ARCHIVED
 }
 

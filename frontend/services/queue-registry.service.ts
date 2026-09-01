@@ -7,8 +7,13 @@
 // CDR (lecture seule) et alimente le registre dans la base d'authentification :
 //   - nouvelle file      -> créée en UNCLASSIFIED, étiquettes pré-remplies
 //   - file renommée      -> currentName mis à jour + historique + signalement
-//   - file sans appel    -> ARCHIVED après queueArchiveAfterDays
 //   - rattachement agent -> QueueAgentLink reconstruit
+//
+// La découverte n'archive RIEN. Elle l'a fait jusqu'au 1er septembre 2026,
+// au bout de 90 jours sans appel : une file en sommeil disparaissait donc des
+// écrans sans que personne ne l'ait décidé ni ne puisse le dater, et rien ne
+// la ramenait quand elle se réveillait. L'archivage est désormais un geste,
+// avec un auteur et une trace (cf. QueueStatusChange).
 //
 // ⚠️ Les étiquettes validées par un ADMIN ne sont JAMAIS écrasées par la découverte.
 // ============================================
@@ -48,7 +53,6 @@ export interface DiscoveryResult {
     discovered: number;
     created: number;
     renamed: RenameNotice[];
-    archived: number;
     agentLinks: number;
 }
 
@@ -157,15 +161,6 @@ export async function discoverQueues(serverId: ServerId): Promise<DiscoveryResul
         });
     }
 
-    // Archivage des files sans appel récent.
-    const settings = await prismaAuth.appSettings.findUnique({ where: { id: "global" } });
-    const archiveAfterDays = settings?.queueArchiveAfterDays ?? 90;
-    const cutoff = new Date(Date.now() - archiveAfterDays * 24 * 60 * 60 * 1000);
-    const { count: archived } = await prismaAuth.queueRegistry.updateMany({
-        where: { tenantId: serverId, lastSeenAt: { lt: cutoff }, status: { not: "ARCHIVED" } },
-        data: { status: "ARCHIVED" },
-    });
-
     // Rattachements agents : on remplace l'état précédent par l'état courant.
     await prismaAuth.queueAgentLink.deleteMany({ where: { tenantId: serverId } });
     if (links.length > 0) {
@@ -185,7 +180,6 @@ export async function discoverQueues(serverId: ServerId): Promise<DiscoveryResul
         discovered: queues.length,
         created,
         renamed,
-        archived,
         agentLinks: links.length,
     };
     logger.info("[queue-registry] Découverte terminée", result);
