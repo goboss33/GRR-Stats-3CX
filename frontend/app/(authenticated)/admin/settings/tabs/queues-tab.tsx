@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, type Dispatch, type SetStateAction } from "react";
 import { toast } from "sonner";
-import { Archive, CheckCircle2, Eye, EyeOff, Loader2, RefreshCw, Search, Tag, Users, Workflow } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Building2, ChevronDown, Eye, EyeOff, Flag, Loader2, RefreshCw, Search, Tag, Users, Workflow, X } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+    DropdownMenu,
+    DropdownMenuCheckboxItem,
+    DropdownMenuContent,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { getSelectedServer } from "@/lib/selected-server";
@@ -18,6 +21,13 @@ import { Attente } from "@/components/ui/etat-chargement";
 import type { Changement } from "@/services/queue-changelog.service";
 import { QueueFlowModal } from "@/components/settings/queue-flow-modal";
 import { assessQueueHealth, type HealthLevel } from "@/services/domain/queue-health";
+import {
+    SENS_INITIAL,
+    TRI_PAR_DEFAUT,
+    trierFiles,
+    type ColonneTri,
+    type Tri,
+} from "@/services/domain/queue-sort";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 
@@ -71,10 +81,151 @@ const healthStyles: Record<HealthLevel, { dot: string; label: string }> = {
  */
 const JOURS_NOUVEAUTE = 30;
 
-const statusStyles: Record<QueueStatus, string> = {
-    ACTIVE: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    ARCHIVED: "bg-slate-100 text-slate-500 border-slate-200",
+/** L'âge fait la nouveauté ; le même délai efface le badge « Renommée ». */
+const estNouvelle = (q: RegistryQueue) =>
+    Date.now() - new Date(q.firstSeenAt).getTime() < JOURS_NOUVEAUTE * 86400000;
+const estRenommeeRecemment = (q: RegistryQueue) =>
+    !!q.lastRename && Date.now() - new Date(q.lastRename.date).getTime() < JOURS_NOUVEAUTE * 86400000;
+
+/** Sentinelle des files sans département, pour qu'elles restent cochables. */
+const SANS_DEPARTEMENT = "\u0000sans";
+
+/**
+ * Les signalements filtrables.
+ *
+ * Ce sont exactement les badges affichés dans le tableau, plus l'absence de
+ * collaborateur que montre déjà la colonne du même nom : on filtre avec les
+ * mots qu'on lit sur les lignes.
+ */
+const SIGNAUX = {
+    nouvelle: { libelle: "Nouvelle", test: estNouvelle },
+    renommee: { libelle: "Renommée", test: estRenommeeRecemment },
+    sansPerimetre: { libelle: "Aucun périmètre", test: (q: RegistryQueue) => q.perimeterCount === 0 },
+    sansCollaborateur: { libelle: "Sans collaborateur", test: (q: RegistryQueue) => q.agentCount === 0 },
+} as const;
+type Signal = keyof typeof SIGNAUX;
+
+const LIBELLES_SANTE: Record<HealthLevel, string> = {
+    critical: "Problème",
+    warning: "À surveiller",
+    ok: "OK",
 };
+
+/** Coche ou décoche une valeur dans un filtre. */
+const basculer = (majSet: Dispatch<SetStateAction<Set<string>>>, valeur: string) =>
+    majSet((s) => {
+        const suivant = new Set(s);
+        if (suivant.has(valeur)) suivant.delete(valeur);
+        else suivant.add(valeur);
+        return suivant;
+    });
+
+interface OptionFiltre {
+    valeur: string;
+    libelle: string;
+    compte: number;
+}
+
+/**
+ * Un filtre à cocher, chaque entrée portant son nombre de files.
+ *
+ * Les comptes valent pour l'onglet courant et la recherche, mais ignorent la
+ * sélection de CE menu : cocher « GRR PULLY » ne change donc pas le nombre
+ * affiché en face de « GRR GENEVE ». Sans cela les nombres danseraient sous
+ * le curseur à chaque clic.
+ *
+ * Une entrée dont le compte est nul disparaît — un filtre qui ne peut rien
+ * trouver n'est que du bruit. Elle reste toutefois visible si elle est
+ * cochée, sans quoi on ne pourrait plus la décocher.
+ */
+function MenuFiltre({
+    libelle,
+    icone: Icone,
+    options,
+    selection,
+    onBasculer,
+}: {
+    libelle: string;
+    icone: typeof Building2;
+    options: OptionFiltre[];
+    selection: Set<string>;
+    onBasculer: (valeur: string) => void;
+}) {
+    const visibles = options.filter((o) => o.compte > 0 || selection.has(o.valeur));
+    if (visibles.length === 0) return null;
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button
+                    variant="outline"
+                    className={cn(
+                        "h-9 gap-1.5",
+                        selection.size > 0 && "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100",
+                    )}
+                >
+                    <Icone className="h-4 w-4" />
+                    {libelle}
+                    {selection.size > 0 && (
+                        <span className="rounded bg-blue-600 px-1.5 text-[10px] font-medium text-white">
+                            {selection.size}
+                        </span>
+                    )}
+                    <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-80 w-64 overflow-y-auto">
+                {visibles.map((o) => (
+                    <DropdownMenuCheckboxItem
+                        key={o.valeur}
+                        checked={selection.has(o.valeur)}
+                        onCheckedChange={() => onBasculer(o.valeur)}
+                        /* Le menu reste ouvert : on coche rarement une seule case. */
+                        onSelect={(e) => e.preventDefault()}
+                    >
+                        <span className="flex-1 truncate">{o.libelle}</span>
+                        <span className="ml-3 text-xs tabular-nums text-slate-400">{o.compte}</span>
+                    </DropdownMenuCheckboxItem>
+                ))}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+}
+
+/** En-tête cliquable : un clic trie, un second inverse. */
+function EnTeteTri({
+    colonne,
+    libelle,
+    tri,
+    onTrier,
+    className,
+}: {
+    colonne: ColonneTri;
+    libelle: string;
+    tri: Tri;
+    onTrier: (colonne: ColonneTri) => void;
+    className?: string;
+}) {
+    const actif = tri.colonne === colonne;
+    return (
+        <th
+            className={cn("px-4 py-3 text-left font-medium text-slate-600", className)}
+            aria-sort={actif ? (tri.sens === "asc" ? "ascending" : "descending") : "none"}
+        >
+            <button
+                type="button"
+                onClick={() => onTrier(colonne)}
+                className="group inline-flex items-center gap-1 hover:text-slate-900"
+            >
+                {libelle}
+                {actif ? (
+                    tri.sens === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
+                ) : (
+                    <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500" />
+                )}
+            </button>
+        </th>
+    );
+}
 
 export function QueuesTab() {
     const [queues, setQueues] = useState<RegistryQueue[]>([]);
@@ -88,12 +239,13 @@ export function QueuesTab() {
     // tableau. Le filtre « Tous les statuts » disparaît — il ferait doublon.
     const [onglet, setOnglet] = useState<"actives" | "archivees" | "changements">("actives");
     const [changements, setChangements] = useState<Changement[] | "chargement" | "échec" | null>(null);
-    const [healthFilter, setHealthFilter] = useState<HealthLevel | "ALL">("ALL");
-    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [filtreDept, setFiltreDept] = useState<Set<string>>(new Set());
+    const [filtreSante, setFiltreSante] = useState<Set<string>>(new Set());
+    const [filtreSignal, setFiltreSignal] = useState<Set<string>>(new Set());
+    const [tri, setTri] = useState(TRI_PAR_DEFAUT);
     // Numéro et nom voyagent avec l'identifiant : la fiche peut ainsi
     // s'annoncer dès l'ouverture, sans attendre sa requête (cf. flowQueue).
     const [detailQueue, setDetailQueue] = useState<{ id: string; number: string; name: string } | null>(null);
-    const [bulkBusy, setBulkBusy] = useState(false);
     const load = useCallback(async () => {
         try {
             const res = await fetch(`/api/admin/queues?server=${getSelectedServer()}`);
@@ -154,23 +306,6 @@ export function QueuesTab() {
         }
     };
 
-    /** Applique la même modification à toutes les files sélectionnées. */
-    const patchSelection = async (patch: Partial<Pick<RegistryQueue, "region" | "entity" | "status">>) => {
-        const ids = [...selected];
-        setBulkBusy(true);
-        try {
-            await Promise.all(ids.map((id) => patchQueue(id, patch)));
-            toast.success(`${ids.length} file(s) mise(s) à jour`);
-            setSelected(new Set());
-        } finally {
-            setBulkBusy(false);
-        }
-    };
-
-    const estNouvelle = (q: RegistryQueue) =>
-        Date.now() - new Date(q.firstSeenAt).getTime() < JOURS_NOUVEAUTE * 86400000;
-    const estRenommeeRecemment = (q: RegistryQueue) =>
-        !!q.lastRename && Date.now() - new Date(q.lastRename.date).getTime() < JOURS_NOUVEAUTE * 86400000;
     // Plus de bandeau des renommages ici : il listait les 65 files renommées
     // à chaque visite, sans date ni ordre — l'onglet « Changements » les
     // raconte désormais chronologiquement, avec leur source.
@@ -182,21 +317,133 @@ export function QueuesTab() {
         return map;
     }, [queues]);
 
-    const filtered = useMemo(() => {
+    const niveau = useCallback((q: RegistryQueue) => health.get(q.id)?.level ?? "ok", [health]);
+
+    /**
+     * Les cinq cribles, tenus séparés à dessein : chaque menu doit pouvoir
+     * appliquer tous les autres SAUF le sien pour établir ses comptes.
+     */
+    const cribles = useMemo(() => {
         const term = search.trim().toLowerCase();
-        return queues.filter((q) => {
-            if (q.status !== (onglet === "archivees" ? "ARCHIVED" : "ACTIVE")) return false;
-            if (healthFilter !== "ALL" && health.get(q.id)?.level !== healthFilter) return false;
-            if (!term) return true;
-            return (
+        return {
+            onglet: (q: RegistryQueue) => q.status === (onglet === "archivees" ? "ARCHIVED" : "ACTIVE"),
+            recherche: (q: RegistryQueue) =>
+                !term ||
                 q.queueNumber.includes(term) ||
                 q.currentName.toLowerCase().includes(term) ||
                 (q.department ?? "").toLowerCase().includes(term) ||
                 // Recherche par agent : retrouve les files où il est sollicité.
-                q.agents.some((a) => a.name.toLowerCase().includes(term) || a.extension.includes(term))
-            );
-        });
-    }, [queues, search, onglet, healthFilter, health]);
+                q.agents.some((a) => a.name.toLowerCase().includes(term) || a.extension.includes(term)),
+            departement: (q: RegistryQueue) =>
+                filtreDept.size === 0 || filtreDept.has(q.department ?? SANS_DEPARTEMENT),
+            sante: (q: RegistryQueue) => filtreSante.size === 0 || filtreSante.has(niveau(q)),
+            // Plusieurs signalements cochés se lisent « ou » : on cherche tout
+            // ce qui est signalé, pas ce qui cumule les défauts.
+            signal: (q: RegistryQueue) =>
+                filtreSignal.size === 0 || [...filtreSignal].some((k) => SIGNAUX[k as Signal].test(q)),
+        };
+    }, [search, onglet, filtreDept, filtreSante, filtreSignal, niveau]);
+
+    // Assiette des comptes de chaque menu : tous les cribles, sauf le sien.
+    const baseDept = useMemo(
+        () => queues.filter((q) => cribles.onglet(q) && cribles.recherche(q) && cribles.sante(q) && cribles.signal(q)),
+        [queues, cribles],
+    );
+    const baseSante = useMemo(
+        () => queues.filter((q) => cribles.onglet(q) && cribles.recherche(q) && cribles.departement(q) && cribles.signal(q)),
+        [queues, cribles],
+    );
+    const baseSignal = useMemo(
+        () => queues.filter((q) => cribles.onglet(q) && cribles.recherche(q) && cribles.departement(q) && cribles.sante(q)),
+        [queues, cribles],
+    );
+
+    const optionsDept = useMemo(() => {
+        const comptes = new Map<string, number>();
+        for (const q of baseDept) {
+            const cle = q.department ?? SANS_DEPARTEMENT;
+            comptes.set(cle, (comptes.get(cle) ?? 0) + 1);
+        }
+        // Les départements les plus fournis en tête : c'est là qu'on va.
+        // Mesuré le 1er septembre 2026 : 38 des 61 files actives sont en
+        // GRR GENEVE, et six départements n'en portent qu'une seule.
+        return [...comptes.entries()]
+            .map(([valeur, compte]) => ({
+                valeur,
+                libelle: valeur === SANS_DEPARTEMENT ? "Sans département" : valeur,
+                compte,
+            }))
+            .sort((a, b) => b.compte - a.compte || a.libelle.localeCompare(b.libelle, "fr"));
+    }, [baseDept]);
+
+    const optionsSante = useMemo(
+        () =>
+            (["critical", "warning", "ok"] as HealthLevel[]).map((n) => ({
+                valeur: n,
+                libelle: LIBELLES_SANTE[n],
+                compte: baseSante.filter((q) => niveau(q) === n).length,
+            })),
+        [baseSante, niveau],
+    );
+
+    const optionsSignal = useMemo(
+        () =>
+            (Object.keys(SIGNAUX) as Signal[]).map((k) => ({
+                valeur: k,
+                libelle: SIGNAUX[k].libelle,
+                compte: baseSignal.filter(SIGNAUX[k].test).length,
+            })),
+        [baseSignal],
+    );
+
+    const filtered = useMemo(() => {
+        const retenues = queues.filter(
+            (q) =>
+                cribles.onglet(q) &&
+                cribles.recherche(q) &&
+                cribles.departement(q) &&
+                cribles.sante(q) &&
+                cribles.signal(q),
+        );
+        return trierFiles(retenues, tri, niveau);
+    }, [queues, cribles, tri, niveau]);
+
+    /** Un clic trie, un second inverse ; changer de colonne repart du sens utile. */
+    const trierPar = (colonne: ColonneTri) =>
+        setTri((t) =>
+            t.colonne === colonne
+                ? { colonne, sens: t.sens === "asc" ? "desc" : "asc" }
+                : { colonne, sens: SENS_INITIAL[colonne] },
+        );
+
+    const puces = useMemo(
+        () => [
+            ...[...filtreDept].map((v) => ({
+                cle: `d:${v}`,
+                libelle: v === SANS_DEPARTEMENT ? "Sans département" : v,
+                retirer: () => basculer(setFiltreDept, v),
+            })),
+            ...[...filtreSante].map((v) => ({
+                cle: `s:${v}`,
+                libelle: LIBELLES_SANTE[v as HealthLevel],
+                retirer: () => basculer(setFiltreSante, v),
+            })),
+            ...[...filtreSignal].map((v) => ({
+                cle: `g:${v}`,
+                libelle: SIGNAUX[v as Signal].libelle,
+                retirer: () => basculer(setFiltreSignal, v),
+            })),
+        ],
+        [filtreDept, filtreSante, filtreSignal],
+    );
+
+    const aDesFiltres = puces.length > 0 || search.trim() !== "";
+    const toutEffacer = () => {
+        setSearch("");
+        setFiltreDept(new Set());
+        setFiltreSante(new Set());
+        setFiltreSignal(new Set());
+    };
 
     const nbActives = useMemo(() => queues.filter((q) => q.status === "ACTIVE").length, [queues]);
     const nbArchivees = useMemo(() => queues.filter((q) => q.status === "ARCHIVED").length, [queues]);
@@ -207,17 +454,6 @@ export function QueuesTab() {
         if (!term) return [];
         return q.agents.filter((a) => a.name.toLowerCase().includes(term) || a.extension.includes(term));
     };
-
-    const toggle = (id: string) => {
-        setSelected((s) => {
-            const next = new Set(s);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-        });
-    };
-
-    const allVisibleSelected = filtered.length > 0 && filtered.every((q) => selected.has(q.id));
 
     // Le journal balaie tous les appels : on ne le charge qu'à l'ouverture de
     // son onglet, et une seule fois.
@@ -244,8 +480,11 @@ export function QueuesTab() {
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h2 className="text-xl font-semibold text-slate-900">Registre des files d&apos;attente</h2>
+                    {/* Les étiquettes Entité / Région / Service ont quitté cet
+                        écran au profit du département déclaré par le 3CX : le
+                        sous-titre ne pouvait plus les annoncer. */}
                     <p className="text-sm text-slate-500">
-                        {queues.length} file(s) — les étiquettes servent à composer les périmètres des managers
+                        {queues.length} file(s) découverte(s) dans l&apos;historique des appels
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
@@ -304,56 +543,69 @@ export function QueuesTab() {
             )}
 
             {onglet !== "changements" && queues.length > 0 && (
-                <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        <Input
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Rechercher par numéro, nom, département ou collaborateur…"
-                            className="pl-9"
+                <div className="space-y-3">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <Input
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                placeholder="Rechercher par numéro, nom, département ou collaborateur…"
+                                className="pl-9"
+                            />
+                        </div>
+                        <MenuFiltre
+                            libelle="Département"
+                            icone={Building2}
+                            options={optionsDept}
+                            selection={filtreDept}
+                            onBasculer={(v) => basculer(setFiltreDept, v)}
+                        />
+                        <MenuFiltre
+                            libelle="État"
+                            icone={AlertCircle}
+                            options={optionsSante}
+                            selection={filtreSante}
+                            onBasculer={(v) => basculer(setFiltreSante, v)}
+                        />
+                        <MenuFiltre
+                            libelle="Signalements"
+                            icone={Flag}
+                            options={optionsSignal}
+                            selection={filtreSignal}
+                            onBasculer={(v) => basculer(setFiltreSignal, v)}
                         />
                     </div>
-                    <Select value={healthFilter} onValueChange={(v) => setHealthFilter(v as HealthLevel | "ALL")}>
-                        <SelectTrigger className="w-full md:w-44">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="ALL">Tous les états</SelectItem>
-                            <SelectItem value="critical">⚠ Problème</SelectItem>
-                            <SelectItem value="warning">À surveiller</SelectItem>
-                            <SelectItem value="ok">OK</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-            )}
 
-            {selected.size > 0 && (
-                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
-                    <span className="text-sm font-medium text-blue-900">{selected.size} sélectionnée(s)</span>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        className="bg-white"
-                        disabled={bulkBusy}
-                        onClick={() => patchSelection({ status: "ACTIVE" })}
-                    >
-                        <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
-                        Activer
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        className="bg-white"
-                        disabled={bulkBusy}
-                        onClick={() => patchSelection({ status: "ARCHIVED" })}
-                    >
-                        <Archive className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
-                        Archiver
-                    </Button>
-                    <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSelected(new Set())}>
-                        Annuler
-                    </Button>
+                    {/* Ce qui est filtré doit se lire sans ouvrir les menus, et
+                        se défaire d'un clic. Le compte dit ce qu'on ne voit
+                        pas : un tableau tronqué en silence se lit comme un
+                        tableau complet. */}
+                    {aDesFiltres && (
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                            {puces.map((puce) => (
+                                <button
+                                    key={puce.cle}
+                                    type="button"
+                                    onClick={puce.retirer}
+                                    className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700 hover:bg-blue-100"
+                                >
+                                    {puce.libelle}
+                                    <X className="h-3 w-3" />
+                                </button>
+                            ))}
+                            <span className="text-slate-500">
+                                {filtered.length} file(s) affichée(s) sur {onglet === "archivees" ? nbArchivees : nbActives}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={toutEffacer}
+                                className="text-blue-600 underline underline-offset-2 hover:text-blue-800"
+                            >
+                                Tout effacer
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -364,24 +616,15 @@ export function QueuesTab() {
                             <table className="w-full text-sm">
                                 <thead className="border-b bg-slate-50">
                                     <tr>
-                                        <th className="w-10 px-4 py-3">
-                                            <Checkbox
-                                                checked={allVisibleSelected}
-                                                onCheckedChange={(checked) =>
-                                                    setSelected(checked ? new Set(filtered.map((q) => q.id)) : new Set())
-                                                }
-                                            />
-                                        </th>
-                                        <th className="w-12 px-2 py-3 text-center font-medium text-slate-600">
-                                            <Tip content="État de la file">
-                                                <span>État</span>
-                                            </Tip>
-                                        </th>
-                                        <th className="px-4 py-3 text-left font-medium text-slate-600">N°</th>
-                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Nom actuel</th>
-                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Département</th>
-                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Collaborateurs</th>
-                                        <th className="px-4 py-3 text-left font-medium text-slate-600">Dernier appel</th>
+                                        <EnTeteTri colonne="sante" libelle="État" tri={tri} onTrier={trierPar} className="w-20 px-2 text-center" />
+                                        <EnTeteTri colonne="numero" libelle="N°" tri={tri} onTrier={trierPar} />
+                                        <EnTeteTri colonne="nom" libelle="Nom actuel" tri={tri} onTrier={trierPar} />
+                                        <EnTeteTri colonne="departement" libelle="Département" tri={tri} onTrier={trierPar} />
+                                        <EnTeteTri colonne="agents" libelle="Collaborateurs" tri={tri} onTrier={trierPar} />
+                                        <EnTeteTri colonne="dernierAppel" libelle="Dernier appel" tri={tri} onTrier={trierPar} />
+                                        {/* Statut et actions ne se trient pas : chaque onglet ne
+                                            montre qu'un statut, et une colonne de boutons n'a pas
+                                            d'ordre. */}
                                         <th className="px-4 py-3 text-left font-medium text-slate-600">Statut</th>
                                     </tr>
                                 </thead>
@@ -396,11 +639,6 @@ export function QueuesTab() {
                                             )}
                                             title="Voir le détail (collaborateurs, historique)"
                                         >
-                                            {/* Les cellules interactives stoppent la propagation pour ne pas
-                                                ouvrir la fiche à chaque édition d'étiquette. */}
-                                            <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
-                                                <Checkbox checked={selected.has(q.id)} onCheckedChange={() => toggle(q.id)} />
-                                            </td>
                                             <td className="px-2 py-2 text-center">
                                                 <Tip content={`${healthStyles[health.get(q.id)?.level ?? "ok"].label} — ${(health.get(q.id)?.reasons ?? []).join(" · ")}`}>
                                                     <span
@@ -543,8 +781,17 @@ export function QueuesTab() {
                                     ))}
                                     {filtered.length === 0 && (
                                         <tr>
-                                            <td colSpan={10} className="py-8 text-center text-slate-500">
+                                            <td colSpan={7} className="py-8 text-center text-slate-500">
                                                 Aucune file ne correspond à ces critères
+                                                {aDesFiltres && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={toutEffacer}
+                                                        className="ml-2 text-blue-600 underline underline-offset-2 hover:text-blue-800"
+                                                    >
+                                                        Tout effacer
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     )}
