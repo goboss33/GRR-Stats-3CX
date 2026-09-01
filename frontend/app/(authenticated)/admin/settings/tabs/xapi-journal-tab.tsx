@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { BookOpenCheck, Loader2, Moon, RefreshCw, XCircle, CheckCircle2 } from "lucide-react";
+import { BookOpenCheck, ChevronDown, Loader2, Moon, RefreshCw, XCircle, CheckCircle2 } from "lucide-react";
 
 import { getSelectedServer } from "@/lib/selected-server";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { QueueAgentPicker } from "@/components/queue-agent-picker";
+import { Attente } from "@/components/ui/etat-chargement";
+import { cn } from "@/lib/utils";
 import type { QueueInfo } from "@/types/queues.types";
 import { Tip } from "@/components/ui/tooltip";
 
@@ -23,6 +25,22 @@ import { Tip } from "@/components/ui/tooltip";
 
 interface RunRow {
     ranAt: string; ok: boolean; queues: number; members: number; changes: number; error: string | null;
+}
+interface MouvementMembre { queueNumber: string; queueName: string; extension: string; agentName: string }
+interface Passation { queueNumber: string; queueName: string; extension: string; avant: string; apres: string }
+interface MouvementFile {
+    queueNumber: string;
+    nomAvant: string | null; nomApres: string | null;
+    departementAvant: string | null; departementApres: string | null;
+    nouvelle: boolean;
+}
+interface RunDetail {
+    arrivees: MouvementMembre[];
+    departs: MouvementMembre[];
+    passations: Passation[];
+    files: MouvementFile[];
+    total: number;
+    tronque: boolean;
 }
 interface MembreRow { extension: string; name: string; lastSeenAt: string }
 interface QueueRow {
@@ -40,6 +58,20 @@ interface IntervalRow {
 const dateTime = (iso: string) => new Date(iso).toLocaleString("fr-CH", { dateStyle: "short", timeStyle: "short" });
 const dateOnly = (iso: string) => new Date(iso).toLocaleDateString("fr-CH");
 
+/** Une section du détail d'un relevé : un intitulé, puis ses lignes. */
+function BlocMouvement({ titre, teinte, children }: {
+    titre: string;
+    teinte: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <div>
+            <p className={`mb-1 text-xs font-semibold uppercase tracking-wide ${teinte}`}>{titre}</p>
+            <ul className="space-y-0.5 text-slate-700">{children}</ul>
+        </div>
+    );
+}
+
 export function XapiJournalTab() {
     const serverId = getSelectedServer();
     const [loading, setLoading] = useState(true);
@@ -52,6 +84,25 @@ export function XapiJournalTab() {
     const [selectedQueue, setSelectedQueue] = useState<string>("");
     const [intervals, setIntervals] = useState<IntervalRow[] | null>(null);
     const [intervalsLoading, setIntervalsLoading] = useState(false);
+    // Détail d'un relevé : replié par défaut, chargé au premier dépliement puis
+    // gardé en mémoire — rouvrir la même ligne ne rappelle pas le serveur.
+    const [runOuvert, setRunOuvert] = useState<string | null>(null);
+    const [details, setDetails] = useState<Record<string, RunDetail | "chargement" | "échec">>({});
+
+    const basculerRun = useCallback(async (ranAt: string) => {
+        if (runOuvert === ranAt) { setRunOuvert(null); return; }
+        setRunOuvert(ranAt);
+        if (details[ranAt] && details[ranAt] !== "échec") return;
+        setDetails((d) => ({ ...d, [ranAt]: "chargement" }));
+        try {
+            const res = await fetch(`/api/admin/xapi-journal?server=${encodeURIComponent(serverId)}&run=${encodeURIComponent(ranAt)}`);
+            if (!res.ok) throw new Error(String(res.status));
+            const data = await res.json();
+            setDetails((d) => ({ ...d, [ranAt]: data.detail as RunDetail }));
+        } catch {
+            setDetails((d) => ({ ...d, [ranAt]: "échec" }));
+        }
+    }, [runOuvert, details, serverId]);
 
     // Le sélecteur partagé parle en QueueInfo : on lui traduit le journal.
     // `attemptsCount` n'a pas de sens ici (le journal ne compte pas les
@@ -197,26 +248,126 @@ export function XapiJournalTab() {
                             </p>
                         ) : (
                             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-                                {runs.map((run) => (
-                                    <li key={run.ranAt} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-sm">
-                                        {run.ok
-                                            ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                                            : <XCircle className="h-4 w-4 shrink-0 text-red-600" />}
-                                        <span className="w-32 tabular-nums text-slate-700">{dateTime(run.ranAt)}</span>
-                                        {run.ok ? (
-                                            <span className="text-slate-600">
-                                                {run.members} membres · {run.queues} équipes vues au 3CX ·{" "}
-                                                <span className={run.changes > 0 ? "font-medium text-violet-700" : ""}>
-                                                    {run.changes} mouvement{run.changes > 1 ? "s" : ""}
+                                {runs.map((run) => {
+                                    // Un relevé sans mouvement n'a rien à déplier : la ligne
+                                    // reste inerte plutôt que d'ouvrir un panneau vide.
+                                    const depliable = run.ok && run.changes > 0;
+                                    const ouvert = runOuvert === run.ranAt;
+                                    const detail = details[run.ranAt];
+                                    return (
+                                    <li key={run.ranAt}>
+                                        <div
+                                            className={cn(
+                                                "flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-sm",
+                                                depliable && "cursor-pointer hover:bg-slate-50",
+                                            )}
+                                            onClick={depliable ? () => void basculerRun(run.ranAt) : undefined}
+                                            role={depliable ? "button" : undefined}
+                                            tabIndex={depliable ? 0 : undefined}
+                                            aria-expanded={depliable ? ouvert : undefined}
+                                            onKeyDown={depliable ? (e) => {
+                                                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void basculerRun(run.ranAt); }
+                                            } : undefined}
+                                        >
+                                            {run.ok
+                                                ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                                                : <XCircle className="h-4 w-4 shrink-0 text-red-600" />}
+                                            <span className="w-32 tabular-nums text-slate-700">{dateTime(run.ranAt)}</span>
+                                            {run.ok ? (
+                                                <span className="text-slate-600">
+                                                    {run.members} membres · {run.queues} équipes vues au 3CX ·{" "}
+                                                    <span className={run.changes > 0 ? "font-medium text-violet-700" : ""}>
+                                                        {run.changes} mouvement{run.changes > 1 ? "s" : ""}
+                                                    </span>
                                                 </span>
-                                            </span>
-                                        ) : (
-                                            <span className="min-w-0 flex-1 truncate text-red-700" title={run.error ?? undefined}>
-                                                {run.error || "Échec"}
-                                            </span>
+                                            ) : (
+                                                <span className="min-w-0 flex-1 truncate text-red-700" title={run.error ?? undefined}>
+                                                    {run.error || "Échec"}
+                                                </span>
+                                            )}
+                                            {depliable && (
+                                                <ChevronDown className={cn(
+                                                    "ml-auto h-4 w-4 shrink-0 text-slate-400 transition-transform",
+                                                    ouvert && "rotate-180",
+                                                )} />
+                                            )}
+                                        </div>
+
+                                        {ouvert && (
+                                            <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-3">
+                                                {detail === "chargement" ? (
+                                                    <Attente libelle="Détail du relevé…" taille="petite" />
+                                                ) : detail === "échec" || !detail ? (
+                                                    <p className="text-sm text-red-700">
+                                                        Le détail n&apos;a pas pu être chargé.{" "}
+                                                        <button type="button" className="underline" onClick={() => void basculerRun(run.ranAt)}>
+                                                            Réessayer
+                                                        </button>
+                                                    </p>
+                                                ) : (
+                                                    <div className="space-y-3 text-sm">
+                                                        {detail.passations.length > 0 && (
+                                                            <BlocMouvement titre="Passations de poste" teinte="text-violet-700">
+                                                                {detail.passations.map((m) => (
+                                                                    <li key={`p-${m.queueNumber}-${m.extension}`}>
+                                                                        <span className="text-slate-500">{m.queueName}</span>
+                                                                        {" · poste "}{m.extension}{" : "}
+                                                                        <span className="line-through decoration-slate-400">{m.avant}</span>
+                                                                        {" → "}<span className="font-medium">{m.apres}</span>
+                                                                    </li>
+                                                                ))}
+                                                            </BlocMouvement>
+                                                        )}
+                                                        {detail.arrivees.length > 0 && (
+                                                            <BlocMouvement titre="Arrivées" teinte="text-emerald-700">
+                                                                {detail.arrivees.map((m) => (
+                                                                    <li key={`a-${m.queueNumber}-${m.extension}`}>
+                                                                        <span className="font-medium">{m.agentName}</span>
+                                                                        {" (poste "}{m.extension}{") rejoint "}
+                                                                        <span className="text-slate-500">{m.queueName}</span>
+                                                                    </li>
+                                                                ))}
+                                                            </BlocMouvement>
+                                                        )}
+                                                        {detail.departs.length > 0 && (
+                                                            <BlocMouvement titre="Départs" teinte="text-amber-700">
+                                                                {detail.departs.map((m) => (
+                                                                    <li key={`d-${m.queueNumber}-${m.extension}`}>
+                                                                        <span className="font-medium">{m.agentName}</span>
+                                                                        {" (poste "}{m.extension}{") quitte "}
+                                                                        <span className="text-slate-500">{m.queueName}</span>
+                                                                    </li>
+                                                                ))}
+                                                            </BlocMouvement>
+                                                        )}
+                                                        {detail.files.length > 0 && (
+                                                            <BlocMouvement titre="Équipes" teinte="text-blue-700">
+                                                                {detail.files.map((f) => (
+                                                                    <li key={`f-${f.queueNumber}`}>
+                                                                        <span className="text-slate-500">File {f.queueNumber}</span>{" : "}
+                                                                        {f.nouvelle ? <>nouvelle équipe « {f.nomApres} »{f.departementApres ? ` (${f.departementApres})` : ""}</>
+                                                                            : !f.nomApres ? <>équipe « {f.nomAvant} » disparue du 3CX</>
+                                                                            : f.nomAvant !== f.nomApres && f.departementAvant !== f.departementApres
+                                                                                ? <>« {f.nomAvant} » → « {f.nomApres} », département {f.departementAvant ?? "aucun"} → {f.departementApres ?? "aucun"}</>
+                                                                            : f.nomAvant !== f.nomApres
+                                                                                ? <>renommée « {f.nomAvant} » → « {f.nomApres} »</>
+                                                                                : <>département {f.departementAvant ?? "aucun"} → {f.departementApres ?? "aucun"}</>}
+                                                                    </li>
+                                                                ))}
+                                                            </BlocMouvement>
+                                                        )}
+                                                        {detail.tronque && (
+                                                            <p className="text-xs text-slate-500">
+                                                                Liste tronquée : ce relevé porte {detail.total} mouvements au total.
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
                                         )}
                                     </li>
-                                ))}
+                                    );
+                                })}
                             </ul>
                         )}
                     </div>

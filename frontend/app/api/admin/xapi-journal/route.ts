@@ -5,7 +5,7 @@ import { ServerId } from "@/lib/prisma-cdr";
 import { requireApiRole } from "@/lib/auth-guard";
 import { getServerXapiConfig, isXapiUsable } from "@/lib/xapi-config";
 import {
-    getJournalOverview, getQueueJournal, runQueueMembershipSnapshot,
+    getJournalOverview, getQueueJournal, getRunDetail, runQueueMembershipSnapshot,
 } from "@/services/xapi-journal.service";
 
 /**
@@ -30,6 +30,17 @@ export async function GET(request: Request) {
         const queueNumber = url.searchParams.get("queue");
         if (queueNumber) {
             return NextResponse.json({ intervals: await getQueueJournal(serverId, queueNumber) });
+        }
+
+        // Détail d'UN relevé : ses mouvements, reconstitués depuis le journal
+        // (les lignes ouvertes ou fermées à l'instant du relevé).
+        const runAt = url.searchParams.get("run");
+        if (runAt) {
+            const instant = new Date(runAt);
+            if (Number.isNaN(instant.getTime())) {
+                return NextResponse.json({ error: "Instant de relevé invalide" }, { status: 400 });
+            }
+            return NextResponse.json({ detail: await getRunDetail(serverId, instant) });
         }
 
         const config = await getServerXapiConfig(serverId);

@@ -376,6 +376,113 @@ export async function getQueueJournal(serverId: ServerId, queueNumber: string) {
     }));
 }
 
+/** Nombre de lignes de détail au-delà duquel on résume plutôt qu'on déroule. */
+const DETAIL_MAX = 120;
+
+/**
+ * Le DÉTAIL d'un relevé : qui est arrivé, qui est parti, quel poste a changé
+ * de titulaire, quelle file a changé de nom ou de département.
+ *
+ * Rien n'est stocké en plus : le relevé horodate ses écritures avec l'instant
+ * du run (`ranAt`), donc les lignes ouvertes ou fermées à cet instant SONT
+ * ses mouvements. Le journal se relit lui-même.
+ *
+ * Une fermeture et une ouverture sur le MÊME couple (file, poste) ne font pas
+ * deux mouvements mais un seul : une passation. On les apparie ici, sans quoi
+ * un changement de titulaire se lirait comme un départ suivi d'une embauche.
+ */
+export async function getRunDetail(serverId: ServerId, ranAt: Date) {
+    const [fermees, ouvertes, filesFermees, filesOuvertes] = await Promise.all([
+        prismaAuth.queueMembershipInterval.findMany({
+            where: { serverId, closedAt: ranAt },
+            select: { queueNumber: true, extension: true, agentName: true },
+        }),
+        prismaAuth.queueMembershipInterval.findMany({
+            where: { serverId, firstSeenAt: ranAt },
+            select: { queueNumber: true, extension: true, agentName: true },
+        }),
+        prismaAuth.queueDirectoryInterval.findMany({
+            where: { serverId, closedAt: ranAt },
+            select: { queueNumber: true, queueName: true, department: true },
+        }),
+        prismaAuth.queueDirectoryInterval.findMany({
+            where: { serverId, firstSeenAt: ranAt },
+            select: { queueNumber: true, queueName: true, department: true },
+        }),
+    ]);
+
+    // Noms d'équipe pour l'affichage : l'annuaire en cours, à défaut le numéro.
+    const annuaire = await prismaAuth.queueDirectoryInterval.findMany({
+        where: { serverId, closedAt: null },
+        select: { queueNumber: true, queueName: true },
+    });
+    const nomFile = new Map(annuaire.map((q) => [q.queueNumber, q.queueName]));
+    const libelle = (n: string) => nomFile.get(n) ?? `File ${n}`;
+
+    // Appariement des passations sur la clé (file, poste).
+    const cle = (m: { queueNumber: string; extension: string }) => `${m.queueNumber}|${m.extension}`;
+    const partants = new Map(fermees.map((m) => [cle(m), m]));
+    const passations: { queueNumber: string; queueName: string; extension: string; avant: string; apres: string }[] = [];
+    const arrivees: { queueNumber: string; queueName: string; extension: string; agentName: string }[] = [];
+
+    for (const m of ouvertes) {
+        const partant = partants.get(cle(m));
+        if (partant) {
+            partants.delete(cle(m));
+            passations.push({
+                queueNumber: m.queueNumber, queueName: libelle(m.queueNumber),
+                extension: m.extension, avant: partant.agentName, apres: m.agentName,
+            });
+        } else {
+            arrivees.push({
+                queueNumber: m.queueNumber, queueName: libelle(m.queueNumber),
+                extension: m.extension, agentName: m.agentName,
+            });
+        }
+    }
+    const departs = [...partants.values()].map((m) => ({
+        queueNumber: m.queueNumber, queueName: libelle(m.queueNumber),
+        extension: m.extension, agentName: m.agentName,
+    }));
+
+    // Mouvements d'annuaire : même appariement, sur le numéro de file.
+    const avantParFile = new Map(filesFermees.map((q) => [q.queueNumber, q]));
+    const files = filesOuvertes.map((apres) => {
+        const avant = avantParFile.get(apres.queueNumber);
+        avantParFile.delete(apres.queueNumber);
+        return {
+            queueNumber: apres.queueNumber,
+            nomAvant: avant?.queueName ?? null,
+            nomApres: apres.queueName,
+            departementAvant: avant?.department ?? null,
+            departementApres: apres.department,
+            nouvelle: !avant,
+        };
+    });
+    // Files disparues du PBX : fermées sans réouverture.
+    for (const avant of avantParFile.values()) {
+        files.push({
+            queueNumber: avant.queueNumber,
+            nomAvant: avant.queueName, nomApres: null as unknown as string,
+            departementAvant: avant.department, departementApres: null,
+            nouvelle: false,
+        });
+    }
+
+    const parNom = (a: { queueName: string }, b: { queueName: string }) => a.queueName.localeCompare(b.queueName, "fr");
+    const total = arrivees.length + departs.length + passations.length + files.length;
+    return {
+        arrivees: arrivees.sort(parNom).slice(0, DETAIL_MAX),
+        departs: departs.sort(parNom).slice(0, DETAIL_MAX),
+        passations: passations.sort(parNom).slice(0, DETAIL_MAX),
+        files: files.sort((a, b) => a.queueNumber.localeCompare(b.queueNumber, "fr")).slice(0, DETAIL_MAX),
+        total,
+        // Le tout premier relevé ouvre TOUTE la composition : des centaines de
+        // lignes qui n'apprennent rien. On dit ce qu'on n'a pas déroulé.
+        tronque: Math.max(arrivees.length, departs.length, passations.length, files.length) > DETAIL_MAX,
+    };
+}
+
 /**
  * ROSTER FERMÉ pour le socle de classement (règle rosterSource=journalAuto).
  *
