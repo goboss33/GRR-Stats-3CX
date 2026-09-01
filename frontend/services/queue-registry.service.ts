@@ -232,7 +232,34 @@ export async function updateRegistryQueue(
         entity?: string | null; region?: string | null; service?: string | null;
         status?: "ACTIVE" | "ARCHIVED";
     },
+    /** Auteur du geste, pour la trace des changements de statut. */
+    auteur?: string | null,
 ) {
+    // Un changement de STATUT laisse une trace datée : contrairement aux
+    // renommages, que les appels permettent de reconstituer après coup, un
+    // archivage n'existe nulle part ailleurs. Si on ne l'écrit pas ici, il
+    // est perdu. Les étiquettes, elles, ne sont pas tracées (elles se
+    // corrigent souvent et n'engagent rien).
+    if (data.status !== undefined) {
+        const avant = await prismaAuth.queueRegistry.findUnique({
+            where: { id },
+            select: { tenantId: true, queueNumber: true, status: true },
+        });
+        // Seul un VRAI changement fait une ligne : réenregistrer le même
+        // statut (clic sans effet, action en masse) ne dit rien.
+        if (avant && avant.status !== data.status) {
+            await prismaAuth.queueStatusChange.create({
+                data: {
+                    tenantId: avant.tenantId,
+                    queueNumber: avant.queueNumber,
+                    previousStatus: avant.status,
+                    newStatus: data.status,
+                    changedByName: auteur ?? null,
+                },
+            });
+        }
+    }
+
     return prismaAuth.queueRegistry.update({
         where: { id },
         data: { ...data, reviewedAt: new Date() },

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Database, Radio, Users2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Attente } from "@/components/ui/etat-chargement";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
 import { getSelectedServer } from "@/lib/selected-server";
 
 /**
@@ -48,6 +50,28 @@ export function QueuesReglageTab() {
     const serverId = getSelectedServer();
     const [etat, setEtat] = useState<Etat | null>(null);
     const [chargement, setChargement] = useState(true);
+    // null = valeur pas encore connue : l'interrupteur attend le serveur.
+    const [masquerArchivees, setMasquerArchivees] = useState<boolean | null>(null);
+
+    // Bascule optimiste : l'interrupteur répond tout de suite, l'échec rétablit.
+    const enregistrerMasquage = async (valeur: boolean) => {
+        const precedent = masquerArchivees;
+        setMasquerArchivees(valeur);
+        try {
+            const res = await fetch("/api/admin/settings", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ hideArchivedQueues: valeur }),
+            });
+            if (!res.ok) throw new Error();
+            toast.success(valeur
+                ? "Les files archivées sont masquées des listes"
+                : "Les files archivées réapparaissent dans les listes");
+        } catch {
+            setMasquerArchivees(precedent);
+            toast.error("Enregistrement impossible");
+        }
+    };
 
     const charger = useCallback(async () => {
         setChargement(true);
@@ -64,6 +88,7 @@ export function QueuesReglageTab() {
                 lire("/api/admin/settings"),
                 lire(`/api/admin/xapi-journal?server=${encodeURIComponent(serverId)}`),
             ]);
+            setMasquerArchivees(reglages.hideArchivedQueues === true);
             setEtat({
                 rosterSource: typeof reglages.ruleRosterSource === "string" ? reglages.ruleRosterSource : null,
                 xapiEnabled: journal.xapiEnabled === true,
@@ -90,6 +115,35 @@ export function QueuesReglageTab() {
 
     return (
         <div className="space-y-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base">Files archivées</CardTitle>
+                    <CardDescription>
+                        Ce réglage gouverne TOUTE l&apos;application, pas seulement le registre.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <label className="flex cursor-pointer items-start gap-3">
+                        <Switch
+                            checked={masquerArchivees === true}
+                            disabled={masquerArchivees === null}
+                            onCheckedChange={enregistrerMasquage}
+                            className="mt-0.5"
+                        />
+                        <span>
+                            <span className="text-sm font-medium text-slate-900">
+                                Masquer les files archivées des listes
+                            </span>
+                            <span className="mt-0.5 block text-sm text-slate-600">
+                                Les retire de la barre latérale, de la recherche et de l&apos;aperçu des groupes,
+                                pour tous les utilisateurs. Périmètres, statistiques passées et journaux
+                                restent intacts.
+                            </span>
+                        </span>
+                    </label>
+                </CardContent>
+            </Card>
+
             <Card>
                 <CardHeader>
                     <CardTitle className="text-base">D&apos;où viennent les informations d&apos;équipe</CardTitle>

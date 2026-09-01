@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 import { getSelectedServer } from "@/lib/selected-server";
 import { KNOWN_REGIONS } from "@/services/domain/queue-naming";
 import { QueueDetailDialog } from "@/components/queue-detail-dialog";
+import { Attente } from "@/components/ui/etat-chargement";
+import type { Changement } from "@/services/queue-changelog.service";
 import { QueueFlowModal } from "@/components/settings/queue-flow-modal";
 import { assessQueueHealth, type HealthLevel } from "@/services/domain/queue-health";
 import { formatDistanceToNow } from "date-fns";
@@ -62,41 +64,15 @@ export function QueuesTab() {
     const [isLoading, setIsLoading] = useState(true);
     const [isDiscovering, setIsDiscovering] = useState(false);
     const [search, setSearch] = useState("");
-    const [statusFilter, setStatusFilter] = useState<QueueStatus | "ALL">("ALL");
+    // Trois onglets au lieu d'un filtre de statut : les archivées sont du bruit
+    // dans 95 % des consultations, et le journal n'a rien à faire dans le même
+    // tableau. Le filtre « Tous les statuts » disparaît — il ferait doublon.
+    const [onglet, setOnglet] = useState<"actives" | "archivees" | "changements">("actives");
+    const [changements, setChangements] = useState<Changement[] | "chargement" | "échec" | null>(null);
     const [healthFilter, setHealthFilter] = useState<HealthLevel | "ALL">("ALL");
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [detailQueueId, setDetailQueueId] = useState<string | null>(null);
     const [bulkBusy, setBulkBusy] = useState(false);
-    // null = valeur pas encore connue : l'interrupteur attend le serveur.
-    const [hideArchived, setHideArchived] = useState<boolean | null>(null);
-
-    useEffect(() => {
-        fetch("/api/admin/settings")
-            .then((res) => res.json())
-            .then((data) => setHideArchived(Boolean(data.hideArchivedQueues)))
-            .catch(() => undefined);
-    }, []);
-
-    // Bascule optimiste : l'interrupteur répond immédiatement, l'erreur rétablit.
-    const saveHideArchived = async (value: boolean) => {
-        const previous = hideArchived;
-        setHideArchived(value);
-        try {
-            const res = await fetch("/api/admin/settings", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ hideArchivedQueues: value }),
-            });
-            if (!res.ok) throw new Error();
-            toast.success(value
-                ? "Les files archivées sont masquées des listes"
-                : "Les files archivées réapparaissent dans les listes");
-        } catch {
-            setHideArchived(previous);
-            toast.error("Enregistrement impossible");
-        }
-    };
-
     const load = useCallback(async () => {
         try {
             const res = await fetch(`/api/admin/queues?server=${getSelectedServer()}`);
@@ -206,7 +182,7 @@ export function QueuesTab() {
     const filtered = useMemo(() => {
         const term = search.trim().toLowerCase();
         return queues.filter((q) => {
-            if (statusFilter !== "ALL" && q.status !== statusFilter) return false;
+            if (q.status !== (onglet === "archivees" ? "ARCHIVED" : "ACTIVE")) return false;
             if (healthFilter !== "ALL" && health.get(q.id)?.level !== healthFilter) return false;
             if (!term) return true;
             return (
@@ -218,7 +194,10 @@ export function QueuesTab() {
                 q.agents.some((a) => a.name.toLowerCase().includes(term) || a.extension.includes(term))
             );
         });
-    }, [queues, search, statusFilter, healthFilter, health]);
+    }, [queues, search, onglet, healthFilter, health]);
+
+    const nbActives = useMemo(() => queues.filter((q) => q.status === "ACTIVE").length, [queues]);
+    const nbArchivees = useMemo(() => queues.filter((q) => q.status === "ARCHIVED").length, [queues]);
 
     /** Agents correspondant à la recherche, pour expliquer pourquoi une file remonte. */
     const matchedAgents = (q: RegistryQueue) => {
@@ -237,6 +216,17 @@ export function QueuesTab() {
     };
 
     const allVisibleSelected = filtered.length > 0 && filtered.every((q) => selected.has(q.id));
+
+    // Le journal balaie tous les appels : on ne le charge qu'à l'ouverture de
+    // son onglet, et une seule fois.
+    useEffect(() => {
+        if (onglet !== "changements" || changements !== null) return;
+        setChangements("chargement");
+        fetch(`/api/admin/queues?server=${getSelectedServer()}&view=changelog`)
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+            .then((data) => setChangements(data.changements as Changement[]))
+            .catch(() => setChangements("échec"));
+    }, [onglet, changements]);
 
     if (isLoading) {
         return (
@@ -257,18 +247,10 @@ export function QueuesTab() {
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
-                    {/* Filtre d'AFFICHAGE global : sidebar, sélecteur et aperçu
-                        des groupes. Les périmètres et les données restent intacts. */}
-                    <Tip content="Retire les files archivées de la barre latérale, de la recherche et de l'aperçu des groupes — pour tous les utilisateurs. Périmètres, statistiques passées et journaux restent intacts.">
-                        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-                            <Switch
-                                checked={hideArchived === true}
-                                disabled={hideArchived === null}
-                                onCheckedChange={saveHideArchived}
-                            />
-                            Masquer les files archivées des listes
-                        </label>
-                    </Tip>
+                    {/* « Masquer les files archivées » a quitté cet écran : ce
+                        n'était pas un filtre de consultation mais un réglage qui
+                        gouverne TOUTE l'application (cf. queues.service). Il vit
+                        désormais dans Files d'attente > Réglage. */}
                     <Button onClick={runDiscovery} disabled={isDiscovering}>
                         {isDiscovering ? (
                             <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Découverte…</>
@@ -278,6 +260,34 @@ export function QueuesTab() {
                     </Button>
                 </div>
             </div>
+
+            {/* Trois onglets, avec leurs compteurs : sans eux, on ne sait pas ce
+                qu'on ne voit pas. « Changements » plutôt que « Journal » — ce
+                dernier mot désigne déjà le sous-menu voisin (XAPI). */}
+            {queues.length > 0 && (
+                <div className="flex gap-1 border-b border-slate-200">
+                    {([
+                        ["actives", `Actives (${nbActives})`],
+                        ["archivees", `Archivées (${nbArchivees})`],
+                        ["changements", "Changements"],
+                    ] as const).map(([cle, libelle]) => (
+                        <button
+                            key={cle}
+                            type="button"
+                            onClick={() => setOnglet(cle)}
+                            aria-current={onglet === cle ? "page" : undefined}
+                            className={cn(
+                                "-mb-px border-b-2 px-4 py-2 text-sm transition-colors",
+                                onglet === cle
+                                    ? "border-blue-600 font-medium text-blue-700"
+                                    : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700",
+                            )}
+                        >
+                            {libelle}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             {queues.length === 0 && (
                 <Card className="border-dashed">
@@ -291,7 +301,7 @@ export function QueuesTab() {
                 </Card>
             )}
 
-            {newQueues > 0 && (
+            {onglet !== "changements" && newQueues > 0 && (
                 <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4">
                     <AlertTriangle className="h-5 w-5 flex-shrink-0 text-blue-600" />
                     <p className="flex-1 text-sm text-blue-800">
@@ -320,7 +330,7 @@ export function QueuesTab() {
                 </div>
             )}
 
-            {queues.length > 0 && (
+            {onglet !== "changements" && queues.length > 0 && (
                 <div className="flex flex-col gap-3 md:flex-row md:items-center">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -340,16 +350,6 @@ export function QueuesTab() {
                             <SelectItem value="critical">⚠ Problème</SelectItem>
                             <SelectItem value="warning">À surveiller</SelectItem>
                             <SelectItem value="ok">OK</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as QueueStatus | "ALL")}>
-                        <SelectTrigger className="w-full md:w-40">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="ALL">Tous les statuts</SelectItem>
-                            <SelectItem value="ACTIVE">Actives</SelectItem>
-                            <SelectItem value="ARCHIVED">Archivées</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>
@@ -407,7 +407,7 @@ export function QueuesTab() {
                 </div>
             )}
 
-            {queues.length > 0 && (
+            {onglet !== "changements" && queues.length > 0 && (
                 <Card>
                     <CardContent className="p-0">
                         <div className="overflow-x-auto">
@@ -577,7 +577,7 @@ export function QueuesTab() {
                 </Card>
             )}
 
-            {queues.length > 0 && (
+            {onglet !== "changements" && queues.length > 0 && (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                     <p className="mb-2 font-medium text-slate-700">À savoir :</p>
                     <ul className="list-inside list-disc space-y-1">
@@ -601,6 +601,76 @@ export function QueuesTab() {
                 open={!!detailQueueId}
                 onOpenChange={(open) => !open && setDetailQueueId(null)}
             />
+
+            {onglet === "changements" && <PanneauChangements etat={changements} />}
+        </div>
+    );
+}
+
+/** Une ligne du journal, mise en mots selon sa nature. */
+function LigneChangement({ c }: { c: Changement }) {
+    const date = new Date(c.date).toLocaleDateString("fr-CH", { day: "2-digit", month: "short", year: "numeric" });
+    const teinte = c.type === "statut" ? "bg-amber-50 text-amber-700 border-amber-200"
+        : c.type === "apparition" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+        : c.type === "departement" ? "bg-blue-50 text-blue-700 border-blue-200"
+        : "bg-violet-50 text-violet-700 border-violet-200";
+    const intitule = c.type === "statut" ? (c.apres === "ARCHIVED" ? "Archivée" : "Réactivée")
+        : c.type === "apparition" ? "Apparition"
+        : c.type === "departement" ? "Département"
+        : "Renommage";
+    return (
+        <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-slate-100 px-3 py-2.5 text-sm last:border-b-0">
+            <span className="w-24 shrink-0 tabular-nums text-slate-500">{date}</span>
+            <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium", teinte)}>{intitule}</span>
+            <span className="shrink-0 text-slate-500">{c.queueName}</span>
+            <span className="min-w-0 flex-1 text-slate-700">
+                {c.type === "renommage" && <>« {c.avant} » → <span className="font-medium">« {c.apres} »</span></>}
+                {c.type === "departement" && <>{c.avant ?? "aucun"} → <span className="font-medium">{c.apres ?? "aucun"}</span></>}
+                {c.type === "apparition" && <>premier appel reçu sous « {c.apres} »</>}
+                {c.type === "statut" && <>{c.par ? `par ${c.par}` : "auteur inconnu"}</>}
+            </span>
+            {/* La source est dite : un journal qui tait ses angles morts ment
+                par omission. */}
+            <span className="shrink-0 text-xs text-slate-400">
+                {c.source === "appels" ? "d'après les appels" : c.source === "xapi" ? "relevé XAPI" : "action dans l'app"}
+            </span>
+        </li>
+    );
+}
+
+function PanneauChangements({ etat }: { etat: Changement[] | "chargement" | "échec" | null }) {
+    if (etat === "chargement" || etat === null) {
+        return (
+            <Card><CardContent className="py-10"><Attente libelle="Reconstitution des changements…" /></CardContent></Card>
+        );
+    }
+    if (etat === "échec") {
+        return (
+            <Card><CardContent className="py-8 text-sm text-red-700">
+                Le journal n&apos;a pas pu être reconstitué.
+            </CardContent></Card>
+        );
+    }
+    return (
+        <div className="space-y-3">
+            {/* Ce que ce journal SAIT et ne sait pas — écrit une fois, à
+                l'endroit où la question se pose. */}
+            <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
+                Les <strong>renommages</strong> et les <strong>apparitions</strong> sont reconstitués depuis les appels :
+                ils remontent à l&apos;origine des données, au jour près. Les <strong>changements de département</strong>
+                viennent du relevé XAPI, qui date ses mouvements depuis le 25 août 2026. Les <strong>archivages</strong>
+                ne laissent aucune trace ailleurs que dans l&apos;application : ils sont enregistrés depuis le
+                1er septembre 2026, et rien ne peut être reconstitué avant cette date.
+            </p>
+            {etat.length === 0 ? (
+                <Card><CardContent className="py-8 text-center text-sm text-slate-500">
+                    Aucun changement enregistré.
+                </CardContent></Card>
+            ) : (
+                <ul className="rounded-lg border border-slate-200 bg-white">
+                    {etat.map((c, i) => <LigneChangement key={`${c.date}-${c.queueNumber}-${i}`} c={c} />)}
+                </ul>
+            )}
         </div>
     );
 }

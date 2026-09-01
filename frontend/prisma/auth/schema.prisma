@@ -381,6 +381,28 @@ model SearchPreset {
 /// Même doctrine que les appartenances : un renommage ou un changement de
 /// département FERME la ligne et en OUVRE une nouvelle. On date, on n'écrase
 /// jamais.
+/// Trace des changements de statut d'une file (active <-> archivée).
+///
+/// Le statut n'est qu'une VALEUR COURANTE dans QueueRegistry : sans cette
+/// table, impossible de dire quand ni par qui une file a été archivée. Les
+/// renommages, eux, se datent depuis les appels ; les archivages, non — ils
+/// ne laissent aucune trace dans les CDR.
+///
+/// Enregistrement démarré le 1er septembre 2026. Rien n'est rétroactif : le
+/// journal des changements ne montrera d'archivages qu'à partir de là.
+model QueueStatusChange {
+  id             String      @id @default(cuid())
+  tenantId       String
+  queueNumber    String
+  previousStatus QueueStatus
+  newStatus      QueueStatus
+  changedAt      DateTime    @default(now())
+  /// Auteur du geste, tel que connu au moment du changement.
+  changedByName  String?
+
+  @@index([tenantId, changedAt])
+}
+
 model QueueDirectoryInterval {
   id          String    @id @default(cuid())
   serverId    String

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getQueueChangeLog } from "@/services/queue-changelog.service";
 import { requireApiRole } from "@/lib/auth-guard";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
 import { ServerId } from "@/lib/prisma-cdr";
@@ -19,6 +20,13 @@ export async function GET(request: NextRequest) {
 
     try {
         const tenantId = resolveTenant(request);
+
+        // Journal des changements : assemblé à part, il balaie les appels et
+        // n'a pas à ralentir la liste du registre, consultée bien plus souvent.
+        if (new URL(request.url).searchParams.get("view") === "changelog") {
+            return NextResponse.json({ changements: await getQueueChangeLog(tenantId) });
+        }
+
         const queues = await listRegistryQueues(tenantId);
         return NextResponse.json({
             tenantId,
@@ -93,12 +101,19 @@ export async function PUT(request: NextRequest) {
 
         const normalize = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
+        // L'auteur du geste accompagne le changement de statut : « archivée le
+        // 12 mars » vaut mieux seule que rien, mais « par qui » évite d'avoir
+        // à le demander.
+        const auteur = [guard.user.firstName, guard.user.lastName].filter(Boolean).join(" ")
+            || guard.user.email
+            || null;
+
         await updateRegistryQueue(id, {
             ...(entity !== undefined ? { entity: normalize(entity) } : {}),
             ...(region !== undefined ? { region: normalize(region) } : {}),
             ...(service !== undefined ? { service: normalize(service) } : {}),
             ...(status !== undefined ? { status } : {}),
-        });
+        }, auteur);
 
         return NextResponse.json({ success: true });
     } catch (error) {
