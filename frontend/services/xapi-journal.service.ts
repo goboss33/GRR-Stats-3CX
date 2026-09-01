@@ -3,11 +3,11 @@ import { getServerXapiConfig, isXapiUsable } from "@/lib/xapi-config";
 import { releveAttendu } from "@/services/domain/journal-cadence";
 import { requestXapiToken, decodeTokenClaims } from "@/lib/xapi-client";
 import { getAvailableServers } from "@/lib/servers";
-import { getQueueMembersRaw } from "@/services/repositories/cdr.repository";
 import type { ServerId } from "@/lib/prisma-cdr";
 import {
     normalizeSnapshot, planJournalChanges, windowReachesCutover,
-    type SnapshotMember,
+    normalizeQueueSnapshot, planDirectoryChanges,
+    type SnapshotMember, type SnapshotQueue,
 } from "@/services/domain/membership-journal";
 import { getServerTimezone } from "@/lib/servers";
 import type { ClassificationRules, RosterMember } from "@/services/domain/call-classification";
@@ -57,13 +57,19 @@ function pick(obj: Record<string, unknown> | null | undefined, keys: string[]): 
 async function fetchQueueMembers(
     baseUrl: string,
     accessToken: string,
-): Promise<{ ok: true; queues: number; members: SnapshotMember[] } | { ok: false; reason: string }> {
+): Promise<{ ok: true; queues: number; members: SnapshotMember[]; annuaire: SnapshotQueue[] } | { ok: false; reason: string }> {
     const members: SnapshotMember[] = [];
+    const annuaire: SnapshotQueue[] = [];
     let queues = 0;
     // Plafond OData du PBX : 100 elements par page (verifie sur le 3CX v20
     // reel — au-dela, HTTP 400 « The limit of 100 for Top query has been
     // exceeded ») ; la pagination @odata.nextLink enchaine les pages.
-    let url: string | null = `${baseUrl}/xapi/v1/Queues?%24expand=Agents&%24top=100`;
+    // Agents ET Groups dans le MÊME appel : le département d'une file est son
+    // « groupe » 3CX, et c'est la seule source qui fasse autorité — le nom
+    // déduit des CDR est celui du dernier appel, les étiquettes du registre
+    // sont figées à la découverte. Vérifié sur le PBX : une file appartient
+    // toujours à exactement un groupe.
+    let url: string | null = `${baseUrl}/xapi/v1/Queues?%24expand=Agents,Groups&%24top=100`;
     let firstShape = "";
 
     for (let page = 0; url && page < PAGE_LIMIT; page++) {
@@ -123,6 +129,17 @@ async function fetchQueueMembers(
             const queueNumber = pick(queue, ["Number", "number", "Extension"]);
             if (!queueNumber) continue;
             queues++;
+            // Annuaire : nom de la file et département, tels que le PBX les
+            // déclare à cet instant.
+            const groupes = (queue.Groups ?? queue.groups ?? []) as unknown[];
+            const premierGroupe = Array.isArray(groupes) && groupes.length > 0
+                ? (groupes[0] as Record<string, unknown>)
+                : undefined;
+            annuaire.push({
+                queueNumber,
+                queueName: pick(queue, ["Name", "name"]) || pick(premierGroupe, ["MemberName"]) || queueNumber,
+                department: pick(premierGroupe, ["Name"]) || null,
+            });
             const agents = (queue.Agents ?? queue.agents ?? queue.Users ?? []) as unknown[];
             if (!Array.isArray(agents)) continue;
             for (const rawAgent of agents) {
@@ -147,7 +164,7 @@ async function fetchQueueMembers(
     if (queues === 0) {
         return { ok: false, reason: `Aucune file lisible dans la réponse du PBX — forme reçue : [${firstShape || "vide"}]` };
     }
-    return { ok: true, queues, members };
+    return { ok: true, queues, members, annuaire };
 }
 
 /** Un relevé complet pour un tenant : lecture XAPI, plan, application, trace. */
@@ -179,7 +196,31 @@ export async function runQueueMembershipSnapshot(serverId: ServerId): Promise<Sn
     });
     const plan = planJournalChanges(open, snapshot);
 
+    // Annuaire des files : même doctrine, un mouvement se date au lieu de
+    // s'écraser. Un renommage ou un changement de département ferme la ligne
+    // en cours et en ouvre une nouvelle.
+    const relevéFiles = normalizeQueueSnapshot(fetched.annuaire);
+    const annuaireOuvert = await prismaAuth.queueDirectoryInterval.findMany({
+        where: { serverId, closedAt: null },
+        select: { id: true, queueNumber: true, queueName: true, department: true },
+    });
+    const planAnnuaire = planDirectoryChanges(annuaireOuvert, relevéFiles);
+
     await prismaAuth.$transaction([
+        prismaAuth.queueDirectoryInterval.updateMany({
+            where: { id: { in: planAnnuaire.toClose } },
+            data: { closedAt: now, lastSeenAt: now },
+        }),
+        prismaAuth.queueDirectoryInterval.updateMany({
+            where: { id: { in: planAnnuaire.toTouch } },
+            data: { lastSeenAt: now },
+        }),
+        prismaAuth.queueDirectoryInterval.createMany({
+            data: planAnnuaire.toOpen.map((q) => ({
+                serverId, queueNumber: q.queueNumber, queueName: q.queueName,
+                department: q.department, firstSeenAt: now, lastSeenAt: now,
+            })),
+        }),
         prismaAuth.queueMembershipInterval.updateMany({
             where: { id: { in: plan.toClose } },
             data: { closedAt: now, lastSeenAt: now },
@@ -276,28 +317,13 @@ export async function getJournalOverview(serverId: ServerId) {
     // « Gérance NE-G01 + NE-G02 » et que le 3CX la place dans « NEUCHATEL ».
     // Ces étiquettes servent à l'écran d'administration des files (filtrer,
     // attribuer des périmètres en masse), pas à afficher un département.
-    const [annuaire, filesCdr] = await Promise.all([
-        prismaAuth.queueRegistry.findMany({
-            where: { tenantId: serverId },
-            select: { queueNumber: true, currentName: true },
+    const [annuaireXapi] = await Promise.all([
+        prismaAuth.queueDirectoryInterval.findMany({
+            where: { serverId, closedAt: null },
+            select: { queueNumber: true, queueName: true, department: true },
         }),
-        // Version NON filtrée par périmètre : la variante filtrée résout la
-        // portée du consultant, ce qui exige une requête HTTP — un script de
-        // contrôle ou une tâche de fond n'en a pas, et l'appel renverrait
-        // silencieusement une liste vide. L'onglet est de toute façon réservé
-        // à l'ADMIN par la garde de sa route.
-        // Mise en cache côté repository : cet annuaire bouge à l'échelle de la
-        // semaine.
-        getQueueMembersRaw(serverId),
     ]);
-    const nomDe = new Map(annuaire.map((q) => [q.queueNumber, q]));
-    // Une ligne par (file, collaborateur) : on ne garde que la première de
-    // chaque file, le nom et le département y sont déjà résolus.
-    const ficheCdr = new Map<string, { queueName: string; queueDepartment: string | null }>();
-    for (const row of filesCdr) {
-        if (ficheCdr.has(row.queue_number)) continue;
-        ficheCdr.set(row.queue_number, { queueName: row.queue_name, queueDepartment: row.queue_department });
-    }
+    const ficheDe = new Map(annuaireXapi.map((q) => [q.queueNumber, q]));
 
     const parFile = new Map<string, typeof queues>();
     for (const ligne of queues) {
@@ -313,16 +339,17 @@ export async function getJournalOverview(serverId: ServerId) {
         })),
         openCount,
         queues: [...parFile.entries()].map(([queueNumber, lignes]) => {
-            const cdr = ficheCdr.get(queueNumber);
+            const fiche = ficheDe.get(queueNumber);
             return {
                 queueNumber,
-                // Repli en cascade : nom vu dans les CDR, puis nom du registre
-                // (une file du journal peut n'avoir aucune sollicitation
-                // récente), puis le numéro seul.
-                queueName: cdr?.queueName ?? nomDe.get(queueNumber)?.currentName ?? `File ${queueNumber}`,
-                // Département déclaré par le 3CX, tel quel. Une file sans
-                // département rejoint le groupe sans titre du sélecteur.
-                queueDepartment: cdr?.queueDepartment ?? null,
+                // Tout vient du PBX, rien des CDR ni du registre. Une file
+                // encore absente de l'annuaire (journal antérieur au premier
+                // relevé qui l'enregistre) garde son numéro pour nom, le
+                // temps d'un relevé.
+                queueName: fiche?.queueName ?? `File ${queueNumber}`,
+                // Département déclaré par le 3CX. Une file sans département
+                // rejoint le groupe « Sans département » du sélecteur.
+                queueDepartment: fiche?.department ?? null,
                 members: lignes.length,
                 membres: lignes.map((l) => ({
                     extension: l.extension,

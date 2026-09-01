@@ -1,6 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
-  output   = "../../node_modules/.prisma/auth-client"
+  provider      = "prisma-client-js"
+  output        = "../../node_modules/.prisma/auth-client"
   binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
@@ -10,21 +10,21 @@ datasource db {
 }
 
 model User {
-  id             String   @id @default(cuid())
-  email          String   @unique
+  id             String    @id @default(cuid())
+  email          String    @unique
   password       String
   firstName      String?
   lastName       String?
-  role           Role     @default(AGENT)
-  authProvider   String   @default("CREDENTIALS")
-  azureAdId      String?  @unique
+  role           Role      @default(AGENT)
+  authProvider   String    @default("CREDENTIALS")
+  azureAdId      String?   @unique
   profilePicture String?
   jobTitle       String?
   department     String?
   mobilePhone    String?
   officeLocation String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
   /// Dernière connexion réussie (horodatée par l'événement signIn de NextAuth,
   /// quel que soit le fournisseur — mot de passe ou Microsoft).
   lastLoginAt    DateTime?
@@ -39,10 +39,10 @@ model User {
   /// derrière chaque KPI, on RETIRE ce droit plutôt qu'on ne l'accorde.
   /// (canViewCompanyWide a disparu en août 2026 : le tableau de bord est
   /// toujours filtré par périmètre — cf. lib/startup-migrations.)
-  canViewLogs             Boolean @default(true)
-  canViewExtensionStats   Boolean @default(true)
-  canViewFullPhoneNumbers Boolean @default(false)
-  canCreateApiKeys        Boolean @default(false)
+  canViewLogs             Boolean  @default(true)
+  canViewExtensionStats   Boolean  @default(true)
+  canViewFullPhoneNumbers Boolean  @default(false)
+  canCreateApiKeys        Boolean  @default(false)
   /// Voir la cloche d'alertes (anomalies détectées dans son périmètre).
   /// `null` = non arbitré -> défaut par rôle : activé pour ADMIN/MODERATOR,
   /// désactivé pour MANAGER (cf. lib/notification-access).
@@ -92,21 +92,21 @@ model AlertIgnore {
 }
 
 model AppSettings {
-  id                          String   @id @default("global")
-  minSignificantDurationSec   Int      @default(1)
+  id                          String    @id @default("global")
+  minSignificantDurationSec   Int       @default(1)
   /// Interrupteur global du filtrage par périmètre (cf. PRD §12).
   /// Reste à false le temps de classer les files et d'affecter les périmètres :
   /// l'activer avant rendrait tous les écrans vides pour les non-ADMIN.
-  perimeterEnforcementEnabled Boolean  @default(false)
+  perimeterEnforcementEnabled Boolean   @default(false)
   /// Nombre de jours sans appel avant qu'une file passe en ARCHIVED.
-  queueArchiveAfterDays       Int      @default(90)
+  queueArchiveAfterDays       Int       @default(90)
   /// Masquer les files ARCHIVED des listes (sidebar, sélecteur, aperçu des
   /// groupes). Filtre d'AFFICHAGE seulement : périmètres, statistiques des
   /// périodes passées et journaux restent accessibles par lien direct.
-  hideArchivedQueues          Boolean  @default(true)
+  hideArchivedQueues          Boolean   @default(true)
   /// Fenêtre d'observation (jours) du détecteur d'anomalies de la cloche
   /// d'alertes — cf. services/notifications.service.
-  notificationWindowDays      Int      @default(7)
+  notificationWindowDays      Int       @default(7)
   /// Horodate l'amorçage des périmètres ADMIN/MODERATOR (août 2026 : ces rôles
   /// ont cessé de tout voir par défaut). Ne rejoue jamais : sans ce marqueur,
   /// chaque démarrage réattribuerait les files qu'un administrateur a retirées.
@@ -119,45 +119,45 @@ model AppSettings {
   // les chiffres des périodes passées.
 
   /// Appel repassant dans la même file : "best" | "last" | "each"
-  ruleMultiPassage            String   @default("best")
+  ruleMultiPassage             String   @default("best")
   /// Débordement vers une autre file : "neutral" | "lost" | "answered"
-  ruleOverflow                String   @default("neutral")
+  ruleOverflow                 String   @default("neutral")
   /// Seuil des abandons courts, en secondes. `null` désactive la règle.
-  ruleShortAbandonSec         Int?     @default(10)
+  ruleShortAbandonSec          Int?     @default(10)
   /// Sort des abandons courts : "lost" (comptés dans Perdus) | "excluded"
   /// (pas comptés du tout — l'appel sort des reçus)
-  ruleShortAbandonDisposition String   @default("lost")
+  ruleShortAbandonDisposition  String   @default("lost")
   /// Horloge du seuil d'abandon court : "passage" (le passage en file seul) |
   /// "team" (cumul de la sollicitation de l'équipe : directs + file)
-  ruleShortAbandonClock       String   @default("passage")
+  ruleShortAbandonClock        String   @default("passage")
   /// Appel direct ET en file : "firstContact" | "queueWins" | "both"
-  ruleDirectAndQueue          String   @default("firstContact")
+  ruleDirectAndQueue           String   @default("firstContact")
   /// Messagerie : "separate" | "lost" | "answered" | "excluded"
-  ruleVoicemail               String   @default("separate")
+  ruleVoicemail                String   @default("separate")
   /// Statut final hors périmètre : "name" | "anonymize" | "hide"
-  ruleOutOfScopeFinalStatus   String   @default("name")
+  ruleOutOfScopeFinalStatus    String   @default("name")
   /// Unité de comptage : "leg" (jambe 3CX) | "merged" (jambes de transfert
   /// fusionnées dans l'appel principal — exige la vue cdroutput_merged,
   /// cf. prisma/cdr/sql/001_effective_call_id.sql)
-  ruleCallGrain               String   @default("leg")
+  ruleCallGrain                String   @default("leg")
   /// Appel répondu puis servi hors du groupe : "overflow" (Transféré) | "answered"
-  ruleAnsweredThenTransferred String   @default("overflow")
+  ruleAnsweredThenTransferred  String   @default("overflow")
   /// Crédit du tableau par agent : "lastAnswer" (dernier décrocheur) | "each"
-  ruleAgentCredit             String   @default("lastAnswer")
+  ruleAgentCredit              String   @default("lastAnswer")
   /// Transfert accompli dans la performance : "success" | "neutral"
-  ruleHandedOffInPerformance  String   @default("success")
+  ruleHandedOffInPerformance   String   @default("success")
   /// Sonnerie directe non répondue partie vers la file d'une autre équipe :
   /// "lost" (Perdu) | "overflow" (Débordé, rangé dans les Débordements)
-  ruleUnansweredDirectOverflow String  @default("lost")
+  ruleUnansweredDirectOverflow String   @default("lost")
   /// Durée minimale d'une conversation pour qu'un décroché compte comme répondu.
-  ruleMinAnswerSec            Int      @default(1)
+  ruleMinAnswerSec             Int      @default(1)
   /// Source de l'équipe : "activity" (déduite des sollicitations de la
   /// fenêtre — l'historique) | "journalAuto" (journal de composition XAPI dès
   /// le premier mois calendaire entièrement couvert ; strictement équivalent
   /// à "activity" tant qu'aucun journal n'existe, d'où ce défaut).
-  ruleRosterSource            String   @default("journalAuto")
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
+  ruleRosterSource             String   @default("journalAuto")
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
 }
 
 /// Registre des files d'attente — SOURCE DE VÉRITÉ des droits.
@@ -171,16 +171,16 @@ model AppSettings {
 /// n'apparaît qu'après son premier appel, et une file supprimée ne disparaît
 /// jamais (d'où le statut ARCHIVED).
 model QueueRegistry {
-  id          String      @id @default(cuid())
-  tenantId    String
-  queueNumber String
-  currentName String
+  id                String      @id @default(cuid())
+  tenantId          String
+  queueNumber       String
+  currentName       String
   /// Étiquettes d'aide à la sélection (pré-remplies, validées par un ADMIN).
   /// Elles ne définissent JAMAIS les droits à elles seules.
-  entity      String?
-  region      String?
-  service     String?
-  status      QueueStatus @default(ACTIVE)
+  entity            String?
+  region            String?
+  service           String?
+  status            QueueStatus @default(ACTIVE)
   /// DÉPRÉCIÉ (août 2026) — plus lu par aucun écran. Les clients hébergés
   /// sortent désormais des chiffres parce qu'ils ne sont dans le périmètre de
   /// personne, et non parce qu'on efface leurs appels de toutes les vues :
@@ -188,15 +188,15 @@ model QueueRegistry {
   /// équipes sur les appels mixtes, journaux compris.
   /// Conservé le temps que l'amorçage des périmètres (startup-migrations) en
   /// tire le périmètre initial des administrateurs ; supprimable ensuite.
-  excludedFromStats Boolean @default(false)
+  excludedFromStats Boolean     @default(false)
   /// null = jamais examinée par un ADMIN -> signalée comme « nouvelle ».
   /// Remplace l'ancien statut « à classer », qui empêchait d'utiliser une file
   /// sans rien protéger : la sécurité vient du périmètre, pas du statut.
-  reviewedAt  DateTime?
-  firstSeenAt DateTime
-  lastSeenAt  DateTime
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  reviewedAt        DateTime?
+  firstSeenAt       DateTime
+  lastSeenAt        DateTime
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
   nameHistory QueueNameHistory[]
   perimeters  UserQueuePerimeter[]
@@ -305,15 +305,15 @@ model QueueAgentLink {
 }
 
 model TenantSettings {
-  serverId           String   @id
-  timezone           String   @default("Europe/Zurich")
+  serverId           String    @id
+  timezone           String    @default("Europe/Zurich")
   licenceThreshold   Int?
   trunkThreshold     Int?
   /// SURCOUCHE XAPI (août 2026) — interrogation directe du 3CX, activable et
   /// désactivable par tenant. Le socle CDR reste la source de vérité en toute
   /// circonstance : rien de ce qui existe ne doit dépendre de cet
   /// interrupteur, XAPI ne fait qu'AJOUTER par-dessus.
-  xapiEnabled        Boolean  @default(false)
+  xapiEnabled        Boolean   @default(false)
   /// Adresse du PBX, port compris (ex. https://exemple.3cx.ch:5001). En base
   /// et non en variable d'environnement : un tenant = un serveur, et
   /// l'administrateur doit pouvoir corriger une adresse sans redéploiement.
@@ -331,23 +331,23 @@ model TenantSettings {
   /// DÉPRÉCIÉ (août 2026) — plus lu par aucun écran, voir
   /// QueueRegistry.excludedFromStats. Les postes hors file sont désormais
   /// visibles des seuls rôles globaux, via leur périmètre.
-  excludedExtensions String   @default("")
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  excludedExtensions String    @default("")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 }
 
 model ApiKey {
-  id              String   @id @default(cuid())
-  keyHash         String   @unique
-  name            String
-  description     String?
-  quotaPerMinute  Int      @default(100)
-  isActive        Boolean  @default(true)
-  createdBy       String?
-  createdAt       DateTime @default(now())
-  lastUsedAt      DateTime?
-  revokedAt       DateTime?
-  revokedBy       String?
+  id             String    @id @default(cuid())
+  keyHash        String    @unique
+  name           String
+  description    String?
+  quotaPerMinute Int       @default(100)
+  isActive       Boolean   @default(true)
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  revokedBy      String?
 
   @@index([isActive])
   @@index([createdBy])
@@ -370,6 +370,34 @@ model SearchPreset {
 /// (Nicole → Martine sur le même poste) FERME l'intervalle et en ouvre un
 /// nouveau : les noms d'époque restent des données de première classe, comme
 /// dans le socle CDR. Le journal ne réécrit jamais le passé — il l'enregistre.
+/// Annuaire des files RELEVÉ PAR XAPI — nom et département, datés.
+///
+/// Le nom déduit des CDR est celui du dernier appel, et les étiquettes du
+/// registre sont analysées une fois puis figées : les deux divergeaient de la
+/// réalité dès qu'une file changeait de nom ou d'entité (la file 925 restait
+/// « RC BULLE » alors que le PBX la place dans « GRR BULLE »). Seul le PBX
+/// fait autorité, et il le dit en un appel : Queues?$expand=Agents,Groups.
+///
+/// Même doctrine que les appartenances : un renommage ou un changement de
+/// département FERME la ligne et en OUVRE une nouvelle. On date, on n'écrase
+/// jamais.
+model QueueDirectoryInterval {
+  id          String    @id @default(cuid())
+  serverId    String
+  queueNumber String
+  /// Nom de la file au PBX, à l'époque de cette ligne.
+  queueName   String
+  /// Département (« groupe » 3CX). null = la file n'en a aucun.
+  department  String?
+  firstSeenAt DateTime
+  lastSeenAt  DateTime
+  /// Relevé qui a constaté le changement ; null = valeurs à ce jour.
+  closedAt    DateTime?
+
+  @@index([serverId, queueNumber, closedAt])
+  @@index([serverId, closedAt])
+}
+
 model QueueMembershipInterval {
   id          String    @id @default(cuid())
   serverId    String

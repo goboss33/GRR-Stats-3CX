@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { normalizeSnapshot, planJournalChanges, localDateKey, journalCutoverKey, windowReachesCutover, type OpenInterval } from "./membership-journal";
+import {
+    normalizeSnapshot,
+    planJournalChanges,
+    localDateKey,
+    journalCutoverKey,
+    windowReachesCutover,
+    normalizeQueueSnapshot,
+    planDirectoryChanges,
+    type OpenInterval,
+    type OpenQueueEntry,
+    type SnapshotQueue,
+} from "./membership-journal";
 
 const interval = (id: string, queueNumber: string, extension: string, agentName: string): OpenInterval =>
     ({ id, queueNumber, extension, agentName });
@@ -116,5 +127,68 @@ describe("frontière de bascule — le premier mois entièrement couvert", () =>
         // Filtre « 30 août » ou « août entier » : ancien régime.
         expect(windowReachesCutover(new Date("2026-08-29T22:00:00.000Z"), firstRun, TZ)).toBe(false);
         expect(windowReachesCutover(new Date("2026-07-31T22:00:00.000Z"), firstRun, TZ)).toBe(false);
+    });
+});
+
+describe("annuaire des files — normalizeQueueSnapshot", () => {
+    it("déduplique par numéro et nettoie les espaces", () => {
+        const out = normalizeQueueSnapshot([
+            { queueNumber: " 925 ", queueName: " Gérance FR-G01 ", department: " GRR BULLE " },
+            { queueNumber: "925", queueName: "Gérance FR-G01", department: "GRR BULLE" },
+        ]);
+        expect(out).toEqual([{ queueNumber: "925", queueName: "Gérance FR-G01", department: "GRR BULLE" }]);
+    });
+
+    it("nom vide : le numéro fait office de nom ; département vide : null", () => {
+        expect(normalizeQueueSnapshot([{ queueNumber: "807", queueName: "  ", department: "" }]))
+            .toEqual([{ queueNumber: "807", queueName: "807", department: null }]);
+    });
+
+    it("une file sans numéro est ignorée", () => {
+        expect(normalizeQueueSnapshot([{ queueNumber: "", queueName: "X", department: "Y" }])).toEqual([]);
+    });
+});
+
+describe("annuaire des files — planDirectoryChanges", () => {
+    const ligne = (over: Partial<OpenQueueEntry> = {}): OpenQueueEntry => ({
+        id: "i1", queueNumber: "925", queueName: "Gérance FR-G01", department: "GRR BULLE", ...over,
+    });
+    const vue = (over: Partial<SnapshotQueue> = {}): SnapshotQueue => ({
+        queueNumber: "925", queueName: "Gérance FR-G01", department: "GRR BULLE", ...over,
+    });
+
+    it("rien n'a bougé : simple prolongation", () => {
+        const p = planDirectoryChanges([ligne()], [vue()]);
+        expect(p).toEqual({ toClose: [], toOpen: [], toTouch: ["i1"] });
+    });
+
+    it("file renommée : la ligne se ferme, une nouvelle s'ouvre", () => {
+        const p = planDirectoryChanges([ligne()], [vue({ queueName: "Gérance Fribourg" })]);
+        expect(p.toClose).toEqual(["i1"]);
+        expect(p.toOpen).toEqual([vue({ queueName: "Gérance Fribourg" })]);
+        expect(p.toTouch).toEqual([]);
+    });
+
+    it("changement de département : même traitement — le cas RC → GRR", () => {
+        const p = planDirectoryChanges([ligne({ department: "RC BULLE" })], [vue()]);
+        expect(p.toClose).toEqual(["i1"]);
+        expect(p.toOpen).toEqual([vue()]);
+    });
+
+    it("file disparue du PBX : la ligne se ferme, rien ne s'ouvre", () => {
+        const p = planDirectoryChanges([ligne()], []);
+        expect(p).toEqual({ toClose: ["i1"], toOpen: [], toTouch: [] });
+    });
+
+    it("nouvelle file : une ligne s'ouvre", () => {
+        const p = planDirectoryChanges([], [vue({ queueNumber: "958", queueName: "Service Client", department: "GRR GENEVE" })]);
+        expect(p.toOpen).toHaveLength(1);
+        expect(p.toClose).toEqual([]);
+    });
+
+    it("département perdu (null) : c'est aussi un mouvement", () => {
+        const p = planDirectoryChanges([ligne()], [vue({ department: null })]);
+        expect(p.toClose).toEqual(["i1"]);
+        expect(p.toOpen[0].department).toBeNull();
     });
 });

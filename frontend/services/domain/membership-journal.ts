@@ -86,6 +86,95 @@ export function planJournalChanges(open: OpenInterval[], snapshot: SnapshotMembe
 }
 
 // ============================================
+// ANNUAIRE DES FILES — même doctrine, autre objet
+//
+// La XAPI donne aussi, pour chaque file, son NOM et son DÉPARTEMENT (le
+// « groupe » du 3CX). Ce sont les seules valeurs qui font autorité : le nom
+// déduit des CDR est celui du dernier appel, et les étiquettes du registre
+// sont analysées une fois puis figées — deux approximations qui divergeaient
+// de la réalité dès qu'une file changeait de nom ou d'entité.
+//
+// Comme pour les appartenances, un changement ferme la ligne et en ouvre une
+// nouvelle : l'annuaire date les mouvements au lieu de les écraser.
+// ============================================
+
+/** Une file vue dans le relevé instantané XAPI. */
+export interface SnapshotQueue {
+    queueNumber: string;
+    queueName: string;
+    /** Département 3CX (« groupe »). null quand la file n'en a aucun. */
+    department: string | null;
+}
+
+/** Ligne d'annuaire ouverte telle que lue dans le journal. */
+export interface OpenQueueEntry {
+    id: string;
+    queueNumber: string;
+    queueName: string;
+    department: string | null;
+}
+
+export interface DirectoryPlan {
+    /** Lignes à fermer : file disparue, renommée, ou changée de département. */
+    toClose: string[];
+    /** Lignes à ouvrir : nouvelle file, nouveau nom, nouveau département. */
+    toOpen: SnapshotQueue[];
+    /** Lignes inchangées : simple prolongation. */
+    toTouch: string[];
+}
+
+/** Nettoie un relevé de files : espaces, doublons, nom vide → numéro. */
+export function normalizeQueueSnapshot(raw: SnapshotQueue[]): SnapshotQueue[] {
+    const vues = new Map<string, SnapshotQueue>();
+    for (const q of raw) {
+        const queueNumber = q.queueNumber?.trim();
+        if (!queueNumber) continue;
+        const departement = q.department?.trim();
+        vues.set(queueNumber, {
+            queueNumber,
+            queueName: q.queueName?.trim() || queueNumber,
+            department: departement ? departement : null,
+        });
+    }
+    return [...vues.values()];
+}
+
+/**
+ * Compare l'annuaire ouvert au relevé et décide des mouvements.
+ *
+ * Strictement le même raisonnement que planJournalChanges, sur une clé plus
+ * simple (le numéro de file) et deux attributs surveillés.
+ */
+export function planDirectoryChanges(open: OpenQueueEntry[], snapshot: SnapshotQueue[]): DirectoryPlan {
+    const files = new Map(snapshot.map((q) => [q.queueNumber, q]));
+    const plan: DirectoryPlan = { toClose: [], toOpen: [], toTouch: [] };
+    const vues = new Set<string>();
+
+    for (const ligne of open) {
+        const file = files.get(ligne.queueNumber);
+        if (!file) {
+            // La file n'existe plus au PBX.
+            plan.toClose.push(ligne.id);
+            continue;
+        }
+        vues.add(ligne.queueNumber);
+        if (file.queueName !== ligne.queueName || file.department !== ligne.department) {
+            // Renommage ou changement de département : mouvement daté.
+            plan.toClose.push(ligne.id);
+            plan.toOpen.push(file);
+        } else {
+            plan.toTouch.push(ligne.id);
+        }
+    }
+
+    for (const [numero, file] of files) {
+        if (!vues.has(numero)) plan.toOpen.push(file);
+    }
+
+    return plan;
+}
+
+// ============================================
 // FRONTIÈRE DE BASCULE — à partir de quand le journal fait foi
 //
 // La règle « rosterSource: journalAuto » ne s'applique qu'aux fenêtres
