@@ -16,6 +16,7 @@
 import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import { prismaAuth } from "@/lib/prisma-auth";
 import { parseQueueName } from "@/services/domain/queue-naming";
+import { getDerniersRenommages } from "@/services/queue-changelog.service";
 import { logger } from "@/lib/logger";
 
 interface DiscoveredQueue {
@@ -221,6 +222,9 @@ export async function listRegistryQueues(serverId: ServerId) {
     // Activité en direct : permet d'afficher un état de santé fiable et de
     // rechercher une file par le nom d'un de ses agents.
     const live = await getQueuesLiveActivity(serverId);
+    // Date RÉELLE du dernier renommage, lue dans les appels : le badge
+    // « Renommée » s'efface passé un délai, il lui faut une vraie date.
+    const renommages = await getDerniersRenommages(serverId);
 
     return queues.map((q) => ({
         ...q,
@@ -229,6 +233,7 @@ export async function listRegistryQueues(serverId: ServerId) {
         department: live[q.queueNumber]?.department ?? null,
         agents: live[q.queueNumber]?.agents ?? [],
         perimeterCount: perimetreParFile.get(q.id) ?? 0,
+        lastRename: renommages[q.queueNumber] ?? null,
     }));
 }
 

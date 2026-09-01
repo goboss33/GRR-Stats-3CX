@@ -37,6 +37,8 @@ interface RegistryQueue {
     firstSeenAt: string;
     /** Combien d'utilisateurs ont cette file dans leur périmètre. */
     perimeterCount: number;
+    /** Dernier renommage daté par les appels, et le nom porté avant. */
+    lastRename: { date: string; avant: string } | null;
     lastCallAt: string | null;
     agents: { extension: string; name: string; attempts: number; lastSeenAt: string }[];
     lastSeenAt: string;
@@ -58,11 +60,6 @@ const healthStyles: Record<HealthLevel, { dot: string; label: string }> = {
  * L'âge, lui, ne se laisse pas éteindre : il dit la vérité tout seul.
  */
 const JOURS_NOUVEAUTE = 30;
-
-const statusLabels: Record<QueueStatus, string> = {
-    ACTIVE: "Active",
-    ARCHIVED: "Archivée",
-};
 
 const statusStyles: Record<QueueStatus, string> = {
     ACTIVE: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -160,6 +157,8 @@ export function QueuesTab() {
 
     const estNouvelle = (q: RegistryQueue) =>
         Date.now() - new Date(q.firstSeenAt).getTime() < JOURS_NOUVEAUTE * 86400000;
+    const estRenommeeRecemment = (q: RegistryQueue) =>
+        !!q.lastRename && Date.now() - new Date(q.lastRename.date).getTime() < JOURS_NOUVEAUTE * 86400000;
     // Plus de bandeau des renommages ici : il listait les 65 files renommées
     // à chaque visite, sans date ni ordre — l'onglet « Changements » les
     // raconte désormais chronologiquement, avec leur source.
@@ -433,11 +432,25 @@ export function QueuesTab() {
                                                         </Badge>
                                                     </Tip>
                                                 )}
-                                                {q.previousNames.length > 0 && (
+                                                {/* « Renommée » suit la même règle que « Nouvelle » :
+                                                    un badge qui s'efface passé le délai. L'étiquette
+                                                    d'avant restait allumée pour toujours — 65 files
+                                                    sur 94 la portaient en permanence, elle ne
+                                                    signalait donc plus rien. La date vient des
+                                                    appels, la seule source qui la connaisse. */}
+                                                {estRenommeeRecemment(q) && (
+                                                    <Tip content={`Renommée ${formatDistanceToNow(new Date(q.lastRename!.date), { addSuffix: true, locale: fr })} — s'appelait « ${q.lastRename!.avant} ». Le badge s'efface au bout de ${JOURS_NOUVEAUTE} jours ; vérifiez que les périmètres restent corrects.`}>
+                                                        <Badge variant="outline" className="ml-2 border-violet-200 bg-violet-50 text-[10px] text-violet-700">
+                                                            Renommée
+                                                        </Badge>
+                                                    </Tip>
+                                                )}
+                                                {/* Les anciens noms restent consultables au-delà du
+                                                    délai, sans crier : c'est ce qu'on cherche quand
+                                                    on regarde une file précise. */}
+                                                {!estRenommeeRecemment(q) && q.previousNames.length > 0 && (
                                                     <Tip content={`Ancien(s) nom(s) : ${q.previousNames.join(", ")}`}>
-                                                        <span className="ml-2 text-xs text-blue-600">
-                                                            (renommée)
-                                                        </span>
+                                                        <span className="ml-2 cursor-help text-xs text-slate-400">(renommée)</span>
                                                     </Tip>
                                                 )}
                                                 {/* Explique pourquoi la file remonte lors d'une recherche par agent */}
@@ -487,16 +500,22 @@ export function QueuesTab() {
                                                         <Workflow className="h-4 w-4" />
                                                     </Button>
                                                 </Tip>
-                                                <Select value={q.status} onValueChange={(v) => patchQueue(q.id, { status: v as QueueStatus })}>
-                                                    <SelectTrigger className={cn("h-8 w-32 text-xs", statusStyles[q.status])}>
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {(Object.keys(statusLabels) as QueueStatus[]).map((s) => (
-                                                            <SelectItem key={s} value={s}>{statusLabels[s]}</SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
+                                                {/* Deux états seulement : un bouton qui bascule vaut
+                                                    mieux qu'une liste déroulante à deux entrées —
+                                                    un clic au lieu de deux, et l'action est écrite
+                                                    en toutes lettres au lieu d'être devinée. */}
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className={cn("h-8 text-xs", statusStyles[q.status])}
+                                                    onClick={() => patchQueue(q.id, {
+                                                        status: q.status === "ACTIVE" ? "ARCHIVED" : "ACTIVE",
+                                                    })}
+                                                >
+                                                    {q.status === "ACTIVE"
+                                                        ? <><Archive className="mr-1.5 h-3.5 w-3.5" /> Archiver</>
+                                                        : <><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Réactiver</>}
+                                                </Button>
                                                 </div>
                                             </td>
                                         </tr>

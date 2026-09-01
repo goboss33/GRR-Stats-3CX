@@ -44,6 +44,9 @@ export async function GET(request: NextRequest) {
                 // signal pour toujours.
                 // Zéro = personne ne voit cette file, nulle part.
                 perimeterCount: q.perimeterCount,
+                // Dernier renommage RÉEL, daté par les appels — le badge
+                // « Renommée » s'efface au bout du même délai que « Nouvelle ».
+                lastRename: q.lastRename,
                 // Activité réelle (CDR), et non la date figée du registre.
                 lastCallAt: q.lastCallAt,
                 // Département 3CX déduit des CDR — null si jamais observé.

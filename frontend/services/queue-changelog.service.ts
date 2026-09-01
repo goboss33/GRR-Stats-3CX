@@ -52,6 +52,72 @@ interface SpanRow {
     nom_precedent: string | null;
 }
 
+/**
+ * SQL des périodes de port de chaque nom, avec le nom précédent.
+ *
+ * Partagé par le journal et par le badge « renommée » du registre : une seule
+ * définition de ce qu'est un renommage, donc pas de risque que les deux
+ * écrans racontent des histoires différentes.
+ *
+ * Limite connue : une file qui reprendrait un nom déjà porté (A → B → A)
+ * n'aurait qu'une ligne pour A, aux bornes élargies — l'ordre pourrait s'en
+ * trouver faussé. Cas non observé, et sans conséquence sur le fond.
+ */
+const SQL_SPANS_DE_NOMS = (table: string) => `
+    WITH spans AS (
+        SELECT destination_dn_number AS queue_number,
+               destination_dn_name   AS name,
+               MIN(cdr_started_at)   AS debut
+        FROM ${table}
+        WHERE destination_dn_type = 'queue'
+          AND destination_dn_name IS NOT NULL
+          AND destination_dn_number IS NOT NULL
+        GROUP BY 1, 2
+    )
+    SELECT queue_number, name, debut,
+           LAG(name) OVER (PARTITION BY queue_number ORDER BY debut) AS nom_precedent
+    FROM spans
+    ORDER BY debut DESC`;
+
+/**
+ * Date du DERNIER renommage de chaque file, et le nom qu'elle portait avant.
+ *
+ * Sert au badge « Renommée » du registre, qui s'efface passé un délai : sans
+ * date réelle, l'étiquette restait allumée pour toujours — 65 files sur 94 la
+ * portaient en permanence, donc elle ne signalait plus rien.
+ */
+/**
+ * Cache des renommages.
+ *
+ * Le calcul balaie toute la table des appels : mesuré à 2,8 s sur 2,5 millions
+ * de lignes. Sans cache, le registre passait de 0,7 s à 3,5 s au chargement —
+ * inacceptable pour un écran qu'on ouvre souvent, et contraire à tout le
+ * travail fait sur les temps de chargement. Un renommage se produit à
+ * l'échelle du mois : cinq minutes de fraîcheur suffisent largement.
+ */
+const CACHE_RENOMMAGES_MS = 5 * 60 * 1000;
+const cacheRenommages = new Map<string, { at: number; valeur: Record<string, { date: string; avant: string }> }>();
+
+export async function getDerniersRenommages(
+    serverId: ServerId,
+): Promise<Record<string, { date: string; avant: string }>> {
+    const enCache = cacheRenommages.get(serverId);
+    if (enCache && Date.now() - enCache.at < CACHE_RENOMMAGES_MS) return enCache.valeur;
+
+    const rules = await getClassificationRules();
+    const spans = await getPrismaCdr(serverId).$queryRawUnsafe<SpanRow[]>(SQL_SPANS_DE_NOMS(cdrTable(rules)));
+    const out: Record<string, { date: string; avant: string }> = {};
+    // Les spans arrivent du plus récent au plus ancien : la première ligne
+    // rencontrée pour une file est donc son dernier renommage.
+    for (const s of spans) {
+        if (!s.nom_precedent || s.nom_precedent === s.name) continue;
+        if (out[s.queue_number]) continue;
+        out[s.queue_number] = { date: s.debut.toISOString(), avant: s.nom_precedent };
+    }
+    cacheRenommages.set(serverId, { at: Date.now(), valeur: out });
+    return out;
+}
+
 export async function getQueueChangeLog(serverId: ServerId, limite = 400): Promise<Changement[]> {
     const rules = await getClassificationRules();
     const prisma = getPrismaCdr(serverId);
@@ -59,26 +125,9 @@ export async function getQueueChangeLog(serverId: ServerId, limite = 400): Promi
     const [spans, annuaire, statuts, registre] = await Promise.all([
         // Périodes de port de chaque nom, et le nom qui précédait. Un balayage
         // complet de la table : l'écran est administratif et consulté
-        // rarement, on préfère l'exactitude à la ruse.
-        //
-        // Limite connue : une file qui reprendrait un nom déjà porté (A → B → A)
-        // n'aurait qu'une ligne pour A, aux bornes élargies — l'ordre pourrait
-        // s'en trouver faussé. Cas non observé, et sans conséquence sur le fond.
-        prisma.$queryRawUnsafe<SpanRow[]>(`
-            WITH spans AS (
-                SELECT destination_dn_number AS queue_number,
-                       destination_dn_name   AS name,
-                       MIN(cdr_started_at)   AS debut
-                FROM ${cdrTable(rules)}
-                WHERE destination_dn_type = 'queue'
-                  AND destination_dn_name IS NOT NULL
-                  AND destination_dn_number IS NOT NULL
-                GROUP BY 1, 2
-            )
-            SELECT queue_number, name, debut,
-                   LAG(name) OVER (PARTITION BY queue_number ORDER BY debut) AS nom_precedent
-            FROM spans
-            ORDER BY debut DESC`),
+        // rarement, on préfère l'exactitude à la ruse. Le SQL est partagé avec
+        // le badge « Renommée » du registre (cf. SQL_SPANS_DE_NOMS).
+        prisma.$queryRawUnsafe<SpanRow[]>(SQL_SPANS_DE_NOMS(cdrTable(rules))),
         prismaAuth.queueDirectoryInterval.findMany({
             where: { serverId },
             select: { queueNumber: true, queueName: true, department: true, firstSeenAt: true, closedAt: true },
