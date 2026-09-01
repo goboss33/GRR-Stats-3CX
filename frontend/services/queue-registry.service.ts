@@ -303,7 +303,22 @@ export interface QueueLiveActivity {
  * mélange deux fraîcheurs (une file « vue il y a 19 h » dont les agents ont été
  * sollicités il y a 15 min).
  */
+/**
+ * Cache de l'activité en direct.
+ *
+ * Ces trois agrégations balaient toute la table des appels : mesurées à 2,9 s
+ * sur 2,5 millions de lignes, à CHAQUE ouverture du registre. C'était le
+ * poste dominant du chargement de l'écran, loin devant tout le reste.
+ * L'annuaire des files bouge à l'échelle de la semaine — cinq minutes de
+ * fraîcheur ne coûtent rien et rendent les visites suivantes instantanées.
+ */
+const CACHE_ACTIVITE_MS = 5 * 60 * 1000;
+const cacheActivite = new Map<string, { at: number; valeur: Record<string, QueueLiveActivity> }>();
+
 export async function getQueuesLiveActivity(serverId: ServerId): Promise<Record<string, QueueLiveActivity>> {
+    const enCache = cacheActivite.get(serverId);
+    if (enCache && Date.now() - enCache.at < CACHE_ACTIVITE_MS) return enCache.valeur;
+
     const prisma = getPrismaCdr(serverId);
 
     const [lastCalls, departments, agents] = await Promise.all([
@@ -366,7 +381,18 @@ export async function getQueuesLiveActivity(serverId: ServerId): Promise<Record<
     for (const entry of Object.values(result)) {
         entry.agents.sort((x, y) => y.lastSeenAt.localeCompare(x.lastSeenAt));
     }
+    cacheActivite.set(serverId, { at: Date.now(), valeur: result });
     return result;
+}
+
+/**
+ * Vide le cache d'activité d'un tenant.
+ *
+ * Appelé après une découverte : celle-ci vient justement de relire les appels,
+ * l'écran doit en voir le résultat sans attendre l'expiration.
+ */
+export async function invaliderCacheActivite(serverId: ServerId): Promise<void> {
+    cacheActivite.delete(serverId);
 }
 
 export interface QueueDetail {
@@ -449,11 +475,3 @@ export async function getQueueDetail(serverId: ServerId, id: string): Promise<Qu
     };
 }
 
-/** Marque des files comme examinées (bouton « J'ai vu ces nouvelles files »). */
-export async function markQueuesReviewed(tenantId: ServerId, ids?: string[]) {
-    const { count } = await prismaAuth.queueRegistry.updateMany({
-        where: { tenantId, reviewedAt: null, ...(ids && ids.length > 0 ? { id: { in: ids } } : {}) },
-        data: { reviewedAt: new Date() },
-    });
-    return count;
-}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, Tag, Search, Users, CheckCircle2, Archive, Workflow } from "lucide-react";
+import { Archive, CheckCircle2, Eye, EyeOff, Loader2, RefreshCw, Search, Tag, Users, Workflow } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -503,18 +503,23 @@ export function QueuesTab() {
                                                 {/* Deux états seulement : un bouton qui bascule vaut
                                                     mieux qu'une liste déroulante à deux entrées —
                                                     un clic au lieu de deux, et l'action est écrite
-                                                    en toutes lettres au lieu d'être devinée. */}
+                                                    en toutes lettres au lieu d'être devinée.
+                                                    L'œil barré / ouvert reprend la convention des
+                                                    alertes : sur un bouton d'ACTION, l'icône montre
+                                                    ce qui va se passer, pas l'état actuel. D'où
+                                                    l'absence de fond coloré, qui se lirait comme un
+                                                    statut. */}
                                                 <Button
                                                     size="sm"
                                                     variant="outline"
-                                                    className={cn("h-8 text-xs", statusStyles[q.status])}
+                                                    className="h-8 text-xs"
                                                     onClick={() => patchQueue(q.id, {
                                                         status: q.status === "ACTIVE" ? "ARCHIVED" : "ACTIVE",
                                                     })}
                                                 >
                                                     {q.status === "ACTIVE"
-                                                        ? <><Archive className="mr-1.5 h-3.5 w-3.5" /> Archiver</>
-                                                        : <><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Réactiver</>}
+                                                        ? <><EyeOff className="mr-1.5 h-3.5 w-3.5" /> Archiver</>
+                                                        : <><Eye className="mr-1.5 h-3.5 w-3.5" /> Réactiver</>}
                                                 </Button>
                                                 </div>
                                             </td>

@@ -177,12 +177,23 @@ export function QueueFlowModal({ queueNumber, queueName, onClose }: {
     const [journeysFor, setJourneysFor] = useState<string | null>(null);
     // Fil d'Ariane de navigation ([0] = la file d'origine).
     const [trail, setTrail] = useState<Array<{ number: string; name: string }>>([]);
+    const [erreur, setErreur] = useState<string | null>(null);
 
     const load = useCallback((num: string) => {
         setLoading(true);
+        setErreur(null);
         getQueueTopology(getSelectedServer(), num)
             .then((t) => setTopology(t))
-            .catch(() => setTopology(null))
+            .catch((e) => {
+                // L'erreur était avalée : l'écran annonçait « impossible de
+                // déduire la topologie » quelle que soit la cause réelle —
+                // panne de base, droit refusé, dépassement de délai. On la
+                // montre, comme partout ailleurs depuis le chantier des
+                // chargements.
+                console.error("[parcours d'appel] échec du calcul :", e);
+                setTopology(null);
+                setErreur(e instanceof Error && e.message ? e.message : String(e));
+            })
             .finally(() => setLoading(false));
     }, []);
 
@@ -431,7 +442,19 @@ export function QueueFlowModal({ queueNumber, queueName, onClose }: {
                 ) : loading ? (
                     <p className="py-16 text-center text-sm text-slate-500">Analyse des 90 derniers jours…</p>
                 ) : topology === null ? (
-                    <p className="py-16 text-center text-sm text-slate-500">Impossible de déduire la topologie de cette file.</p>
+                    <div className="py-12 text-center">
+                        <p className="text-sm font-medium text-red-800">Le parcours n&apos;a pas pu être calculé.</p>
+                        {erreur && (
+                            <p className="mx-auto mt-2 max-w-xl break-words text-xs text-red-700">{erreur}</p>
+                        )}
+                        <button
+                            type="button"
+                            className="mt-4 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                            onClick={() => queueNumber && load(queueNumber)}
+                        >
+                            Réessayer
+                        </button>
+                    </div>
                 ) : topology.totalPassages === 0 && topology.agents.length === 0 ? (
                     <p className="py-16 text-center text-sm text-slate-500">
                         Aucun passage observé sur {topology.windowDays} jours — rien à cartographier.

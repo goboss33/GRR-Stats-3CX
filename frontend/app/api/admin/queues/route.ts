@@ -3,7 +3,7 @@ import { getQueueChangeLog } from "@/services/queue-changelog.service";
 import { requireApiRole } from "@/lib/auth-guard";
 import { getDefaultServer, isValidServer } from "@/lib/servers";
 import { ServerId } from "@/lib/prisma-cdr";
-import { discoverQueues, listRegistryQueues, updateRegistryQueue, markQueuesReviewed } from "@/services/queue-registry.service";
+import { discoverQueues, listRegistryQueues, updateRegistryQueue, invaliderCacheActivite } from "@/services/queue-registry.service";
 import { logger } from "@/lib/logger";
 
 // Registre des files : administration réservée à l'ADMIN (cf. PRD droits d'accès §4.1).
@@ -63,10 +63,7 @@ export async function GET(request: NextRequest) {
     }
 }
 
-/**
- * `?action=review` marque les files comme examinées ; sinon déclenche la
- * découverte depuis les CDR.
- */
+/** Déclenche la découverte des files depuis les CDR. */
 export async function POST(request: NextRequest) {
     const guard = await requireApiRole(["ADMIN"]);
     if (!guard.ok) return guard.response;
@@ -74,15 +71,10 @@ export async function POST(request: NextRequest) {
     try {
         const tenantId = resolveTenant(request);
 
-        if (new URL(request.url).searchParams.get("action") === "review") {
-            // Liste vide ou absente : on marque toutes les files du tenant.
-            const body = await request.json().catch(() => ({}));
-            const ids = Array.isArray(body?.ids) ? body.ids.filter((i: unknown) => typeof i === "string") : [];
-            const count = await markQueuesReviewed(tenantId, ids);
-            return NextResponse.json({ reviewed: count });
-        }
-
         const result = await discoverQueues(tenantId);
+        // La découverte vient de relire les appels : le cache d'activité doit
+        // repartir de zéro, sinon l'écran afficherait l'état d'avant.
+        await invaliderCacheActivite(tenantId);
         return NextResponse.json(result);
     } catch (error) {
         logger.error("[admin/queues] POST error:", error);
