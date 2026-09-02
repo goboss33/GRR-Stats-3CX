@@ -469,16 +469,70 @@ model QueueMembershipInterval {
 /// Trace de chaque relevé XAPI — l'onglet des réglages s'en nourrit, et un
 /// échec y laisse son motif exact plutôt que de disparaître dans les logs.
 model XapiSnapshotRun {
-  id       String   @id @default(cuid())
-  serverId String
-  ranAt    DateTime @default(now())
-  ok       Boolean
+  id            String   @id @default(cuid())
+  serverId      String
+  ranAt         DateTime @default(now())
+  ok            Boolean
   /// Files lues, postes membres vus, et mouvements (apparitions + départs
   /// + changements de titulaire) par rapport au relevé précédent.
-  queues   Int      @default(0)
-  members  Int      @default(0)
-  changes  Int      @default(0)
-  error    String?
+  queues        Int      @default(0)
+  members       Int      @default(0)
+  changes       Int      @default(0)
+  error         String?
+  /// Volet Microsoft 365 du même relevé (septembre 2026) : collaborateurs
+  /// rapprochés à un profil Graph, photos détenues, non rapprochés. null =
+  /// l'intégration n'était pas exploitable cette nuit-là — pas un échec.
+  m365Profiles  Int?
+  m365Photos    Int?
+  m365Unmatched Int?
+  m365Error     String?
 
   @@index([serverId, ranAt(sort: Desc)])
+}
+
+/// JOURNAL DES COLLABORATEURS (septembre 2026) — qui tenait quel poste, sous
+/// quel nom, avec quel e-mail et quel titre de poste, de quand à quand. Même
+/// doctrine que QueueDirectoryInterval : un changement FERME la ligne et en
+/// ouvre une nouvelle, on ne réécrit jamais le passé. Nourri chaque nuit par
+/// les utilisateurs du 3CX (XAPI) puis enrichi par Microsoft Graph (titre)
+/// quand l'intégration M365 est active. Les lignes survivent au départ d'un
+/// collaborateur : les statistiques passées gardent son nom et son titre
+/// d'époque. Sa PHOTO, elle, est purgée (CollaboratorPhoto).
+model CollaboratorDirectoryInterval {
+  id          String    @id @default(cuid())
+  serverId    String
+  extension   String
+  displayName String
+  /// E-mail déclaré au 3CX, en minuscules — LA clé vers Microsoft 365.
+  email       String?
+  /// Titre de poste lu dans Graph. null = inconnu (pas rapproché, ou vide).
+  jobTitle    String?
+  /// Identifiant Graph de l'utilisateur rapproché.
+  graphId     String?
+  /// « ok » | « sans-email » | « inconnu-m365 » | « compte-desactive » |
+  /// « m365-inactif » (intégration éteinte cette nuit-là).
+  matchState  String
+  firstSeenAt DateTime
+  lastSeenAt  DateTime
+  closedAt    DateTime?
+
+  @@index([serverId, extension, closedAt])
+  @@index([serverId, closedAt])
+}
+
+/// Photos de profil des collaborateurs EN POSTE, 96 px, lues dans Graph.
+/// Clé = e-mail : une photo appartient à une personne, pas à un poste. Purgée
+/// dès que la personne n'est plus rapprochée (partie du 3CX, disparue ou
+/// désactivée dans M365) : donnée personnelle, pas d'archive.
+model CollaboratorPhoto {
+  serverId    String
+  email       String
+  graphId     String
+  contentType String
+  data        Bytes
+  /// ETag Graph : évite de retélécharger une photo inchangée (304).
+  etag        String?
+  fetchedAt   DateTime
+
+  @@id([serverId, email])
 }

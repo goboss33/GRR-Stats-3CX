@@ -25,7 +25,10 @@ import { Tip } from "@/components/ui/tooltip";
 
 interface RunRow {
     ranAt: string; ok: boolean; queues: number; members: number; changes: number; error: string | null;
+    /** Volet Microsoft 365 du relevé — null quand l'intégration n'était pas exploitable. */
+    m365Profiles: number | null; m365Photos: number | null; m365Unmatched: number | null; m365Error: string | null;
 }
+interface NonRapproche { extension: string; displayName: string; email: string | null; etat: string; libelle: string }
 interface MouvementMembre { queueNumber: string; queueName: string; extension: string; agentName: string }
 interface Passation { queueNumber: string; queueName: string; extension: string; avant: string; apres: string }
 interface MouvementFile {
@@ -41,6 +44,7 @@ interface RunDetail {
     files: MouvementFile[];
     total: number;
     tronque: boolean;
+    nonRapproches: { total: number; lignes: NonRapproche[] };
 }
 interface MembreRow { extension: string; name: string; lastSeenAt: string }
 interface QueueRow {
@@ -173,7 +177,9 @@ export function XapiJournalTab() {
             } else if (!data.ran || !data.ok) {
                 toast.error(data.reason || "Relevé en échec");
             } else {
-                toast.success(`Relevé effectué : ${data.members} membres sur ${data.queues} équipes, ${data.changes} mouvement(s)`);
+                toast.success(`Relevé effectué : ${data.members} membres sur ${data.queues} équipes, ${data.changes} mouvement(s)`
+                    + (data.m365 ? ` · M365 : ${data.m365.profiles} profils, ${data.m365.photos} photos` : ""));
+                if (data.m365?.error) toast.warning(`Microsoft 365 : ${data.m365.error}`, { duration: 10000 });
             }
             await reload();
             if (selectedQueue) setSelectedQueue((q) => q); // recharge le détail affiché
@@ -251,7 +257,7 @@ export function XapiJournalTab() {
                                 {runs.map((run) => {
                                     // Un relevé sans mouvement n'a rien à déplier : la ligne
                                     // reste inerte plutôt que d'ouvrir un panneau vide.
-                                    const depliable = run.ok && run.changes > 0;
+                                    const depliable = run.ok && (run.changes > 0 || (run.m365Unmatched ?? 0) > 0);
                                     const ouvert = runOuvert === run.ranAt;
                                     const detail = details[run.ranAt];
                                     return (
@@ -279,6 +285,19 @@ export function XapiJournalTab() {
                                                     <span className={run.changes > 0 ? "font-medium text-violet-700" : ""}>
                                                         {run.changes} mouvement{run.changes > 1 ? "s" : ""}
                                                     </span>
+                                                    {/* Volet M365, sur la même ligne : un chiffre de plus, pas un
+                                                        second journal. Absent quand l'intégration était éteinte. */}
+                                                    {run.m365Profiles !== null && (
+                                                        <>
+                                                            {" · "}{run.m365Profiles} profil{run.m365Profiles > 1 ? "s" : ""} M365, {run.m365Photos ?? 0} photo{(run.m365Photos ?? 0) > 1 ? "s" : ""}
+                                                            {(run.m365Unmatched ?? 0) > 0 && (
+                                                                <span className="text-amber-700">, {run.m365Unmatched} non rapproché{(run.m365Unmatched ?? 0) > 1 ? "s" : ""}</span>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                    {run.m365Error && (
+                                                        <span className="text-red-700" title={run.m365Error}>{" · "}M365 : {run.m365Error}</span>
+                                                    )}
                                                 </span>
                                             ) : (
                                                 <span className="min-w-0 flex-1 truncate text-red-700" title={run.error ?? undefined}>
@@ -360,6 +379,20 @@ export function XapiJournalTab() {
                                                             <p className="text-xs text-slate-500">
                                                                 Liste tronquée : ce relevé porte {detail.total} mouvements au total.
                                                             </p>
+                                                        )}
+                                                        {(run.m365Unmatched ?? 0) > 0 && detail.nonRapproches.lignes.length > 0 && (
+                                                            <BlocMouvement titre={`Non rapprochés Microsoft 365 (${detail.nonRapproches.total})`} teinte="text-amber-700">
+                                                                {detail.nonRapproches.lignes.map((c) => (
+                                                                    <li key={`m-${c.extension}`}>
+                                                                        <span className="font-medium">{c.displayName}</span>
+                                                                        {" (poste "}{c.extension}{") — "}
+                                                                        <span className="text-slate-500">{c.libelle}{c.email ? ` : ${c.email}` : ""}</span>
+                                                                    </li>
+                                                                ))}
+                                                                {detail.nonRapproches.total > detail.nonRapproches.lignes.length && (
+                                                                    <li className="text-xs text-slate-500">… et {detail.nonRapproches.total - detail.nonRapproches.lignes.length} autres</li>
+                                                                )}
+                                                            </BlocMouvement>
                                                         )}
                                                     </div>
                                                 )}
