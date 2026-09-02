@@ -13,6 +13,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { AvatarCollaborateur } from "@/components/avatar-collaborateur";
 
 interface AgentPerformanceTableV2Props {
     agents: AgentStats[];
@@ -254,7 +255,13 @@ export function AgentPerformanceTableV2({
                                 {sortedAgents.map((agent, index) => (
                                     <tr key={`${agent.extension}-${agent.name}-${index}`} className="hover:bg-slate-50 transition-colors">
                                         <td className="px-3 py-3">
-                                            <div>
+                                            {/* Avatar (photo M365, initiales en repli) puis nom ; dessous le
+                                                titre de poste quand on le connaît, et RIEN sinon — l'ancien
+                                                « Ext. N » de repli a été retiré à dessein (décision
+                                                gbossens, 2 septembre 2026). */}
+                                            <div className="flex items-center gap-3">
+                                                <AvatarCollaborateur name={agent.name} photoUrl={agent.photoUrl} />
+                                                <div>
                                                 <p className="flex items-center gap-1.5 font-medium text-slate-900">
                                                     {agent.name}
                                                     <TrendPill
@@ -267,7 +274,10 @@ export function AgentPerformanceTableV2({
                                                             : undefined}
                                                     />
                                                 </p>
-                                                <p className="text-xs text-slate-500">Ext. {agent.extension}</p>
+                                                {agent.jobTitle && (
+                                                    <p className="text-xs text-slate-500">{agent.jobTitle}</p>
+                                                )}
+                                                </div>
                                             </div>
                                         </td>
                                         <td className="px-3 py-3 text-center">

@@ -8,6 +8,7 @@ import {
     getQueueDepartment,
 } from "@/services/repositories/cdr.repository";
 import { getAnnuaireXapi } from "@/services/queue-directory.service";
+import { cleAgent, getProfilsCollaborateurs } from "@/services/collaborator-profile.service";
 import {
     getQueueTimelineData,
     getQueueHeatmapData,
@@ -143,6 +144,8 @@ export async function getQueueStatistics(
         getQueueHeatmapData(serverId, queueNumber, startDate, endDate, origin),
     ]);
 
+    const profils = await getProfilsCollaborateurs(serverId, agents, { start: startDate, end: endDate });
+
     return {
         queueNumber,
         queueName: annuaire?.get(queueNumber)?.queueName || nomCdr,
@@ -152,7 +155,10 @@ export async function getQueueStatistics(
             end: endDate.toISOString(),
         },
         kpis,
-        agents,
+        // Titre de poste et photo, résolus par POSTE + NOM dans le journal des
+        // collaborateurs : les noms d'époque du tableau ne se voient jamais
+        // attribuer le visage du titulaire actuel d'un poste réattribué.
+        agents: agents.map((a) => ({ ...a, ...(profils.get(cleAgent(a)) ?? {}) })),
         timelineData,
         heatmapData,
     };

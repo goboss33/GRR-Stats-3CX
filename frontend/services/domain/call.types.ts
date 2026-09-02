@@ -351,6 +351,10 @@ export interface QueueKPIs {
 export interface AgentStats {
     extension: string;
     name: string;
+    /** Titre de poste (Microsoft 365, via le journal des collaborateurs) — absent si inconnu. */
+    jobTitle?: string | null;
+    /** Adresse de la photo (opaque) — absente si on n'en détient pas. */
+    photoUrl?: string | null;
     callsReceived: number;
     answered: number;
     /** Transferts accomplis crédités à l'agent, côté file. */
