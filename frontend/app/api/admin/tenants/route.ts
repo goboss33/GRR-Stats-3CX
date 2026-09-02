@@ -6,6 +6,7 @@ import { prismaAuth } from "@/lib/prisma-auth";
 import { requireApiRole } from "@/lib/auth-guard";
 import { sealSecret } from "@/lib/secret-box";
 import { normalizeXapiBaseUrl } from "@/lib/xapi-client";
+import { normaliserClientId, normaliserTenantId } from "@/lib/graph-diagnostic";
 import { invaliderCacheAnnuaire } from "@/services/queue-directory.service";
 
 export async function GET() {
@@ -37,6 +38,14 @@ export async function GET() {
             // que de savoir si elle est posée, et depuis quand.
             xapiKeyConfigured: Boolean(settingsMap.get(id)?.xapiKeyEncrypted),
             xapiKeyUpdatedAt: settingsMap.get(id)?.xapiKeyUpdatedAt?.toISOString() ?? null,
+            // Microsoft 365 : mêmes règles — identifiants affichables, secret
+            // jamais renvoyé, seule sa présence et ses dates.
+            m365Enabled: settingsMap.get(id)?.m365Enabled ?? false,
+            m365TenantId: settingsMap.get(id)?.m365TenantId ?? "",
+            m365ClientId: settingsMap.get(id)?.m365ClientId ?? "",
+            m365SecretConfigured: Boolean(settingsMap.get(id)?.m365SecretEncrypted),
+            m365SecretUpdatedAt: settingsMap.get(id)?.m365SecretUpdatedAt?.toISOString() ?? null,
+            m365SecretExpiresAt: settingsMap.get(id)?.m365SecretExpiresAt?.toISOString() ?? null,
         }));
 
         return NextResponse.json({
@@ -57,7 +66,11 @@ export async function POST(request: Request) {
     if (!guard.ok) return guard.response;
 
     try {
-        const { serverId, timezone, licenceThreshold, trunkThreshold, xapiEnabled, xapiDirectoryEnabled, xapiKey, xapiBaseUrl, xapiClientId } = await request.json();
+        const {
+            serverId, timezone, licenceThreshold, trunkThreshold,
+            xapiEnabled, xapiDirectoryEnabled, xapiKey, xapiBaseUrl, xapiClientId,
+            m365Enabled, m365TenantId, m365ClientId, m365Secret, m365SecretExpiresAt,
+        } = await request.json();
         
         if (!serverId || typeof serverId !== "string") {
             return NextResponse.json(
@@ -238,6 +251,98 @@ export async function POST(request: Request) {
                 xapiKeyConfigured: Boolean(trimmed),
                 xapiKeyUpdatedAt: payload.xapiKeyUpdatedAt?.toISOString() ?? null,
             });
+        }
+
+        // ---- Microsoft 365 : mêmes gestes que la XAPI, champ par champ ----
+        if (m365Enabled !== undefined) {
+            if (typeof m365Enabled !== "boolean") {
+                return NextResponse.json({ error: "Invalid m365Enabled" }, { status: 400 });
+            }
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: { m365Enabled },
+                create: { serverId, m365Enabled },
+            });
+            return NextResponse.json({ success: true, serverId, m365Enabled });
+        }
+
+        if (m365TenantId !== undefined) {
+            if (typeof m365TenantId !== "string") {
+                return NextResponse.json({ error: "Invalid m365TenantId" }, { status: 400 });
+            }
+            const normalise = m365TenantId.trim() ? normaliserTenantId(m365TenantId) : null;
+            if (m365TenantId.trim() && !normalise) {
+                return NextResponse.json({ error: "ID de l'annuaire invalide : attendu un GUID ou un domaine du tenant (ex. contoso.onmicrosoft.com)." }, { status: 400 });
+            }
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: { m365TenantId: normalise },
+                create: { serverId, m365TenantId: normalise },
+            });
+            return NextResponse.json({ success: true, serverId, m365TenantId: normalise ?? "" });
+        }
+
+        if (m365ClientId !== undefined) {
+            if (typeof m365ClientId !== "string") {
+                return NextResponse.json({ error: "Invalid m365ClientId" }, { status: 400 });
+            }
+            const normalise = m365ClientId.trim() ? normaliserClientId(m365ClientId) : null;
+            if (m365ClientId.trim() && !normalise) {
+                return NextResponse.json({ error: "ID d'application invalide : attendu un GUID (page « Vue d'ensemble » de l'inscription)." }, { status: 400 });
+            }
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: { m365ClientId: normalise },
+                create: { serverId, m365ClientId: normalise },
+            });
+            return NextResponse.json({ success: true, serverId, m365ClientId: normalise ?? "" });
+        }
+
+        // Le secret : chiffré avant stockage, jamais relu par le client.
+        // Chaîne vide = suppression volontaire, date d'expiration comprise.
+        if (m365Secret !== undefined) {
+            if (typeof m365Secret !== "string") {
+                return NextResponse.json({ error: "Invalid m365Secret" }, { status: 400 });
+            }
+            const trimmed = m365Secret.trim();
+            if (trimmed.length > 4096) {
+                return NextResponse.json({ error: "Secret trop long" }, { status: 400 });
+            }
+            const payload = trimmed
+                ? { m365SecretEncrypted: await sealSecret(trimmed), m365SecretUpdatedAt: new Date() }
+                : { m365SecretEncrypted: null, m365SecretUpdatedAt: null, m365SecretExpiresAt: null };
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: payload,
+                create: { serverId, ...payload },
+            });
+            return NextResponse.json({
+                success: true,
+                serverId,
+                m365SecretConfigured: Boolean(trimmed),
+                m365SecretUpdatedAt: payload.m365SecretUpdatedAt?.toISOString() ?? null,
+                ...(trimmed ? {} : { m365SecretExpiresAt: null }),
+            });
+        }
+
+        // Expiration déclarée du secret (« AAAA-MM-JJ » ou vide pour effacer).
+        if (m365SecretExpiresAt !== undefined) {
+            if (m365SecretExpiresAt !== null && typeof m365SecretExpiresAt !== "string") {
+                return NextResponse.json({ error: "Invalid m365SecretExpiresAt" }, { status: 400 });
+            }
+            let date: Date | null = null;
+            if (m365SecretExpiresAt && m365SecretExpiresAt.trim()) {
+                date = new Date(`${m365SecretExpiresAt.trim().slice(0, 10)}T23:59:59Z`);
+                if (Number.isNaN(date.getTime())) {
+                    return NextResponse.json({ error: "Date d'expiration invalide" }, { status: 400 });
+                }
+            }
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: { m365SecretExpiresAt: date },
+                create: { serverId, m365SecretExpiresAt: date },
+            });
+            return NextResponse.json({ success: true, serverId, m365SecretExpiresAt: date?.toISOString() ?? null });
         }
 
         const cookieStore = await cookies();

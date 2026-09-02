@@ -340,6 +340,23 @@ model TenantSettings {
   xapiKeyEncrypted     String?
   /// Date de dernière saisie de la clé — seule trace montrable à l'écran.
   xapiKeyUpdatedAt     DateTime?
+  /// INTÉGRATION MICROSOFT 365 (septembre 2026) — photos et titres de poste
+  /// des collaborateurs, lus dans Microsoft Graph avec une inscription
+  /// d'application DÉDIÉE (permissions d'application User.Read.All et
+  /// ProfilePhoto.Read.All). Même doctrine que la XAPI : par tenant, en base
+  /// plutôt qu'en variables d'environnement — deux tenants Microsoft, et un
+  /// secret qui expire tous les 24 mois doit se renouveler sans redéploiement.
+  m365Enabled          Boolean   @default(false)
+  /// ID de l'annuaire (locataire) Entra — un GUID, pas un secret.
+  m365TenantId         String?
+  /// ID d'application (client) de l'inscription dédiée — pas un secret.
+  m365ClientId         String?
+  /// Secret client CHIFFRÉ (cf. lib/secret-box), jamais renvoyé au navigateur.
+  m365SecretEncrypted  String?
+  m365SecretUpdatedAt  DateTime?
+  /// Expiration du secret telle que DÉCLARÉE par l'administrateur (Graph ne la
+  /// laisse pas lire sans Application.Read.All). Sert à prévenir un mois avant.
+  m365SecretExpiresAt  DateTime?
   /// DÉPRÉCIÉ (août 2026) — plus lu par aucun écran, voir
   /// QueueRegistry.excludedFromStats. Les postes hors file sont désormais
   /// visibles des seuls rôles globaux, via leur périmètre.

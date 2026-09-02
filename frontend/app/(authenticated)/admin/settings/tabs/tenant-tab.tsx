@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, CheckCircle2, Building2, Activity, Plug, Settings2 } from "lucide-react";
+import { Loader2, CheckCircle2, Building2, Activity, Plug, Settings2, Cloud } from "lucide-react";
 import { getSelectedServer } from "@/lib/selected-server";
 import { getConcurrentCallsChartData } from "@/services/dashboard.service";
 import { ConcurrentCallsChart } from "@/components/concurrent-calls-chart";
@@ -16,6 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { XapiSettingsModal } from "@/components/settings/xapi-settings-modal";
+import { M365SettingsModal } from "@/components/settings/m365-settings-modal";
+import { etatSecret } from "@/lib/graph-diagnostic";
 
 interface TenantInfo {
     id: string;
@@ -33,6 +35,13 @@ interface TenantInfo {
     /** Une clé est-elle enregistrée ? Sa valeur ne quitte jamais le serveur. */
     xapiKeyConfigured: boolean;
     xapiKeyUpdatedAt: string | null;
+    /** Intégration Microsoft 365 — mêmes règles : le secret ne descend jamais. */
+    m365Enabled: boolean;
+    m365TenantId: string;
+    m365ClientId: string;
+    m365SecretConfigured: boolean;
+    m365SecretUpdatedAt: string | null;
+    m365SecretExpiresAt: string | null;
 }
 
 const COMMON_TIMEZONES = [
@@ -62,6 +71,7 @@ export function TenantTab() {
     // Tenant dont les réglages XAPI sont ouverts. Ces champs vivaient dépliés
     // dans la fiche, où ils noyaient les réglages qu'on consulte vraiment.
     const [xapiOuvert, setXapiOuvert] = useState<string | null>(null);
+    const [m365Ouvert, setM365Ouvert] = useState<string | null>(null);
     // Adaptateur : route les appels setMessage(...) existants vers les toasts.
     const setMessage = (m: { type: "success" | "error"; text: string } | null) => {
         if (!m) return;
@@ -276,6 +286,34 @@ export function TenantTab() {
         }
     };
 
+    // ---- Microsoft 365 : un seul gestionnaire générique, le serveur valide
+    //      et renvoie la valeur normalisée (GUID en minuscules, date ISO).
+    const handleM365Save = async (serverId: string, corps: Record<string, unknown>, succes: string) => {
+        setSaving(true);
+        try {
+            const res = await fetch("/api/admin/tenants", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ serverId, ...corps }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setMessage({ type: "error", text: data.error || "Erreur lors de la sauvegarde" });
+                return;
+            }
+            // Le serveur renvoie exactement les champs qu'il a écrits (hors
+            // « success » et « serverId ») : on les reprend tels quels.
+            const { success: _s, serverId: _id, ...ecrits } = data as Record<string, unknown>;
+            void _s; void _id;
+            setAvailableServers(prev => prev.map(s => s.id === serverId ? { ...s, ...ecrits } : s));
+            setMessage({ type: "success", text: succes });
+        } catch {
+            setMessage({ type: "error", text: "Erreur lors de la sauvegarde" });
+        } finally {
+            setSaving(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center py-12">
@@ -442,6 +480,56 @@ export function TenantTab() {
                                             <Settings2 className="h-4 w-4" />
                                         </Button>
                                     </div>
+
+                                    {/* Microsoft 365 — photos et titres de poste des
+                                        collaborateurs. Même présentation que la XAPI :
+                                        l'état en pastilles, la configuration à la roue
+                                        dentée. La pastille d'expiration est la raison
+                                        d'être de la date déclarée : prévenir un mois
+                                        avant que les photos cessent de se rafraîchir. */}
+                                    {(() => {
+                                        const secret = etatSecret(server.m365SecretExpiresAt);
+                                        return (
+                                    <div className="ml-12 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                                        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                                            <Cloud className="h-4 w-4 text-slate-500" />
+                                            Intégration Microsoft 365
+                                            <span className={cn(
+                                                "rounded border px-1.5 py-0.5 text-[10px]",
+                                                server.m365Enabled
+                                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                                    : "border-slate-200 bg-white text-slate-500",
+                                            )}>
+                                                {server.m365Enabled ? "Active" : "Éteinte"}
+                                            </span>
+                                            {server.m365Enabled && !server.m365SecretConfigured && (
+                                                <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
+                                                    Secret manquant
+                                                </span>
+                                            )}
+                                            {server.m365Enabled && server.m365SecretConfigured && secret.etat === "bientot" && (
+                                                <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
+                                                    Secret expire dans {secret.joursRestants} j
+                                                </span>
+                                            )}
+                                            {server.m365Enabled && server.m365SecretConfigured && secret.etat === "expire" && (
+                                                <span className="rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] text-red-700">
+                                                    Secret expiré
+                                                </span>
+                                            )}
+                                        </div>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            aria-label="Réglages de l'intégration Microsoft 365"
+                                            onClick={() => setM365Ouvert(server.id)}
+                                            className="h-8 w-8 p-0 border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-sky-600"
+                                        >
+                                            <Settings2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                        );
+                                    })()}
                                 </div>
                             ))}
                         </div>
@@ -470,6 +558,20 @@ export function TenantTab() {
                 onChampSauve={(champ, valeur) => handleXapiFieldSave(xapiOuvert!, champ, valeur)}
                 onInterrupteur={(champ, valeur) => handleXapiInterrupteur(xapiOuvert!, champ, valeur)}
                 onCleSauvee={(cle) => handleXapiKeySave(xapiOuvert!, cle)}
+            />
+
+            <M365SettingsModal
+                serveur={availableServers.find((s) => s.id === m365Ouvert) ?? null}
+                open={m365Ouvert !== null}
+                onOpenChange={(o) => !o && setM365Ouvert(null)}
+                onInterrupteur={(valeur) => handleM365Save(m365Ouvert!, { m365Enabled: valeur },
+                    valeur ? "Intégration Microsoft 365 activée" : "Intégration Microsoft 365 désactivée — retour aux initiales")}
+                onChampSauve={(champ, valeur) => handleM365Save(m365Ouvert!, { [champ]: valeur },
+                    champ === "m365TenantId" ? "ID de l'annuaire enregistré"
+                        : champ === "m365ClientId" ? "ID d'application enregistré"
+                            : valeur ? "Date d'expiration enregistrée" : "Date d'expiration effacée")}
+                onSecretSauve={(secret) => handleM365Save(m365Ouvert!, { m365Secret: secret },
+                    secret ? "Secret client enregistré" : "Secret client supprimé")}
             />
 
             {/* Monitoring de licence — déménagé depuis le tableau de bord : ce
