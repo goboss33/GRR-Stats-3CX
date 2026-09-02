@@ -37,12 +37,10 @@ import { requireActionRole } from "@/lib/auth-guard";
 import { ServerId, getPrismaCdr } from "@/lib/prisma-cdr";
 import { getQueueName, getQueueDepartment } from "@/services/repositories/cdr.repository";
 import { getAnnuaireXapi } from "@/services/queue-directory.service";
-import { getAlertsForTenant } from "@/services/repositories/anomaly-detector";
-import { prismaAuth } from "@/lib/prisma-auth";
 
 /** Fenêtre d'observation des FLUX : la configuration récente est la vraie. */
 const FLOW_WINDOW_DAYS = 90;
-/** Appartenance des agents : l'horizon des alertes (un lien plus vieux n'engage plus). */
+/** Appartenance des agents : au-delà, un lien n'engage plus. */
 const MEMBERSHIP_DAYS = 365;
 /** Sollicité plus récemment que ça = considéré connecté à la Q. */
 const CONNECTED_DAYS = 7;
@@ -108,7 +106,7 @@ export interface TopologyAgent {
     /** Passages répondus par cet agent sur la fenêtre de flux. */
     answered: number;
     lastPolledAt: string;
-    status: "connected" | "disconnected" | "away";
+    status: "connected" | "disconnected";
 }
 
 export interface QueueTopology {
@@ -406,20 +404,16 @@ async function computeTopology(serverId: ServerId, queueNumber: string): Promise
         }),
     );
 
-    // ---- Agents : états repris du détecteur d'anomalies (mêmes signatures) ----
-    const settings = await prismaAuth.appSettings.findUnique({
-        where: { id: "global" }, select: { notificationWindowDays: true },
-    });
-    const alerts = await getAlertsForTenant(serverId, settings?.notificationWindowDays ?? 7);
-    const awayExts = new Set(alerts.filter((a) => a.type === "away_forgotten").map((a) => a.agentExtension));
+    // ---- Agents : connecté = sollicité récemment, déconnecté sinon ----
+    // L'état « Absent (probable) » venait du détecteur d'anomalies CDR, retiré
+    // le 1er septembre 2026 : ses signatures déduites des appels étaient trop
+    // approximatives. La présence réelle viendra de la XAPI, pas des CDR.
     const agents: TopologyAgent[] = agentRows.map((a) => ({
         extension: a.extension,
         name: a.name ?? a.extension,
         answered: Number(a.answered),
         lastPolledAt: a.last_polled.toISOString(),
-        status: awayExts.has(a.extension) ? "away"
-            : a.last_polled >= connectedSince ? "connected"
-            : "disconnected",
+        status: a.last_polled >= connectedSince ? "connected" : "disconnected",
     }));
 
     const multi = Number(strategyRows[0]?.multi ?? 0);

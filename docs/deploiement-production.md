@@ -187,7 +187,7 @@ rejoués automatiquement par l'entrypoint du frontend — rien à faire.
 - [ ] `MAX(cdr_started_at)` avance en continu (la 3CX écrit bien sur la prod)
 - [ ] Un appel de test → visible dans les logs de l'app en ~1 min
 - [ ] Logs, statistiques d'équipe, carte de parcours d'une file
-- [ ] Cloche d'alertes : les anomalies connues réapparaissent ; refaire les « ignorer » si la base auth n'a pas été copiée
+- [x] ~~Cloche d'alertes~~ — système d'alertes CDR retiré le 1er septembre 2026 (une version fondée sur la XAPI le remplacera) ; la table AlertIgnore reste en base, dormante
 - [ ] Réglages ▸ utilisateurs, périmètres, règles métier présents (preuve du restore auth)
 - [ ] Changement de filtre dans les logs (pas de gel — Next 15.5 + clé d'actions)
 

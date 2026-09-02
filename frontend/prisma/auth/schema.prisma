@@ -43,9 +43,9 @@ model User {
   canViewExtensionStats   Boolean  @default(true)
   canViewFullPhoneNumbers Boolean  @default(false)
   canCreateApiKeys        Boolean  @default(false)
-  /// Voir la cloche d'alertes (anomalies détectées dans son périmètre).
-  /// `null` = non arbitré -> défaut par rôle : activé pour ADMIN/MODERATOR,
-  /// désactivé pour MANAGER (cf. lib/notification-access).
+  /// DORMANT depuis le 1er septembre 2026 (système d'alertes CDR retiré) :
+  /// plus lu ni écrit. Colonne gardée pour ne pas imposer de migration
+  /// destructive aux bases en service ; le droit renaîtra avec les alertes XAPI.
   canViewNotifications    Boolean?
   /// Ratios (dénominateurs « 85/111 ») du tableau de performance des agents :
   /// "none" = aucun, "totals" = ligne TOTAL seule, "all" = toutes les lignes.
@@ -75,11 +75,12 @@ enum Role {
   AGENT
 }
 
-/// Alertes ignorées « définitivement » — GLOBAL (partagé entre lecteurs) :
-/// « ce poste a été retiré de la file » est un fait d'organisation, pas une
-/// préférence. Rien n'est perdu : les alertes étant recalculées à la lecture,
-/// ignorer = filtrer à l'affichage ; l'onglet Ignorées permet de restaurer.
-/// `alertId` = identifiant stable de l'anomalie (type:file[:poste]).
+/// DORMANTE depuis le 1er septembre 2026 : le système d'alertes déduit des
+/// CDR a été retiré (trop approximatif — décision gbossens), plus aucun code
+/// n'écrit ni ne lit cette table. Conservée parce que l'entrypoint du
+/// conteneur fait `prisma db push` SANS --accept-data-loss : supprimer le
+/// modèle ferait refuser le démarrage tant que la table existe en base.
+/// À supprimer (ou réemployer) avec le futur système d'alertes XAPI.
 model AlertIgnore {
   id            String   @id @default(cuid())
   tenantId      String
@@ -107,8 +108,8 @@ model AppSettings {
   /// groupes). Filtre d'AFFICHAGE seulement : périmètres, statistiques des
   /// périodes passées et journaux restent accessibles par lien direct.
   hideArchivedQueues          Boolean   @default(true)
-  /// Fenêtre d'observation (jours) du détecteur d'anomalies de la cloche
-  /// d'alertes — cf. services/notifications.service.
+  /// DORMANT depuis le 1er septembre 2026 (détecteur d'anomalies CDR retiré) :
+  /// plus lu ni écrit, colonne gardée pour éviter une migration destructive.
   notificationWindowDays      Int       @default(7)
   /// Horodate l'amorçage des périmètres ADMIN/MODERATOR (août 2026 : ces rôles
   /// ont cessé de tout voir par défaut). Ne rejoue jamais : sans ce marqueur,

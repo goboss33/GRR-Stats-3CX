@@ -46,7 +46,6 @@ async function main() {
         canViewExtensionStats: true,
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
-        canViewNotifications: false,
         agentRatiosLevel: "none",
     });
     const scope = await describeUserScope(user.id);
@@ -65,7 +64,6 @@ async function main() {
         canViewExtensionStats: true,
         canViewFullPhoneNumbers: false,
         canCreateApiKeys: false,
-        canViewNotifications: false,
         agentRatiosLevel: "none",
     });
     const scope2 = await describeUserScope(user.id);

@@ -39,9 +39,9 @@ async function replaceCompanyWideWithCanViewLogs(): Promise<void> {
     await prismaAuth.$executeRawUnsafe(
         `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "canViewExtensionStats" BOOLEAN NOT NULL DEFAULT true`,
     );
-    // Cloche d'alertes (août 2026) : NULLABLE à dessein — null = non arbitré,
-    // le défaut se calcule alors PAR RÔLE (ADMIN/MODERATOR oui, MANAGER non),
-    // y compris pour les utilisateurs créés après cette migration.
+    // Ex-cloche d'alertes (août 2026), système RETIRÉ le 1er septembre 2026 :
+    // la colonne reste (dormante) pour que le schéma et les bases en service
+    // continuent de coïncider — cf. schema.prisma.
     await prismaAuth.$executeRawUnsafe(
         `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "canViewNotifications" BOOLEAN`,
     );
@@ -52,7 +52,7 @@ async function replaceCompanyWideWithCanViewLogs(): Promise<void> {
     await prismaAuth.$executeRawUnsafe(
         `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "agentRatiosLevel" TEXT`,
     );
-    // Fenêtre d'observation du détecteur d'anomalies (jours).
+    // Ex-fenêtre du détecteur d'anomalies (retiré le 1er septembre 2026) — dormante.
     await prismaAuth.$executeRawUnsafe(
         `ALTER TABLE "AppSettings" ADD COLUMN IF NOT EXISTS "notificationWindowDays" INTEGER NOT NULL DEFAULT 7`,
     );

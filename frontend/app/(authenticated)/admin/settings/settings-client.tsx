@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Users, Phone, KeyRound, Settings, Building2, Bell, BookOpenCheck, Database } from "lucide-react";
+import { Users, Phone, KeyRound, Settings, Building2, BookOpenCheck, Database } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PersonalInfoTab } from "./tabs/personal-info-tab";
 import { UsersTab } from "./tabs/users-tab";
@@ -9,13 +9,12 @@ import { QueuesTab } from "./tabs/queues-tab";
 import { TenantTab } from "./tabs/tenant-tab";
 import { BusinessRulesTab } from "./tabs/business-rules-tab";
 import { ApiKeysTab } from "./tabs/api-keys-tab";
-import { AlertsTab } from "./tabs/alerts-tab";
 import { XapiJournalTab } from "./tabs/xapi-journal-tab";
 
 type SectionId =
     | "personal" | "users"
     | "queues-registre" | "queues-journal"
-    | "business-rules" | "alerts" | "api-keys" | "tenant";
+    | "business-rules" | "api-keys" | "tenant";
 
 // Rôles autorisés par section (cf. PRD droits d'accès §4.1).
 // ⚠️ Ce filtrage est une commodité d'affichage : la sécurité réelle est assurée
@@ -46,7 +45,6 @@ const sections: Entree[] = [
         ],
     },
     { id: "business-rules", label: "Règles métier", icon: Settings, roles: ["ADMIN"] },
-    { id: "alerts", label: "Alertes", icon: Bell, roles: ["ADMIN"] },
     { id: "api-keys", label: "Clés API", icon: KeyRound, roles: ["ADMIN", "MODERATOR"] },
     { id: "tenant", label: "Tenant", icon: Building2, roles: ["ADMIN"] },
 ];
@@ -68,7 +66,6 @@ export default function SettingsPage({ userRole }: { userRole: string }) {
             case "queues-registre": return <QueuesTab />;
             case "queues-journal": return <XapiJournalTab />;
             case "business-rules": return <BusinessRulesTab />;
-            case "alerts": return <AlertsTab />;
             case "api-keys": return <ApiKeysTab />;
             case "tenant": return <TenantTab />;
         }

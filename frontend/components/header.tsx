@@ -5,7 +5,6 @@ import { DateRangePicker } from "@/components/date-range-picker";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
-import { HeaderNotifications } from "@/components/header-notifications";
 import { OriginToggle } from "@/components/stats-v2/origin-toggle";
 import { HeaderQueueSearch } from "@/components/header-queue-search";
 import { useHeaderScope } from "@/components/header-scope";
@@ -14,7 +13,6 @@ import { useUrlPeriod, useUrlOrigin } from "@/lib/url-state";
 const pageTitleMap: Record<string, string> = {
     "/dashboard": "Tableau de bord",
     "/admin/logs": "Logs d'appels",
-    "/admin/alerts": "Alertes",
     "/admin/settings": "Paramètres",
     "/documentation": "Documentation",
     "/statistics-v2": "Mes équipes",
@@ -129,7 +127,7 @@ function HeaderRefreshButton() {
     );
 }
 
-export function Header({ userName, showAlerts }: { userName: string; showAlerts: boolean }) {
+export function Header({ userName }: { userName: string }) {
     const pathname = usePathname();
     const title = getPageTitle(pathname);
 
@@ -137,8 +135,8 @@ export function Header({ userName, showAlerts }: { userName: string; showAlerts:
     // la plus radicale) : 1) bloc titre masqué < 1400px ; 2) la recherche se
     // compresse jusqu'à 200px ; 3) le sélecteur de dates la suit jusqu'à
     // 200px ; 4) le toggle passe en icônes (1000–1129px) ; 5) sous 1000px,
-    // deux lignes : toggle (texte) + cloche + actualiser au-dessus, recherche
-    // et dates en dessous (classes order-/flex-wrap max-[999px]).
+    // deux lignes : toggle (texte) + actualiser au-dessus, recherche et dates
+    // en dessous (classes order-/flex-wrap max-[999px]).
     return (
         <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-6 max-[999px]:h-auto max-[999px]:py-2">
             {/* Premier sacrifice quand la place manque : tout le bloc titre +
@@ -158,8 +156,8 @@ export function Header({ userName, showAlerts }: { userName: string; showAlerts:
             {/* min-w-0 est vital ici AUSSI : ce groupe est un item flex du
                 header ; sans lui, min-width:auto l'empêche de passer sous la
                 largeur intrinsèque de son contenu — la recherche et les dates
-                ne recevraient jamais d'espace négatif à absorber et les
-                boutons de fin (cloche, actualiser) déborderaient hors écran. */}
+                ne recevraient jamais d'espace négatif à absorber et le bouton
+                de fin (actualiser) déborderait hors écran. */}
             <div className="flex items-center gap-4 min-w-0 max-[999px]:w-full max-[999px]:flex-wrap">
                 <HeaderQueueSearch />
                 <ContextControl
@@ -175,18 +173,11 @@ export function Header({ userName, showAlerts }: { userName: string; showAlerts:
                     <HeaderPeriodPicker />
                 </ContextControl>
 
-                {showAlerts && (
-                    // ml-auto en mode 2 lignes : les actions restent plaquées
-                    // à droite sur la première ligne.
-                    <div className="max-[999px]:order-2 max-[999px]:ml-auto">
-                        <HeaderNotifications />
-                    </div>
-                )}
                 <HeaderRefreshButton />
                 {/* Saut de ligne forcé en mode 2 lignes : cet item pleine
                     largeur pousse la recherche et les dates sur la seconde
-                    ligne (order : toggle 1, cloche 2, actualiser 3, puis
-                    recherche 5 et dates 6). */}
+                    ligne (order : toggle 1, actualiser 3, puis recherche 5 et
+                    dates 6). */}
                 <div aria-hidden className="hidden h-0 basis-full max-[999px]:order-4 max-[999px]:block" />
             </div>
         </header>

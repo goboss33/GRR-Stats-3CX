@@ -523,19 +523,17 @@ export function QueueFlowModal({ queueNumber, queueName, onClose }: {
                                     {topology.agents.map((agent) => (
                                         <Tip
                                             key={agent.extension}
-                                            content={`Dernière sollicitation ${formatDistanceToNow(new Date(agent.lastPolledAt), { addSuffix: true, locale: fr })}${agent.status === "away" ? " — statut Absent (probable)" : agent.status === "disconnected" ? " — déconnecté de la file" : ""}`}
+                                            content={`Dernière sollicitation ${formatDistanceToNow(new Date(agent.lastPolledAt), { addSuffix: true, locale: fr })}${agent.status === "disconnected" ? " — déconnecté de la file" : ""}`}
                                         >
                                             <span className={cn(
                                                 "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
                                                 agent.status === "connected" && "border-emerald-200 bg-emerald-50 text-emerald-800",
                                                 agent.status === "disconnected" && "border-slate-200 bg-slate-50 text-slate-500",
-                                                agent.status === "away" && "border-orange-200 bg-orange-50 text-orange-800",
                                             )}>
                                                 <span className={cn(
                                                     "h-1.5 w-1.5 rounded-full",
                                                     agent.status === "connected" && "bg-emerald-500",
                                                     agent.status === "disconnected" && "bg-slate-400",
-                                                    agent.status === "away" && "bg-orange-500",
                                                 )} />
                                                 {agent.name}
                                                 <span className="font-mono text-[10px] text-slate-400">{agent.extension}</span>
