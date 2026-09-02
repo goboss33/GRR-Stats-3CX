@@ -11,6 +11,8 @@ import { QueueAgentPicker } from "@/components/queue-agent-picker";
 import { Attente } from "@/components/ui/etat-chargement";
 import { cn } from "@/lib/utils";
 import type { QueueInfo } from "@/types/queues.types";
+import type { ResumeM365 } from "@/services/collaborators.service";
+import { CollaborateursTable } from "@/components/settings/collaborateurs-table";
 import { Tip } from "@/components/ui/tooltip";
 
 /**
@@ -27,8 +29,8 @@ interface RunRow {
     ranAt: string; ok: boolean; queues: number; members: number; changes: number; error: string | null;
     /** Volet Microsoft 365 du relevé — null quand l'intégration n'était pas exploitable. */
     m365Profiles: number | null; m365Photos: number | null; m365Unmatched: number | null; m365Error: string | null;
+    m365TeamTotal: number | null; m365TeamMatched: number | null;
 }
-interface NonRapproche { extension: string; displayName: string; email: string | null; etat: string; libelle: string }
 interface MouvementMembre { queueNumber: string; queueName: string; extension: string; agentName: string }
 interface Passation { queueNumber: string; queueName: string; extension: string; avant: string; apres: string }
 interface MouvementFile {
@@ -44,7 +46,8 @@ interface RunDetail {
     files: MouvementFile[];
     total: number;
     tronque: boolean;
-    nonRapproches: { total: number; lignes: NonRapproche[] };
+    /** Résumé M365 d'aujourd'hui — la liste vit dans l'onglet Collaborateurs. */
+    m365: ResumeM365;
 }
 interface MembreRow { extension: string; name: string; lastSeenAt: string }
 interface QueueRow {
@@ -92,6 +95,12 @@ export function XapiJournalTab() {
     // gardé en mémoire — rouvrir la même ligne ne rappelle pas le serveur.
     const [runOuvert, setRunOuvert] = useState<string | null>(null);
     const [details, setDetails] = useState<Record<string, RunDetail | "chargement" | "échec">>({});
+    // Deux onglets, comme le registre : les équipes (relevés, historique) et
+    // les collaborateurs (le tableau). Le lien d'un relevé ouvre le second
+    // déjà filtré sur les non rapprochés.
+    const [onglet, setOnglet] = useState<"equipes" | "collaborateurs">("equipes");
+    const [filtreCollab, setFiltreCollab] = useState<string[] | null>(null);
+    const [resumeM365, setResumeM365] = useState<ResumeM365 | null>(null);
 
     const basculerRun = useCallback(async (ranAt: string) => {
         if (runOuvert === ranAt) { setRunOuvert(null); return; }
@@ -133,6 +142,7 @@ export function XapiJournalTab() {
         try {
             const res = await fetch(`/api/admin/xapi-journal?server=${encodeURIComponent(serverId)}`);
             const data = await res.json();
+            setResumeM365((data.resumeM365 as ResumeM365 | undefined) ?? null);
             if (res.ok) {
                 setXapiUsable(data.xapiUsable);
                 setXapiEnabled(data.xapiEnabled);
@@ -200,7 +210,34 @@ export function XapiJournalTab() {
     }
 
     return (
-        <div className="max-w-3xl space-y-6">
+        <div className={cn("space-y-6", onglet === "equipes" && "max-w-3xl")}>
+            <div className="flex gap-1 border-b border-slate-200">
+                {([
+                    ["equipes", `Équipes (${queues.length})`],
+                    ["collaborateurs", resumeM365 ? `Collaborateurs (${resumeM365.total})` : "Collaborateurs"],
+                ] as const).map(([cle, libelle]) => (
+                    <button
+                        key={cle}
+                        type="button"
+                        onClick={() => { setOnglet(cle); if (cle === "collaborateurs") setFiltreCollab(null); }}
+                        aria-current={onglet === cle ? "page" : undefined}
+                        className={cn(
+                            "-mb-px border-b-2 px-4 py-2 text-sm transition-colors",
+                            onglet === cle
+                                ? "border-blue-600 font-medium text-blue-700"
+                                : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700",
+                        )}
+                    >
+                        {libelle}
+                    </button>
+                ))}
+            </div>
+
+            {onglet === "collaborateurs" && (
+                <CollaborateursTable key={filtreCollab ? "filtre" : "libre"} serverId={serverId} filtreEtatInitial={filtreCollab} />
+            )}
+
+            {onglet === "equipes" && (<>
             <Card>
                 <CardHeader>
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -289,10 +326,11 @@ export function XapiJournalTab() {
                                                         second journal. Absent quand l'intégration était éteinte. */}
                                                     {run.m365Profiles !== null && (
                                                         <>
-                                                            {" · "}{run.m365Profiles} profil{run.m365Profiles > 1 ? "s" : ""} M365, {run.m365Photos ?? 0} photo{(run.m365Photos ?? 0) > 1 ? "s" : ""}
-                                                            {(run.m365Unmatched ?? 0) > 0 && (
-                                                                <span className="text-amber-700">, {run.m365Unmatched} non rapproché{(run.m365Unmatched ?? 0) > 1 ? "s" : ""}</span>
-                                                            )}
+                                                            {" · M365 : "}
+                                                            {run.m365TeamTotal !== null
+                                                                ? <><span className="font-medium">{run.m365TeamMatched} / {run.m365TeamTotal}</span> en équipe rapprochés</>
+                                                                : <>{run.m365Profiles} profils</>}
+                                                            {", "}{run.m365Photos ?? 0} photo{(run.m365Photos ?? 0) > 1 ? "s" : ""}
                                                         </>
                                                     )}
                                                     {run.m365Error && (
@@ -380,19 +418,19 @@ export function XapiJournalTab() {
                                                                 Liste tronquée : ce relevé porte {detail.total} mouvements au total.
                                                             </p>
                                                         )}
-                                                        {(run.m365Unmatched ?? 0) > 0 && detail.nonRapproches.lignes.length > 0 && (
-                                                            <BlocMouvement titre={`Non rapprochés Microsoft 365 (${detail.nonRapproches.total})`} teinte="text-amber-700">
-                                                                {detail.nonRapproches.lignes.map((c) => (
-                                                                    <li key={`m-${c.extension}`}>
-                                                                        <span className="font-medium">{c.displayName}</span>
-                                                                        {" (poste "}{c.extension}{") — "}
-                                                                        <span className="text-slate-500">{c.libelle}{c.email ? ` : ${c.email}` : ""}</span>
-                                                                    </li>
-                                                                ))}
-                                                                {detail.nonRapproches.total > detail.nonRapproches.lignes.length && (
-                                                                    <li className="text-xs text-slate-500">… et {detail.nonRapproches.total - detail.nonRapproches.lignes.length} autres</li>
-                                                                )}
-                                                            </BlocMouvement>
+                                                        {run.m365Profiles !== null && (
+                                                            <p className="text-slate-600">
+                                                                <span className="font-semibold uppercase tracking-wide text-xs text-slate-500">Microsoft 365</span>
+                                                                {" · "}{detail.m365.enEquipeRapproches} rapprochés sur {detail.m365.enEquipe} collaborateurs en équipe,
+                                                                {" "}{detail.m365.nonRapproches} non rapprochés sur {detail.m365.total} postes —{" "}
+                                                                <button
+                                                                    type="button"
+                                                                    className="text-blue-600 underline underline-offset-2 hover:text-blue-800"
+                                                                    onClick={() => { setFiltreCollab(["sans-email", "inconnu-m365", "compte-desactive"]); setOnglet("collaborateurs"); }}
+                                                                >
+                                                                    voir les collaborateurs
+                                                                </button>
+                                                            </p>
                                                         )}
                                                     </div>
                                                 )}
@@ -477,6 +515,7 @@ export function XapiJournalTab() {
                     )}
                 </CardContent>
             </Card>
+            </>)}
         </div>
     );
 }

@@ -12,7 +12,8 @@ import {
 import { getServerTimezone } from "@/lib/servers";
 import type { ClassificationRules, RosterMember } from "@/services/domain/call-classification";
 import { invaliderCacheAnnuaire } from "@/services/queue-directory.service";
-import { getNonRapproches, runCollaboratorSync } from "@/services/m365-sync.service";
+import { runCollaboratorSync } from "@/services/m365-sync.service";
+import { getResumeM365 } from "@/services/collaborators.service";
 
 /**
  * JOURNAL DE COMPOSITION DES ÉQUIPES — la couche d'entrée-sortie.
@@ -38,7 +39,7 @@ export interface SnapshotSummary {
     members?: number;
     changes?: number;
     /** Volet Microsoft 365 du relevé ; null = intégration inexploitable cette fois. */
-    m365?: { profiles: number; photos: number; unmatched: number; error: string | null } | null;
+    m365?: { profiles: number; photos: number; unmatched: number; teamTotal: number; teamMatched: number; error: string | null } | null;
 }
 
 /** Extraction défensive d'un champ texte parmi plusieurs noms candidats. */
@@ -268,6 +269,7 @@ export async function runQueueMembershipSnapshot(serverId: ServerId): Promise<Sn
             data: {
                 m365Profiles: m365.profiles, m365Photos: m365.photos,
                 m365Unmatched: m365.unmatched, m365Error: m365.error?.slice(0, 500) ?? null,
+                m365TeamTotal: m365.teamTotal, m365TeamMatched: m365.teamMatched,
             },
         }).catch(() => undefined);
     }
@@ -276,7 +278,10 @@ export async function runQueueMembershipSnapshot(serverId: ServerId): Promise<Sn
         ran: true, ok: true,
         queues: fetched.queues, members: snapshot.length,
         changes: plan.toClose.length + plan.toOpen.length,
-        m365: m365.skipped ? null : { profiles: m365.profiles, photos: m365.photos, unmatched: m365.unmatched, error: m365.error },
+        m365: m365.skipped ? null : {
+            profiles: m365.profiles, photos: m365.photos, unmatched: m365.unmatched,
+            teamTotal: m365.teamTotal, teamMatched: m365.teamMatched, error: m365.error,
+        },
     };
 }
 
@@ -364,6 +369,7 @@ export async function getJournalOverview(serverId: ServerId) {
             // Volet M365 : null quand l'intégration n'était pas exploitable.
             m365Profiles: r.m365Profiles, m365Photos: r.m365Photos,
             m365Unmatched: r.m365Unmatched, m365Error: r.m365Error,
+            m365TeamTotal: r.m365TeamTotal, m365TeamMatched: r.m365TeamMatched,
         })),
         openCount,
         queues: [...parFile.entries()].map(([queueNumber, lignes]) => {
@@ -499,12 +505,12 @@ export async function getRunDetail(serverId: ServerId, ranAt: Date) {
 
     const parNom = (a: { queueName: string }, b: { queueName: string }) => a.queueName.localeCompare(b.queueName, "fr");
     const total = arrivees.length + departs.length + passations.length + files.length;
-    // Volet M365 : l'état D'AUJOURD'HUI des collaborateurs non rapprochés —
-    // c'est ce sur quoi on peut agir (un e-mail à corriger au 3CX), pas une
-    // archive du relevé.
-    const nonRapproches = await getNonRapproches(serverId, DETAIL_MAX);
+    // Volet M365 : le résumé D'AUJOURD'HUI — la liste elle-même vit dans
+    // l'onglet Collaborateurs, où elle se trie et se filtre. Ici, un chiffre
+    // et un lien : 324 lignes noyaient le détail du relevé.
+    const m365 = await getResumeM365(serverId);
     return {
-        nonRapproches,
+        m365,
         arrivees: arrivees.sort(parNom).slice(0, DETAIL_MAX),
         departs: departs.sort(parNom).slice(0, DETAIL_MAX),
         passations: passations.sort(parNom).slice(0, DETAIL_MAX),

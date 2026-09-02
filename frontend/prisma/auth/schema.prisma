@@ -469,23 +469,29 @@ model QueueMembershipInterval {
 /// Trace de chaque relevé XAPI — l'onglet des réglages s'en nourrit, et un
 /// échec y laisse son motif exact plutôt que de disparaître dans les logs.
 model XapiSnapshotRun {
-  id            String   @id @default(cuid())
-  serverId      String
-  ranAt         DateTime @default(now())
-  ok            Boolean
+  id              String   @id @default(cuid())
+  serverId        String
+  ranAt           DateTime @default(now())
+  ok              Boolean
   /// Files lues, postes membres vus, et mouvements (apparitions + départs
   /// + changements de titulaire) par rapport au relevé précédent.
-  queues        Int      @default(0)
-  members       Int      @default(0)
-  changes       Int      @default(0)
-  error         String?
+  queues          Int      @default(0)
+  members         Int      @default(0)
+  changes         Int      @default(0)
+  error           String?
   /// Volet Microsoft 365 du même relevé (septembre 2026) : collaborateurs
   /// rapprochés à un profil Graph, photos détenues, non rapprochés. null =
   /// l'intégration n'était pas exploitable cette nuit-là — pas un échec.
-  m365Profiles  Int?
-  m365Photos    Int?
-  m365Unmatched Int?
-  m365Error     String?
+  m365Profiles    Int?
+  m365Photos      Int?
+  m365Unmatched   Int?
+  m365Error       String?
+  /// Le chiffre HONNÊTE : parmi les collaborateurs membres d'au moins une
+  /// équipe, combien sont rapprochés. Les 270 postes hors équipe (salles,
+  /// fax, boîtes vocales, postes libres) n'auront jamais de profil Microsoft
+  /// — les compter ferait passer l'intégration pour à moitié cassée.
+  m365TeamTotal   Int?
+  m365TeamMatched Int?
 
   @@index([serverId, ranAt(sort: Desc)])
 }

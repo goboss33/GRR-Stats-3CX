@@ -17,7 +17,8 @@ export function AvatarCollaborateur({ name, photoUrl, className }: {
 }) {
     return (
         <Avatar className={cn("h-8 w-8", className)}>
-            {photoUrl && <AvatarImage src={photoUrl} alt="" />}
+            {/* Chargement paresseux : un tableau de 600 lignes ne doit pas lancer 200 requêtes d'un coup. */}
+            {photoUrl && <AvatarImage src={photoUrl} alt="" loading="lazy" />}
             <AvatarFallback
                 className="bg-slate-200 text-[11px] font-medium text-slate-700"
                 // Aucun délai : sans photo, les initiales doivent être là au premier

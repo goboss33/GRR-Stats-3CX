@@ -1,19 +1,14 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, type Dispatch, type SetStateAction } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
-import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Building2, ChevronDown, Eye, EyeOff, Flag, Loader2, RefreshCw, Search, Tag, Users, Workflow, X } from "lucide-react";
+import { AlertCircle, Building2, Eye, EyeOff, Flag, Loader2, RefreshCw, Search, Tag, Users, Workflow } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import {
-    DropdownMenu,
-    DropdownMenuCheckboxItem,
-    DropdownMenuContent,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { EnTeteTri, MenuFiltre, PucesDeFiltres, basculerDansSet as basculer } from "@/components/tableau-filtrable";
 import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { getSelectedServer } from "@/lib/selected-server";
@@ -27,7 +22,6 @@ import {
     TRI_PAR_DEFAUT,
     trierFiles,
     type ColonneTri,
-    type Tri,
 } from "@/services/domain/queue-sort";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -116,120 +110,9 @@ const LIBELLES_SANTE: Record<HealthLevel, string> = {
 };
 
 /** Coche ou décoche une valeur dans un filtre. */
-const basculer = (majSet: Dispatch<SetStateAction<Set<string>>>, valeur: string) =>
-    majSet((s) => {
-        const suivant = new Set(s);
-        if (suivant.has(valeur)) suivant.delete(valeur);
-        else suivant.add(valeur);
-        return suivant;
-    });
-
-interface OptionFiltre {
-    valeur: string;
-    libelle: string;
-    compte: number;
-}
-
-/**
- * Un filtre à cocher, chaque entrée portant son nombre de files.
- *
- * Les comptes valent pour l'onglet courant et la recherche, mais ignorent la
- * sélection de CE menu : cocher « GRR PULLY » ne change donc pas le nombre
- * affiché en face de « GRR GENEVE ». Sans cela les nombres danseraient sous
- * le curseur à chaque clic.
- *
- * Une entrée dont le compte est nul disparaît — un filtre qui ne peut rien
- * trouver n'est que du bruit. Elle reste toutefois visible si elle est
- * cochée, sans quoi on ne pourrait plus la décocher.
- */
-function MenuFiltre({
-    libelle,
-    icone: Icone,
-    options,
-    selection,
-    onBasculer,
-}: {
-    libelle: string;
-    icone: typeof Building2;
-    options: OptionFiltre[];
-    selection: Set<string>;
-    onBasculer: (valeur: string) => void;
-}) {
-    const visibles = options.filter((o) => o.compte > 0 || selection.has(o.valeur));
-    if (visibles.length === 0) return null;
-    return (
-        <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <Button
-                    variant="outline"
-                    className={cn(
-                        "h-9 gap-1.5",
-                        selection.size > 0 && "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100",
-                    )}
-                >
-                    <Icone className="h-4 w-4" />
-                    {libelle}
-                    {selection.size > 0 && (
-                        <span className="rounded bg-blue-600 px-1.5 text-[10px] font-medium text-white">
-                            {selection.size}
-                        </span>
-                    )}
-                    <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-80 w-64 overflow-y-auto">
-                {visibles.map((o) => (
-                    <DropdownMenuCheckboxItem
-                        key={o.valeur}
-                        checked={selection.has(o.valeur)}
-                        onCheckedChange={() => onBasculer(o.valeur)}
-                        /* Le menu reste ouvert : on coche rarement une seule case. */
-                        onSelect={(e) => e.preventDefault()}
-                    >
-                        <span className="flex-1 truncate">{o.libelle}</span>
-                        <span className="ml-3 text-xs tabular-nums text-slate-400">{o.compte}</span>
-                    </DropdownMenuCheckboxItem>
-                ))}
-            </DropdownMenuContent>
-        </DropdownMenu>
-    );
-}
-
-/** En-tête cliquable : un clic trie, un second inverse. */
-function EnTeteTri({
-    colonne,
-    libelle,
-    tri,
-    onTrier,
-    className,
-}: {
-    colonne: ColonneTri;
-    libelle: string;
-    tri: Tri;
-    onTrier: (colonne: ColonneTri) => void;
-    className?: string;
-}) {
-    const actif = tri.colonne === colonne;
-    return (
-        <th
-            className={cn("px-4 py-3 text-left font-medium text-slate-600", className)}
-            aria-sort={actif ? (tri.sens === "asc" ? "ascending" : "descending") : "none"}
-        >
-            <button
-                type="button"
-                onClick={() => onTrier(colonne)}
-                className="group inline-flex items-center gap-1 hover:text-slate-900"
-            >
-                {libelle}
-                {actif ? (
-                    tri.sens === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
-                ) : (
-                    <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500" />
-                )}
-            </button>
-        </th>
-    );
-}
+// Les en-têtes triables, les menus à cocher et les puces viennent de la
+// charpente partagée (components/tableau-filtrable) : le tableau des
+// collaborateurs est bâti sur le même code, les deux ne peuvent plus diverger.
 
 export function QueuesTab() {
     const [queues, setQueues] = useState<RegistryQueue[]>([]);
@@ -630,29 +513,13 @@ export function QueuesTab() {
                         pas : un tableau tronqué en silence se lit comme un
                         tableau complet. */}
                     {aDesFiltres && (
-                        <div className="flex flex-wrap items-center gap-2 text-xs">
-                            {puces.map((puce) => (
-                                <button
-                                    key={puce.cle}
-                                    type="button"
-                                    onClick={puce.retirer}
-                                    className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700 hover:bg-blue-100"
-                                >
-                                    {puce.libelle}
-                                    <X className="h-3 w-3" />
-                                </button>
-                            ))}
-                            <span className="text-slate-500">
-                                {filtered.length} file(s) affichée(s) sur {onglet === "archivees" ? nbArchivees : nbActives}
-                            </span>
-                            <button
-                                type="button"
-                                onClick={toutEffacer}
-                                className="text-blue-600 underline underline-offset-2 hover:text-blue-800"
-                            >
-                                Tout effacer
-                            </button>
-                        </div>
+                        <PucesDeFiltres
+                            puces={puces}
+                            affichees={filtered.length}
+                            total={onglet === "archivees" ? nbArchivees : nbActives}
+                            unite="file(s)"
+                            onToutEffacer={toutEffacer}
+                        />
                     )}
                 </div>
             )}

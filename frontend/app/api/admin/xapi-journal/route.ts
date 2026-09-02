@@ -7,6 +7,7 @@ import { getServerXapiConfig, isXapiUsable } from "@/lib/xapi-config";
 import {
     getJournalOverview, getQueueJournal, getRunDetail, runQueueMembershipSnapshot,
 } from "@/services/xapi-journal.service";
+import { getCollaborateurs, getFicheCollaborateur, getResumeM365 } from "@/services/collaborators.service";
 
 /**
  * Journal de composition des équipes (surcouche XAPI) — lecture pour
@@ -32,6 +33,15 @@ export async function GET(request: Request) {
             return NextResponse.json({ intervals: await getQueueJournal(serverId, queueNumber) });
         }
 
+        // Onglet Collaborateurs : la liste complète, puis la fiche d'un poste.
+        if (url.searchParams.get("view") === "collaborateurs") {
+            return NextResponse.json(await getCollaborateurs(serverId));
+        }
+        const collab = url.searchParams.get("collab");
+        if (collab) {
+            return NextResponse.json({ fiche: await getFicheCollaborateur(serverId, collab) });
+        }
+
         // Détail d'UN relevé : ses mouvements, reconstitués depuis le journal
         // (les lignes ouvertes ou fermées à l'instant du relevé).
         const runAt = url.searchParams.get("run");
@@ -43,11 +53,13 @@ export async function GET(request: Request) {
             return NextResponse.json({ detail: await getRunDetail(serverId, instant) });
         }
 
-        const config = await getServerXapiConfig(serverId);
-        const overview = await getJournalOverview(serverId);
+        const [config, overview, resumeM365] = await Promise.all([
+            getServerXapiConfig(serverId), getJournalOverview(serverId), getResumeM365(serverId),
+        ]);
         return NextResponse.json({
             xapiUsable: isXapiUsable(config),
             xapiEnabled: config.enabled,
+            resumeM365,
             ...overview,
         });
     } catch (error) {

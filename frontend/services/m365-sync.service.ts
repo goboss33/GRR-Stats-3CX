@@ -46,6 +46,9 @@ export interface M365SyncResult {
     profiles: number;
     photos: number;
     unmatched: number;
+    /** Le chiffre honnête : parmi les membres d'au moins une équipe, combien sont rapprochés. */
+    teamTotal: number;
+    teamMatched: number;
     error: string | null;
     /** Le journal des collaborateurs a-t-il été écrit (même sans M365) ? */
     journal: { toClose: number; toOpen: number; toTouch: number } | null;
@@ -57,7 +60,7 @@ interface Contexte {
     xapiToken: string;
 }
 
-const RIEN: M365SyncResult = { skipped: true, profiles: 0, photos: 0, unmatched: 0, error: null, journal: null };
+const RIEN: M365SyncResult = { skipped: true, profiles: 0, photos: 0, unmatched: 0, teamTotal: 0, teamMatched: 0, error: null, journal: null };
 
 /** Tous les utilisateurs du PBX, par pages de 100 via $skip. */
 async function fetchXapiUsers(baseUrl: string, token: string): Promise<{ ok: true; users: XapiUserLike[] } | { ok: false; reason: string }> {
@@ -230,15 +233,27 @@ export async function runCollaboratorSync(serverId: ServerId, ctx: Contexte): Pr
         const journal = await appliquerJournal(serverId, snapshot, ctx.now);
 
         if (!isM365Usable(config)) return { ...RIEN, journal };
-        if (!graph || !tokenGraph) return { skipped: false, profiles: 0, photos: 0, unmatched: 0, error, journal };
+        if (!graph || !tokenGraph) return { ...RIEN, skipped: false, error, journal };
 
         const attendues = emailsAvecPhotoAttendue(snapshot);
         const photos = await synchroniserPhotos(serverId, tokenGraph, attendues, ctx.now);
+
+        // Les 270 postes hors équipe (salles, fax, boîtes vocales, postes libres)
+        // n'auront jamais de profil Microsoft : le chiffre qui compte se mesure
+        // sur les membres d'au moins une équipe. Le relevé des équipes vient
+        // d'être écrit, ses lignes ouvertes SONT l'état de ce soir.
+        const membres = await prismaAuth.queueMembershipInterval.findMany({
+            where: { serverId, closedAt: null }, select: { extension: true }, distinct: ["extension"],
+        });
+        const enEquipe = new Set(membres.map((m) => m.extension));
+        const equipe = snapshot.filter((c) => enEquipe.has(c.extension));
         return {
             skipped: false,
             profiles: snapshot.filter((c) => c.matchState === "ok").length,
             photos: photos.photos,
             unmatched: snapshot.filter((c) => c.matchState === "sans-email" || c.matchState === "inconnu-m365" || c.matchState === "compte-desactive").length,
+            teamTotal: equipe.length,
+            teamMatched: equipe.filter((c) => c.matchState === "ok").length,
             error: photos.error,
             journal,
         };
@@ -247,29 +262,3 @@ export async function runCollaboratorSync(serverId: ServerId, ctx: Contexte): Pr
     }
 }
 
-/** Libellés lisibles des états de rapprochement, pour l'écran. */
-export const LIBELLES_ETAT: Record<string, string> = {
-    "sans-email": "sans e-mail au 3CX",
-    "inconnu-m365": "e-mail inconnu de Microsoft 365",
-    "compte-desactive": "compte Microsoft 365 désactivé",
-};
-
-/**
- * Les collaborateurs EN POSTE que Microsoft 365 ne couvre pas, pour le détail
- * d'un relevé. Lu en direct dans le journal (lignes ouvertes) : c'est l'état
- * d'aujourd'hui, celui sur lequel on peut agir — corriger un e-mail au 3CX.
- */
-export async function getNonRapproches(serverId: ServerId, limite = 120) {
-    const lignes = await prismaAuth.collaboratorDirectoryInterval.findMany({
-        where: { serverId, closedAt: null, matchState: { in: ["sans-email", "inconnu-m365", "compte-desactive"] } },
-        select: { extension: true, displayName: true, email: true, matchState: true },
-        orderBy: [{ matchState: "asc" }, { displayName: "asc" }],
-    });
-    return {
-        total: lignes.length,
-        lignes: lignes.slice(0, limite).map((l) => ({
-            extension: l.extension, displayName: l.displayName, email: l.email,
-            etat: l.matchState, libelle: LIBELLES_ETAT[l.matchState] ?? l.matchState,
-        })),
-    };
-}
