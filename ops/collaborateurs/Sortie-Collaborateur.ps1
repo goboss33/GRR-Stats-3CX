@@ -89,17 +89,16 @@ if ($Job) {
     } elseif ((Get-Prop -Objet $j -Nom 'redirection') -eq 'desactiver') { $dossier.Redirection = 'desactiver' }
 } else {
     Show-Section '1 · Le collaborateur'
-    $dossier.Societe = Read-Choix -Titre 'Société' -Elements @($config.societes) -Libelle { "$($_.nom)   ·   $($_.domaineMail)" }
+    $dossier.Societe = Read-Choix -Titre 'Quelle société ?' -Elements @($config.societes) -Colonnes nom, domaineMail
     $ad = Connect-Domaine -Societe $dossier.Societe
     do {
-        $recherche = Read-Texte -Invite "Collaborateur à désactiver — nom, prénom, identifiant ou e-mail (q pour quitter)" -Obligatoire -QuitteSurQ
-        $trouves = @(Invoke-Attente -Titre "Recherche de « $recherche » dans l'AD" -Action { @(Find-AdUtilisateur -Recherche $recherche -Ad $ad) })
+        $recherche = Read-Texte -Invite 'Qui part ? Nom, prénom, identifiant ou e-mail (q pour quitter)' -Obligatoire -QuitteSurQ
+        $trouves = @(Invoke-Attente -Titre "Recherche de « $recherche » dans l'AD" -Action {
+            @(Find-AdUtilisateur -Recherche $recherche -Ad $ad | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled) { '' } else { 'déjà désactivé' } } })
+        })
         if ($trouves.Count -eq 0) { Show-Note 'Aucun compte ne correspond.' -Niveau Alerte }
     } while ($trouves.Count -eq 0)
-    $choix = Read-Choix -Titre "Compte à désactiver — $($trouves.Count) trouvé(s)" -Elements $trouves -Libelle {
-        $etat = if ($_.Enabled) { '' } else { '   (déjà désactivé)' }
-        ((@("$($_.Name)", "$($_.SamAccountName)", "$($_.Title)", "$($_.Department)") | Where-Object { $_ }) -join '   ·   ') + $etat
-    }
+    $choix = Read-Choix -Titre "Quel compte ? ($($trouves.Count) trouvé$(if ($trouves.Count -gt 1) { 's' }))" -Elements $trouves -Colonnes Name, SamAccountName, Title, Department, Etat
     $dossier.Utilisateur = Get-ADUser -Identity $choix.SamAccountName -Properties $proprietesAd @ad
 }
 $soc = $dossier.Societe
@@ -150,16 +149,15 @@ if ($Job) {
         [pscustomobject]@{ Code = 'desactiver'; Texte = 'Désactiver la redirection existante' },
         [pscustomobject]@{ Code = 'aucune';     Texte = 'Ne rien changer à la redirection' }
     )
-    $r = Read-Choix -Titre 'Redirection des mails' -Elements $optionsRedirection -Libelle { $_.Texte } -SansAnnulation
+    $r = Read-Choix -Titre 'Redirection des mails ?' -Elements $optionsRedirection -Colonnes Texte -SansAnnulation
     if ($r.Code -eq 'activer') {
         do {
-            $recherche = Read-Texte -Invite 'Vers qui ? — nom, prénom, identifiant, adresse ou nom de liste' -Obligatoire -QuitteSurQ
-            $cibles = @(Invoke-Attente -Titre "Recherche de « $recherche »" -Action { @(Find-AdDestinataire -Recherche $recherche -Ad $ad) })
+            $recherche = Read-Texte -Invite 'Vers qui ? Nom, prénom, identifiant, adresse ou nom de liste' -Obligatoire -QuitteSurQ
+            $cibles = @(Invoke-Attente -Titre "Recherche de « $recherche »" -Action {
+                @(Find-AdDestinataire -Recherche $recherche -Ad $ad | Select-Object *, @{ n = 'Etat'; e = { if ($_.Actif) { '' } else { 'compte désactivé' } } })
+            })
             if ($cibles.Count -eq 0) { Show-Note "Rien ne correspond dans l'AD." -Niveau Alerte; continue }
-            $cible = Read-Choix -Titre "Destinataire de la redirection — $($cibles.Count) trouvé(s)" -Elements $cibles -Libelle {
-                $etat = if ($_.Actif) { '' } else { '   (compte désactivé)' }
-                ((@("$($_.Type)", "$($_.Nom)", "$($_.Adresse)", "$($_.Detail)") | Where-Object { $_ }) -join '   ·   ') + $etat
-            }
+            $cible = Read-Choix -Titre "Vers quel destinataire ? ($($cibles.Count) trouvé$(if ($cibles.Count -gt 1) { 's' }))" -Elements $cibles -Colonnes Type, Nom, Adresse, Detail, Etat
             if (-not $cible.Actif -and -not (Confirm-Choix -Question 'Ce compte est désactivé — rediriger quand même vers lui ?')) { $cible = $null }
         } while (-not $cible)
         $dossier.Redirection = 'activer'; $dossier.RedirectionVers = $cible.Adresse; $dossier.RedirectionVersNom = $cible.Nom
@@ -174,7 +172,7 @@ if ($Job) {
     $optionsReponse += [pscustomobject]@{ Code = 'aucune';     Modele = $null; Texte = 'Ne rien changer à la réponse automatique' }
     do {
         $decide = $true
-        $a = Read-Choix -Titre 'Réponse automatique' -Elements $optionsReponse -Libelle { $_.Texte } -SansAnnulation
+        $a = Read-Choix -Titre 'Réponse automatique ?' -Elements $optionsReponse -Colonnes Texte -SansAnnulation
         $texte = ''
         switch ($a.Code) {
             'modele'     { $texte = Resolve-Modele -Modele $a.Modele }

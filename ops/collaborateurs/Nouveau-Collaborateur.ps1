@@ -80,8 +80,8 @@ if ($Job) {
     if (Get-Prop -Objet $j -Nom 'identifiant') { $dossier.Sam = "$(Get-Prop -Objet $j -Nom 'identifiant')" }
 } else {
     Show-Section '1 · Le collaborateur'
-    $dossier.Societe = Read-Choix -Titre 'Société' -Elements @($config.societes) -Libelle { "$($_.nom)   ·   $($_.domaineMail)" }
-    $dossier.Site    = Read-Choix -Titre "Site — $($dossier.Societe.nom)" -Elements @($dossier.Societe.sites) -Libelle { (@("$($_.id)", "$($_.adresse)", "$($_.codePostal)", "$($_.telephone)") | Where-Object { $_ }) -join '   ·   ' }
+    $dossier.Societe = Read-Choix -Titre 'Quelle société ?' -Elements @($config.societes) -Colonnes nom, domaineMail
+    $dossier.Site    = Read-Choix -Titre "Quel site ? ($($dossier.Societe.nom))" -Elements @($dossier.Societe.sites) -Colonnes id, adresse, codePostal, telephone
     Show-Note "$($dossier.Societe.nom) › $($dossier.Site.id)   (q pour quitter à tout moment)" -Niveau Sourdine
     $dossier.Prenom   = Read-Texte -Invite 'Prénom' -Obligatoire -QuitteSurQ
     $dossier.Nom      = Read-Texte -Invite 'Nom' -Obligatoire -QuitteSurQ
@@ -131,10 +131,8 @@ if ($pbx) {
     } elseif (-not $Job) {
         Show-Note "$($candidats.Count) poste(s) libre(s) au 3CX (désactivés ou nommés « libre »)." -Niveau Sourdine
         if ($candidats.Count -gt 0 -and (Confirm-Choix -Question 'Réaffecter un poste libre à ce collaborateur ?' -DefautOui)) {
-            $dossier.Poste3CX = Read-Choix -Titre 'Poste 3CX à réaffecter' -Elements $candidats -Libelle {
-                $etat = if ($_.Enabled) { 'actif' } else { 'désactivé' }
-                (@("$($_.Number)", "$($_.DisplayName)", "$($_.EmailAddress)", $etat) | Where-Object { $_ }) -join '   ·   '
-            }
+            $vue = @($candidats | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled) { 'actif' } else { 'désactivé' } } })
+            $dossier.Poste3CX = Read-Choix -Titre 'Quel poste 3CX réaffecter ?' -Elements $vue -Colonnes Number, DisplayName, EmailAddress, Etat
         }
     }
     if ($dossier.Poste3CX) {
@@ -142,7 +140,7 @@ if ($pbx) {
         if ($filesVoulues.Count -gt 0) {
             $dossier.Files3CX = @($toutesFiles | Where-Object { $filesVoulues -contains "$($_.Number)" })
         } elseif (-not $Job -and (Confirm-Choix -Question "Inscrire ce poste dans des files d'attente ?" -DefautOui)) {
-            $dossier.Files3CX = @(Read-Choix -Titre "Files d'attente" -Elements $toutesFiles -Libelle { "$($_.Number)   ·   $($_.Name)" } -Multiple)
+            $dossier.Files3CX = @(Read-Choix -Titre "Dans quelles files d'attente ?" -Elements $toutesFiles -Colonnes Number, Name -Multiple)
         }
     }
 }

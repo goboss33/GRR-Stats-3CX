@@ -13,12 +13,6 @@
     "serveur": "giffre.gerofinance.local"
   },
 
-  "m365": {
-    "_commentaire": "Connexion unique à Microsoft 365 : une seule ouverture de session pour Exchange Online ET Graph. appId = ID (client) d'une inscription d'application Entra configurée en client public (voir README « Connexion unique »). Tant que appId est null, ou que le module MSAL.PS manque, les deux connexions classiques s'enchaînent. Une société peut porter son propre m365AppId (tenant distinct).",
-    "connexionUnique": true,
-    "appId": null
-  },
-
   "planner": {
     "tenant": "GEROFINANCE",
     "appId": "9f038dea-f005-4146-a873-65f7654860e7",

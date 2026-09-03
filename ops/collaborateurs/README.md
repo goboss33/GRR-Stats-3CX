@@ -3,8 +3,8 @@
 Refonte des anciens `NouveauCollaborateur.ps1` et `DIsable-USerAccount.ps1`.
 Même logique, même ordre d'étapes, mais : une configuration en données, un module
 commun, une **simulation qui ne peut pas écrire**, un mode test, une interface
-entièrement dans le terminal, une checklist vivante, un rapport JSON, et le 3CX
-pris en charge par la XAPI.
+entièrement dans le terminal (PowerShell 7 + Spectre), une checklist vivante, un
+rapport JSON, et le 3CX pris en charge par la XAPI.
 
 | Fichier | Rôle |
 |---|---|
@@ -33,11 +33,11 @@ winget install --id Microsoft.PowerShell --source winget
 ```powershell
 Get-ChildItem -Recurse | Unblock-File
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-Install-Module PwshSpectreConsole, MSAL.PS, ExchangeOnlineManagement, Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Identity.DirectoryManagement -Scope AllUsers
-Get-Module -ListAvailable ActiveDirectory, PwshSpectreConsole, MSAL.PS, ExchangeOnlineManagement, Microsoft.Graph.Authentication
+Install-Module PwshSpectreConsole, ExchangeOnlineManagement, Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Identity.DirectoryManagement -Scope AllUsers
+Get-Module -ListAvailable ActiveDirectory, PwshSpectreConsole, ExchangeOnlineManagement, Microsoft.Graph.Authentication
 ```
 
-   `PwshSpectreConsole` = l'interface (panneaux, menus au clavier, indicateurs). `MSAL.PS` = la connexion unique à Microsoft 365. Les quatre autres sont ceux de l'ancien script. Sans Spectre, tout fonctionne en affichage simple ; sans MSAL.PS, les deux connexions classiques s'enchaînent.
+   `PwshSpectreConsole` = l'interface (panneaux, menus au clavier, indicateurs). Les quatre autres sont ceux de l'ancien script. Sans Spectre, tout fonctionne en affichage simple.
 
 4. Vérifier l'interface, sans rien connecter :
 
@@ -57,19 +57,13 @@ Get-Module -ListAvailable ActiveDirectory, PwshSpectreConsole, MSAL.PS, Exchange
 
 7. Vérifier la société **BARNES COMMERCIAL** : domaine `bcr` confirmé, mais contrôleur, OU des désactivés et tenant restent marqués `_aVerifier`.
 
-## Connexion unique à Microsoft 365
+## Connexion à Microsoft 365
 
-Sans réglage, Exchange Online puis Graph ouvrent chacun leur fenêtre de connexion. Pour n'en avoir **qu'une**, il faut une inscription d'application Entra en *client public* dont le jeton est transmis aux deux modules. À faire une fois, dans le portail Entra du tenant Gérofinance (vous pouvez étendre l'application « Service IT Planner » déjà utilisée pour le Planner, ou en créer une « Scripts IT ») :
+Comme avant : Exchange Online puis Microsoft Graph, chacun sa fenêtre de connexion dans le navigateur, avec le compte administrateur de l'opérateur (`config.json` → `operateurs`). Une connexion unique (jeton partagé par les deux modules, ou certificat) a été étudiée et mise de côté : simple d'abord.
 
-1. **Authentification** ▸ *Ajouter une plateforme* ▸ **Applications mobiles et de bureau** ▸ URI de redirection `http://localhost`. Plus bas, **Autoriser les flux de client public : Oui**.
-2. **Autorisations d'API** ▸ *Ajouter* ▸ Microsoft Graph ▸ **Déléguées** : `User.ReadWrite.All`, `Directory.ReadWrite.All`.
-3. **Autorisations d'API** ▸ *Ajouter* ▸ onglet **API utilisées par mon organisation** ▸ chercher **Office 365 Exchange Online** ▸ **Déléguées** ▸ `Exchange.Manage`.
-4. **Accorder le consentement d'administrateur** pour le tenant.
-5. Reporter l'*ID d'application (client)* dans `config.json` → `m365.appId`.
+## L'interface
 
-Le compte qui se connecte reste le vôtre (`adminXXX@…onmicrosoft.com`) : l'application ne fait que porter la session, l'audit Microsoft montre toujours la personne. Le jeton Exchange vaut environ une heure : largement assez pour une sortie, sauf reconstruction complète du cache des délégations sur un très grand tenant — dans ce cas relancez sans connexion unique (`m365.connexionUnique: false`).
-
-Edifea est un autre tenant : soit vous y inscrivez la même application et renseignez `m365AppId` sur la société, soit la connexion classique s'applique pour elle.
+Une seule couleur d'accent (terracotta) pour ce qui guide : le titre, la question, le pointeur, la bordure du panneau d'accueil. Du gris pour le secondaire, du blanc pour les données, vert et rouge réservés aux verdicts. Les listes se parcourent aux flèches et se filtrent en tapant ; les colonnes sont alignées ; chaque étape se termine par une coche et sa durée, ses détails en dessous. La console classique de Windows suffit ; **Windows Terminal** rend mieux les caractères et les couleurs.
 
 ## La simulation ne peut pas écrire
 

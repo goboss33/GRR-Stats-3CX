@@ -45,18 +45,17 @@ Show-Panneau -Texte "Bonjour,`n`nJe ne fais plus partie de la société.`nMerci 
 
 if (-not $SansSaisie) {
     Show-Section '2 · Questions'
-    $choisi = Read-Choix -Titre 'Choisissez un compte (flèches, recherche en tapant)' -Elements $comptes -Libelle {
-        $etat = if ($_.Enabled) { '' } else { '   (désactivé)' }
-        ((@("$($_.Name)", "$($_.SamAccountName)", "$($_.Title)", "$($_.Department)") | Where-Object { $_ }) -join '   ·   ') + $etat
-    }
+    $vue = @($comptes | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled) { '' } else { 'déjà désactivé' } } })
+    $choisi = Read-Choix -Titre 'Quel compte ? (3 trouvés)' -Elements $vue -Colonnes Name, SamAccountName, Title, Department, Etat
     Show-Note "Choisi : $($choisi.Name)" -Niveau Succes
-    $plusieurs = @(Read-Choix -Titre 'Choisissez plusieurs files' -Elements @('901 Vevey', '906 Compta Pully', '910 Gérance Genève', '912 Direction') -Multiple)
-    Show-Note "Choisies : $($plusieurs -join ', ')" -Niveau Succes
+    $files = @([pscustomobject]@{ Number = '901'; Name = 'Vevey' }, [pscustomobject]@{ Number = '906'; Name = 'Compta Pully' }, [pscustomobject]@{ Number = '910'; Name = 'Gérance Genève' }, [pscustomobject]@{ Number = '912'; Name = 'Direction' })
+    $plusieurs = @(Read-Choix -Titre "Dans quelles files d'attente ?" -Elements $files -Colonnes Number, Name -Multiple)
+    Show-Note "Choisies : $(($plusieurs | ForEach-Object { $_.Number }) -join ', ')" -Niveau Succes
     $texte = Read-Texte -Invite 'Une saisie libre (Entrée pour la valeur par défaut)' -Defaut 'valeur par défaut'
     Show-Note "Saisi : $texte" -Niveau Succes
-    $bloc = Read-TexteMultiligne -Invite 'Un bloc de texte — collez plusieurs lignes'
-    Show-Panneau -Texte $bloc -Titre 'Ce que vous avez collé'
-    $oui = Confirm-Choix -Question 'Une confirmation ?' -DefautOui
+    $bloc = Read-TexteMultiligne -Invite 'Message de réponse automatique'
+    Show-Panneau -Texte $bloc -Titre 'Aperçu de la réponse automatique'
+    $oui = Confirm-Choix -Question 'Retenir ce texte ?' -DefautOui
     Show-Note "Réponse : $oui" -Niveau Succes
 }
 
@@ -74,4 +73,5 @@ Invoke-Etape -Nom 'Étape ignorée (réglage éteint)' -Categorie Planner -Ignor
 Invoke-Etape -Nom 'Étape qui échoue (secondaire)' -Categorie 3CX -Action { Start-Sleep -Milliseconds 400; throw "Le PBX a répondu 401 [non autorisé]" } | Out-Null
 
 Complete-Session
+Show-Panneau -Texte "Identifiant : mexemple`nMot de passe initial : Xk7#pQ2m!vR9" -Titre 'À transmettre (exemple)' -Accent
 Show-Note "Transcription : $((Get-Reglages).DossierLogs)" -Niveau Sourdine
