@@ -13,6 +13,12 @@
     "serveur": "giffre.gerofinance.local"
   },
 
+  "m365": {
+    "_commentaire": "Connexion unique à Microsoft 365 : une seule ouverture de session pour Exchange Online ET Graph. appId = ID (client) d'une inscription d'application Entra configurée en client public (voir README « Connexion unique »). Tant que appId est null, ou que le module MSAL.PS manque, les deux connexions classiques s'enchaînent. Une société peut porter son propre m365AppId (tenant distinct).",
+    "connexionUnique": true,
+    "appId": null
+  },
+
   "planner": {
     "tenant": "GEROFINANCE",
     "appId": "9f038dea-f005-4146-a873-65f7654860e7",
@@ -34,7 +40,15 @@
       "RIGHTSMANAGEMENT_ADHOC": "Azure Rights Management",
       "DYN365_TEAM_MEMBERS": "Dynamics 365 Team Members"
     },
-    "cacheDelegationsHeures": 240
+    "cacheDelegationsHeures": 240,
+    "reponsesAutomatiques": {
+      "_commentaire": "Modèles proposés à la sortie. Variables remplies par le script : {Prenom} {Nom} {NomComplet} {Societe} {Date} {Successeur} {SuccesseurEmail} (les deux dernières viennent de la redirection choisie) ; toute autre {Variable} est demandée à l'opérateur. Sauts de ligne : \\n.",
+      "modeles": [
+        { "id": "standard",   "nom": "Départ — standard",              "texte": "Bonjour,\n\nJe ne fais plus partie de {Societe}. Merci d'adresser désormais vos demandes à {SuccesseurEmail}.\n\nMeilleures salutations" },
+        { "id": "successeur", "nom": "Départ — avec successeur nommé", "texte": "Bonjour,\n\nJe ne fais plus partie de {Societe} depuis le {Date}. {Successeur} ({SuccesseurEmail}) reprend mes dossiers et se tient à votre disposition.\n\nMeilleures salutations" },
+        { "id": "sansContact", "nom": "Départ — sans contact indiqué", "texte": "Bonjour,\n\nJe ne fais plus partie de {Societe}. Votre message ne sera pas traité : merci de vous adresser à votre interlocuteur habituel ou au secrétariat.\n\nMeilleures salutations" }
+      ]
+    }
   },
 
   "pbx": {
@@ -50,13 +64,13 @@
 
   "operateurs": {
     "_commentaire": "Clé = nom de session Windows ($env:USERNAME) de la personne qui lance le script. Les comptes admin sont demandés une fois par domaine puis réutilisés pendant la session.",
-    "admingbo": { "nom": "Geoffrey Bossens", "GEROFINANCE": { "domaine": "gerofinance\\admingbo", "o365": "admingbo@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\admingbo", "o365": "admingbo@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\admingbo", "o365": "admingbo@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\admingbo", "o365": "admingbo@edifeagroup.onmicrosoft.com" } },
-    "adminyem": { "nom": "Yann Emonin", "GEROFINANCE": { "domaine": "gerofinance\\adminyem", "o365": "adminyem@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminyem", "o365": "adminyem@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\adminyem", "o365": "adminyem@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\adminyem", "o365": "adminyem@edifeagroup.onmicrosoft.com" } },
-    "adminlul": { "nom": "Luis Lopes", "GEROFINANCE": { "domaine": "gerofinance\\adminlul", "o365": "adminlul@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminlul", "o365": "adminlul@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\adminlul", "o365": "adminlul@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\adminlul", "o365": "adminlul@edifeagroup.onmicrosoft.com" } },
-    "adminyth": { "nom": "Yoann Thomas", "GEROFINANCE": { "domaine": "gerofinance\\adminyth", "o365": "adminyth@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminyth", "o365": "adminyth@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\adminyth", "o365": "adminyth@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\adminyth", "o365": "adminyth@edifeagroup.onmicrosoft.com" } },
-    "adminsma": { "nom": "Stevo Maksic", "GEROFINANCE": { "domaine": "gerofinance\\adminsma", "o365": "adminsma@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminsma", "o365": "adminsma@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\adminsma", "o365": "adminsma@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\adminsma", "o365": "adminsma@edifeagroup.onmicrosoft.com" } },
-    "admincto": { "nom": "Christopher Toro", "GEROFINANCE": { "domaine": "gerofinance\\admincto", "o365": "admincto@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\admincto", "o365": "admincto@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\admincto", "o365": "admincto@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\admincto", "o365": "admincto@edifeagroup.onmicrosoft.com" } },
-    "adminpfi": { "nom": "Parsa Firouzabadi", "GEROFINANCE": { "domaine": "gerofinance\\adminpfi", "o365": "adminpfi@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminpfi", "o365": "adminpfi@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\adminpfi", "o365": "adminpfi@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\adminpfi", "o365": "adminpfi@edifeagroup.onmicrosoft.com" } }
+    "admingbo": { "nom": "Geoffrey Bossens", "GEROFINANCE": { "domaine": "gerofinance\\admingbo", "o365": "admingbo@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\admingbo", "o365": "admingbo@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "bcr\\admingbo", "o365": null }, "EDIFEA": { "domaine": "edifea\\admingbo", "o365": "admingbo@edifeagroup.onmicrosoft.com" } },
+    "adminyem": { "nom": "Yann Emonin", "GEROFINANCE": { "domaine": "gerofinance\\adminyem", "o365": "adminyem@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminyem", "o365": "adminyem@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "bcr\\adminyem", "o365": null }, "EDIFEA": { "domaine": "edifea\\adminyem", "o365": "adminyem@edifeagroup.onmicrosoft.com" } },
+    "adminlul": { "nom": "Luis Lopes", "GEROFINANCE": { "domaine": "gerofinance\\adminlul", "o365": "adminlul@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminlul", "o365": "adminlul@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "bcr\\adminlul", "o365": null }, "EDIFEA": { "domaine": "edifea\\adminlul", "o365": "adminlul@edifeagroup.onmicrosoft.com" } },
+    "adminyth": { "nom": "Yoann Thomas", "GEROFINANCE": { "domaine": "gerofinance\\adminyth", "o365": "adminyth@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminyth", "o365": "adminyth@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "bcr\\adminyth", "o365": null }, "EDIFEA": { "domaine": "edifea\\adminyth", "o365": "adminyth@edifeagroup.onmicrosoft.com" } },
+    "adminsma": { "nom": "Stevo Maksic", "GEROFINANCE": { "domaine": "gerofinance\\adminsma", "o365": "adminsma@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminsma", "o365": "adminsma@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "bcr\\adminsma", "o365": null }, "EDIFEA": { "domaine": "edifea\\adminsma", "o365": "adminsma@edifeagroup.onmicrosoft.com" } },
+    "admincto": { "nom": "Christopher Toro", "GEROFINANCE": { "domaine": "gerofinance\\admincto", "o365": "admincto@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\admincto", "o365": "admincto@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "bcr\\admincto", "o365": null }, "EDIFEA": { "domaine": "edifea\\admincto", "o365": "admincto@edifeagroup.onmicrosoft.com" } },
+    "adminpfi": { "nom": "Parsa Firouzabadi", "GEROFINANCE": { "domaine": "gerofinance\\adminpfi", "o365": "adminpfi@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminpfi", "o365": "adminpfi@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "bcr\\adminpfi", "o365": null }, "EDIFEA": { "domaine": "edifea\\adminpfi", "o365": "adminpfi@edifeagroup.onmicrosoft.com" } }
   },
 
   "societes": [
@@ -114,12 +128,12 @@
     {
       "id": "BARNES COMMERCIAL",
       "nom": "BARNES Commercial Realty SA",
-      "_aVerifier": "Les deux anciens scripts ne s'accordaient pas : la création visait bcrdc01.bcr.local (domaine bcr, OU=UTILISATEURS,OU=GENEVE,DC=bcr,DC=local), la sortie visait prekfdc.prekf.local (domaine prekf, OU=Disabled,DC=prekf,DC=local), et le tenant M365 était vide. Valeurs ci-dessous reprises de la SORTIE (script le plus récent) — à confirmer avant le premier lancement réel.",
+      "_aVerifier": "Domaine confirmé par gbossens le 03.09.2026 : BCR (et non prekf, que l'ancien script de sortie visait). Reste à confirmer avant le premier lancement réel : le nom du contrôleur, l'OU des désactivés, le tenant M365 (vide) et les comptes admin (o365 à null tant que le tenant est inconnu).",
       "domaineMail": "@barnes-commercial.com",
-      "domaineAd": "prekf",
-      "dc": "prekfdc.prekf.local",
+      "domaineAd": "bcr",
+      "dc": "bcrdc01.bcr.local",
       "tenantId": null,
-      "ouDesactives": "OU=Disabled,DC=prekf,DC=local",
+      "ouDesactives": "OU=Disabled,DC=bcr,DC=local",
       "groupesAuto": [],
       "pbx": "gerofinance",
       "sites": [

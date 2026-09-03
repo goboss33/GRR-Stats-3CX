@@ -1,7 +1,9 @@
 {
-  "_commentaire": "Exemple de fichier de travail pour Sortie-Collaborateur.ps1 -Job. redirectionVers (UPN ou adresse d'une liste) et reponseAuto (texte) sont facultatifs ; 'redirection': 'desactiver' ou 'reponseAutoEtat': 'desactiver' coupent explicitement.",
+  "_commentaire": "Exemple de fichier de travail pour Sortie-Collaborateur.ps1 -Job. Tout est facultatif sauf societe et identifiant. Redirection : 'redirectionVers' (adresse) + 'redirectionVersNom' (pour les modèles), ou 'redirection': 'desactiver'. Réponse automatique : 'reponseAuto' (texte libre), ou 'reponseAutoModele' (id d'un modèle de config.json → sortie.reponsesAutomatiques) avec 'variables' pour ce que le script ne déduit pas, ou 'reponseAutoEtat': 'desactiver'.",
   "societe": "GEROFINANCE",
   "identifiant": "mexemple",
   "redirectionVers": "comptabilite.pully@grrsa.ch",
-  "reponseAuto": "Bonjour,\nJe ne fais plus partie de la société. Merci d'adresser vos demandes à comptabilite.pully@grrsa.ch.\nMeilleures salutations"
+  "redirectionVersNom": "Comptabilité Pully",
+  "reponseAutoModele": "standard",
+  "variables": { }
 }
