@@ -1,0 +1,13 @@
+{
+  "_commentaire": "Exemple de fichier de travail pour Nouveau-Collaborateur.ps1 -Job. Aucune question n'est posée : tout vient d'ici. identifiant, poste3cx et files3cx sont facultatifs.",
+  "societe": "GEROFINANCE",
+  "site": "PULLY",
+  "prenom": "Marie",
+  "nom": "Exemple",
+  "fonction": "Comptable",
+  "service": "Comptabilité",
+  "titre": "Comptable immobilière",
+  "identifiant": null,
+  "poste3cx": "129",
+  "files3cx": [ "906" ]
+}

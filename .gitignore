@@ -66,3 +66,8 @@ coverage/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Scripts entrée/sortie des collaborateurs : traces, cache et secrets restent sur la machine
+ops/collaborateurs/logs/
+ops/collaborateurs/cache/
+ops/collaborateurs/secrets/

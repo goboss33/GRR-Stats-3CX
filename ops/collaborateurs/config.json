@@ -1,0 +1,161 @@
+{
+  "_commentaire": "Configuration des scripts d'entrée et de sortie des collaborateurs. Tout ce qui était en dur dans les anciens scripts vit ici. Les SECRETS (clé XAPI) ne vont PAS dans ce fichier : voir Set-Secret.ps1.",
+  "version": 1,
+
+  "mail": {
+    "smtp": "192.168.21.74",
+    "expediteur": "FORMULAIRE@gerofinance.ch",
+    "helpdesk": "helpdesk@grrsa.ch"
+  },
+
+  "adConnect": {
+    "_commentaire": "Serveur qui porte Azure AD Connect : la synchronisation delta y est déclenchée à distance (Invoke-Command). L'ancien script l'appelait en local et échouait silencieusement hors de ce serveur.",
+    "serveur": "giffre.gerofinance.local"
+  },
+
+  "planner": {
+    "tenant": "GEROFINANCE",
+    "appId": "9f038dea-f005-4146-a873-65f7654860e7",
+    "empreinteCertificat": "9BA2EF78C7BF86D4D104596736DE87D210A15082",
+    "planId": "yU9Sp4qSWUW9EuYxTZlxqZgAAMbw",
+    "compartiment": "Désactivations",
+    "assigneA": "010e2927-c046-481e-b5e7-65e8616b177f",
+    "echeanceJours": 180,
+    "categoriesParBureau": { "PULLY": "category22", "GENEVE": "category5", "GENÈVE": "category5" }
+  },
+
+  "sortie": {
+    "groupesConserves": [ "SEC_MFILES_*" ],
+    "licencesConservees": [ "EXCHANGEENTERPRISE" ],
+    "licencesNoms": {
+      "EXCHANGEENTERPRISE": "Exchange Online (Plan 2)",
+      "SPB": "Microsoft Business Premium",
+      "FLOW_FREE": "Microsoft Power Automate Free",
+      "RIGHTSMANAGEMENT_ADHOC": "Azure Rights Management",
+      "DYN365_TEAM_MEMBERS": "Dynamics 365 Team Members"
+    },
+    "cacheDelegationsHeures": 240
+  },
+
+  "pbx": {
+    "_commentaire": "Un PBX par clé ; chaque société pointe sur une clé (ou null si pas de XAPI). Le secret est lu dans le fichier chiffré indiqué, créé par Set-Secret.ps1. Utilisez de préférence un principal DÉDIÉ aux scripts (ID client distinct de celui de l'application de statistiques).",
+    "gerofinance": {
+      "adresse": "https://gerofinance.3cx.ch:5001",
+      "clientId": "stats",
+      "fichierSecret": "secrets\\xapi.gerofinance.bin",
+      "motifPosteLibre": "\\blibre\\b",
+      "skillGroupParDefaut": "1"
+    }
+  },
+
+  "operateurs": {
+    "_commentaire": "Clé = nom de session Windows ($env:USERNAME) de la personne qui lance le script. Les comptes admin sont demandés une fois par domaine puis réutilisés pendant la session.",
+    "admingbo": { "nom": "Geoffrey Bossens", "GEROFINANCE": { "domaine": "gerofinance\\admingbo", "o365": "admingbo@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\admingbo", "o365": "admingbo@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\admingbo", "o365": "admingbo@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\admingbo", "o365": "admingbo@edifeagroup.onmicrosoft.com" } },
+    "adminyem": { "nom": "Yann Emonin", "GEROFINANCE": { "domaine": "gerofinance\\adminyem", "o365": "adminyem@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminyem", "o365": "adminyem@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\adminyem", "o365": "adminyem@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\adminyem", "o365": "adminyem@edifeagroup.onmicrosoft.com" } },
+    "adminlul": { "nom": "Luis Lopes", "GEROFINANCE": { "domaine": "gerofinance\\adminlul", "o365": "adminlul@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminlul", "o365": "adminlul@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\adminlul", "o365": "adminlul@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\adminlul", "o365": "adminlul@edifeagroup.onmicrosoft.com" } },
+    "adminyth": { "nom": "Yoann Thomas", "GEROFINANCE": { "domaine": "gerofinance\\adminyth", "o365": "adminyth@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminyth", "o365": "adminyth@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\adminyth", "o365": "adminyth@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\adminyth", "o365": "adminyth@edifeagroup.onmicrosoft.com" } },
+    "adminsma": { "nom": "Stevo Maksic", "GEROFINANCE": { "domaine": "gerofinance\\adminsma", "o365": "adminsma@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminsma", "o365": "adminsma@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\adminsma", "o365": "adminsma@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\adminsma", "o365": "adminsma@edifeagroup.onmicrosoft.com" } },
+    "admincto": { "nom": "Christopher Toro", "GEROFINANCE": { "domaine": "gerofinance\\admincto", "o365": "admincto@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\admincto", "o365": "admincto@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\admincto", "o365": "admincto@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\admincto", "o365": "admincto@edifeagroup.onmicrosoft.com" } },
+    "adminpfi": { "nom": "Parsa Firouzabadi", "GEROFINANCE": { "domaine": "gerofinance\\adminpfi", "o365": "adminpfi@gerofinancegroup.onmicrosoft.com" }, "BARNES": { "domaine": "gerofinance\\adminpfi", "o365": "adminpfi@gerofinancegroup.onmicrosoft.com" }, "BARNES COMMERCIAL": { "domaine": "prekf\\adminpfi", "o365": "adminpfi@prekfgroup.onmicrosoft.com" }, "EDIFEA": { "domaine": "edifea\\adminpfi", "o365": "adminpfi@edifeagroup.onmicrosoft.com" } }
+  },
+
+  "societes": [
+    {
+      "id": "GEROFINANCE",
+      "nom": "GEROFINANCE - RÉGIE DU RHÔNE SA",
+      "domaineMail": "@grrsa.ch",
+      "domaineAd": "gerofinance",
+      "dc": "ad-vd01.gerofinance.local",
+      "tenantId": "7c81ccb4-7e5a-4d54-8bd9-f657dda553b0",
+      "ouDesactives": "OU=99 - DISABLED USERS,DC=gerofinance,DC=local",
+      "groupesAuto": [ "SEC_DOCSERIES", "SEC_OPTIMISO_ACTEURS" ],
+      "pbx": "gerofinance",
+      "sites": [
+        { "id": "GENEVE",    "ou": "OU=USERS,OU=GENEVE,OU=SITES,OU=1 - GD | RC,DC=gerofinance,DC=local",    "adresse": "Avenue de l'Etang, 57", "case": "Case Postale", "codePostal": "1211 Genève 2",  "telephone": "+41 22 325 50 00", "bureau": "Genève",    "prefixePostes": null },
+        { "id": "PULLY",     "ou": "OU=USERS,OU=PULLY,OU=SITES,OU=1 - GD | RC,DC=gerofinance,DC=local",     "adresse": "Chemin de Pallin 6",    "case": "Case Postale", "codePostal": "1009 Pully",     "telephone": "+41 21 925 71 00", "bureau": "Pully",     "prefixePostes": null },
+        { "id": "COPPET",    "ou": "OU=USERS,OU=COPPET,OU=SITES,OU=1 - GD | RC,DC=gerofinance,DC=local",    "adresse": "Grand'Rue 28",          "case": "Case Postale", "codePostal": "1296 Coppet",    "telephone": "+41 22 950 97 98", "bureau": "Coppet",    "prefixePostes": null },
+        { "id": "BULLE",     "ou": "OU=USERS,OU=BULLE,OU=SITES,OU=1 - GD | RC,DC=gerofinance,DC=local",     "adresse": "Rue de Vevey 48",       "case": "",             "codePostal": "1630 Bulle",     "telephone": "+41 26 347 47 90", "bureau": "Bulle",     "prefixePostes": null },
+        { "id": "MONTREUX",  "ou": "OU=USERS,OU=MONTREUX,OU=SITES,OU=1 - GD | RC,DC=gerofinance,DC=local",  "adresse": "Grand-Rue 54",          "case": "",             "codePostal": "1820 Montreux",  "telephone": "+41 21 925 72 50", "bureau": "Montreux",  "prefixePostes": null },
+        { "id": "NEUCHATEL", "ou": "OU=USERS,OU=NEUCHATEL,OU=SITES,OU=1 - GD | RC,DC=gerofinance,DC=local", "adresse": "Rue du Coq-d'Inde 10",  "case": "",             "codePostal": "2000 Neuchâtel", "telephone": "+41 32 723 23 53", "bureau": "Neuchâtel", "prefixePostes": null },
+        { "id": "NYON",      "ou": "OU=USERS,OU=NYON,OU=SITES,OU=1 - GD | RC,DC=gerofinance,DC=local",      "adresse": "Rue Saint-Jean 34",     "case": "",             "codePostal": "1260 Nyon",      "telephone": "+41 22 365 75 20", "bureau": "Nyon",      "prefixePostes": null },
+        { "id": "SION",      "ou": "OU=USERS,OU=SION,OU=SITES,OU=1 - GD | RC,DC=gerofinance,DC=local",      "adresse": "Av. des Mayennets 29",  "case": "",             "codePostal": "1950 Sion",      "telephone": "+41 27 327 34 40", "bureau": "Sion",      "prefixePostes": null },
+        { "id": "VEVEY",     "ou": "OU=USERS,OU=VEVEY,OU=SITES,OU=1 - GD | RC,DC=gerofinance,DC=local",     "adresse": "Rue du Lac 29",         "case": "",             "codePostal": "1800 Vevey",     "telephone": "+41 21 925 71 90", "bureau": "Vevey",     "prefixePostes": null }
+      ]
+    },
+    {
+      "id": "BARNES",
+      "nom": "BARNES Suisse SA",
+      "domaineMail": "@barnes-suisse.ch",
+      "domaineAd": "gerofinance",
+      "dc": "ad-vd01.gerofinance.local",
+      "tenantId": "7c81ccb4-7e5a-4d54-8bd9-f657dda553b0",
+      "ouDesactives": "OU=99 - DISABLED USERS,DC=gerofinance,DC=local",
+      "groupesAuto": [],
+      "pbx": "gerofinance",
+      "sites": [
+        { "id": "GENEVE ETANG",   "ou": "OU=ETANG,OU=USERS,OU=GENEVE,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",   "adresse": "Avenue de l'Etang, 57",   "case": "Case Postale", "codePostal": "1211 Genève 2",       "telephone": "",                 "bureau": "Genève",        "prefixePostes": null },
+        { "id": "GENEVE THEATRE", "ou": "OU=THEATRE,OU=USERS,OU=GENEVE,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local", "adresse": "Boulevard du Théâtre 8",  "case": "",             "codePostal": "1204 Genève",         "telephone": "",                 "bureau": "Genève",        "prefixePostes": null },
+        { "id": "PULLY",          "ou": "OU=USERS,OU=PULLY,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",            "adresse": "Chemin de Pallin 6",      "case": "Case Postale", "codePostal": "1009 Pully",          "telephone": "",                 "bureau": "Pully",         "prefixePostes": null },
+        { "id": "BULLE",          "ou": "OU=USERS,OU=BULLE,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",            "adresse": "Rue de Vevey 48",         "case": "",             "codePostal": "1630 Bulle",          "telephone": "",                 "bureau": "Bulle",         "prefixePostes": null },
+        { "id": "COPPET",         "ou": "OU=USERS,OU=COPPET,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",           "adresse": "Grand'Rue 28",            "case": "Case Postale", "codePostal": "1296 Coppet",         "telephone": "",                 "bureau": "Coppet",        "prefixePostes": null },
+        { "id": "CRANS-MONTANA",  "ou": "OU=USERS,OU=CRANS-MONTANA,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",    "adresse": "Rue du Grand-Place 10",   "case": "",             "codePostal": "3963 Crans-Montana",  "telephone": "",                 "bureau": "Crans-Montana", "prefixePostes": null },
+        { "id": "LAUSANNE",       "ou": "OU=USERS,OU=LAUSANNE,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",         "adresse": "Avenue du Théâtre 14",    "case": "",             "codePostal": "1005 Lausanne",       "telephone": "",                 "bureau": "Lausanne",      "prefixePostes": null },
+        { "id": "LUTRY",          "ou": "OU=USERS,OU=GRANDRUE,OU=LUTRY,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local", "adresse": "Grand-Rue 14",            "case": "",             "codePostal": "1095 Lutry",          "telephone": "",                 "bureau": "Lutry",         "prefixePostes": null },
+        { "id": "MONTREUX",       "ou": "OU=USERS,OU=MONTREUX,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",         "adresse": "Grand-Rue 54",            "case": "",             "codePostal": "1820 Montreux",       "telephone": "",                 "bureau": "Montreux",      "prefixePostes": null },
+        { "id": "MORGES",         "ou": "OU=USERS,OU=MORGES,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",           "adresse": "Grand-Rue 28",            "case": "",             "codePostal": "1110 Morges",         "telephone": "",                 "bureau": "Morges",        "prefixePostes": null },
+        { "id": "NEUCHATEL",      "ou": "OU=USERS,OU=NEUCHATEL,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",        "adresse": "Rue Coq d'Inde 8",        "case": "",             "codePostal": "2000 Neuchâtel",      "telephone": "+41 32 723 23 43", "bureau": "Neuchâtel",     "prefixePostes": null },
+        { "id": "NYON",           "ou": "OU=USERS,OU=NYON,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",             "adresse": "Rue Saint-Jean 34",       "case": "",             "codePostal": "1260 Nyon",           "telephone": "+41 22 950 97 97", "bureau": "Nyon",          "prefixePostes": null },
+        { "id": "SION",           "ou": "OU=USERS,OU=SION,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",             "adresse": "Av. de Tourbillon 26",    "case": "",             "codePostal": "1950 Sion",           "telephone": "",                 "bureau": "Sion",          "prefixePostes": null },
+        { "id": "VEVEY",          "ou": "OU=USERS,OU=VEVEY,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",            "adresse": "Rue du Lac 29",           "case": "",             "codePostal": "1800 Vevey",          "telephone": "",                 "bureau": "Vevey",         "prefixePostes": null },
+        { "id": "YVERDON",        "ou": "OU=USERS,OU=YVERDON,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",          "adresse": "Rue de la Plaine 37",     "case": "",             "codePostal": "1400 Yverdon",        "telephone": "",                 "bureau": "Yverdon",       "prefixePostes": null },
+        { "id": "ZERMATT",        "ou": "OU=USERS,OU=ZERMATT,OU=SITES,OU=10 - BS,DC=gerofinance,DC=local",          "adresse": "Bahnhofstrasse 5",        "case": "",             "codePostal": "3920 Zermatt",        "telephone": "",                 "bureau": "Zermatt",       "prefixePostes": null }
+      ]
+    },
+    {
+      "id": "BARNES COMMERCIAL",
+      "nom": "BARNES Commercial Realty SA",
+      "_aVerifier": "Les deux anciens scripts ne s'accordaient pas : la création visait bcrdc01.bcr.local (domaine bcr, OU=UTILISATEURS,OU=GENEVE,DC=bcr,DC=local), la sortie visait prekfdc.prekf.local (domaine prekf, OU=Disabled,DC=prekf,DC=local), et le tenant M365 était vide. Valeurs ci-dessous reprises de la SORTIE (script le plus récent) — à confirmer avant le premier lancement réel.",
+      "domaineMail": "@barnes-commercial.com",
+      "domaineAd": "prekf",
+      "dc": "prekfdc.prekf.local",
+      "tenantId": null,
+      "ouDesactives": "OU=Disabled,DC=prekf,DC=local",
+      "groupesAuto": [],
+      "pbx": "gerofinance",
+      "sites": [
+        { "id": "GENEVE", "ou": "OU=UTILISATEURS,OU=GENEVE,DC=bcr,DC=local", "adresse": "Avenue de l'Étang 57", "case": "Case Postale", "codePostal": "1211 Genève 2", "telephone": "", "bureau": "Genève", "prefixePostes": null }
+      ]
+    },
+    {
+      "id": "EDIFEA",
+      "nom": "EDIFEA SA",
+      "_aVerifier": "Création sur dc-ge01.edifea.local, sortie sur edifeavauddc.edifea.local dans les anciens scripts — même domaine, un seul contrôleur retenu ici.",
+      "domaineMail": "@edifea.ch",
+      "domaineAd": "edifea",
+      "dc": "dc-ge01.edifea.local",
+      "tenantId": "407c6558-166f-47cc-adcf-deafef81875c",
+      "ouDesactives": "OU=99 - DISABLED USERS,OU=1 - EDIFEA,DC=edifea,DC=local",
+      "groupesAuto": [],
+      "pbx": null,
+      "sites": [
+        { "id": "GENEVE",            "ou": "OU=USERS,OU=GENEVE,OU=SITES,OU=1 - EDIFEA,DC=edifea,DC=local",            "adresse": "Avenue de l'Etang 57",      "case": "CP133",         "codePostal": "1211 Genève 8",         "telephone": "+41 22 807 33 22", "bureau": "Genève",            "prefixePostes": null },
+        { "id": "MORGES",            "ou": "OU=USERS,OU=MORGES,OU=SITES,OU=1 - EDIFEA,DC=edifea,DC=local",            "adresse": "Route de la Longeraie 9",   "case": "Case postale",  "codePostal": "1110 Morges 2",         "telephone": "+41 21 796 35 50", "bureau": "Morges",            "prefixePostes": null },
+        { "id": "VILLARS-SUR-GLANE", "ou": "OU=USERS,OU=VILLARS-SUR-GLANE,OU=SITES,OU=1 - EDIFEA,DC=edifea,DC=local", "adresse": "Route du Petit-Moncor 1E",  "case": "CP 141",        "codePostal": "1752 Villars-sur-Glâne", "telephone": "+41 26 350 12 70", "bureau": "Villars-Sur-Glâne", "prefixePostes": null }
+      ]
+    },
+    {
+      "id": "AZNAR",
+      "nom": "Aznar & Cie",
+      "domaineMail": "@aznar.ch",
+      "domaineAd": "aznarcie",
+      "dc": "alpha.aznarcie.local",
+      "tenantId": null,
+      "ouDesactives": null,
+      "groupesAuto": [],
+      "pbx": null,
+      "sites": [
+        { "id": "GENEVE", "ou": "OU=Utilisateurs,DC=aznarcie,DC=local", "adresse": "Route de Thonon 61", "case": "", "codePostal": "1222 Vésenaz", "telephone": "+41 22 827 19 19", "bureau": "Genève", "prefixePostes": null }
+      ]
+    }
+  ]
+}

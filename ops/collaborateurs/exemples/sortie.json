@@ -1,0 +1,7 @@
+{
+  "_commentaire": "Exemple de fichier de travail pour Sortie-Collaborateur.ps1 -Job. redirectionVers (UPN ou adresse d'une liste) et reponseAuto (texte) sont facultatifs ; 'redirection': 'desactiver' ou 'reponseAutoEtat': 'desactiver' coupent explicitement.",
+  "societe": "GEROFINANCE",
+  "identifiant": "mexemple",
+  "redirectionVers": "comptabilite.pully@grrsa.ch",
+  "reponseAuto": "Bonjour,\nJe ne fais plus partie de la société. Merci d'adresser vos demandes à comptabilite.pully@grrsa.ch.\nMeilleures salutations"
+}
