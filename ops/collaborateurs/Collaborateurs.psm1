@@ -1334,7 +1334,9 @@ function Find-AdDestinataire {
     $liste = @()
     foreach ($u in @(Find-AdUtilisateur -Recherche $Recherche -Ad $Ad)) {
         $adresse = if ($u.mail) { "$($u.mail)" } else { "$($u.UserPrincipalName)" }
-        $liste += [pscustomobject]@{ Type = 'Utilisateur'; Nom = $u.Name; Adresse = $adresse; Actif = [bool]$u.Enabled; Detail = "$($u.Title)" }
+        # Actif sauf si l'annuaire affirme le contraire : sur ce domaine, la
+        # propriété revient parfois vide, et un vide n'est pas un compte fermé.
+        $liste += [pscustomobject]@{ Type = 'Utilisateur'; Nom = $u.Name; Adresse = $adresse; Actif = ($u.Enabled -ne $false); Detail = "$($u.Title)" }
     }
     $r = $Recherche.Replace("'", "''")
     try {

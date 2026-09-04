@@ -119,7 +119,7 @@ if (-not $Job) {
     Add-Resume -Cle 'Qui part' -Valeur "$($dossier.Nom) · $($dossier.Sam)"
     Show-Constat -Titre 'Compte retenu' -Valeurs @($dossier.Nom, $dossier.Sam, $dossier.Upn)
 }
-if (-not $u.Enabled) { Add-Journal -Message "Le compte $($u.SamAccountName) est DÉJÀ désactivé — le script reprend là où il en est." -Categorie AD -Niveau Alerte }
+if ($u.Enabled -eq $false) { Add-Journal -Message "Le compte $($u.SamAccountName) est DÉJÀ désactivé — le script reprend là où il en est." -Categorie AD -Niveau Alerte }
 
 # Les variables que les modèles de réponse automatique peuvent utiliser.
 function Get-VariablesReponse {
