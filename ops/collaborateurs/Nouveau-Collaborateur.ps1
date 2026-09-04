@@ -158,17 +158,14 @@ if ($Job) {
         $dossier.GroupesRepris = @(Get-GroupesReprenables -Sam $modeleSam | Where-Object { -not $_.Note })
     }
 } elseif (Confirm-Choix -Question "Reprendre les groupes d'un ou d'une collègue ?" -DefautOui) {
+    # Un champ de recherche, comme pour la redirection : on tape un nom, on choisit.
     $modele = $null
-    $collegues = @(Invoke-Attente -Titre "Lecture des collègues du site $($site.id)" -Action { @(Get-AdCollegues -Ou $site.ou -Ad $ad) })
-    $ailleurs = [pscustomobject]@{ Name = "Chercher quelqu'un d'autre…"; SamAccountName = ''; Title = ''; Department = '' }
-    $choix = Read-Choix -Titre "Sur le modèle de qui ? ($($collegues.Count) sur le site)" -Elements (@($ailleurs) + $collegues) -Colonnes Name, SamAccountName, Title, Department
-    if ($choix.SamAccountName) { $modele = $choix }
-    while (-not $modele) {
-        $recherche = Read-Texte -Invite 'Qui ?' -Aide 'nom, prénom ou identifiant' -Obligatoire -QuitteSurQ
-        $trouves = @(Invoke-Attente -Titre "Recherche de « $recherche » dans l'Active Directory" -Action { @(Find-AdUtilisateur -Recherche $recherche -Ad $ad) })
-        if ($trouves.Count -eq 0) { Show-Note 'Aucun compte ne correspond.' -Niveau Alerte; continue }
+    do {
+        $recherche = Read-Texte -Invite 'Sur le modèle de qui ?' -Aide 'nom, prénom ou identifiant — q pour quitter' -Obligatoire -QuitteSurQ
+        $trouves = @(Invoke-Attente -Titre "Recherche de « $recherche » dans l'Active Directory" -Action { @(Find-AdUtilisateur -Recherche $recherche -Ad $ad | Where-Object { $_.Enabled }) })
+        if ($trouves.Count -eq 0) { Show-Note 'Aucun compte actif ne correspond.' -Niveau Alerte; continue }
         $modele = Read-Choix -Titre "Quel compte ? ($($trouves.Count) trouvé$(if ($trouves.Count -gt 1) { 's' }))" -Elements $trouves -Colonnes Name, SamAccountName, Title, Department
-    }
+    } while (-not $modele)
     $reprenables = @(Invoke-Attente -Titre "Lecture des groupes de $($modele.Name)" -Action { @(Get-GroupesReprenables -Sam $modele.SamAccountName) })
     if ($reprenables.Count -eq 0) {
         Show-Note "$($modele.Name) n'a aucun groupe à reprendre en plus des groupes automatiques." -Niveau Alerte

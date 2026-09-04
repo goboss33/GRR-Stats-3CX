@@ -621,7 +621,7 @@ function Read-Texte {
                 $valeur = $null
                 if (-not $script:Ui.Avertissements.ContainsKey('champ')) {
                     $script:Ui.Avertissements['champ'] = $true
-                    Write-Host "  (champ de saisie simplifié : $(Get-MessageErreur $_))" -ForegroundColor DarkYellow
+                    Add-Ligne "[yellow]!  Champ de saisie indisponible ($(Protect-Texte (Get-MessageErreur $_))) — saisie simple.[/]"
                 }
             }
         }
@@ -710,12 +710,14 @@ function Read-Liste {
         [string] $Aide = '',
         [switch] $Multiple,
         [switch] $SansAnnulation,
-        [int[]] $Coches = @()          # index déjà cochés à l'ouverture (sélection multiple)
+        [int[]] $Precoches = @()       # index déjà cochés à l'ouverture (sélection multiple)
     )
     $largeur = Get-Colonne
     $marge = Get-Marge
+    # PowerShell ne distingue pas les majuscules : un paramètre $Coches et une
+    # variable $coches sont la même chose. D'où le nom distinct du paramètre.
     $coches = @{}
-    foreach ($c in $Coches) { if ($c -ge 0 -and $c -lt $Textes.Count) { $coches[$c] = $true } }
+    foreach ($c in $Precoches) { if ($c -ge 0 -and $c -lt $Textes.Count) { $coches[$c] = $true } }
     $filtre = ''
     $curseur = 0
     $sommet = 0
@@ -842,12 +844,13 @@ function Read-Choix {
 
     $indices = $null
     if (Test-ConsolePilotable) {
-        try { $indices = @(Read-Liste -Question $Titre -Textes $textes -Aide $Aide -Multiple:$Multiple -SansAnnulation:$SansAnnulation -Coches $IndicesCoches) }
+        try { $indices = @(Read-Liste -Question $Titre -Textes $textes -Aide $Aide -Multiple:$Multiple -SansAnnulation:$SansAnnulation -Precoches $IndicesCoches) }
         catch {
             $indices = $null
+            # L'avertissement rejoint le contenu de l'étape : il survit au redessin, on le voit.
             if (-not $script:Ui.Avertissements.ContainsKey('sélection')) {
                 $script:Ui.Avertissements['sélection'] = $true
-                Write-Host "  (sélecteur simplifié : $(Get-MessageErreur $_))" -ForegroundColor DarkYellow
+                Add-Ligne "[yellow]!  Sélecteur au clavier indisponible ($(Protect-Texte (Get-MessageErreur $_))) — menu numéroté.[/]"
             }
         }
     }
@@ -1382,13 +1385,6 @@ function New-AdresseLibre {
         if (-not (Find-AdParAdresse -Adresse $essai -Ad $Ad)) { return $essai }
     }
     return ''
-}
-
-function Get-AdCollegues {
-    <# Les comptes actifs sous une OU (le site), pour choisir un modèle de groupes. #>
-    param([Parameter(Mandatory)] [string] $Ou, [Parameter(Mandatory)] [hashtable] $Ad)
-    return @(Get-ADUser -SearchBase $Ou -SearchScope Subtree -Filter 'Enabled -eq $true' -Properties Title, Department @Ad |
-        Sort-Object Name | Select-Object Name, SamAccountName, Title, Department)
 }
 
 function Get-AdGroupesDe {
