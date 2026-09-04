@@ -339,7 +339,7 @@ function Initialize-Ecran {
     param(
         [Parameter(Mandatory)] [string] $Mot,          # SORTIE | ENTRÉE — le grand titre
         [Parameter(Mandatory)] [string] $Titre,        # « Sortie d'un collaborateur »
-        [Parameter(Mandatory)] [string[]] $Etapes,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Etapes,
         [bool] $Actif = $true
     )
     $script:Ecran.Mot = $Mot
@@ -1392,17 +1392,35 @@ function Get-AdGroupesDe {
       Les groupes d'un compte : nom lisible et DN — c'est le DN qu'on donne à
       Add-ADGroupMember, le nom affiché pouvant différer du sAMAccountName.
 
-      Deux chemins, parce qu'un seul ne suffit pas toujours : l'attribut
-      MemberOf du compte, puis, s'il ne rend rien, Get-ADPrincipalGroupMembership,
-      qui interroge l'annuaire autrement. Le groupe principal (« Utilisateurs
-      du domaine ») n'apparaît dans aucun des deux et n'a pas à être recopié.
+      TROIS chemins, du plus direct au plus sûr, parce qu'aucun ne marche
+      partout : l'attribut MemberOf du compte ; puis
+      Get-ADPrincipalGroupMembership ; puis la recherche des groupes qui
+      citent ce compte (`member`), qui lit le lien à l'endroit, et non le
+      lien retour — le seul chemin qui ne dépend pas des attributs du compte.
+      Le groupe principal (« Utilisateurs du domaine ») est écarté : tout
+      compte l'a déjà, le recopier n'a pas de sens.
     #>
     param([Parameter(Mandatory)] [string] $Sam, [Parameter(Mandatory)] [hashtable] $Ad)
     $dns = @()
-    try { $dns = @((Get-ADUser -Identity $Sam -Properties MemberOf @Ad).MemberOf) } catch { $dns = @() }
+    $principal = ''
+    $compte = $null
+    try { $compte = Get-ADUser -Identity $Sam -Properties MemberOf, PrimaryGroup, DistinguishedName @Ad } catch { }
+    if ($compte) {
+        $dns = @($compte.MemberOf)
+        $principal = "$(Get-Prop -Objet $compte -Nom 'PrimaryGroup' -Defaut '')"
+    }
     if ($dns.Count -eq 0) {
         try { $dns = @(Get-ADPrincipalGroupMembership -Identity $Sam @Ad | Select-Object -ExpandProperty DistinguishedName) } catch { $dns = @() }
     }
+    if ($dns.Count -le 1 -and $compte) {
+        # Le lien à l'endroit : on demande aux groupes qui ils contiennent.
+        try {
+            $dnCompte = "$($compte.DistinguishedName)" -replace '\\', '\5c' -replace '\(', '\28' -replace '\)', '\29' -replace '\*', '\2a'
+            $parGroupe = @(Get-ADGroup -LDAPFilter "(member=$dnCompte)" @Ad | Select-Object -ExpandProperty DistinguishedName)
+            if ($parGroupe.Count -gt $dns.Count) { $dns = $parGroupe }
+        } catch { }
+    }
+    if ($principal) { $dns = @($dns | Where-Object { "$_" -ne $principal }) }
     return @($dns | Where-Object { $_ } | ForEach-Object {
         $nom = ([regex]::Match("$_", '^CN=((?:\\,|[^,])+)').Groups[1].Value) -replace '\\,', ','
         if (-not $nom) { $nom = "$_" }

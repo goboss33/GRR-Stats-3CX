@@ -4,11 +4,12 @@
 
     Quand la recherche d'un compte ou la lecture de ses groupes ne donne pas
     ce qu'on attend, ce script montre exactement ce que l'Active Directory
-    répond, sans passer par les écrans : le compte brut, l'état, les groupes
-    par les deux chemins que le module utilise.
+    répond, sans passer par les écrans : le compte trouvé et son emplacement,
+    les propriétés réellement rendues, et les trois chemins de lecture des
+    groupes.
 
-        .\Test-Annuaire.ps1 parsa
-        .\Test-Annuaire.ps1 pfirouzabadi -Societe GEROFINANCE
+        .\Test-Annuaire.ps1 gbossens
+        .\Test-Annuaire.ps1 parsa -Societe GEROFINANCE
 
     Collez la sortie telle quelle : elle suffit à trancher.
 #>
@@ -20,53 +21,67 @@ param(
 
 Import-Module (Join-Path $PSScriptRoot 'Collaborateurs.psm1') -Force
 Initialize-Collaborateurs -Reglages @{ ModeTest = $true; DestinataireTest = ''; Simulation = $true; EnvoyerMail = $false; DossierLogs = (Join-Path $env:TEMP 'collaborateurs-sonde') } `
-    -Dossier $PSScriptRoot -Operation 'entree' -Etapes @() -Interactif $false | Out-Null
+    -Dossier $PSScriptRoot -Operation 'entree' -Etapes @('Sonde') -Interactif $false | Out-Null
 
 $soc = Get-Societe -Id $Societe
 $ad = Connect-Domaine -Societe $soc
 Write-Host ''
-Write-Host "Société $($soc.id) · contrôleur $($soc.dc) · identifiants $(if ($ad.ContainsKey('Credential')) { $ad.Credential.UserName } else { 'session courante' })" -ForegroundColor Cyan
+Write-Host "Société $($soc.id) · contrôleur $($soc.dc) · compte $(if ($ad.ContainsKey('Credential')) { $ad.Credential.UserName } else { "$env:USERDOMAIN\$env:USERNAME (session courante)" })" -ForegroundColor Cyan
 Write-Host ''
 
-# 1. Ce que la recherche du module rend
+# ------------------------------------------------------------------ 1
 Write-Host "1. Find-AdUtilisateur « $Recherche »" -ForegroundColor Yellow
 $trouves = @(Find-AdUtilisateur -Recherche $Recherche -Ad $ad)
 Write-Host "   $($trouves.Count) résultat(s)"
-$trouves | Select-Object Name, SamAccountName, @{ n = 'Enabled'; e = { if ($null -eq $_.Enabled) { '(absent)' } else { $_.Enabled } } }, Title, Department |
-    Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+foreach ($u in $trouves) {
+    Write-Host "     $($u.Name)  ·  $($u.SamAccountName)  ·  Enabled=$(if ($null -eq $u.Enabled) { '(absent)' } else { $u.Enabled })"
+    Write-Host "        $($u.DistinguishedName)" -ForegroundColor DarkGray
+}
 if ($trouves.Count -eq 0) { Write-Host '   Rien trouvé : arrêt de la sonde.' -ForegroundColor Red; exit }
-
-$cible = $trouves[0]
-Write-Host "2. Le compte brut, tel que Get-ADUser le rend : $($cible.SamAccountName)" -ForegroundColor Yellow
-$brut = Get-ADUser -Identity $cible.SamAccountName -Properties Enabled, MemberOf, PrimaryGroup, mail, Title, Department @ad
-Write-Host "   Enabled            : $(if ($null -eq $brut.Enabled) { '(propriété absente)' } else { $brut.Enabled })  [type $(if ($null -eq $brut.Enabled) { 'néant' } else { $brut.Enabled.GetType().Name })]"
-Write-Host "   UserAccountControl : $((Get-ADUser -Identity $cible.SamAccountName -Properties userAccountControl @ad).userAccountControl)  (2 = désactivé)"
-Write-Host "   MemberOf           : $(@($brut.MemberOf).Count) entrée(s)"
-Write-Host "   PrimaryGroup       : $(Get-Prop -Objet $brut -Nom 'PrimaryGroup' -Defaut '(absent)')"
+$sam = $trouves[0].SamAccountName
 Write-Host ''
 
-Write-Host '3. Les deux chemins de lecture des groupes' -ForegroundColor Yellow
-$viaMemberOf = @($brut.MemberOf)
-Write-Host "   a) attribut MemberOf                 : $($viaMemberOf.Count)"
-foreach ($dn in $viaMemberOf) { Write-Host "        $dn" }
-$viaPrincipal = @()
-try { $viaPrincipal = @(Get-ADPrincipalGroupMembership -Identity $cible.SamAccountName @ad | Select-Object -ExpandProperty DistinguishedName) }
-catch { Write-Host "   b) Get-ADPrincipalGroupMembership     : ÉCHEC — $(Get-MessageErreur $_)" -ForegroundColor Red }
-if ($viaPrincipal.Count -gt 0 -or $viaMemberOf.Count -eq 0) {
-    Write-Host "   b) Get-ADPrincipalGroupMembership     : $($viaPrincipal.Count)"
-    foreach ($dn in $viaPrincipal) { Write-Host "        $dn" }
+# ------------------------------------------------------------------ 2
+Write-Host "2. Get-ADUser -Identity $sam : ce que l'annuaire rend VRAIMENT" -ForegroundColor Yellow
+$brut = Get-ADUser -Identity $sam -Properties * @ad
+Write-Host "   Emplacement        : $($brut.DistinguishedName)"
+Write-Host "   Propriétés rendues : $(@($brut.PSObject.Properties).Count)"
+foreach ($nom in @('Enabled', 'userAccountControl', 'MemberOf', 'PrimaryGroup', 'primaryGroupID', 'whenChanged', 'Modified')) {
+    $prop = $brut.PSObject.Properties[$nom]
+    if (-not $prop) { Write-Host "   $($nom.PadRight(18)) : PROPRIÉTÉ ABSENTE de la réponse" -ForegroundColor Red; continue }
+    $v = $prop.Value
+    $affichage = if ($null -eq $v) { '(nulle)' } elseif ($v -is [array] -or $v.GetType().Name -like '*Collection*') { "$(@($v).Count) entrée(s)" } else { "$v" }
+    Write-Host "   $($nom.PadRight(18)) : $affichage"
 }
 Write-Host ''
 
+# ------------------------------------------------------------------ 3
+Write-Host '3. Les trois chemins de lecture des groupes' -ForegroundColor Yellow
+$a = @(); $b = @(); $c = @()
+try { $a = @((Get-ADUser -Identity $sam -Properties MemberOf @ad).MemberOf) } catch { Write-Host "   a) ÉCHEC : $(Get-MessageErreur $_)" -ForegroundColor Red }
+Write-Host "   a) attribut MemberOf du compte        : $($a.Count)"
+try { $b = @(Get-ADPrincipalGroupMembership -Identity $sam @ad | Select-Object -ExpandProperty DistinguishedName) } catch { Write-Host "   b) ÉCHEC : $(Get-MessageErreur $_)" -ForegroundColor Red }
+Write-Host "   b) Get-ADPrincipalGroupMembership     : $($b.Count)"
+try {
+    $dnFiltre = "$($brut.DistinguishedName)" -replace '\\', '\5c' -replace '\(', '\28' -replace '\)', '\29' -replace '\*', '\2a'
+    $c = @(Get-ADGroup -LDAPFilter "(member=$dnFiltre)" @ad | Select-Object -ExpandProperty DistinguishedName)
+} catch { Write-Host "   c) ÉCHEC : $(Get-MessageErreur $_)" -ForegroundColor Red }
+Write-Host "   c) groupes citant ce compte (member=) : $($c.Count)   <-- lit le lien à l'endroit"
+$toutes = @($a + $b + $c | Where-Object { $_ } | Sort-Object -Unique)
+Write-Host "   union des trois : $($toutes.Count)"
+foreach ($dn in $toutes) { Write-Host "     $dn" -ForegroundColor DarkGray }
+Write-Host ''
+
+# ------------------------------------------------------------------ 4
 Write-Host '4. Ce que le module en tire (Get-AdGroupesDe)' -ForegroundColor Yellow
-$groupes = @(Get-AdGroupesDe -Sam $cible.SamAccountName -Ad $ad)
+$groupes = @(Get-AdGroupesDe -Sam $sam -Ad $ad)
 Write-Host "   $($groupes.Count) groupe(s)"
 foreach ($g in $groupes) { Write-Host "     $($g.Nom)" }
 Write-Host ''
 
+# ------------------------------------------------------------------ 5
 Write-Host "5. Groupes donnés d'office à tout nouveau compte de $($soc.id) (config.json → groupesAuto)" -ForegroundColor Yellow
 Write-Host "   $(if ($soc.groupesAuto) { $soc.groupesAuto -join ' ; ' } else { '(aucun)' })"
-$reste = @($groupes | Where-Object { $soc.groupesAuto -notcontains $_.Nom })
-Write-Host "   Reprenables après exclusion : $($reste.Count)"
+Write-Host "   Reprenables après exclusion : $(@($groupes | Where-Object { $soc.groupesAuto -notcontains $_.Nom }).Count)"
 Write-Host ''
 try { Stop-Transcript | Out-Null } catch { }
