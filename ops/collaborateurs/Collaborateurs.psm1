@@ -41,7 +41,7 @@ $script:Etapes      = New-Object System.Collections.ArrayList   # la checklist
 $script:Credentials = @{}                                        # domaine -> PSCredential (une saisie par session)
 $script:Xapi        = @{}                                        # clé PBX -> jeton + expiration
 $script:Session     = @{ Operateur = $env:USERNAME; Debut = Get-Date; Transcription = $null }
-$script:Ui          = @{ Spectre = $false; Tampon = $null; Statut = $null; Resultat = $null; Params = @{}; Avertissements = @{}; Accent = '#8ccaae'; Ombre = '#085440'; Ligne = 'grey27' }
+$script:Ui          = @{ Spectre = $false; Tampon = $null; Statut = $null; Resultat = $null; Params = @{}; Avertissements = @{}; Accent = '#8ccaae'; Ombre = '#085440'; Ligne = 'grey27'; Succes = 'green' }
 
 $script:Categories  = @('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')
 
@@ -142,7 +142,7 @@ function Initialize-Interface {
     # Couleurs de la charte Gérofinance (le dégradé du site : #085440 → #8ccaae),
     # surchargeables dans config.json → interface.
     $reglagesUi = Get-Prop -Objet $script:Config -Nom 'interface'
-    foreach ($cle in @('Accent', 'Ombre', 'Ligne')) {
+    foreach ($cle in @('Accent', 'Ombre', 'Ligne', 'Succes')) {
         $valeur = "$(Get-Prop -Objet $reglagesUi -Nom $cle.ToLower() -Defaut '')"
         if ($valeur -match '^(#[0-9a-fA-F]{6}|[a-z][a-z0-9_]*)$') { $script:Ui[$cle] = $valeur }
     }
@@ -356,7 +356,7 @@ function Show-EnTete {
     $culture = [Globalization.CultureInfo]::GetCultureInfo('fr-CH')
     $quand = (Get-Date).ToString('dddd d MMMM yyyy, HH:mm', $culture)
     $modes = @()
-    if ($r.Simulation) { $modes += @{ Point = $script:Ui.Accent; Nom = 'SIMULATION'; Texte = 'rien ne sera écrit, chaque geste est décrit'; Console = 'Green' } }
+    if ($r.Simulation) { $modes += @{ Point = $script:Ui.Succes; Nom = 'SIMULATION'; Texte = 'rien ne sera écrit, chaque geste est décrit'; Console = 'Green' } }
     else               { $modes += @{ Point = 'red';   Nom = 'RÉEL';       Texte = 'les actions seront exécutées';               Console = 'Red' } }
     if ($r.ModeTest)   { $modes += @{ Point = 'grey62'; Nom = 'MODE TEST'; Texte = "rapport vers $($r.DestinataireTest), pas de tâche Planner"; Console = 'Cyan' } }
     Invoke-Rendu -Composant 'en-tête' -Spectre {
@@ -406,7 +406,7 @@ function Show-Section {
 function Show-Note {
     <# Une ligne d'information hors journal. Niveau : Info | Sourdine | Succes | Alerte | Erreur #>
     param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Texte, [ValidateSet('Info', 'Sourdine', 'Succes', 'Alerte', 'Erreur')] [string] $Niveau = 'Info')
-    $couleurSpectre = switch ($Niveau) { 'Sourdine' { 'grey50' } 'Succes' { $script:Ui.Accent } 'Alerte' { 'yellow' } 'Erreur' { 'red' } default { 'grey85' } }
+    $couleurSpectre = switch ($Niveau) { 'Sourdine' { 'grey50' } 'Succes' { $script:Ui.Succes } 'Alerte' { 'yellow' } 'Erreur' { 'red' } default { 'grey85' } }
     $couleurConsole = switch ($Niveau) { 'Sourdine' { 'DarkGray' } 'Succes' { 'Green' } 'Alerte' { 'Yellow' } 'Erreur' { 'Red' } default { 'Gray' } }
     $puce = switch ($Niveau) { 'Succes' { '✓ ' } 'Alerte' { '! ' } 'Erreur' { '✗ ' } default { '' } }
     Invoke-Rendu -Composant 'note' -Spectre { Write-SpectreHost "  [$couleurSpectre]$puce$(Protect-Texte $Texte)[/]" } -Repli { Write-Host "  $Texte" -ForegroundColor $couleurConsole }
@@ -697,7 +697,7 @@ function Write-LigneJournal {
     Invoke-Rendu -Composant 'journal' -Spectre {
         $a = $script:Ui.Accent
         switch ($Ligne.Niveau) {
-            'Succes' { Write-SpectreHost "      [$a]·[/] [grey85]$(Protect-Texte $texte)[/]" }
+            'Succes' { Write-SpectreHost "      [$($script:Ui.Succes)]·[/] [grey85]$(Protect-Texte $texte)[/]" }
             'Alerte' { Write-SpectreHost "      [yellow]![/] [yellow]$(Protect-Texte $texte)[/]" }
             'Erreur' { Write-SpectreHost "      [red]✗[/] [red]$(Protect-Texte $texte)[/]" }
             'Simule' { Write-SpectreHost "      [$a]▸[/] [grey62]$(Protect-Texte ($texte -replace '^SIMULATION : ', ''))[/]" }
@@ -732,7 +732,7 @@ function Write-LigneEtape {
     $droite = if ($Etape.Etat -eq 'ignoree') { 'ignorée' } else { "$($Etape.Duree) s$Suffixe" }
     $espace = [Math]::Max(2, $largeur - 4 - $nom.Length - $droite.Length)
     Invoke-Rendu -Composant 'étape' -Spectre {
-        $coche = switch ($Etape.Etat) { 'ok' { "[$($script:Ui.Accent)]✓[/]" } 'echec' { '[red]✗[/]' } default { '[grey35]○[/]' } }
+        $coche = switch ($Etape.Etat) { 'ok' { "[$($script:Ui.Succes)]✓[/]" } 'echec' { '[red]✗[/]' } default { '[grey35]○[/]' } }
         $texte = if ($Etape.Etat -eq 'ignoree') { "[grey35]$(Protect-Texte $nom)[/]" } else { "[white]$(Protect-Texte $nom)[/]" }
         Write-SpectreHost "  $coche $texte$(' ' * $espace)[grey50]$(Protect-Texte $droite)[/]"
     } -Repli {
@@ -796,7 +796,7 @@ function Show-Checklist {
     $ig = @($script:Etapes | Where-Object { $_.Etat -eq 'ignoree' }).Count
     Show-Section 'Bilan'
     Invoke-Rendu -Composant 'bilan' -Spectre {
-        $parts = @("[bold $($script:Ui.Accent)]$ok réussie$(if ($ok -gt 1) { 's' })[/]")
+        $parts = @("[bold $($script:Ui.Succes)]$ok réussie$(if ($ok -gt 1) { 's' })[/]")
         if ($ko -gt 0) { $parts += "[bold red]$ko en échec[/]" } else { $parts += "[grey50]0 en échec[/]" }
         $parts += "[grey50]$ig ignorée$(if ($ig -gt 1) { 's' })[/]"
         if (Test-Simulation) { $parts += "[$($script:Ui.Accent)]simulation — rien n'a été écrit[/]" }

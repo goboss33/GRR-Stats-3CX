@@ -9,10 +9,11 @@
   },
 
   "interface": {
-    "_commentaire": "Couleurs du terminal, reprises du dégradé de la charte Gérofinance (gerofinance.ch : linear-gradient #085440 → #8ccaae). accent = titre, questions, pointeur, coches ; ombre = ombre portée du titre ; ligne = bordures discrètes. Hexadécimal #rrggbb ou nom de couleur Spectre.",
+    "_commentaire": "Couleurs du terminal. accent et ombre viennent du dégradé de la charte Gérofinance (gerofinance.ch : linear-gradient #085440 → #8ccaae) : accent = titre, questions, pointeur, bordure d'accueil ; ombre = ombre portée du titre. ligne = bordures discrètes. succes = les verdicts (coches, pastille du mode, puces) — un vert franc, distinct du vert de la charte. Hexadécimal #rrggbb ou nom de couleur Spectre.",
     "accent": "#8ccaae",
     "ombre": "#085440",
-    "ligne": "grey27"
+    "ligne": "grey27",
+    "succes": "green"
   },
 
   "adConnect": {
