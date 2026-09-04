@@ -58,6 +58,13 @@ if ($SansAdConnect) { $Reglages.SynchroniserAdConnect = $false }
 # ---------------------------------------------------------------------------
 
 Import-Module (Join-Path $PSScriptRoot 'Collaborateurs.psm1') -Force
+
+# Un échec non rattrapé se présente comme le reste de l'interface, puis on
+# ferme proprement — plutôt qu'une pile d'exception au milieu d'un encadré.
+trap {
+    Show-Erreur -Message (Get-MessageErreur $_)
+    Stop-Script -Code 1
+}
 $etapes = @('Le collaborateur', 'Vérifications', 'Confirmation', 'Exécution')
 Initialize-Collaborateurs -Reglages $Reglages -Dossier $PSScriptRoot -Operation 'entree' -Etapes $etapes -Interactif (-not $Job)
 $config = Get-Config
@@ -109,10 +116,22 @@ while ($true) {
     if (-not $existant) { break }
     Show-Note "L'identifiant $($dossier.Sam) est déjà utilisé par $($existant.Name)." -Niveau Alerte
     if ($Job) { throw "Identifiant déjà pris : $($dossier.Sam)" }
-    $dossier.Sam = Read-Texte -Invite 'Identifiant alternatif' -Obligatoire -QuitteSurQ
+    $dossier.Sam = Read-Texte -Invite 'Identifiant à utiliser' -Defaut (New-IdentifiantLibre -Prenom $dossier.Prenom -Nom $dossier.Nom -Ad $ad) -Obligatoire -QuitteSurQ
 }
-$doublonUpn = Get-ADUser -Filter "UserPrincipalName -eq '$($dossier.Email)'" @ad -ErrorAction SilentlyContinue
-if ($doublonUpn) { throw "L'adresse $($dossier.Email) existe déjà dans l'AD ($($doublonUpn.Name))." }
+
+# L'adresse se traite comme l'identifiant : un homonyme ne doit pas arrêter le
+# script, il doit demander quelle adresse prendre — et en proposer une libre.
+while ($true) {
+    $occupant = Find-AdParAdresse -Adresse $dossier.Email -Ad $ad
+    if (-not $occupant) { break }
+    Show-Note "L'adresse $($dossier.Email) est déjà portée par $($occupant.Name)." -Niveau Alerte
+    if ($Job) { throw "Adresse déjà prise : $($dossier.Email)" }
+    $proposition = New-AdresseLibre -Base $ids.MailNickname -Domaine $dossier.Societe.domaineMail -Ad $ad
+    $saisie = Read-Texte -Invite 'Adresse e-mail à utiliser' -Defaut $proposition -Aide 'le domaine est ajouté si vous ne le mettez pas' -Obligatoire -QuitteSurQ
+    if ($saisie -notlike '*@*') { $saisie = "$saisie$($dossier.Societe.domaineMail)" }
+    $dossier.Email = $saisie
+    $dossier.MailNickname = ($saisie -split '@')[0]
+}
 Show-Constat -Titre "Identifiant et adresse libres dans l'Active Directory" -Valeurs @($dossier.Sam, $dossier.Email)
 
 if ($pbx) {

@@ -62,6 +62,13 @@ if ($SansScanDelegations) { $Reglages.ScanDelegations = $false }
 # ---------------------------------------------------------------------------
 
 Import-Module (Join-Path $PSScriptRoot 'Collaborateurs.psm1') -Force
+
+# Un échec non rattrapé se présente comme le reste de l'interface, puis on
+# ferme proprement — plutôt qu'une pile d'exception au milieu d'un encadré.
+trap {
+    Show-Erreur -Message (Get-MessageErreur $_)
+    Stop-Script -Code 1
+}
 $etapes = @('Le collaborateur', 'Messagerie', 'Connexions', 'Confirmation', 'Exécution')
 Initialize-Collaborateurs -Reglages $Reglages -Dossier $PSScriptRoot -Operation 'sortie' -Etapes $etapes -Interactif (-not $Job)
 $config = Get-Config

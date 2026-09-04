@@ -932,12 +932,24 @@ function Update-Statut {
     if ($Pourcent -ge 0) { Write-Progress -Activity $Texte -PercentComplete $Pourcent } else { Write-Progress -Activity $Texte }
 }
 
+function Show-Erreur {
+    <# Un échec qui arrête tout : encadré rouge, à la marge, lisible. #>
+    param([Parameter(Mandatory)] [string] $Message)
+    Write-Vide 2
+    $lignes = @('')
+    foreach ($l in (Format-Ajuste -Texte $Message -Largeur ((Get-Colonne) - 6))) { $lignes += "[red]$(Protect-Texte $l)[/]" }
+    $lignes += ''
+    foreach ($l in (New-Encadre -Titre '[bold red] Arrêt [/]' -Lignes $lignes -Couleur 'red')) { Write-Ligne $l }
+    Write-Vide
+}
+
 function Stop-Script {
+    param([int] $Code = 0)
     Write-Vide
     Write-Ligne '[grey50]Fermeture du script.[/]'
     Disconnect-M365
     try { Stop-Transcript | Out-Null } catch { }
-    exit
+    exit $Code
 }
 
 # ====================================================================
@@ -1311,6 +1323,48 @@ function Find-AdDestinataire {
         }
     } catch { }
     return @($liste | Sort-Object Type, Nom)
+}
+
+function Find-AdParAdresse {
+    <#
+      Qui porte déjà cette adresse ? On regarde l'UPN, l'attribut mail ET les
+      alias (proxyAddresses) : une adresse peut être libre en UPN et déjà prise
+      en alias, et Exchange refusera quand même.
+    #>
+    param([Parameter(Mandatory)] [string] $Adresse, [Parameter(Mandatory)] [hashtable] $Ad)
+    $a = $Adresse.Replace("'", "''")
+    $filtre = "UserPrincipalName -eq '$a' -or mail -eq '$a' -or proxyAddresses -like '*:$a'"
+    return @(Get-ADUser -Filter $filtre -Properties mail, proxyAddresses @Ad -ErrorAction SilentlyContinue | Select-Object -First 1)[0]
+}
+
+function New-IdentifiantLibre {
+    <#
+      Une proposition d'identifiant pour un homonyme : d'abord la pratique
+      maison (deux, puis trois lettres du prénom + le nom), ensuite un chiffre.
+      Le sAMAccountName ne dépasse pas 20 caractères.
+    #>
+    param([Parameter(Mandatory)] [string] $Prenom, [Parameter(Mandatory)] [string] $Nom, [Parameter(Mandatory)] [hashtable] $Ad)
+    $p = (Remove-Accents $Prenom).ToLower() -replace '\s+', ''
+    $n = (Remove-Accents $Nom).ToLower() -replace '\s+', ''
+    if (-not $p -or -not $n) { return '' }
+    $candidats = @()
+    for ($k = 2; $k -le [Math]::Min(4, $p.Length); $k++) { $candidats += $p.Substring(0, $k) + $n }
+    for ($i = 2; $i -le 9; $i++) { $candidats += $p.Substring(0, 1) + $n + $i }
+    foreach ($c in $candidats) {
+        if ($c.Length -gt 20) { continue }
+        if (-not (Get-ADUser -Filter "SamAccountName -eq '$c'" @Ad -ErrorAction SilentlyContinue)) { return $c }
+    }
+    return ''
+}
+
+function New-AdresseLibre {
+    <# Une proposition d'adresse qui ne heurte personne : la base, puis 2, 3, 4… #>
+    param([Parameter(Mandatory)] [string] $Base, [Parameter(Mandatory)] [string] $Domaine, [Parameter(Mandatory)] [hashtable] $Ad)
+    for ($i = 2; $i -le 20; $i++) {
+        $essai = "$Base$i$Domaine"
+        if (-not (Find-AdParAdresse -Adresse $essai -Ad $Ad)) { return $essai }
+    }
+    return ''
 }
 
 function Wait-AdUtilisateur {
