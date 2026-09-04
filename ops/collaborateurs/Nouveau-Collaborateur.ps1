@@ -142,12 +142,13 @@ Show-Constat -Titre "Identifiant et adresse libres dans l'Active Directory" -Val
 #     « sensibles » (config entree.groupesSensibles) sont proposés décochés.
 $sensibles = @(Get-Prop -Objet (Get-Prop -Objet $config -Nom 'entree') -Nom 'groupesSensibles' -Defaut @())
 function Get-GroupesReprenables {
+    <# Les groupes du modèle, moins ceux que la société donne déjà. Les groupes sensibles sont marqués, pas retirés. #>
     param([Parameter(Mandatory)] [string] $Sam)
     $liste = @(Get-AdGroupesDe -Sam $Sam -Ad $ad | Where-Object { $soc.groupesAuto -notcontains $_.Nom })
     return @($liste | ForEach-Object {
         $nom = $_.Nom
         $sensible = @($sensibles | Where-Object { $nom -like $_ }).Count -gt 0
-        [pscustomobject]@{ Nom = $_.Nom; DN = $_.DN; Note = $(if ($sensible) { 'sensible — décoché' } else { '' }) }
+        [pscustomobject]@{ Nom = $_.Nom; DN = $_.DN; Note = $(if ($sensible) { 'sensible' } else { '' }) }
     })
 }
 if ($Job) {
@@ -158,22 +159,26 @@ if ($Job) {
         $dossier.GroupesRepris = @(Get-GroupesReprenables -Sam $modeleSam | Where-Object { -not $_.Note })
     }
 } elseif (Confirm-Choix -Question "Reprendre les groupes d'un ou d'une collègue ?" -DefautOui) {
-    # Un champ de recherche, comme pour la redirection : on tape un nom, on choisit.
+    # Le même champ de recherche que pour la redirection des mails, à l'identique.
     $modele = $null
     do {
         $recherche = Read-Texte -Invite 'Sur le modèle de qui ?' -Aide 'nom, prénom ou identifiant — q pour quitter' -Obligatoire -QuitteSurQ
-        $trouves = @(Invoke-Attente -Titre "Recherche de « $recherche » dans l'Active Directory" -Action { @(Find-AdUtilisateur -Recherche $recherche -Ad $ad | Where-Object { $_.Enabled }) })
-        if ($trouves.Count -eq 0) { Show-Note 'Aucun compte actif ne correspond.' -Niveau Alerte; continue }
-        $modele = Read-Choix -Titre "Quel compte ? ($($trouves.Count) trouvé$(if ($trouves.Count -gt 1) { 's' }))" -Elements $trouves -Colonnes Name, SamAccountName, Title, Department
+        $trouves = @(Invoke-Attente -Titre "Recherche de « $recherche » dans l'Active Directory" -Action {
+            @(Find-AdUtilisateur -Recherche $recherche -Ad $ad | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled) { '' } else { 'désactivé' } } })
+        })
+        # Le terme cherché est répété : si la recherche ne donne rien, on voit sur quoi elle a porté.
+        if ($trouves.Count -eq 0) { Show-Note "Aucun compte ne correspond à « $recherche »." -Niveau Alerte; continue }
+        $modele = Read-Choix -Titre "Quel compte ? ($($trouves.Count) trouvé$(if ($trouves.Count -gt 1) { 's' }))" -Elements $trouves -Colonnes Name, SamAccountName, Title, Department, Etat
     } while (-not $modele)
     $reprenables = @(Invoke-Attente -Titre "Lecture des groupes de $($modele.Name)" -Action { @(Get-GroupesReprenables -Sam $modele.SamAccountName) })
     if ($reprenables.Count -eq 0) {
         Show-Note "$($modele.Name) n'a aucun groupe à reprendre en plus des groupes automatiques." -Niveau Alerte
     } else {
-        $coches = @(); for ($i = 0; $i -lt $reprenables.Count; $i++) { if (-not $reprenables[$i].Note) { $coches += $i } }
+        # Tout est coché d'avance : le cas courant est de tout reprendre, on décoche l'exception.
+        $tous = @(0..($reprenables.Count - 1))
         $dossier.Modele = $modele.Name
-        $dossier.GroupesRepris = @(Read-Choix -Titre "Quels groupes reprendre de $($modele.Name) ? ($($reprenables.Count))" -Elements $reprenables -Colonnes Nom, Note -Multiple -IndicesCoches $coches)
-        Show-Constat -Titre "$($dossier.GroupesRepris.Count) groupe(s) repris de $($modele.Name)" -Niveau Info
+        $dossier.GroupesRepris = @(Read-Choix -Titre "Quels groupes reprendre de $($modele.Name) ?" -Aide 'tout est coché — décochez ce qui ne doit pas suivre' -Elements $reprenables -Colonnes Nom, Note -Multiple -IndicesCoches $tous)
+        Show-Constat -Titre "$($dossier.GroupesRepris.Count) groupe(s) sur $($reprenables.Count) repris de $($modele.Name)" -Niveau Info
         Add-Resume -Cle 'Groupes' -Valeur "$($dossier.GroupesRepris.Count) de $($modele.Name)"
     }
 }
