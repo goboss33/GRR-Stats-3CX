@@ -13,7 +13,8 @@
     "accent": "#8ccaae",
     "ombre": "#085440",
     "ligne": "grey27",
-    "succes": "green"
+    "succes": "green",
+    "champ": "#17211f"
   },
 
   "adConnect": {

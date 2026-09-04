@@ -75,7 +75,9 @@ Quand l'exécution commence, l'en-tête se cale en haut et le script bascule en 
 
 En mode `-Job`, aucun effacement : le script écrit un journal linéaire, lisible dans un fichier de sortie.
 
-Les listes se parcourent aux flèches et se filtrent en tapant ; les colonnes sont alignées. La console classique de Windows suffit ; **Windows Terminal** rend mieux les caractères et les couleurs.
+**Les invites sont dessinées par le module**, pas par Spectre : lui pose ses listes et ses saisies au bord gauche de la console, ce qui casserait le centrage. Les listes se parcourent aux flèches, se filtrent en tapant, se valident par Entrée et s'annulent par Échap ; la ligne courante porte un fond légèrement plus clair. Les saisies libres s'écrivent dans un champ encadré **sous** la question, au même fond. Si la console ne se pilote pas — entrée redirigée, sortie capturée — tout retombe sur un menu numéroté et `Read-Host`, sans rien casser.
+
+La console classique de Windows suffit ; **Windows Terminal** rend mieux les caractères et les couleurs.
 
 ## La simulation ne peut pas écrire
 

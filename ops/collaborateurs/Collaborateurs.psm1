@@ -41,7 +41,7 @@ $script:Etapes      = New-Object System.Collections.ArrayList   # la checklist
 $script:Credentials = @{}                                        # domaine -> PSCredential (une saisie par session)
 $script:Xapi        = @{}                                        # clé PBX -> jeton + expiration
 $script:Session     = @{ Operateur = $env:USERNAME; Debut = Get-Date; Transcription = $null }
-$script:Ui          = @{ Spectre = $false; Tampon = $null; Statut = $null; Resultat = $null; Params = @{}; Avertissements = @{}; Accent = '#8ccaae'; Ombre = '#085440'; Ligne = 'grey27'; Succes = 'green' }
+$script:Ui          = @{ Spectre = $false; Tampon = $null; Statut = $null; Resultat = $null; Params = @{}; Avertissements = @{}; Accent = '#8ccaae'; Ombre = '#085440'; Ligne = 'grey27'; Succes = 'green'; Champ = '#17211f' }
 $script:Ecran       = @{ Actif = $false; Flux = $false; Mot = ''; Titre = ''; Etapes = @(); Index = 0; Resume = [ordered]@{}; Lignes = @() }
 
 $script:Categories  = @('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')
@@ -153,7 +153,7 @@ function Initialize-Interface {
     # Couleurs de la charte Gérofinance (le dégradé du site : #085440 → #8ccaae),
     # surchargeables dans config.json → interface.
     $reglagesUi = Get-Prop -Objet $script:Config -Nom 'interface'
-    foreach ($cle in @('Accent', 'Ombre', 'Ligne', 'Succes')) {
+    foreach ($cle in @('Accent', 'Ombre', 'Ligne', 'Succes', 'Champ')) {
         $valeur = "$(Get-Prop -Objet $reglagesUi -Nom $cle.ToLower() -Defaut '')"
         if ($valeur -match '^(#[0-9a-fA-F]{6}|[a-z][a-z0-9_]*)$') { $script:Ui[$cle] = $valeur }
     }
@@ -246,9 +246,12 @@ function Out-Rendu {
 
 function Get-Colonne {
     <# Largeur de la colonne de contenu : la console, plafonnée pour rester lisible. #>
-    $l = 96
-    try { $l = [Math]::Min([Console]::WindowWidth - 6, 96) } catch { }
-    if ($l -lt 48) { $l = 48 }
+    $largeurFenetre = 120
+    try { $largeurFenetre = [Console]::WindowWidth } catch { }
+    $l = [Math]::Min($largeurFenetre - 6, 96)
+    # Sur une fenêtre étroite, mieux vaut serrer que déborder : une ligne plus
+    # large que la console se replie et casse le compte de lignes du sélecteur.
+    if ($l -lt 48) { $l = [Math]::Max(20, $largeurFenetre - 6) }
     return $l
 }
 
@@ -541,48 +544,102 @@ function Show-Filet {
 }
 
 # ------------------------------------------------------------- INVITES
+#
+#  Les invites sont dessinées ICI, pas par Spectre : lui pose ses listes et
+#  ses saisies au bord gauche de la console, ce qui casse le centrage. On
+#  garde la main sur la colonne, le pointeur, le fond du champ.
+#
+#  Repli automatique dès que la console ne se pilote pas (entrée redirigée,
+#  sortie capturée) : menu numéroté et Read-Host, comme avant.
+
+function Test-ConsolePilotable {
+    <# Peut-on lire les touches et déplacer le curseur ? (pas quand l'entrée est redirigée) #>
+    try { return (-not [Console]::IsInputRedirected) -and (-not [Console]::IsOutputRedirected) } catch { return $false }
+}
+
+function Get-AnsiFond {
+    <# La séquence qui pose une couleur de fond 24 bits sur ce que la console va écrire. #>
+    param([Parameter(Mandatory)] [string] $Hex)
+    if ($Hex -notmatch '^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$') { return '' }
+    $r = [Convert]::ToInt32($Matches[1], 16); $v = [Convert]::ToInt32($Matches[2], 16); $b = [Convert]::ToInt32($Matches[3], 16)
+    return "$([char]27)[48;2;$r;$v;${b}m"
+}
+function Get-AnsiFin { return "$([char]27)[0m" }
 
 function Format-Question {
-    <# « ? » en accent puis la question en gras : la même signature partout. #>
+    <# « ? » en accent puis la question en gras. #>
     param([Parameter(Mandatory)] [string] $Texte, [string] $Aide = '')
-    $q = "$(' ' * (Get-Marge))[$($script:Ui.Accent)]?[/]  [bold white]$(Protect-Texte $Texte)[/]"
+    $q = "[$($script:Ui.Accent)]?[/]  [bold white]$(Protect-Texte $Texte)[/]"
     if ($Aide) { $q += "   [grey50]$(Protect-Texte $Aide)[/]" }
     return $q
 }
 
 function Format-Champ {
-    <# Un champ déjà rempli, dans la colonne de gauche du « formulaire ». #>
+    <# Un champ déjà rempli, dans la liste des réponses de l'étape. #>
     param([Parameter(Mandatory)] [string] $Libelle, [AllowEmptyString()] [string] $Valeur)
     return "[$($script:Ui.Succes)]●[/]  [grey62]$(Protect-Texte $Libelle.PadRight(20))[/][white]$(Protect-Texte $Valeur)[/]"
 }
 
+function Write-Champ {
+    <#
+      Le champ de saisie : un cadre au fond légèrement plus clair, sous la
+      question. Rend la position (colonne, ligne) où poser le curseur.
+    #>
+    param([int] $Largeur)
+    $c = $script:Ui.Ligne
+    $fond = $script:Ui.Champ
+    Write-Ligne "[$c]╭$('─' * ($Largeur - 2))╮[/]"
+    $y = -1
+    try { $y = [Console]::CursorTop } catch { }
+    Write-Ligne "[$c]│[/][on $fond]$(' ' * ($Largeur - 2))[/][$c]│[/]"
+    Write-Ligne "[$c]╰$('─' * ($Largeur - 2))╯[/]"
+    return @{ X = (Get-Marge) + 2; Y = $y }
+}
+
 function Read-Texte {
+    <#
+      Une saisie libre. La question en haut, le champ juste en dessous,
+      aligné avec elle — pas au bout de la ligne.
+    #>
     param([Parameter(Mandatory)] [string] $Invite, [string] $Defaut = '', [switch] $Obligatoire, [switch] $QuitteSurQ, [string] $Aide = '')
+    $aide = $Aide
+    if ($Defaut) { $aide = if ($aide) { "$aide — Entrée pour « $Defaut »" } else { "Entrée pour « $Defaut »" } }
     do {
-        Show-Ecran -Reserve 3
-        $valeur = Invoke-Rendu -Valeur -Composant 'saisie' -Spectre {
-            $p = @{ AllowEmpty = (-not $Obligatoire) }
-            $p[(Get-NomInvite 'Read-SpectreText')] = Format-Question -Texte $Invite -Aide $Aide
-            if ($Defaut) { $p.DefaultAnswer = $Defaut }
-            if (Test-Param 'Read-SpectreText' 'AnswerColor') { $p.AnswerColor = 'white' }
-            "$(Read-SpectreText @p)"
-        } -Repli {
-            $affichage = "$(' ' * (Get-Marge))$Invite$(if ($Defaut) { " [$Defaut]" })"
-            "$(Read-Host $affichage)"
+        Show-Ecran -Reserve 7
+        $valeur = $null
+        if (Test-ConsolePilotable) {
+            try {
+                Write-Ligne (Format-Question -Texte $Invite -Aide $aide)
+                Write-Vide
+                $pos = Write-Champ -Largeur (Get-Colonne)
+                if ($pos.Y -lt 0) { throw 'position du curseur inconnue' }
+                [Console]::SetCursorPosition($pos.X, $pos.Y)
+                [Console]::Write((Get-AnsiFond $script:Ui.Champ))
+                try { $valeur = "$(Read-Host)" } finally { [Console]::Write((Get-AnsiFin)) }
+            } catch {
+                $valeur = $null
+                if (-not $script:Ui.Avertissements.ContainsKey('champ')) {
+                    $script:Ui.Avertissements['champ'] = $true
+                    Write-Host "  (champ de saisie simplifié : $(Get-MessageErreur $_))" -ForegroundColor DarkYellow
+                }
+            }
         }
-        if ($null -eq $valeur) { $valeur = '' }
-        $valeur = $valeur.Trim()
+        if ($null -eq $valeur) {
+            Write-Ligne (Format-Question -Texte $Invite -Aide $aide)
+            $valeur = "$(Read-Host "$(' ' * (Get-Marge))›")"
+        }
+        $valeur = "$valeur".Trim()
         if ($QuitteSurQ -and $valeur -eq 'q') { Stop-Script }
         if (-not $valeur -and $Defaut) { $valeur = $Defaut }
-        if ($Obligatoire -and -not $valeur) { Add-Ligne "[yellow]!  Valeur obligatoire.[/]" }
+        if ($Obligatoire -and -not $valeur) { Add-Ligne '[yellow]!  Valeur obligatoire.[/]' }
     } while ($Obligatoire -and -not $valeur)
     return $valeur
 }
 
 function Read-Champ {
     <# Une question de formulaire : la réponse rejoint la liste des champs remplis. #>
-    param([Parameter(Mandatory)] [string] $Libelle, [string] $Defaut = '', [switch] $Obligatoire, [switch] $QuitteSurQ, [string] $SiVide = '—')
-    $v = Read-Texte -Invite $Libelle -Defaut $Defaut -Obligatoire:$Obligatoire -QuitteSurQ:$QuitteSurQ
+    param([Parameter(Mandatory)] [string] $Libelle, [string] $Defaut = '', [switch] $Obligatoire, [switch] $QuitteSurQ, [string] $SiVide = '—', [string] $Aide = '')
+    $v = Read-Texte -Invite $Libelle -Defaut $Defaut -Obligatoire:$Obligatoire -QuitteSurQ:$QuitteSurQ -Aide $Aide
     Add-Ligne (Format-Champ -Libelle $Libelle -Valeur $(if ($v) { $v } else { $SiVide }))
     return $v
 }
@@ -594,15 +651,15 @@ function Read-TexteMultiligne {
       isolées (paragraphes) sont conservées.
     #>
     param([Parameter(Mandatory)] [string] $Invite)
-    Show-Ecran -Reserve 8
+    Show-Ecran -Reserve 10
     $a = $script:Ui.Accent
-    Write-Ligne "[$a]?[/]  [bold white]$(Protect-Texte $Invite)[/]"
-    Write-Ligne "   [grey50]Tapez ou collez le texte. Pour terminer : deux fois Entrée, ou un point seul.[/]"
-    Write-Ligne "[$($script:Ui.Ligne)]$('─' * (Get-Colonne))[/]"
+    Write-Ligne (Format-Question -Texte $Invite -Aide 'deux fois Entrée pour terminer, ou un point seul')
+    Write-Vide
+    Write-Ligne "[$($script:Ui.Ligne)]╭$('─' * ((Get-Colonne) - 2))╮[/]"
     $lignes = New-Object System.Collections.ArrayList
     $vides = 0
     while ($true) {
-        Invoke-Rendu -Composant 'invite multiligne' -Spectre { Write-SpectreHost "$(' ' * (Get-Marge))[$a]›[/] " -NoNewline } -Repli { Write-Host "$(' ' * (Get-Marge))> " -NoNewline }
+        Invoke-Rendu -Composant 'invite multiligne' -Spectre { Write-SpectreHost "$(' ' * (Get-Marge))[$($script:Ui.Ligne)]│[/] [$a]›[/] " -NoNewline } -Repli { Write-Host "$(' ' * (Get-Marge))| > " -NoNewline }
         # Read-Host plutôt que [Console]::ReadLine : même tampon d'entrée que les autres questions.
         $l = try { Read-Host } catch { $null }
         if ($null -eq $l) { break }
@@ -618,24 +675,8 @@ function Read-TexteMultiligne {
         [void]$lignes.Add($l.TrimEnd())
     }
     while ($lignes.Count -gt 0 -and $lignes[$lignes.Count - 1] -eq '') { $lignes.RemoveAt($lignes.Count - 1) }
-    Write-Ligne "[$($script:Ui.Ligne)]$('─' * (Get-Colonne))[/]"
+    Write-Ligne "[$($script:Ui.Ligne)]╰$('─' * ((Get-Colonne) - 2))╯[/]"
     return (@($lignes) -join "`n")
-}
-
-function Confirm-Choix {
-    <# Oui / Non au clavier, le choix par défaut sous le pointeur. #>
-    param([Parameter(Mandatory)] [string] $Question, [switch] $DefautOui)
-    Show-Ecran -Reserve 5
-    return [bool](Invoke-Rendu -Valeur -Composant 'confirmation' -Spectre {
-        $choix = if ($DefautOui) { @('Oui', 'Non') } else { @('Non', 'Oui') }
-        $p = @{ Choices = $choix; Color = $script:Ui.Accent }
-        $p[(Get-NomInvite 'Read-SpectreSelection')] = Format-Question $Question
-        "$(Read-SpectreSelection @p)" -eq 'Oui'
-    } -Repli {
-        $suffixe = if ($DefautOui) { '(O/n)' } else { '(o/N)' }
-        $r = Read-Host "$(' ' * (Get-Marge))$Question $suffixe"
-        if (-not $r) { [bool]$DefautOui } else { [bool]($r -match '^[oOyY]') }
-    })
 }
 
 function Format-Colonnes {
@@ -655,12 +696,122 @@ function Format-Colonnes {
     return $textes
 }
 
+function Read-Liste {
+    <#
+      LE sélecteur : flèches, filtre en tapant, Entrée pour valider, Échap
+      pour annuler ; espace pour cocher en sélection multiple. Dessiné dans
+      la colonne, ligne courante sur fond légèrement plus clair.
+      Rend les index choisis dans $Textes, ou @(-1) si annulé.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $Question,
+        [Parameter(Mandatory)] [string[]] $Textes,
+        [string] $Aide = '',
+        [switch] $Multiple,
+        [switch] $SansAnnulation
+    )
+    $largeur = Get-Colonne
+    $marge = Get-Marge
+    $coches = @{}
+    $filtre = ''
+    $curseur = 0
+    $sommet = 0
+    $indices = @(0..($Textes.Count - 1))
+
+    Show-Ecran -Reserve ([Math]::Min($Textes.Count, 14) + 6)
+    $haut = -1
+    try { $haut = [Console]::CursorTop } catch { }
+    if ($haut -lt 0) { throw 'position du curseur inconnue' }
+    # ce qui reste sous le bloc : la liste s'y adapte, elle ne doit jamais faire défiler
+    $visible = [Math]::Max(3, [Math]::Min($Textes.Count, (Get-Hauteur) - $haut - 6))
+    $curseurVisible = $true
+    try { $curseurVisible = [Console]::CursorVisible; [Console]::CursorVisible = $false } catch { }
+
+    try {
+        while ($true) {
+            # Ce que le filtre laisse passer.
+            $indices = @()
+            for ($i = 0; $i -lt $Textes.Count; $i++) {
+                if (-not $filtre -or $Textes[$i] -like "*$filtre*") { $indices += $i }
+            }
+            if ($indices.Count -eq 0) { $indices = @() }
+            if ($curseur -ge $indices.Count) { $curseur = [Math]::Max(0, $indices.Count - 1) }
+            if ($curseur -lt $sommet) { $sommet = $curseur }
+            if ($curseur -ge $sommet + $visible) { $sommet = $curseur - $visible + 1 }
+            if ($sommet -gt [Math]::Max(0, $indices.Count - $visible)) { $sommet = [Math]::Max(0, $indices.Count - $visible) }
+
+            # Dessin, toujours sur le même nombre de lignes : rien à effacer.
+            try { if ($haut -ge 0) { [Console]::SetCursorPosition(0, $haut) } } catch { }
+            $aideAffichee = @()
+            if ($Multiple) { $aideAffichee += 'espace pour cocher' }
+            $aideAffichee += '↑↓ choisir'
+            $aideAffichee += 'Entrée valider'
+            if (-not $SansAnnulation) { $aideAffichee += 'Échap annuler' }
+            if ($Textes.Count -gt 6) { $aideAffichee += 'tapez pour filtrer' }
+            if ($Aide) { $aideAffichee = @($Aide) + $aideAffichee }
+            Write-Ligne (Format-Question -Texte $Question)
+            $etat = "[grey50]$(Protect-Texte ($aideAffichee -join '  ·  '))[/]"
+            if ($filtre) { $etat = "[$($script:Ui.Accent)]filtre « $(Protect-Texte $filtre) »[/]   $etat" }
+            Write-Ligne "   $etat$(' ' * [Math]::Max(0, $largeur - 3 - (Get-LongueurVisible $etat)))"
+            Write-Ligne ''
+
+            for ($r = 0; $r -lt $visible; $r++) {
+                $n = $sommet + $r
+                if ($n -ge $indices.Count) { Write-Ligne (' ' * $largeur); continue }
+                $i = $indices[$n]
+                $texte = $Textes[$i]
+                $case = if ($Multiple) { $(if ($coches.ContainsKey($i)) { '◼ ' } else { '◻ ' }) } else { '' }
+                $brut = "$case$texte"
+                if ($brut.Length -gt $largeur - 4) { $brut = $brut.Substring(0, $largeur - 5) + '…' }
+                $bourre = ' ' * [Math]::Max(0, $largeur - 4 - $brut.Length)
+                if ($n -eq $curseur) {
+                    Write-Ligne "[$($script:Ui.Accent)]›[/] [on $($script:Ui.Champ)][white] $(Protect-Texte $brut)$bourre [/][/]"
+                } else {
+                    Write-Ligne "  [grey70] $(Protect-Texte $brut)$bourre [/]"
+                }
+            }
+            $pied = if ($indices.Count -eq 0) { 'aucune correspondance' } elseif ($indices.Count -gt $visible) { "$($curseur + 1) / $($indices.Count)" } else { '' }
+            Write-Ligne "   [grey35]$(Protect-Texte $pied)[/]$(' ' * [Math]::Max(0, $largeur - 3 - $pied.Length))"
+
+            # Une touche.
+            $t = [Console]::ReadKey($true)
+            switch ($t.Key) {
+                'UpArrow'    { if ($curseur -gt 0) { $curseur-- } }
+                'DownArrow'  { if ($curseur -lt $indices.Count - 1) { $curseur++ } }
+                'PageUp'     { $curseur = [Math]::Max(0, $curseur - $visible) }
+                'PageDown'   { $curseur = [Math]::Min($indices.Count - 1, $curseur + $visible) }
+                'Home'       { $curseur = 0 }
+                'End'        { $curseur = [Math]::Max(0, $indices.Count - 1) }
+                'Escape'     { if (-not $SansAnnulation) { return @(-1) } }
+                'Backspace'  { if ($filtre) { $filtre = $filtre.Substring(0, $filtre.Length - 1); $curseur = 0; $sommet = 0 } }
+                'Spacebar'   {
+                    if ($Multiple -and $indices.Count -gt 0) {
+                        $i = $indices[$curseur]
+                        if ($coches.ContainsKey($i)) { $coches.Remove($i) } else { $coches[$i] = $true }
+                        if ($curseur -lt $indices.Count - 1) { $curseur++ }
+                    } elseif (-not $Multiple) { $filtre += ' '; $curseur = 0; $sommet = 0 }
+                }
+                'Enter' {
+                    if ($Multiple) { return @($coches.Keys | Sort-Object) }
+                    if ($indices.Count -gt 0) { return @($indices[$curseur]) }
+                }
+                default {
+                    if (($t.KeyChar -and [char]::IsLetterOrDigit($t.KeyChar)) -or ($t.KeyChar -in @('-', '_', '.', '@', ''''))) {
+                        $filtre += $t.KeyChar; $curseur = 0; $sommet = 0
+                    }
+                }
+            }
+        }
+    } finally {
+        try { [Console]::CursorVisible = $curseurVisible } catch { }
+    }
+}
+
 function Read-Choix {
     <#
-      Un choix parmi des objets, au clavier (flèches + filtre en tapant avec
-      Spectre, numéros sinon). -Colonnes : propriétés affichées, alignées ;
+      Un choix parmi des objets. -Colonnes : propriétés affichées, alignées ;
       -Libelle : scriptblock qui rend le texte d'une ligne ($_) ; sinon "$e".
-      -Multiple : sélection multiple. Sans -SansAnnulation, « Annuler » ferme.
+      -Multiple : sélection multiple. Sans -SansAnnulation, Échap ferme.
     #>
     param(
         [Parameter(Mandatory)] [string]   $Titre,
@@ -675,43 +826,32 @@ function Read-Choix {
     $textes = @()
     if ($Colonnes) { $textes = @(Format-Colonnes -Elements $Elements -Colonnes $Colonnes) }
     else { foreach ($e in $Elements) { $textes += $(if ($Libelle) { "$(ForEach-Object -InputObject $e -Process $Libelle)" } else { "$e" }) } }
-    $vus = @{}
-    for ($i = 0; $i -lt $textes.Count; $i++) {
-        if ($vus.ContainsKey($textes[$i])) { $textes[$i] = "$($textes[$i])  ($($i + 1))" }
-        $vus[$textes[$i]] = $i
-    }
-    $annuler = '← Annuler'
-    $page = [Math]::Max(5, [Math]::Min(14, (Get-Hauteur) - 18))
-    $aide = if ($Aide) { $Aide } elseif ($Multiple) { 'espace pour cocher, Entrée pour valider' } elseif ($textes.Count -gt 6) { 'tapez pour filtrer' } else { '' }
-    Show-Ecran -Reserve ([Math]::Min($textes.Count + 3, $page + 3))
 
-    $indices = Invoke-Rendu -Valeur -Composant 'sélection' -Spectre {
-        $affiches = @($textes | ForEach-Object { Protect-Texte $_ })
-        if ($Multiple) {
-            $p = @{ Choices = $affiches; Color = $script:Ui.Accent }
-            if (Test-Param 'Read-SpectreMultiSelection' 'PageSize') { $p.PageSize = $page }
-            $p[(Get-NomInvite 'Read-SpectreMultiSelection')] = Format-Question -Texte $Titre -Aide $aide
-            $retenus = @(Read-SpectreMultiSelection @p)
-            @($retenus | ForEach-Object { [array]::IndexOf($affiches, "$_") } | Where-Object { $_ -ge 0 })
-        } else {
-            $liste = @($affiches); if (-not $SansAnnulation) { $liste += $annuler }
-            $p = @{ Choices = $liste; Color = $script:Ui.Accent }
-            if (Test-Param 'Read-SpectreSelection' 'PageSize') { $p.PageSize = $page }
-            if ($liste.Count -gt 6 -and (Test-Param 'Read-SpectreSelection' 'EnableSearch')) { $p.EnableSearch = $true }
-            $p[(Get-NomInvite 'Read-SpectreSelection')] = Format-Question -Texte $Titre -Aide $aide
-            $retenu = "$(Read-SpectreSelection @p)"
-            if ($retenu -eq $annuler) { @(-1) } else { @([array]::IndexOf($affiches, $retenu)) }
+    $indices = $null
+    if (Test-ConsolePilotable) {
+        try { $indices = @(Read-Liste -Question $Titre -Textes $textes -Aide $Aide -Multiple:$Multiple -SansAnnulation:$SansAnnulation) }
+        catch {
+            $indices = $null
+            if (-not $script:Ui.Avertissements.ContainsKey('sélection')) {
+                $script:Ui.Avertissements['sélection'] = $true
+                Write-Host "  (sélecteur simplifié : $(Get-MessageErreur $_))" -ForegroundColor DarkYellow
+            }
         }
-    } -Repli {
-        Write-Ligne "[bold]$(Protect-Texte $Titre)[/]"
-        for ($i = 0; $i -lt $textes.Count; $i++) { Write-Ligne ("{0,3}) {1}" -f ($i + 1), (Protect-Texte $textes[$i])) }
+    }
+    if ($null -eq $indices) {
+        # Console non pilotable, ou sélecteur en défaut : menu numéroté.
+        Show-Ecran -Reserve ($textes.Count + 4)
+        Write-Ligne (Format-Question -Texte $Titre -Aide $Aide)
+        for ($i = 0; $i -lt $textes.Count; $i++) { Write-Ligne ("  [grey70]{0,3}) $(Protect-Texte $textes[$i])[/]" -f ($i + 1)) }
+        $nums = @()
         do {
             $saisie = Read-Host "$(' ' * (Get-Marge))$(if ($Multiple) { 'Numéros séparés par des virgules (q pour quitter)' } else { 'Numéro (q pour quitter)' })"
-            if ($saisie -eq 'q') { @(-1); break }
+            if ($saisie -eq 'q') { $nums = @(-1); break }
             $nums = @($saisie -split '[,; ]+' | Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ - 1 } | Where-Object { $_ -ge 0 -and $_ -lt $textes.Count })
         } while ($nums.Count -eq 0)
-        if ($saisie -ne 'q') { @($nums) }
+        $indices = @($nums)
     }
+
     $indices = @($indices)
     if ($indices.Count -eq 0 -or $indices[0] -lt 0) {
         if ($Multiple) { return @() }
@@ -720,6 +860,15 @@ function Read-Choix {
     $retour = @($indices | ForEach-Object { $Elements[$_] })
     if ($Multiple) { return $retour }
     return $retour[0]
+}
+
+function Confirm-Choix {
+    <# Oui / Non, au clavier, le choix par défaut sous le pointeur. #>
+    param([Parameter(Mandatory)] [string] $Question, [switch] $DefautOui)
+    $choix = if ($DefautOui) { @('Oui', 'Non') } else { @('Non', 'Oui') }
+    $elements = @($choix | ForEach-Object { [pscustomobject]@{ Texte = $_ } })
+    $r = Read-Choix -Titre $Question -Elements $elements -Colonnes Texte -SansAnnulation
+    return ("$($r.Texte)" -eq 'Oui')
 }
 
 # -------------------------------------------------------------- ATTENTE
