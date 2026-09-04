@@ -41,7 +41,7 @@ $script:Etapes      = New-Object System.Collections.ArrayList   # la checklist
 $script:Credentials = @{}                                        # domaine -> PSCredential (une saisie par session)
 $script:Xapi        = @{}                                        # clé PBX -> jeton + expiration
 $script:Session     = @{ Operateur = $env:USERNAME; Debut = Get-Date; Transcription = $null }
-$script:Ui          = @{ Spectre = $false; Tampon = $null; Statut = $null; Resultat = $null; Params = @{}; Avertissements = @{}; Accent = '#8ccaae'; Ombre = '#085440'; Ligne = 'grey27'; Succes = 'green'; Champ = '#17211f' }
+$script:Ui          = @{ Spectre = $false; Tampon = $null; Params = @{}; Avertissements = @{}; Accent = '#8ccaae'; Ombre = '#085440'; Ligne = 'grey27'; Succes = 'green'; Champ = '#17211f'; LigneY = -1 }
 $script:Ecran       = @{ Actif = $false; Flux = $false; Mot = ''; Titre = ''; Etapes = @(); Index = 0; Resume = [ordered]@{}; Lignes = @() }
 
 $script:Categories  = @('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')
@@ -873,32 +873,62 @@ function Confirm-Choix {
 
 # -------------------------------------------------------------- ATTENTE
 
-function Invoke-Attente {
-    <# Un travail qui dure (lecture du PBX, connexion…) : un indicateur, puis le résultat. #>
-    param([Parameter(Mandatory)] [string] $Titre, [Parameter(Mandatory)] [scriptblock] $Action)
-    if (-not (Test-Spectre)) {
-        Write-Ligne "[grey50]… $(Protect-Texte $Titre)[/]"
-        return & $Action
-    }
-    $script:Ui.Tampon = New-Object System.Collections.ArrayList
-    $act = $Action
-    $script:Ui.Resultat = $null
+function Start-Ligne {
+    <#
+      Écrit une ligne « en cours » et retient sa position, pour pouvoir la
+      réécrire ou l'effacer une fois le travail fini. Spectre sait animer un
+      indicateur, mais il le pose au bord gauche de la console : on perdrait
+      l'alignement de la colonne.
+    #>
+    param([Parameter(Mandatory)] [string] $Markup)
+    $script:Ui.LigneY = -1
+    # Sortie capturée (transcription, redirection) : pas de jeu avec le curseur,
+    # la ligne « en cours » reste et le verdict s'écrit en dessous.
+    if (Test-ConsolePilotable) { try { $script:Ui.LigneY = [Console]::CursorTop } catch { } }
+    Write-Ligne $Markup
+}
+
+function Update-Ligne {
+    <#
+      Réécrit la ligne « en cours » — seulement si elle est toujours la
+      dernière écrite : dès que la console a défilé, sa position ne veut plus
+      rien dire et on rend $false pour que l'appelant écrive à la suite.
+      -Rembobiner : laisse le curseur sur la ligne, qui sera donc écrasée.
+    #>
+    param([AllowEmptyString()] [string] $Markup = '', [switch] $Rembobiner)
+    $y = $script:Ui.LigneY
+    if ($y -lt 0) { return $false }
     try {
-        Invoke-SpectreCommandWithStatus -Title "$(' ' * (Get-Marge))[grey62]$(Protect-Texte $Titre)[/]" -Spinner Line -Color $script:Ui.Accent -ScriptBlock { param($ctx) $script:Ui.Statut = $ctx; $script:Ui.Resultat = & $act } | Out-Null
-        return $script:Ui.Resultat
-    } catch {
-        throw (Get-MessageErreur $_)
+        if ([Console]::CursorTop -ne $y + 1) { return $false }
+        [Console]::SetCursorPosition(0, $y)
+        $bourre = [Math]::Max(0, (Get-Colonne) - (Get-LongueurVisible $Markup))
+        Write-Ligne "$Markup$(' ' * $bourre)"
+        if ($Rembobiner) { [Console]::SetCursorPosition(0, $y); $script:Ui.LigneY = $y }
+        return $true
+    } catch { return $false }
+}
+
+function Invoke-Attente {
+    <# Un travail qui dure (lecture du PBX, connexion…) : une ligne d'attente, puis le résultat. #>
+    param([Parameter(Mandatory)] [string] $Titre, [Parameter(Mandatory)] [scriptblock] $Action)
+    $script:Ui.Tampon = New-Object System.Collections.ArrayList
+    Start-Ligne "[$($script:Ui.Accent)]▸[/]  [grey62]$(Protect-Texte $Titre)…[/]"
+    try {
+        return & $Action
     } finally {
-        $script:Ui.Statut = $null; $script:Ui.Resultat = $null
+        # La ligne d'attente s'efface : ce qui suit prendra sa place.
+        Update-Ligne -Markup '' -Rembobiner | Out-Null
+        $script:Ui.LigneY = -1
         $tampon = @($script:Ui.Tampon); $script:Ui.Tampon = $null
         foreach ($l in $tampon) { Write-LigneJournal -Ligne $l }
     }
 }
 
 function Update-Statut {
-    <# Met à jour le texte de l'indicateur (Spectre) ou une barre de progression. #>
+    <# Le texte de la ligne d'attente, pendant un travail long (scan des boîtes…). #>
     param([Parameter(Mandatory)] [string] $Texte, [int] $Pourcent = -1)
-    if ($script:Ui.Statut) { try { $script:Ui.Statut.Status = "$(' ' * (Get-Marge))[grey62]$(Protect-Texte $Texte)[/]" } catch { } ; return }
+    $fait = Update-Ligne -Markup "[$($script:Ui.Accent)]▸[/]  [grey62]$(Protect-Texte $Texte)[/]"
+    if ($fait) { return }
     if ($Pourcent -ge 0) { Write-Progress -Activity $Texte -PercentComplete $Pourcent } else { Write-Progress -Activity $Texte }
 }
 
@@ -977,7 +1007,10 @@ function Write-LigneEtape {
         switch ($Etape.Etat) { 'ok' { "[$($script:Ui.Succes)]✓[/]" } 'echec' { '[red]✗[/]' } default { '[grey35]○[/]' } }
     }
     $encre = if ($Etape.Etat -eq 'ignoree' -and -not $EnCours) { 'grey35' } else { 'white' }
-    Write-Ligne (Format-Deux -Gauche "$marqueur  [$encre]$(Protect-Texte $Etape.Nom)[/]" -Droite "[grey50]$(Protect-Texte $droite)[/]")
+    $markup = Format-Deux -Gauche "$marqueur  [$encre]$(Protect-Texte $Etape.Nom)[/]" -Droite "[grey50]$(Protect-Texte $droite)[/]"
+    if ($EnCours) { Start-Ligne $markup; return }
+    # Le verdict prend la place de la ligne « en cours » si elle est encore visible.
+    if (-not (Update-Ligne -Markup $markup)) { Write-Ligne $markup }
 }
 
 function Invoke-Etape {
@@ -999,25 +1032,15 @@ function Invoke-Etape {
     $script:Ui.Tampon = New-Object System.Collections.ArrayList
     $chrono = [Diagnostics.Stopwatch]::StartNew()
     $resultat = $null; $erreur = $null
-    try {
-        if (Test-Spectre) {
-            $act = $Action
-            $script:Ui.Resultat = $null
-            try {
-                Invoke-SpectreCommandWithStatus -Title "$(' ' * (Get-Marge))[$($script:Ui.Accent)]▸[/]  [white]$(Protect-Texte $Nom)[/]" -Spinner Line -Color $script:Ui.Accent -ScriptBlock { param($ctx) $script:Ui.Statut = $ctx; $script:Ui.Resultat = & $act } | Out-Null
-                $resultat = $script:Ui.Resultat
-            } finally { $script:Ui.Statut = $null; $script:Ui.Resultat = $null }
-        } else {
-            Write-LigneEtape -Etape $etape -EnCours
-            $resultat = & $Action
-        }
-    } catch { $erreur = Get-MessageErreur $_ }
+    Write-LigneEtape -Etape $etape -EnCours
+    try { $resultat = & $Action } catch { $erreur = Get-MessageErreur $_ }
     $chrono.Stop()
     $etape.Duree = [math]::Round($chrono.Elapsed.TotalSeconds, 1)
     $tampon = @($script:Ui.Tampon); $script:Ui.Tampon = $null
     $simule = @($tampon | Where-Object { $_.Niveau -eq 'Simule' }).Count -gt 0
     if ($erreur) { $etape.Etat = 'echec'; $etape.Detail = $erreur } else { $etape.Etat = 'ok' }
     Write-LigneEtape -Etape $etape -Suffixe $(if ($simule) { '  ·  simulée' } else { '' })
+    $script:Ui.LigneY = -1
     foreach ($l in $tampon) { Write-LigneJournal -Ligne $l }
     if ($erreur) {
         Add-Journal -Message "$Nom : $erreur" -Categorie $Categorie -Niveau Erreur
@@ -1416,7 +1439,7 @@ function Invoke-ScanDelegations {
                 $delegs += [pscustomobject]@{ Type = 'SendAs'; Boite = $b.UserPrincipalName; Qui = "$($p.Trustee)" }
             }
         }
-        if (-not $script:Ui.Statut) { Write-Progress -Activity 'Analyse des boîtes aux lettres' -Completed }
+        Write-Progress -Activity 'Analyse des boîtes aux lettres' -Completed
         $cache = [pscustomobject]@{ LastUpdated = (Get-Date).ToString('o'); Redirections = $redirs; Delegations = $delegs }
         # Le cache est une trace locale, pas une écriture métier : il se met à jour même en simulation.
         $cache | ConvertTo-Json -Depth 4 | Set-Content -Path $fichier -Encoding UTF8
