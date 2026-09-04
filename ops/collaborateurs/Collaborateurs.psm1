@@ -42,6 +42,7 @@ $script:Credentials = @{}                                        # domaine -> PS
 $script:Xapi        = @{}                                        # clé PBX -> jeton + expiration
 $script:Session     = @{ Operateur = $env:USERNAME; Debut = Get-Date; Transcription = $null }
 $script:Ui          = @{ Spectre = $false; Tampon = $null; Statut = $null; Resultat = $null; Params = @{}; Avertissements = @{}; Accent = '#8ccaae'; Ombre = '#085440'; Ligne = 'grey27'; Succes = 'green' }
+$script:Ecran       = @{ Actif = $false; Flux = $false; Mot = ''; Titre = ''; Etapes = @(); Index = 0; Resume = [ordered]@{}; Lignes = @() }
 
 $script:Categories  = @('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')
 
@@ -58,7 +59,9 @@ function Initialize-Collaborateurs {
     param(
         [Parameter(Mandatory)] [hashtable] $Reglages,
         [Parameter(Mandatory)] [string]    $Dossier,      # dossier du script ($PSScriptRoot)
-        [Parameter(Mandatory)] [string]    $Operation     # "entree" | "sortie"
+        [Parameter(Mandatory)] [string]    $Operation,    # "entree" | "sortie"
+        [string[]] $Etapes = @(),                         # la frise du parcours
+        [bool]     $Interactif = $true                    # $false en mode -Job : un journal, pas des écrans
     )
     $script:Dossier  = $Dossier
     $script:Reglages = $Reglages
@@ -82,7 +85,8 @@ function Initialize-Collaborateurs {
     $script:Session.Transcription = Join-Path $Reglages.DossierLogs "$Operation-$horodatage-transcription.txt"
     try { Start-Transcript -Path $script:Session.Transcription -Append | Out-Null } catch { }
 
-    Show-EnTete -Titre $(if ($Operation -eq 'entree') { "Entrée d'un collaborateur" } else { "Sortie d'un collaborateur" })
+    $mot = if ($Operation -eq 'entree') { 'Entrée' } else { 'Sortie' }
+    Initialize-Ecran -Mot $mot -Titre "$mot d'un collaborateur" -Etapes $Etapes -Actif $Interactif
 }
 
 function Get-Config { return $script:Config }
@@ -126,13 +130,20 @@ function Get-MessageErreur {
 }
 
 # ====================================================================
-#  INTERFACE — Spectre quand c'est possible, console nue sinon
+#  INTERFACE
 #
-#  Direction visuelle : UNE couleur d'accent (terracotta) pour ce qui guide
-#  l'œil — titre, pointeur, question, bordure du panneau d'accueil ; du gris
-#  pour tout ce qui est secondaire ; le blanc pour les données ; vert et
-#  rouge réservés aux verdicts. Bordures minimales, colonnes alignées,
-#  de l'air entre les blocs. Jamais de texte sur fond de couleur.
+#  Modèle d'ÉCRAN, pas de défilement : à chaque question, la console est
+#  effacée et tout est redessiné — un en-tête permanent (le titre, la
+#  frise des étapes, l'encadré « sous l'œil »), puis le contenu de la SEULE
+#  étape en cours, puis l'invite. Le bloc est centré horizontalement dans
+#  une colonne de largeur fixe et posé au tiers supérieur de la fenêtre.
+#
+#  Pendant l'exécution on bascule en mode FLUX : l'en-tête reste en haut et
+#  les étapes s'écrivent à la suite, puisque leur nombre n'est pas connu
+#  d'avance. Hors interactif (-Job), aucun effacement : un journal simple.
+#
+#  Tout passe par Write-Ligne, qui pose la marge gauche. Rien n'écrit
+#  directement dans la console en dehors de cette couche.
 # ====================================================================
 
 function Initialize-Interface {
@@ -155,19 +166,25 @@ function Initialize-Interface {
 
 function Test-Spectre { return [bool]$script:Ui.Spectre }
 
-function Get-Largeur {
-    <# Largeur utile des panneaux : la console, plafonnée pour rester lisible sur un grand écran. #>
-    $l = 100
-    try { $l = [Math]::Min([Console]::WindowWidth - 2, 100) } catch { }
-    if ($l -lt 60) { $l = 60 }
-    return $l
-}
-
 function Protect-Texte {
     <# Échappe les crochets : Spectre lit [ceci] comme du balisage. À appliquer à TOUTE donnée affichée. #>
     param([AllowNull()] [AllowEmptyString()] [string] $Texte)
     if ($null -eq $Texte) { return '' }
     return $Texte.Replace('[', '[[').Replace(']', ']]')
+}
+
+function ConvertFrom-Markup {
+    <# Le texte nu derrière le balisage : sert à mesurer une ligne et à l'affichage de repli. #>
+    param([AllowNull()] [AllowEmptyString()] [string] $Markup)
+    if (-not $Markup) { return '' }
+    $t = $Markup.Replace('[[', "`u{0001}").Replace(']]', "`u{0002}")
+    $t = [regex]::Replace($t, '\[[^\]]*\]', '')
+    return $t.Replace("`u{0001}", '[').Replace("`u{0002}", ']')
+}
+
+function Get-LongueurVisible {
+    param([AllowNull()] [AllowEmptyString()] [string] $Markup)
+    return (ConvertFrom-Markup $Markup).Length
 }
 
 function Test-Param {
@@ -218,21 +235,672 @@ function Invoke-Rendu {
 }
 
 function Out-Rendu {
-    <# Affiche un objet Spectre (table, panneau…) quel que soit le mode de sortie. #>
+    <# Affiche un objet Spectre (table…) quel que soit le mode de sortie. #>
     param([Parameter(Mandatory, ValueFromPipeline)] $Rendu)
     process {
         if (Get-Command Out-SpectreHost -ErrorAction SilentlyContinue) { $Rendu | Out-SpectreHost } else { $Rendu | Out-Host }
     }
 }
 
-function New-Panneau {
-    <# Un panneau Spectre aux réglages maison : bordure arrondie, largeur plafonnée, titre discret. #>
-    param([Parameter(Mandatory)] [string] $Contenu, [string] $Titre = '', [string] $Couleur = '')
+# ------------------------------------------------------------ GÉOMÉTRIE
+
+function Get-Colonne {
+    <# Largeur de la colonne de contenu : la console, plafonnée pour rester lisible. #>
+    $l = 96
+    try { $l = [Math]::Min([Console]::WindowWidth - 6, 96) } catch { }
+    if ($l -lt 48) { $l = 48 }
+    return $l
+}
+
+function Get-Marge {
+    <# Ce qu'il faut à gauche pour centrer la colonne dans la fenêtre. #>
+    $m = 2
+    try { $m = [Math]::Max(2, [int][Math]::Floor(([Console]::WindowWidth - (Get-Colonne)) / 2)) } catch { }
+    return $m
+}
+
+function Get-Hauteur {
+    $h = 40
+    try { $h = [Console]::WindowHeight } catch { }
+    if ($h -lt 16) { $h = 16 }
+    return $h
+}
+
+function Format-Ajuste {
+    <# Coupe un texte nu à la largeur donnée, aux espaces ; rend les lignes. #>
+    param([AllowEmptyString()] [string] $Texte, [int] $Largeur)
+    if ($Largeur -lt 12) { $Largeur = 12 }
+    $lignes = @()
+    foreach ($paragraphe in ($Texte -split "`r?`n")) {
+        if ($paragraphe.Length -le $Largeur) { $lignes += $paragraphe; continue }
+        $courant = ''
+        foreach ($mot in ($paragraphe -split ' ')) {
+            if ($courant -and ($courant.Length + 1 + $mot.Length) -gt $Largeur) { $lignes += $courant; $courant = '' }
+            while ($mot.Length -gt $Largeur) {
+                # un mot plus long que la colonne (adresse, JSON) : on le tranche
+                if ($courant) { $lignes += $courant; $courant = '' }
+                $lignes += $mot.Substring(0, $Largeur)
+                $mot = $mot.Substring($Largeur)
+            }
+            $courant = if ($courant) { "$courant $mot" } else { $mot }
+        }
+        if ($courant) { $lignes += $courant }
+    }
+    return @($lignes)
+}
+
+function Format-Deux {
+    <# Un texte à gauche, un texte à droite, calés sur la largeur de la colonne. #>
+    param([string] $Gauche, [string] $Droite)
+    $espace = [Math]::Max(2, (Get-Colonne) - (Get-LongueurVisible $Gauche) - (Get-LongueurVisible $Droite))
+    return "$Gauche$(' ' * $espace)$Droite"
+}
+
+# ------------------------------------------------------------- ÉCRITURE
+
+function Write-Ligne {
+    <# LA sortie : une ligne de balisage, précédée de la marge de centrage. #>
+    param([AllowEmptyString()] [string] $Markup = '', [int] $Retrait = 0)
+    $marge = ' ' * ((Get-Marge) + $Retrait)
+    Invoke-Rendu -Composant 'ligne' -Spectre { Write-SpectreHost "$marge$Markup" } -Repli { Write-Host "$marge$(ConvertFrom-Markup $Markup)" }
+}
+
+function Write-Vide { param([int] $Combien = 1) ; for ($i = 0; $i -lt $Combien; $i++) { Write-Ligne '' } }
+
+function New-Encadre {
+    <# Un cadre, rendu sous forme de lignes de balisage : mesurable, donc centrable. #>
+    param([string] $Titre = '', [AllowEmptyCollection()] [string[]] $Lignes = @(), [string] $Couleur = '')
+    $c = if ($Couleur) { $Couleur } else { $script:Ui.Ligne }
+    $largeur = Get-Colonne
+    $interieur = $largeur - 4
+    $sortie = @()
+    if ($Titre) {
+        $reste = [Math]::Max(0, $largeur - 5 - (Get-LongueurVisible $Titre))
+        $sortie += "[$c]╭─[/] $Titre [$c]$('─' * $reste)╮[/]"
+    } else {
+        $sortie += "[$c]╭$('─' * ($largeur - 2))╮[/]"
+    }
+    foreach ($l in $Lignes) {
+        $bourre = [Math]::Max(0, $interieur - (Get-LongueurVisible $l))
+        $sortie += "[$c]│[/] $l$(' ' * $bourre) [$c]│[/]"
+    }
+    $sortie += "[$c]╰$('─' * ($largeur - 2))╯[/]"
+    return $sortie
+}
+
+# ---------------------------------------------------------------- ÉCRAN
+
+function Initialize-Ecran {
+    <# Ouvre le mode écran : efface la console et retient les étapes du parcours. #>
+    param(
+        [Parameter(Mandatory)] [string] $Mot,          # SORTIE | ENTRÉE — le grand titre
+        [Parameter(Mandatory)] [string] $Titre,        # « Sortie d'un collaborateur »
+        [Parameter(Mandatory)] [string[]] $Etapes,
+        [bool] $Actif = $true
+    )
+    $script:Ecran.Mot = $Mot
+    $script:Ecran.Titre = $Titre
+    $script:Ecran.Etapes = @($Etapes)
+    $script:Ecran.Index = 0
+    $script:Ecran.Resume = [ordered]@{}
+    $script:Ecran.Lignes = @()
+    $script:Ecran.Flux = $false
+    $script:Ecran.Actif = $Actif
+    if ($Actif) { try { Clear-Host } catch { } }
+    Show-Ecran
+}
+
+function Get-LignesEnTete {
+    <# L'en-tête permanent, en lignes de balisage. #>
+    $e = $script:Ecran
+    $r = $script:Reglages
+    $a = $script:Ui.Accent
+    $lignes = @()
+
+    # Le grand titre — remplacé par une ligne en capitales sur les fenêtres courtes.
+    if ((Get-Hauteur) -ge 34 -and $e.Mot) {
+        $lignes += Get-LignesTitre -Texte $e.Mot
+        $lignes += ''
+    } elseif ($e.Mot) {
+        $lignes += "[bold $a]$(Protect-Texte $e.Mot.ToUpper())[/]"
+    }
+
+    $modes = @()
+    if ($r.Simulation) { $modes += "[$($script:Ui.Succes)]●[/] [grey62]SIMULATION[/]" } else { $modes += "[red]●[/] [grey62]RÉEL[/]" }
+    if ($r.ModeTest)   { $modes += "[grey50]●[/] [grey62]MODE TEST[/]" }
+    $lignes += Format-Deux -Gauche "[bold white]$(Protect-Texte $e.Titre)[/]" -Droite ($modes -join '   ')
+    $lignes += "[grey50]$(Protect-Texte "Service Informatique · $($script:Session.Operateur) · $(Get-Date -Format 'dd.MM.yyyy HH:mm')")[/]"
+    $lignes += ''
+
+    # La frise des étapes : faites, en cours, à venir.
+    if ($e.Etapes.Count -gt 0) {
+        $frise = @()
+        for ($i = 0; $i -lt $e.Etapes.Count; $i++) {
+            $nom = Protect-Texte $e.Etapes[$i]
+            $n = $i + 1
+            if ($n -lt $e.Index)      { $frise += "[$($script:Ui.Succes)]✓[/] [grey50]$nom[/]" }
+            elseif ($n -eq $e.Index)  { $frise += "[$a]▸[/] [bold $a]$nom[/]" }
+            else                      { $frise += "[grey35]○ $nom[/]" }
+        }
+        $lignes += ($frise -join '  [grey27]·[/]  ')
+        $lignes += ''
+    }
+
+    # Ce qu'on garde sous l'œil, sur une ligne.
+    if ($e.Resume.Count -gt 0) {
+        $bouts = @()
+        foreach ($k in $e.Resume.Keys) { $bouts += "[grey50]$(Protect-Texte "$k")[/] [white]$(Protect-Texte "$($e.Resume[$k])")[/]" }
+        $texte = $bouts -join '   [grey27]·[/]   '
+        $trop = (Get-LongueurVisible $texte) - ((Get-Colonne) - 4)
+        if ($trop -gt 0) {
+            # trop long : on ne garde que les dernières décisions, celles qui comptent
+            while ($bouts.Count -gt 1 -and ((Get-LongueurVisible ($bouts -join '   ·   ')) -gt ((Get-Colonne) - 8))) { $bouts = $bouts[1..($bouts.Count - 1)] }
+            $texte = "[grey35]…[/]   " + ($bouts -join '   [grey27]·[/]   ')
+        }
+        $lignes += New-Encadre -Lignes @($texte)
+        $lignes += ''
+    }
+    return @($lignes)
+}
+
+function Show-Ecran {
+    <#
+      Efface et redessine : en-tête, contenu de l'étape en cours, puis on
+      rend la main à l'appelant qui posera son invite en dessous.
+      -Reserve : le nombre de lignes que l'invite va prendre, pour le calcul
+      du centrage vertical.
+    #>
+    param([int] $Reserve = 3, [switch] $EnHaut)
+    if (-not $script:Ecran.Actif -or $script:Ecran.Flux) { return }
+    try { Clear-Host } catch { }
+    $entete = @(Get-LignesEnTete)
+    $corps = @($script:Ecran.Lignes)
+    $haut = if ($EnHaut) { 1 } else { [Math]::Max(1, [int][Math]::Floor(((Get-Hauteur) - $entete.Count - $corps.Count - $Reserve) / 3)) }
+    Write-Vide $haut
+    foreach ($l in $entete) { Write-Ligne $l }
+    foreach ($l in $corps) { Write-Ligne $l }
+    if ($corps.Count -gt 0) { Write-Vide }
+}
+
+function Set-Etape {
+    <# On passe à l'étape suivante : le contenu de la précédente disparaît. #>
+    param([Parameter(Mandatory)] [string] $Nom)
+    $i = [array]::IndexOf($script:Ecran.Etapes, $Nom)
+    $script:Ecran.Index = if ($i -ge 0) { $i + 1 } else { $script:Ecran.Index + 1 }
+    $script:Ecran.Lignes = @()
+    if ($script:Ecran.Flux -or -not $script:Ecran.Actif) {
+        Write-Vide
+        Write-Ligne "[$($script:Ui.Accent)]▸[/] [bold $($script:Ui.Accent)]$(Protect-Texte $Nom)[/]"
+        Write-Vide
+        return
+    }
+    Show-Ecran
+}
+
+function Add-Resume {
+    <# Une décision à garder sous l'œil, dans l'encadré du haut. #>
+    param([Parameter(Mandatory)] [string] $Cle, [Parameter(Mandatory)] [AllowEmptyString()] [string] $Valeur)
+    $script:Ecran.Resume[$Cle] = $Valeur
+    Show-Ecran
+}
+
+function Add-Ligne {
+    <# Une ligne au contenu de l'étape en cours. Redessine tant qu'on est en mode écran. #>
+    param([AllowEmptyString()] [string] $Markup = '')
+    if ($script:Ecran.Flux -or -not $script:Ecran.Actif) { Write-Ligne $Markup; return }
+    $script:Ecran.Lignes += $Markup
+    Show-Ecran
+}
+
+function Start-Flux {
+    <# Fin des questions : l'en-tête se cale en haut et on écrit à la suite. #>
+    if ($script:Ecran.Actif) { Show-Ecran -Reserve 0 -EnHaut }
+    $script:Ecran.Flux = $true
+    Write-Vide
+}
+
+# ---------------------------------------------------------- AFFICHAGES
+
+function Show-Note {
+    <# Une ligne d'information. Niveau : Info | Sourdine | Succes | Alerte | Erreur #>
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Texte, [ValidateSet('Info', 'Sourdine', 'Succes', 'Alerte', 'Erreur')] [string] $Niveau = 'Info')
+    $couleur = switch ($Niveau) { 'Sourdine' { 'grey50' } 'Succes' { $script:Ui.Succes } 'Alerte' { 'yellow' } 'Erreur' { 'red' } default { 'grey85' } }
+    $puce = switch ($Niveau) { 'Succes' { '●' } 'Alerte' { '!' } 'Erreur' { '✗' } default { ' ' } }
+    foreach ($l in (Format-Ajuste -Texte $Texte -Largeur ((Get-Colonne) - 4))) {
+        Add-Ligne "[$couleur]$puce[/]  [$couleur]$(Protect-Texte $l)[/]"
+        $puce = ' '
+    }
+}
+
+function Show-Constat {
+    <#
+      Un constat qui doit se voir : pastille pleine, énoncé en clair, et les
+      valeurs qu'il porte en dessous, en gras. « Identifiant et adresse
+      libres dans l'AD » puis « gfavon · georges.favon@grrsa.ch ».
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $Titre,
+        [string[]] $Valeurs = @(),
+        [ValidateSet('Succes', 'Alerte', 'Info')] [string] $Niveau = 'Succes'
+    )
+    $couleur = switch ($Niveau) { 'Alerte' { 'yellow' } 'Info' { $script:Ui.Accent } default { $script:Ui.Succes } }
+    Add-Ligne "[$couleur]●[/]  [white]$(Protect-Texte $Titre)[/]"
+    $valables = @($Valeurs | Where-Object { "$_" })
+    if ($valables.Count -gt 0) {
+        Add-Ligne "   [bold $couleur]$(($valables | ForEach-Object { Protect-Texte "$_" }) -join "[/][grey35]  ·  [/][bold $couleur]")[/]"
+    }
+}
+
+function Show-Recap {
+    <# Le récapitulatif clé → valeur, dans un cadre. #>
+    param([Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $Paires, [string] $Titre = 'Récapitulatif')
+    $large = 4
+    foreach ($k in $Paires.Keys) { if ("$k".Length -gt $large) { $large = "$k".Length } }
+    $lignes = @('')
+    foreach ($k in $Paires.Keys) {
+        $valeurs = @(Format-Ajuste -Texte "$($Paires[$k])" -Largeur ((Get-Colonne) - $large - 8))
+        $etiquette = "[grey62]$(Protect-Texte "$k".PadRight($large))[/]"
+        foreach ($v in $valeurs) {
+            $lignes += "$etiquette   [white]$(Protect-Texte $v)[/]"
+            $etiquette = "[grey62]$(' ' * $large)[/]"
+        }
+    }
+    $lignes += ''
+    foreach ($l in (New-Encadre -Titre "[bold white]$(Protect-Texte $Titre)[/]" -Lignes $lignes)) { Add-Ligne $l }
+}
+
+function Show-Panneau {
+    <# Un bloc de texte encadré (aperçu d'un message, identifiants…). #>
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Texte, [string] $Titre = '', [switch] $Accent)
+    $couleur = if ($Accent) { $script:Ui.Accent } else { $script:Ui.Ligne }
+    $lignes = @('')
+    foreach ($l in (Format-Ajuste -Texte $Texte -Largeur ((Get-Colonne) - 6))) { $lignes += "[white]$(Protect-Texte $l)[/]" }
+    $lignes += ''
+    $titre = if ($Titre) { "[bold $(if ($Accent) { $couleur } else { 'white' })]$(Protect-Texte $Titre)[/]" } else { '' }
+    foreach ($l in (New-Encadre -Titre $titre -Lignes $lignes -Couleur $couleur)) { Add-Ligne $l }
+}
+
+function Show-Tableau {
+    <# Des objets en colonnes alignées. #>
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Lignes, [string[]] $Colonnes, [string] $Titre = '')
+    if (-not $Lignes -or $Lignes.Count -eq 0) { return }
+    if (-not $Colonnes) { $Colonnes = @($Lignes[0].PSObject.Properties | ForEach-Object { $_.Name }) }
+    if ($Titre) { Add-Ligne "[grey62]$(Protect-Texte $Titre)[/]" }
+    $entete = [pscustomobject]@{}
+    foreach ($c in $Colonnes) { $entete | Add-Member -NotePropertyName $c -NotePropertyValue $c }
+    $textes = @(Format-Colonnes -Elements (@($entete) + @($Lignes)) -Colonnes $Colonnes)
+    Add-Ligne "[$($script:Ui.Accent)]$(Protect-Texte $textes[0])[/]"
+    for ($i = 1; $i -lt $textes.Count; $i++) { Add-Ligne "[white]$(Protect-Texte $textes[$i])[/]" }
+}
+
+function Show-Filet {
+    <# Un filet plein, à la largeur de la colonne. #>
+    param([string] $Couleur = '')
     if (-not $Couleur) { $Couleur = $script:Ui.Ligne }
-    $p = @{ Data = $Contenu; Border = 'Rounded'; Color = $Couleur }
-    if ($Titre) { $p.Title = $Titre }
-    if (Test-Param 'Format-SpectrePanel' 'Width') { $p.Width = Get-Largeur }
-    return Format-SpectrePanel @p
+    Add-Ligne "[$Couleur]$('─' * (Get-Colonne))[/]"
+}
+
+# ------------------------------------------------------------- INVITES
+
+function Format-Question {
+    <# « ? » en accent puis la question en gras : la même signature partout. #>
+    param([Parameter(Mandatory)] [string] $Texte, [string] $Aide = '')
+    $q = "$(' ' * (Get-Marge))[$($script:Ui.Accent)]?[/]  [bold white]$(Protect-Texte $Texte)[/]"
+    if ($Aide) { $q += "   [grey50]$(Protect-Texte $Aide)[/]" }
+    return $q
+}
+
+function Format-Champ {
+    <# Un champ déjà rempli, dans la colonne de gauche du « formulaire ». #>
+    param([Parameter(Mandatory)] [string] $Libelle, [AllowEmptyString()] [string] $Valeur)
+    return "[$($script:Ui.Succes)]●[/]  [grey62]$(Protect-Texte $Libelle.PadRight(20))[/][white]$(Protect-Texte $Valeur)[/]"
+}
+
+function Read-Texte {
+    param([Parameter(Mandatory)] [string] $Invite, [string] $Defaut = '', [switch] $Obligatoire, [switch] $QuitteSurQ, [string] $Aide = '')
+    do {
+        Show-Ecran -Reserve 3
+        $valeur = Invoke-Rendu -Valeur -Composant 'saisie' -Spectre {
+            $p = @{ AllowEmpty = (-not $Obligatoire) }
+            $p[(Get-NomInvite 'Read-SpectreText')] = Format-Question -Texte $Invite -Aide $Aide
+            if ($Defaut) { $p.DefaultAnswer = $Defaut }
+            if (Test-Param 'Read-SpectreText' 'AnswerColor') { $p.AnswerColor = 'white' }
+            "$(Read-SpectreText @p)"
+        } -Repli {
+            $affichage = "$(' ' * (Get-Marge))$Invite$(if ($Defaut) { " [$Defaut]" })"
+            "$(Read-Host $affichage)"
+        }
+        if ($null -eq $valeur) { $valeur = '' }
+        $valeur = $valeur.Trim()
+        if ($QuitteSurQ -and $valeur -eq 'q') { Stop-Script }
+        if (-not $valeur -and $Defaut) { $valeur = $Defaut }
+        if ($Obligatoire -and -not $valeur) { Add-Ligne "[yellow]!  Valeur obligatoire.[/]" }
+    } while ($Obligatoire -and -not $valeur)
+    return $valeur
+}
+
+function Read-Champ {
+    <# Une question de formulaire : la réponse rejoint la liste des champs remplis. #>
+    param([Parameter(Mandatory)] [string] $Libelle, [string] $Defaut = '', [switch] $Obligatoire, [switch] $QuitteSurQ, [string] $SiVide = '—')
+    $v = Read-Texte -Invite $Libelle -Defaut $Defaut -Obligatoire:$Obligatoire -QuitteSurQ:$QuitteSurQ
+    Add-Ligne (Format-Champ -Libelle $Libelle -Valeur $(if ($v) { $v } else { $SiVide }))
+    return $v
+}
+
+function Read-TexteMultiligne {
+    <#
+      Un bloc de texte tapé ou COLLÉ. Fin de saisie : deux lignes vides
+      d'affilée, ou une ligne ne contenant qu'un point. Les lignes vides
+      isolées (paragraphes) sont conservées.
+    #>
+    param([Parameter(Mandatory)] [string] $Invite)
+    Show-Ecran -Reserve 8
+    $a = $script:Ui.Accent
+    Write-Ligne "[$a]?[/]  [bold white]$(Protect-Texte $Invite)[/]"
+    Write-Ligne "   [grey50]Tapez ou collez le texte. Pour terminer : deux fois Entrée, ou un point seul.[/]"
+    Write-Ligne "[$($script:Ui.Ligne)]$('─' * (Get-Colonne))[/]"
+    $lignes = New-Object System.Collections.ArrayList
+    $vides = 0
+    while ($true) {
+        Invoke-Rendu -Composant 'invite multiligne' -Spectre { Write-SpectreHost "$(' ' * (Get-Marge))[$a]›[/] " -NoNewline } -Repli { Write-Host "$(' ' * (Get-Marge))> " -NoNewline }
+        # Read-Host plutôt que [Console]::ReadLine : même tampon d'entrée que les autres questions.
+        $l = try { Read-Host } catch { $null }
+        if ($null -eq $l) { break }
+        $l = "$l"
+        if ($l.Trim() -eq '.') { break }
+        if ($l.Trim() -eq '') {
+            $vides++
+            if ($vides -ge 2) { break }
+            [void]$lignes.Add('')
+            continue
+        }
+        $vides = 0
+        [void]$lignes.Add($l.TrimEnd())
+    }
+    while ($lignes.Count -gt 0 -and $lignes[$lignes.Count - 1] -eq '') { $lignes.RemoveAt($lignes.Count - 1) }
+    Write-Ligne "[$($script:Ui.Ligne)]$('─' * (Get-Colonne))[/]"
+    return (@($lignes) -join "`n")
+}
+
+function Confirm-Choix {
+    <# Oui / Non au clavier, le choix par défaut sous le pointeur. #>
+    param([Parameter(Mandatory)] [string] $Question, [switch] $DefautOui)
+    Show-Ecran -Reserve 5
+    return [bool](Invoke-Rendu -Valeur -Composant 'confirmation' -Spectre {
+        $choix = if ($DefautOui) { @('Oui', 'Non') } else { @('Non', 'Oui') }
+        $p = @{ Choices = $choix; Color = $script:Ui.Accent }
+        $p[(Get-NomInvite 'Read-SpectreSelection')] = Format-Question $Question
+        "$(Read-SpectreSelection @p)" -eq 'Oui'
+    } -Repli {
+        $suffixe = if ($DefautOui) { '(O/n)' } else { '(o/N)' }
+        $r = Read-Host "$(' ' * (Get-Marge))$Question $suffixe"
+        if (-not $r) { [bool]$DefautOui } else { [bool]($r -match '^[oOyY]') }
+    })
+}
+
+function Format-Colonnes {
+    <# Des objets → des lignes à colonnes alignées (l'œil lit une grille, pas une phrase). #>
+    param([Parameter(Mandatory)] [object[]] $Elements, [Parameter(Mandatory)] [string[]] $Colonnes, [int] $MaxColonne = 38)
+    $cellules = @()
+    foreach ($e in $Elements) {
+        $cellules += , @($Colonnes | ForEach-Object { $v = "$($e.$_)" -replace "\s+", ' '; if ($v.Length -gt $MaxColonne) { $v.Substring(0, $MaxColonne - 1) + '…' } else { $v } })
+    }
+    $largeurs = @(0) * $Colonnes.Count
+    foreach ($ligne in $cellules) { for ($i = 0; $i -lt $Colonnes.Count; $i++) { if ($ligne[$i].Length -gt $largeurs[$i]) { $largeurs[$i] = $ligne[$i].Length } } }
+    $textes = @()
+    foreach ($ligne in $cellules) {
+        $parts = @(); for ($i = 0; $i -lt $Colonnes.Count; $i++) { if ($largeurs[$i] -gt 0) { $parts += $ligne[$i].PadRight($largeurs[$i]) } }
+        $textes += ($parts -join '   ').TrimEnd()
+    }
+    return $textes
+}
+
+function Read-Choix {
+    <#
+      Un choix parmi des objets, au clavier (flèches + filtre en tapant avec
+      Spectre, numéros sinon). -Colonnes : propriétés affichées, alignées ;
+      -Libelle : scriptblock qui rend le texte d'une ligne ($_) ; sinon "$e".
+      -Multiple : sélection multiple. Sans -SansAnnulation, « Annuler » ferme.
+    #>
+    param(
+        [Parameter(Mandatory)] [string]   $Titre,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Elements,
+        [string[]]    $Colonnes,
+        [scriptblock] $Libelle,
+        [string]      $Aide = '',
+        [switch]      $Multiple,
+        [switch]      $SansAnnulation
+    )
+    if (-not $Elements -or $Elements.Count -eq 0) { throw "Rien à choisir pour « $Titre »." }
+    $textes = @()
+    if ($Colonnes) { $textes = @(Format-Colonnes -Elements $Elements -Colonnes $Colonnes) }
+    else { foreach ($e in $Elements) { $textes += $(if ($Libelle) { "$(ForEach-Object -InputObject $e -Process $Libelle)" } else { "$e" }) } }
+    $vus = @{}
+    for ($i = 0; $i -lt $textes.Count; $i++) {
+        if ($vus.ContainsKey($textes[$i])) { $textes[$i] = "$($textes[$i])  ($($i + 1))" }
+        $vus[$textes[$i]] = $i
+    }
+    $annuler = '← Annuler'
+    $page = [Math]::Max(5, [Math]::Min(14, (Get-Hauteur) - 18))
+    $aide = if ($Aide) { $Aide } elseif ($Multiple) { 'espace pour cocher, Entrée pour valider' } elseif ($textes.Count -gt 6) { 'tapez pour filtrer' } else { '' }
+    Show-Ecran -Reserve ([Math]::Min($textes.Count + 3, $page + 3))
+
+    $indices = Invoke-Rendu -Valeur -Composant 'sélection' -Spectre {
+        $affiches = @($textes | ForEach-Object { Protect-Texte $_ })
+        if ($Multiple) {
+            $p = @{ Choices = $affiches; Color = $script:Ui.Accent }
+            if (Test-Param 'Read-SpectreMultiSelection' 'PageSize') { $p.PageSize = $page }
+            $p[(Get-NomInvite 'Read-SpectreMultiSelection')] = Format-Question -Texte $Titre -Aide $aide
+            $retenus = @(Read-SpectreMultiSelection @p)
+            @($retenus | ForEach-Object { [array]::IndexOf($affiches, "$_") } | Where-Object { $_ -ge 0 })
+        } else {
+            $liste = @($affiches); if (-not $SansAnnulation) { $liste += $annuler }
+            $p = @{ Choices = $liste; Color = $script:Ui.Accent }
+            if (Test-Param 'Read-SpectreSelection' 'PageSize') { $p.PageSize = $page }
+            if ($liste.Count -gt 6 -and (Test-Param 'Read-SpectreSelection' 'EnableSearch')) { $p.EnableSearch = $true }
+            $p[(Get-NomInvite 'Read-SpectreSelection')] = Format-Question -Texte $Titre -Aide $aide
+            $retenu = "$(Read-SpectreSelection @p)"
+            if ($retenu -eq $annuler) { @(-1) } else { @([array]::IndexOf($affiches, $retenu)) }
+        }
+    } -Repli {
+        Write-Ligne "[bold]$(Protect-Texte $Titre)[/]"
+        for ($i = 0; $i -lt $textes.Count; $i++) { Write-Ligne ("{0,3}) {1}" -f ($i + 1), (Protect-Texte $textes[$i])) }
+        do {
+            $saisie = Read-Host "$(' ' * (Get-Marge))$(if ($Multiple) { 'Numéros séparés par des virgules (q pour quitter)' } else { 'Numéro (q pour quitter)' })"
+            if ($saisie -eq 'q') { @(-1); break }
+            $nums = @($saisie -split '[,; ]+' | Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ - 1 } | Where-Object { $_ -ge 0 -and $_ -lt $textes.Count })
+        } while ($nums.Count -eq 0)
+        if ($saisie -ne 'q') { @($nums) }
+    }
+    $indices = @($indices)
+    if ($indices.Count -eq 0 -or $indices[0] -lt 0) {
+        if ($Multiple) { return @() }
+        Stop-Script
+    }
+    $retour = @($indices | ForEach-Object { $Elements[$_] })
+    if ($Multiple) { return $retour }
+    return $retour[0]
+}
+
+# -------------------------------------------------------------- ATTENTE
+
+function Invoke-Attente {
+    <# Un travail qui dure (lecture du PBX, connexion…) : un indicateur, puis le résultat. #>
+    param([Parameter(Mandatory)] [string] $Titre, [Parameter(Mandatory)] [scriptblock] $Action)
+    if (-not (Test-Spectre)) {
+        Write-Ligne "[grey50]… $(Protect-Texte $Titre)[/]"
+        return & $Action
+    }
+    $script:Ui.Tampon = New-Object System.Collections.ArrayList
+    $act = $Action
+    $script:Ui.Resultat = $null
+    try {
+        Invoke-SpectreCommandWithStatus -Title "$(' ' * (Get-Marge))[grey62]$(Protect-Texte $Titre)[/]" -Spinner Line -Color $script:Ui.Accent -ScriptBlock { param($ctx) $script:Ui.Statut = $ctx; $script:Ui.Resultat = & $act } | Out-Null
+        return $script:Ui.Resultat
+    } catch {
+        throw (Get-MessageErreur $_)
+    } finally {
+        $script:Ui.Statut = $null; $script:Ui.Resultat = $null
+        $tampon = @($script:Ui.Tampon); $script:Ui.Tampon = $null
+        foreach ($l in $tampon) { Write-LigneJournal -Ligne $l }
+    }
+}
+
+function Update-Statut {
+    <# Met à jour le texte de l'indicateur (Spectre) ou une barre de progression. #>
+    param([Parameter(Mandatory)] [string] $Texte, [int] $Pourcent = -1)
+    if ($script:Ui.Statut) { try { $script:Ui.Statut.Status = "$(' ' * (Get-Marge))[grey62]$(Protect-Texte $Texte)[/]" } catch { } ; return }
+    if ($Pourcent -ge 0) { Write-Progress -Activity $Texte -PercentComplete $Pourcent } else { Write-Progress -Activity $Texte }
+}
+
+function Stop-Script {
+    Write-Vide
+    Write-Ligne '[grey50]Fermeture du script.[/]'
+    Disconnect-M365
+    try { Stop-Transcript | Out-Null } catch { }
+    exit
+}
+
+# ====================================================================
+#  JOURNAL, ÉCRITURES ET ÉTAPES
+# ====================================================================
+
+function Add-Journal {
+    <# Une ligne du rapport final, rangée par catégorie. Niveau : Info | Succes | Alerte | Erreur | Simule #>
+    param(
+        [Parameter(Mandatory)] [string] $Message,
+        [ValidateSet('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')] [string] $Categorie = 'General',
+        [ValidateSet('Info', 'Succes', 'Alerte', 'Erreur', 'Simule')] [string] $Niveau = 'Info'
+    )
+    $ligne = [pscustomobject]@{ Quand = Get-Date; Categorie = $Categorie; Niveau = $Niveau; Message = $Message }
+    [void] $script:Journal.Add($ligne)
+    # Pendant une étape, l'affichage attend la fin de l'indicateur d'activité.
+    if ($null -ne $script:Ui.Tampon) { [void] $script:Ui.Tampon.Add($ligne); return }
+    Write-LigneJournal -Ligne $ligne
+}
+
+function Write-LigneJournal {
+    <#
+      Une ligne sous son étape, tenue par un filet vertical : la lecture
+      suit la colonne. Le texte est coupé à la largeur utile — les charges
+      JSON et les longues listes ne partent plus à la ligne n'importe où.
+    #>
+    param([Parameter(Mandatory)] $Ligne)
+    $couleur = switch ($Ligne.Niveau) {
+        'Succes' { 'grey85' } 'Alerte' { 'yellow' } 'Erreur' { 'red' } 'Simule' { 'grey62' } default { 'grey50' }
+    }
+    $puce = switch ($Ligne.Niveau) {
+        'Succes' { "[$($script:Ui.Succes)]●[/]" } 'Alerte' { '[yellow]![/]' } 'Erreur' { '[red]✗[/]' }
+        'Simule' { "[$($script:Ui.Accent)]▸[/]" } default { '[grey35]·[/]' }
+    }
+    $texte = if ($Ligne.Niveau -eq 'Simule') { $Ligne.Message -replace '^SIMULATION : ', '' } else { $Ligne.Message }
+    $guide = "[$($script:Ui.Ligne)]│[/]"
+    $premier = $true
+    foreach ($l in (Format-Ajuste -Texte $texte -Largeur ((Get-Colonne) - 9))) {
+        if ($premier) { Add-Ligne "   $guide  $puce [$couleur]$(Protect-Texte $l)[/]"; $premier = $false }
+        else { Add-Ligne "   $guide    [$couleur]$(Protect-Texte $l)[/]" }
+    }
+}
+
+function Invoke-Ecriture {
+    <#
+      LA porte unique des écritures. En simulation : la description va au
+      journal, l'action n'est pas exécutée. Sinon : l'action est exécutée et
+      son résultat rendu. Aucune cmdlet n'écrit ailleurs qu'ici.
+    #>
+    param(
+        [Parameter(Mandatory)] [string]      $Description,   # ce qui serait fait, en clair
+        [Parameter(Mandatory)] [scriptblock] $Action,
+        [ValidateSet('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')] [string] $Categorie = 'General'
+    )
+    if (Test-Simulation) {
+        Add-Journal -Message "SIMULATION : $Description" -Categorie $Categorie -Niveau Simule
+        return $null
+    }
+    return & $Action
+}
+
+function Write-LigneEtape {
+    <# La ligne de verdict d'une étape : marqueur, nom, durée calée à droite. #>
+    param([Parameter(Mandatory)] $Etape, [string] $Suffixe = '', [switch] $EnCours)
+    $droite = if ($EnCours) { '' } elseif ($Etape.Etat -eq 'ignoree') { 'ignorée' } else { "$($Etape.Duree) s$Suffixe" }
+    $marqueur = if ($EnCours) { "[$($script:Ui.Accent)]▸[/]" } else {
+        switch ($Etape.Etat) { 'ok' { "[$($script:Ui.Succes)]✓[/]" } 'echec' { '[red]✗[/]' } default { '[grey35]○[/]' } }
+    }
+    $encre = if ($Etape.Etat -eq 'ignoree' -and -not $EnCours) { 'grey35' } else { 'white' }
+    Write-Ligne (Format-Deux -Gauche "$marqueur  [$encre]$(Protect-Texte $Etape.Nom)[/]" -Droite "[grey50]$(Protect-Texte $droite)[/]")
+}
+
+function Invoke-Etape {
+    <#
+      Exécute UNE étape de la checklist, avec son try/catch, sa durée, son
+      verdict. Une étape critique qui échoue arrête tout ; une étape
+      secondaire note l'échec et laisse continuer.
+    #>
+    param(
+        [Parameter(Mandatory)] [string]      $Nom,
+        [Parameter(Mandatory)] [scriptblock] $Action,
+        [ValidateSet('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')] [string] $Categorie = 'General',
+        [switch] $Critique,
+        [switch] $Ignorer        # déjà décidé de ne pas la faire (réglage éteint, rien à faire)
+    )
+    $etape = [pscustomobject]@{ Nom = $Nom; Categorie = $Categorie; Etat = 'ignoree'; Duree = 0; Detail = '' }
+    [void] $script:Etapes.Add($etape)
+    if ($Ignorer) { Write-LigneEtape -Etape $etape; return $null }
+    $script:Ui.Tampon = New-Object System.Collections.ArrayList
+    $chrono = [Diagnostics.Stopwatch]::StartNew()
+    $resultat = $null; $erreur = $null
+    try {
+        if (Test-Spectre) {
+            $act = $Action
+            $script:Ui.Resultat = $null
+            try {
+                Invoke-SpectreCommandWithStatus -Title "$(' ' * (Get-Marge))[$($script:Ui.Accent)]▸[/]  [white]$(Protect-Texte $Nom)[/]" -Spinner Line -Color $script:Ui.Accent -ScriptBlock { param($ctx) $script:Ui.Statut = $ctx; $script:Ui.Resultat = & $act } | Out-Null
+                $resultat = $script:Ui.Resultat
+            } finally { $script:Ui.Statut = $null; $script:Ui.Resultat = $null }
+        } else {
+            Write-LigneEtape -Etape $etape -EnCours
+            $resultat = & $Action
+        }
+    } catch { $erreur = Get-MessageErreur $_ }
+    $chrono.Stop()
+    $etape.Duree = [math]::Round($chrono.Elapsed.TotalSeconds, 1)
+    $tampon = @($script:Ui.Tampon); $script:Ui.Tampon = $null
+    $simule = @($tampon | Where-Object { $_.Niveau -eq 'Simule' }).Count -gt 0
+    if ($erreur) { $etape.Etat = 'echec'; $etape.Detail = $erreur } else { $etape.Etat = 'ok' }
+    Write-LigneEtape -Etape $etape -Suffixe $(if ($simule) { '  ·  simulée' } else { '' })
+    foreach ($l in $tampon) { Write-LigneJournal -Ligne $l }
+    if ($erreur) {
+        Add-Journal -Message "$Nom : $erreur" -Categorie $Categorie -Niveau Erreur
+        if ($Critique) { throw "Étape critique en échec : $Nom — $erreur" }
+        Write-Vide
+        return $null
+    }
+    Write-Vide
+    return $resultat
+}
+
+function Show-Checklist {
+    <# Le bilan des étapes, en fin de session : le compte, puis une ligne par étape. #>
+    $ok = @($script:Etapes | Where-Object { $_.Etat -eq 'ok' }).Count
+    $ko = @($script:Etapes | Where-Object { $_.Etat -eq 'echec' }).Count
+    $ig = @($script:Etapes | Where-Object { $_.Etat -eq 'ignoree' }).Count
+    $parts = @("[bold $($script:Ui.Succes)]$ok réussie$(if ($ok -gt 1) { 's' })[/]")
+    if ($ko -gt 0) { $parts += "[bold red]$ko en échec[/]" } else { $parts += '[grey50]0 en échec[/]' }
+    $parts += "[grey50]$ig ignorée$(if ($ig -gt 1) { 's' })[/]"
+    if (Test-Simulation) { $parts += "[$($script:Ui.Accent)]simulation — rien n'a été écrit[/]" }
+    Write-Vide
+    Write-Ligne "[$($script:Ui.Ligne)]$('─' * (Get-Colonne))[/]"
+    Write-Vide
+    Write-Ligne ($parts -join '   [grey27]·[/]   ')
+    Write-Vide
+    foreach ($e in $script:Etapes) {
+        Write-LigneEtape -Etape $e
+        if ($e.Etat -eq 'echec' -and $e.Detail) {
+            foreach ($l in (Format-Ajuste -Texte $e.Detail -Largeur ((Get-Colonne) - 6))) { Write-Ligne "   [red]$(Protect-Texte $l)[/]" }
+        }
+    }
+    Write-Vide
 }
 
 # --------------------------------------------------------------------
@@ -307,39 +975,30 @@ function Get-GrilleTitre {
     return $grille
 }
 
-function Show-Titre {
-    <# Le mot en grand, plein, avec son ombre portée. #>
-    param([Parameter(Mandatory)] [string] $Texte, [int] $Marge = 1)
+function Get-LignesTitre {
+    <# Le mot en grand, plein, avec son ombre portée — rendu en lignes de balisage. #>
+    param([Parameter(Mandatory)] [string] $Texte)
     $grille = Get-GrilleTitre -Texte $Texte
-    if (-not $grille) {
-        Invoke-Rendu -Composant 'titre' -Spectre { Write-SpectreHost "[bold $($script:Ui.Accent)]$(Protect-Texte $Texte.ToUpper())[/]" } -Repli { Write-Host "  $($Texte.ToUpper())" -ForegroundColor Green }
-        return
-    }
+    if (-not $grille) { return @("[bold $($script:Ui.Accent)]$(Protect-Texte $Texte.ToUpper())[/]") }
     $bloc = [string][char]0x2588   # █
-    Invoke-Rendu -Composant 'titre' -Spectre {
-        foreach ($ligne in $grille) {
-            $sb = New-Object Text.StringBuilder
-            [void]$sb.Append(' ' * $Marge)
-            foreach ($suite in (Get-Suites -Ligne $ligne)) {
-                switch ($suite.Signe) {
-                    'P' { [void]$sb.Append("[$($script:Ui.Accent)]$($bloc * $suite.Nombre)[/]") }
-                    'O' { [void]$sb.Append("[$($script:Ui.Ombre)]$($bloc * $suite.Nombre)[/]") }
-                    default { [void]$sb.Append(' ' * $suite.Nombre) }
-                }
+    $lignes = @()
+    foreach ($ligne in $grille) {
+        $sb = New-Object Text.StringBuilder
+        foreach ($suite in (Get-Suites -Ligne $ligne)) {
+            switch ($suite.Signe) {
+                'P' { [void]$sb.Append("[$($script:Ui.Accent)]$($bloc * $suite.Nombre)[/]") }
+                'O' { [void]$sb.Append("[$($script:Ui.Ombre)]$($bloc * $suite.Nombre)[/]") }
+                default { [void]$sb.Append(' ' * $suite.Nombre) }
             }
-            Write-SpectreHost $sb.ToString()
         }
-    } -Repli {
-        foreach ($ligne in $grille) {
-            Write-Host (' ' * $Marge) -NoNewline
-            foreach ($suite in (Get-Suites -Ligne $ligne)) {
-                $texte = $(if ($suite.Signe -eq ' ') { ' ' * $suite.Nombre } else { $bloc * $suite.Nombre })
-                $couleur = switch ($suite.Signe) { 'P' { 'Green' } 'O' { 'DarkGreen' } default { 'Black' } }
-                Write-Host $texte -NoNewline -ForegroundColor $couleur
-            }
-            Write-Host ''
-        }
+        $lignes += $sb.ToString()
     }
+    return @($lignes)
+}
+
+function Show-Titre {
+    param([Parameter(Mandatory)] [string] $Texte)
+    foreach ($l in (Get-LignesTitre -Texte $Texte)) { Write-Ligne $l }
 }
 
 function Get-Suites {
@@ -357,485 +1016,6 @@ function Get-Suites {
     return $suites
 }
 
-function Show-EnTete {
-    param([Parameter(Mandatory)] [string] $Titre)
-    $r = $script:Reglages
-    $a = $script:Ui.Accent
-    $mot = if ($Titre -like 'Entrée*') { 'Entrée' } else { 'Sortie' }
-    $culture = [Globalization.CultureInfo]::GetCultureInfo('fr-CH')
-    $quand = (Get-Date).ToString('dddd d MMMM yyyy, HH:mm', $culture)
-    $modes = @()
-    if ($r.Simulation) { $modes += @{ Point = $script:Ui.Succes; Nom = 'SIMULATION'; Texte = 'rien ne sera écrit, chaque geste est décrit'; Console = 'Green' } }
-    else               { $modes += @{ Point = 'red';   Nom = 'RÉEL';       Texte = 'les actions seront exécutées';               Console = 'Red' } }
-    if ($r.ModeTest)   { $modes += @{ Point = 'grey62'; Nom = 'MODE TEST'; Texte = "rapport vers $($r['DestinataireTest']), pas de tâche Planner"; Console = 'Cyan' } }
-    Invoke-Rendu -Composant 'en-tête' -Spectre {
-        Write-SpectreHost ''
-        Show-Titre -Texte $mot
-        Write-SpectreHost ''
-        $lignes = @(
-            '',
-            " [bold white]$(Protect-Texte $Titre)[/]   [grey62]Service Informatique[/]",
-            " [grey62]$(Protect-Texte $script:Session.Operateur) · $(Protect-Texte $quand) · PowerShell $($PSVersionTable.PSVersion)[/]",
-            ''
-        )
-        foreach ($m in $modes) { $lignes += " [$($m.Point)]●[/] [bold]$(Protect-Texte $m.Nom.PadRight(11))[/] [grey62]$(Protect-Texte $m.Texte)[/]" }
-        $lignes += ''
-        $lignes += " [grey50]↑ ↓ choisir     Entrée valider     taper pour filtrer     ← Annuler pour quitter[/]"
-        New-Panneau -Contenu ($lignes -join "`n") -Titre "[bold $a] Collaborateurs [/]" -Couleur $a | Out-Rendu
-        Write-SpectreHost ''
-    } -Repli {
-        $ligne = '=' * 72
-        Write-Host ''
-        Show-Titre -Texte $mot
-        Write-Host ''
-        Write-Host $ligne -ForegroundColor DarkGray
-        Write-Host "  $Titre   Service Informatique" -ForegroundColor White
-        Write-Host "  $($script:Session.Operateur) · $quand · PowerShell $($PSVersionTable.PSVersion)" -ForegroundColor DarkGray
-        foreach ($m in $modes) { Write-Host ("  * {0,-11} {1}" -f $m.Nom, $m.Texte) -ForegroundColor $m.Console }
-        Write-Host $ligne -ForegroundColor DarkGray
-        Write-Host ''
-    }
-}
-
-function Show-Section {
-    param([Parameter(Mandatory)] [string] $Titre)
-    $trait = [string][char]0x2500
-    $reste = [Math]::Max(3, (Get-Largeur) - $Titre.Length - 4)
-    Invoke-Rendu -Composant 'section' -Spectre {
-        Write-SpectreHost ''
-        Write-SpectreHost "[$($script:Ui.Ligne)]$($trait * 2)[/] [bold $($script:Ui.Accent)]$(Protect-Texte $Titre)[/] [$($script:Ui.Ligne)]$($trait * $reste)[/]"
-        Write-SpectreHost ''
-    } -Repli {
-        Write-Host ''
-        Write-Host "-- $Titre " -ForegroundColor Cyan -NoNewline
-        Write-Host ('-' * $reste) -ForegroundColor DarkGray
-        Write-Host ''
-    }
-}
-
-function Show-Filet {
-    <# Un filet plein, à la largeur des panneaux. #>
-    param([string] $Couleur = '')
-    if (-not $Couleur) { $Couleur = $script:Ui.Ligne }
-    $trait = [string][char]0x2500
-    $largeur = Get-Largeur
-    Invoke-Rendu -Composant 'filet' -Spectre { Write-SpectreHost "[$Couleur]$($trait * $largeur)[/]" } -Repli { Write-Host ($trait * $largeur) -ForegroundColor DarkGray }
-}
-
-function Show-Note {
-    <# Une ligne d'information hors journal. Niveau : Info | Sourdine | Succes | Alerte | Erreur #>
-    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Texte, [ValidateSet('Info', 'Sourdine', 'Succes', 'Alerte', 'Erreur')] [string] $Niveau = 'Info')
-    $couleurSpectre = switch ($Niveau) { 'Sourdine' { 'grey50' } 'Succes' { $script:Ui.Succes } 'Alerte' { 'yellow' } 'Erreur' { 'red' } default { 'grey85' } }
-    $couleurConsole = switch ($Niveau) { 'Sourdine' { 'DarkGray' } 'Succes' { 'Green' } 'Alerte' { 'Yellow' } 'Erreur' { 'Red' } default { 'Gray' } }
-    $puce = switch ($Niveau) { 'Succes' { '✓ ' } 'Alerte' { '! ' } 'Erreur' { '✗ ' } default { '' } }
-    Invoke-Rendu -Composant 'note' -Spectre { Write-SpectreHost "  [$couleurSpectre]$puce$(Protect-Texte $Texte)[/]" } -Repli { Write-Host "  $Texte" -ForegroundColor $couleurConsole }
-}
-
-function Show-Tableau {
-    <# Des objets en tableau : lignes horizontales seulement, en-têtes en accent. -Colonnes = propriétés affichées, dans l'ordre. #>
-    param([Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Lignes, [string[]] $Colonnes, [string] $Titre = '')
-    if (-not $Lignes -or $Lignes.Count -eq 0) { return }
-    $vue = if ($Colonnes) { @($Lignes | Select-Object -Property $Colonnes) } else { @($Lignes) }
-    Invoke-Rendu -Composant 'tableau' -Spectre {
-        $p = @{ Data = $vue; Border = 'Horizontal'; Color = $script:Ui.Ligne }
-        if (Test-Param 'Format-SpectreTable' 'HeaderColor') { $p.HeaderColor = $script:Ui.Accent }
-        if ($Titre) { $p.Title = "[grey62]$(Protect-Texte $Titre)[/]" }
-        Format-SpectreTable @p | Out-Rendu
-    } -Repli {
-        if ($Titre) { Write-Host "  $Titre" -ForegroundColor Cyan }
-        $vue | Format-Table -AutoSize | Out-String -Width 200 | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ } | ForEach-Object { Write-Host "  $_" }
-    }
-}
-
-function Show-Recap {
-    <# Un récapitulatif clé → valeur, avant la confirmation : libellés en gris alignés, valeurs en blanc. #>
-    param([Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $Paires, [string] $Titre = 'Récapitulatif')
-    $largeurCle = 4; foreach ($k in $Paires.Keys) { if ("$k".Length -gt $largeurCle) { $largeurCle = "$k".Length } }
-    Invoke-Rendu -Composant 'récapitulatif' -Spectre {
-        $lignes = @('')
-        foreach ($k in $Paires.Keys) { $lignes += " [grey62]$(Protect-Texte "$k".PadRight($largeurCle))[/]   [white]$(Protect-Texte "$($Paires[$k])")[/]" }
-        $lignes += ''
-        New-Panneau -Contenu ($lignes -join "`n") -Titre "[bold white] $(Protect-Texte $Titre) [/]" | Out-Rendu
-    } -Repli {
-        Write-Host ''
-        Write-Host "  $Titre" -ForegroundColor Cyan
-        foreach ($k in $Paires.Keys) { Write-Host ("  {0}   {1}" -f "$k".PadRight($largeurCle), $Paires[$k]) }
-        Write-Host ''
-    }
-}
-
-function Show-Panneau {
-    <# Un bloc de texte encadré (aperçu d'un message, mot de passe…). -Accent : bordure en couleur d'accent. #>
-    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Texte, [string] $Titre = '', [switch] $Accent)
-    Invoke-Rendu -Composant 'panneau' -Spectre {
-        $contenu = "`n" + ((($Texte -split "`r?`n") | ForEach-Object { " $(Protect-Texte $_)" }) -join "`n") + "`n"
-        $couleur = if ($Accent) { $script:Ui.Accent } else { $script:Ui.Ligne }
-        $titre = if ($Titre) { "[bold $(if ($Accent) { $script:Ui.Accent } else { 'white' })] $(Protect-Texte $Titre) [/]" } else { '' }
-        New-Panneau -Contenu $contenu -Titre $titre -Couleur $couleur | Out-Rendu
-    } -Repli {
-        Write-Host ''
-        if ($Titre) { Write-Host "  -- $Titre" -ForegroundColor DarkGray }
-        foreach ($l in ($Texte -split "`r?`n")) { Write-Host "  | $l" }
-        Write-Host '  --' -ForegroundColor DarkGray
-    }
-}
-
-function Format-Question {
-    <# « ? » en accent puis la question en gras : la même signature pour toutes les invites. #>
-    param([Parameter(Mandatory)] [string] $Texte)
-    return "[$($script:Ui.Accent)]?[/] [bold]$(Protect-Texte $Texte)[/]"
-}
-
-function Read-Texte {
-    param([Parameter(Mandatory)] [string] $Invite, [string] $Defaut = '', [switch] $Obligatoire, [switch] $QuitteSurQ)
-    do {
-        $valeur = Invoke-Rendu -Valeur -Composant 'saisie' -Spectre {
-            $p = @{ AllowEmpty = (-not $Obligatoire) }
-            $p[(Get-NomInvite 'Read-SpectreText')] = Format-Question $Invite
-            if ($Defaut) { $p.DefaultAnswer = $Defaut }
-            if (Test-Param 'Read-SpectreText' 'AnswerColor') { $p.AnswerColor = 'white' }
-            "$(Read-SpectreText @p)"
-        } -Repli {
-            $affichage = if ($Defaut) { "$Invite [$Defaut]" } else { $Invite }
-            "$(Read-Host $affichage)"
-        }
-        if ($null -eq $valeur) { $valeur = '' }
-        $valeur = $valeur.Trim()
-        if ($QuitteSurQ -and $valeur -eq 'q') { Stop-Script }
-        if (-not $valeur -and $Defaut) { $valeur = $Defaut }
-        if ($Obligatoire -and -not $valeur) { Show-Note 'Valeur obligatoire.' -Niveau Alerte }
-    } while ($Obligatoire -and -not $valeur)
-    return $valeur
-}
-
-function Read-TexteMultiligne {
-    <#
-      Un bloc de texte tapé ou COLLÉ dans le terminal, dans une zone de saisie
-      délimitée. Fin de saisie : deux lignes vides d'affilée (Entrée, Entrée)
-      ou une ligne ne contenant qu'un point. Les lignes vides isolées
-      (paragraphes) sont conservées.
-    #>
-    param([Parameter(Mandatory)] [string] $Invite)
-    $a = $script:Ui.Accent
-    Invoke-Rendu -Composant 'saisie multiligne' -Spectre {
-        Write-SpectreHost (Format-Question $Invite)
-        Write-SpectreHost "  [grey50]Tapez ou collez le texte. Pour terminer : deux fois Entrée sur une ligne vide, ou un point seul.[/]"
-    } -Repli {
-        Write-Host "  $Invite" -ForegroundColor Cyan
-        Write-Host '  Tapez ou collez le texte. Pour terminer : deux fois Entrée sur une ligne vide, ou un point seul.' -ForegroundColor DarkGray
-    }
-    Show-Filet -Couleur $a
-    $lignes = New-Object System.Collections.ArrayList
-    $vides = 0
-    while ($true) {
-        if (Test-Spectre) { Write-SpectreHost "[$a]›[/] " -NoNewline } else { Write-Host '> ' -NoNewline -ForegroundColor DarkGray }
-        # Read-Host plutôt que [Console]::ReadLine : même tampon d'entrée que les autres questions.
-        $l = try { Read-Host } catch { $null }
-        if ($null -eq $l) { break }
-        $l = "$l"
-        if ($l.Trim() -eq '.') { break }
-        if ($l.Trim() -eq '') {
-            $vides++
-            if ($vides -ge 2) { break }
-            [void]$lignes.Add('')
-            continue
-        }
-        $vides = 0
-        [void]$lignes.Add($l.TrimEnd())
-    }
-    while ($lignes.Count -gt 0 -and $lignes[$lignes.Count - 1] -eq '') { $lignes.RemoveAt($lignes.Count - 1) }
-    Show-Filet -Couleur $a
-    return (@($lignes) -join "`n")
-}
-
-function Confirm-Choix {
-    <# Oui / Non au clavier, le choix par défaut sous le pointeur. #>
-    param([Parameter(Mandatory)] [string] $Question, [switch] $DefautOui)
-    return [bool](Invoke-Rendu -Valeur -Composant 'confirmation' -Spectre {
-        $choix = if ($DefautOui) { @('Oui', 'Non') } else { @('Non', 'Oui') }
-        $p = @{ Choices = $choix; Color = $script:Ui.Accent }
-        $p[(Get-NomInvite 'Read-SpectreSelection')] = Format-Question $Question
-        "$(Read-SpectreSelection @p)" -eq 'Oui'
-    } -Repli {
-        $suffixe = if ($DefautOui) { '(O/n)' } else { '(o/N)' }
-        $r = Read-Host "$Question $suffixe"
-        if (-not $r) { [bool]$DefautOui } else { [bool]($r -match '^[oOyY]') }
-    })
-}
-
-function Format-Colonnes {
-    <# Des objets → des lignes de texte à colonnes alignées (l'œil lit une grille, pas une phrase). #>
-    param([Parameter(Mandatory)] [object[]] $Elements, [Parameter(Mandatory)] [string[]] $Colonnes, [int] $MaxColonne = 42)
-    $cellules = @()
-    foreach ($e in $Elements) {
-        $cellules += , @($Colonnes | ForEach-Object { $v = "$($e.$_)" -replace "\s+", ' '; if ($v.Length -gt $MaxColonne) { $v.Substring(0, $MaxColonne - 1) + '…' } else { $v } })
-    }
-    $largeurs = @(0) * $Colonnes.Count
-    foreach ($ligne in $cellules) { for ($i = 0; $i -lt $Colonnes.Count; $i++) { if ($ligne[$i].Length -gt $largeurs[$i]) { $largeurs[$i] = $ligne[$i].Length } } }
-    $textes = @()
-    foreach ($ligne in $cellules) {
-        $parts = @(); for ($i = 0; $i -lt $Colonnes.Count; $i++) { if ($largeurs[$i] -gt 0) { $parts += $ligne[$i].PadRight($largeurs[$i]) } }
-        $textes += ($parts -join '   ').TrimEnd()
-    }
-    return $textes
-}
-
-function Read-Choix {
-    <#
-      Un choix parmi des objets, au clavier (flèches + filtre en tapant avec
-      Spectre, numéros sinon). -Colonnes : propriétés affichées, alignées ;
-      -Libelle : scriptblock qui rend le texte d'une ligne ($_) ; sinon "$e".
-      -Multiple : sélection multiple (rend un tableau).
-      Sans -SansAnnulation, une entrée « Annuler » ferme le script.
-    #>
-    param(
-        [Parameter(Mandatory)] [string]   $Titre,
-        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Elements,
-        [string[]]    $Colonnes,
-        [scriptblock] $Libelle,
-        [string]      $Aide = '',
-        [switch]      $Multiple,
-        [switch]      $SansAnnulation
-    )
-    if (-not $Elements -or $Elements.Count -eq 0) { throw "Rien à choisir pour « $Titre »." }
-    $textes = @()
-    if ($Colonnes) { $textes = @(Format-Colonnes -Elements $Elements -Colonnes $Colonnes) }
-    else {
-        foreach ($e in $Elements) { $textes += $(if ($Libelle) { "$(ForEach-Object -InputObject $e -Process $Libelle)" } else { "$e" }) }
-    }
-    # Libellés uniques : c'est par eux qu'on retrouve l'objet choisi.
-    $vus = @{}
-    for ($i = 0; $i -lt $textes.Count; $i++) {
-        if ($vus.ContainsKey($textes[$i])) { $textes[$i] = "$($textes[$i])  ($($i + 1))" }
-        $vus[$textes[$i]] = $i
-    }
-    $annuler = '← Annuler'
-    $aide = if ($Aide) { $Aide } elseif ($Multiple) { 'espace pour cocher, Entrée pour valider' } elseif ($textes.Count -gt 6) { 'tapez pour filtrer' } else { '' }
-    $question = (Format-Question $Titre) + $(if ($aide) { "  [grey50]$(Protect-Texte $aide)[/]" } else { '' })
-
-    $indices = Invoke-Rendu -Valeur -Composant 'sélection' -Spectre {
-        $affiches = @($textes | ForEach-Object { Protect-Texte $_ })
-        Write-SpectreHost ''
-        if ($Multiple) {
-            $p = @{ Choices = $affiches; Color = $script:Ui.Accent }
-            if (Test-Param 'Read-SpectreMultiSelection' 'PageSize') { $p.PageSize = 14 }
-            $p[(Get-NomInvite 'Read-SpectreMultiSelection')] = $question
-            $retenus = @(Read-SpectreMultiSelection @p)
-            @($retenus | ForEach-Object { [array]::IndexOf($affiches, "$_") } | Where-Object { $_ -ge 0 })
-        } else {
-            $liste = @($affiches); if (-not $SansAnnulation) { $liste += $annuler }
-            $p = @{ Choices = $liste; Color = $script:Ui.Accent }
-            if (Test-Param 'Read-SpectreSelection' 'PageSize') { $p.PageSize = 14 }
-            if ($liste.Count -gt 6 -and (Test-Param 'Read-SpectreSelection' 'EnableSearch')) { $p.EnableSearch = $true }
-            $p[(Get-NomInvite 'Read-SpectreSelection')] = $question
-            $retenu = "$(Read-SpectreSelection @p)"
-            if ($retenu -eq $annuler) { @(-1) } else { @([array]::IndexOf($affiches, $retenu)) }
-        }
-    } -Repli {
-        Write-Host ''
-        Write-Host "  $Titre" -ForegroundColor Cyan
-        for ($i = 0; $i -lt $textes.Count; $i++) { Write-Host ("  {0,3}) {1}" -f ($i + 1), $textes[$i]) }
-        do {
-            $saisie = Read-Host $(if ($Multiple) { '  Numéros séparés par des virgules (q pour quitter)' } else { '  Numéro (q pour quitter)' })
-            if ($saisie -eq 'q') { @(-1); break }
-            $nums = @($saisie -split '[,; ]+' | Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ - 1 } | Where-Object { $_ -ge 0 -and $_ -lt $textes.Count })
-        } while ($nums.Count -eq 0)
-        if ($saisie -ne 'q') { @($nums) }
-    }
-    $indices = @($indices)
-    if ($indices.Count -eq 0 -or $indices[0] -lt 0) {
-        if ($Multiple) { return @() }
-        Stop-Script
-    }
-    $retour = @($indices | ForEach-Object { $Elements[$_] })
-    if ($Multiple) { return $retour }
-    return $retour[0]
-}
-
-function Invoke-Attente {
-    <# Un travail qui dure (lecture du PBX, connexion…) : un indicateur d'activité, puis le résultat. #>
-    param([Parameter(Mandatory)] [string] $Titre, [Parameter(Mandatory)] [scriptblock] $Action)
-    if (-not (Test-Spectre)) {
-        Write-Host "  … $Titre" -ForegroundColor DarkGray
-        return & $Action
-    }
-    # Le journal attend la fin de l'indicateur, sinon il s'écrit par-dessus.
-    $script:Ui.Tampon = New-Object System.Collections.ArrayList
-    $act = $Action
-    # Le résultat passe par l'état du module : on ne dépend pas de ce que Spectre rend.
-    $script:Ui.Resultat = $null
-    try {
-        Invoke-SpectreCommandWithStatus -Title "[grey62]$(Protect-Texte $Titre)[/]" -Spinner Line -Color $script:Ui.Accent -ScriptBlock { param($ctx) $script:Ui.Statut = $ctx; $script:Ui.Resultat = & $act } | Out-Null
-        return $script:Ui.Resultat
-    } catch {
-        throw (Get-MessageErreur $_)
-    } finally {
-        $script:Ui.Statut = $null; $script:Ui.Resultat = $null
-        $tampon = @($script:Ui.Tampon); $script:Ui.Tampon = $null
-        foreach ($l in $tampon) { Write-LigneJournal -Ligne $l }
-    }
-}
-
-function Update-Statut {
-    <# Met à jour le texte de l'indicateur d'activité (Spectre) ou une barre de progression (console nue). #>
-    param([Parameter(Mandatory)] [string] $Texte, [int] $Pourcent = -1)
-    if ($script:Ui.Statut) { try { $script:Ui.Statut.Status = "[grey62]$(Protect-Texte $Texte)[/]" } catch { } ; return }
-    if ($Pourcent -ge 0) { Write-Progress -Activity $Texte -PercentComplete $Pourcent } else { Write-Progress -Activity $Texte }
-}
-
-function Stop-Script {
-    Show-Note 'Fermeture du script.' -Niveau Sourdine
-    Disconnect-M365
-    try { Stop-Transcript | Out-Null } catch { }
-    exit
-}
-
-# ====================================================================
-#  JOURNAL, ÉCRITURES ET ÉTAPES
-# ====================================================================
-
-function Add-Journal {
-    <# Une ligne du rapport final, rangée par catégorie. Niveau : Info | Succes | Alerte | Erreur | Simule #>
-    param(
-        [Parameter(Mandatory)] [string] $Message,
-        [ValidateSet('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')] [string] $Categorie = 'General',
-        [ValidateSet('Info', 'Succes', 'Alerte', 'Erreur', 'Simule')] [string] $Niveau = 'Info'
-    )
-    $ligne = [pscustomobject]@{ Quand = Get-Date; Categorie = $Categorie; Niveau = $Niveau; Message = $Message }
-    [void] $script:Journal.Add($ligne)
-    # Pendant une étape, l'affichage attend la fin de l'indicateur d'activité.
-    if ($null -ne $script:Ui.Tampon) { [void] $script:Ui.Tampon.Add($ligne); return }
-    Write-LigneJournal -Ligne $ligne
-}
-
-function Write-LigneJournal {
-    param([Parameter(Mandatory)] $Ligne)
-    $texte = $Ligne.Message
-    $console = switch ($Ligne.Niveau) { 'Succes' { 'Gray' } 'Alerte' { 'Yellow' } 'Erreur' { 'Red' } 'Simule' { 'DarkYellow' } default { 'DarkGray' } }
-    $puceConsole = switch ($Ligne.Niveau) { 'Succes' { '+' } 'Alerte' { '!' } 'Erreur' { 'x' } 'Simule' { '>' } default { '·' } }
-    Invoke-Rendu -Composant 'journal' -Spectre {
-        $a = $script:Ui.Accent
-        switch ($Ligne.Niveau) {
-            'Succes' { Write-SpectreHost "      [$($script:Ui.Succes)]·[/] [grey85]$(Protect-Texte $texte)[/]" }
-            'Alerte' { Write-SpectreHost "      [yellow]![/] [yellow]$(Protect-Texte $texte)[/]" }
-            'Erreur' { Write-SpectreHost "      [red]✗[/] [red]$(Protect-Texte $texte)[/]" }
-            'Simule' { Write-SpectreHost "      [$a]▸[/] [grey62]$(Protect-Texte ($texte -replace '^SIMULATION : ', ''))[/]" }
-            default  { Write-SpectreHost "      [grey50]·[/] [grey62]$(Protect-Texte $texte)[/]" }
-        }
-    } -Repli { Write-Host "       $puceConsole $texte" -ForegroundColor $console }
-}
-
-function Invoke-Ecriture {
-    <#
-      LA porte unique des écritures. En simulation : la description va au
-      journal, l'action n'est pas exécutée. Sinon : l'action est exécutée et
-      son résultat rendu. Aucune cmdlet n'écrit ailleurs qu'ici.
-    #>
-    param(
-        [Parameter(Mandatory)] [string]      $Description,   # ce qui serait fait, en clair : « Set-Mailbox x -Type Shared »
-        [Parameter(Mandatory)] [scriptblock] $Action,
-        [ValidateSet('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')] [string] $Categorie = 'General'
-    )
-    if (Test-Simulation) {
-        Add-Journal -Message "SIMULATION : $Description" -Categorie $Categorie -Niveau Simule
-        return $null
-    }
-    return & $Action
-}
-
-function Write-LigneEtape {
-    <# La ligne de verdict d'une étape : coche, nom, durée calée à droite. #>
-    param([Parameter(Mandatory)] $Etape, [string] $Suffixe = '')
-    $largeur = Get-Largeur
-    $nom = $Etape.Nom
-    $droite = if ($Etape.Etat -eq 'ignoree') { 'ignorée' } else { "$($Etape.Duree) s$Suffixe" }
-    $espace = [Math]::Max(2, $largeur - 4 - $nom.Length - $droite.Length)
-    Invoke-Rendu -Composant 'étape' -Spectre {
-        $coche = switch ($Etape.Etat) { 'ok' { "[$($script:Ui.Succes)]✓[/]" } 'echec' { '[red]✗[/]' } default { '[grey35]○[/]' } }
-        $texte = if ($Etape.Etat -eq 'ignoree') { "[grey35]$(Protect-Texte $nom)[/]" } else { "[white]$(Protect-Texte $nom)[/]" }
-        Write-SpectreHost "  $coche $texte$(' ' * $espace)[grey50]$(Protect-Texte $droite)[/]"
-    } -Repli {
-        $symbole = switch ($Etape.Etat) { 'ok' { '[OK]' } 'echec' { '[KO]' } default { '[--]' } }
-        $couleur = switch ($Etape.Etat) { 'ok' { 'Green' } 'echec' { 'Red' } default { 'DarkGray' } }
-        Write-Host ("  {0} {1}{2}{3}" -f $symbole, $nom, (' ' * $espace), $droite) -ForegroundColor $couleur
-    }
-}
-
-function Invoke-Etape {
-    <#
-      Exécute UNE étape de la checklist, avec son try/catch, sa durée, son
-      verdict. Une étape critique qui échoue arrête tout ; une étape
-      secondaire note l'échec et laisse continuer.
-    #>
-    param(
-        [Parameter(Mandatory)] [string]      $Nom,
-        [Parameter(Mandatory)] [scriptblock] $Action,
-        [ValidateSet('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')] [string] $Categorie = 'General',
-        [switch] $Critique,
-        [switch] $Ignorer        # déjà décidé de ne pas la faire (réglage éteint, rien à faire)
-    )
-    $etape = [pscustomobject]@{ Nom = $Nom; Categorie = $Categorie; Etat = 'ignoree'; Duree = 0; Detail = '' }
-    [void] $script:Etapes.Add($etape)
-    if ($Ignorer) { Write-LigneEtape -Etape $etape; return $null }
-    $script:Ui.Tampon = New-Object System.Collections.ArrayList
-    $chrono = [Diagnostics.Stopwatch]::StartNew()
-    $resultat = $null; $erreur = $null
-    try {
-        if (Test-Spectre) {
-            $act = $Action
-            $script:Ui.Resultat = $null
-            try {
-                Invoke-SpectreCommandWithStatus -Title "[grey62]$(Protect-Texte $Nom)[/]" -Spinner Line -Color $script:Ui.Accent -ScriptBlock { param($ctx) $script:Ui.Statut = $ctx; $script:Ui.Resultat = & $act } | Out-Null
-                $resultat = $script:Ui.Resultat
-            } finally { $script:Ui.Statut = $null; $script:Ui.Resultat = $null }
-        } else {
-            Write-Host ("  [..] {0}" -f $Nom) -ForegroundColor DarkGray
-            $resultat = & $Action
-        }
-    } catch { $erreur = Get-MessageErreur $_ }
-    $chrono.Stop()
-    $etape.Duree = [math]::Round($chrono.Elapsed.TotalSeconds, 1)
-    $tampon = @($script:Ui.Tampon); $script:Ui.Tampon = $null
-    $simule = @($tampon | Where-Object { $_.Niveau -eq 'Simule' }).Count -gt 0
-    if ($erreur) { $etape.Etat = 'echec'; $etape.Detail = $erreur } else { $etape.Etat = 'ok' }
-    Write-LigneEtape -Etape $etape -Suffixe $(if ($simule) { '  ·  simulée' } else { '' })
-    foreach ($l in $tampon) { Write-LigneJournal -Ligne $l }
-    if ($erreur) {
-        Add-Journal -Message "$Nom : $erreur" -Categorie $Categorie -Niveau Erreur
-        if ($Critique) { throw "Étape critique en échec : $Nom — $erreur" }
-        return $null
-    }
-    return $resultat
-}
-
-function Show-Checklist {
-    <# Le bilan des étapes, en fin de session : une ligne par étape, le compte en tête. #>
-    $ok = @($script:Etapes | Where-Object { $_.Etat -eq 'ok' }).Count
-    $ko = @($script:Etapes | Where-Object { $_.Etat -eq 'echec' }).Count
-    $ig = @($script:Etapes | Where-Object { $_.Etat -eq 'ignoree' }).Count
-    Show-Section 'Bilan'
-    Invoke-Rendu -Composant 'bilan' -Spectre {
-        $parts = @("[bold $($script:Ui.Succes)]$ok réussie$(if ($ok -gt 1) { 's' })[/]")
-        if ($ko -gt 0) { $parts += "[bold red]$ko en échec[/]" } else { $parts += "[grey50]0 en échec[/]" }
-        $parts += "[grey50]$ig ignorée$(if ($ig -gt 1) { 's' })[/]"
-        if (Test-Simulation) { $parts += "[$($script:Ui.Accent)]simulation — rien n'a été écrit[/]" }
-        Write-SpectreHost "  $($parts -join '   [grey35]·[/]   ')"
-        Write-SpectreHost ''
-        foreach ($e in $script:Etapes) {
-            Write-LigneEtape -Etape $e
-            if ($e.Etat -eq 'echec' -and $e.Detail) { Write-SpectreHost "      [red]$(Protect-Texte $e.Detail)[/]" }
-        }
-        Write-SpectreHost ''
-    } -Repli {
-        Write-Host "  $ok réussie(s) · $ko en échec · $ig ignorée(s)$(if (Test-Simulation) { ' · SIMULATION' })" -ForegroundColor Cyan
-        Write-Host ''
-        foreach ($e in $script:Etapes) {
-            Write-LigneEtape -Etape $e
-            if ($e.Etat -eq 'echec' -and $e.Detail) { Write-Host "       $($e.Detail)" -ForegroundColor Red }
-        }
-        Write-Host ''
-    }
-}
 
 # ====================================================================
 #  OUTILS TEXTE, MODÈLES ET MOT DE PASSE
@@ -1201,7 +1381,8 @@ function Invoke-Xapi {
         [Parameter(Mandatory)] $Pbx,
         [ValidateSet('GET', 'POST', 'PATCH', 'DELETE')] [string] $Methode = 'GET',
         [Parameter(Mandatory)] [string] $Chemin,     # ex. "Users?%24top=100"
-        $Corps = $null
+        $Corps = $null,
+        [string] $Libelle = ''                       # la description lisible, pour le journal
     )
     $appel = {
         $token = Connect-Xapi -Pbx $Pbx
@@ -1210,8 +1391,12 @@ function Invoke-Xapi {
         Invoke-RestMethod @params
     }
     if ($Methode -eq 'GET') { return & $appel }
-    $apercu = if ($Corps) { ($Corps | ConvertTo-Json -Depth 6 -Compress) } else { '' }
-    return Invoke-Ecriture -Categorie 3CX -Description "3CX $Methode $Chemin $apercu" -Action $appel
+    $description = $Libelle
+    if (-not $description) {
+        $apercu = if ($Corps) { ($Corps | ConvertTo-Json -Depth 6 -Compress) } else { '' }
+        $description = "3CX $Methode $Chemin $apercu"
+    }
+    return Invoke-Ecriture -Categorie 3CX -Description $description -Action $appel
 }
 
 function Get-XapiUtilisateurs {
@@ -1264,7 +1449,10 @@ function Set-XapiAgentsDeFile {
     <# Remplace la liste des agents d'une file (PATCH). On envoie TOUJOURS la liste complète : le PBX ne fait pas de diff. #>
     param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] $File, [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Agents)
     $corps = @{ Agents = @($Agents | ForEach-Object { @{ Number = "$($_.Number)"; SkillGroup = $(if ($_.SkillGroup) { "$($_.SkillGroup)" } else { "$($Pbx.skillGroupParDefaut)" }) } }) }
-    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Queues($($File.Id))" -Corps $corps | Out-Null
+    $numeros = @($Agents | ForEach-Object { "$($_.Number)" })
+    $nom = if (Get-Prop -Objet $File -Nom 'Name') { " « $($File.Name) »" } else { '' }
+    $libelle = "File $($File.Number)$nom : $($numeros.Count) agent(s) — $(if ($numeros.Count) { $numeros -join ', ' } else { 'aucun' })"
+    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Queues($($File.Id))" -Corps $corps -Libelle $libelle | Out-Null
 }
 
 function Remove-XapiPosteDesFiles {
@@ -1294,8 +1482,10 @@ function Add-XapiPosteAuxFiles {
 
 function Set-XapiPoste {
     <# Modifie un utilisateur du PBX (PATCH Users({Id})). #>
-    param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [int] $Id, [Parameter(Mandatory)] [hashtable] $Proprietes)
-    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Users($Id)" -Corps $Proprietes | Out-Null
+    param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [int] $Id, [Parameter(Mandatory)] [hashtable] $Proprietes, [string] $Numero = '')
+    $details = @($Proprietes.Keys | Sort-Object | ForEach-Object { "$_ = $(if ("$($Proprietes[$_])" -eq '') { '(vide)' } else { "$($Proprietes[$_])" })" })
+    $libelle = "Poste $(if ($Numero) { $Numero } else { "#$Id" }) : $($details -join ', ')"
+    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Users($Id)" -Corps $Proprietes -Libelle $libelle | Out-Null
 }
 
 function Get-XapiSdaVersPoste {

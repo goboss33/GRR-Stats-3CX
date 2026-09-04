@@ -7,9 +7,9 @@
     vers Microsoft 365, réaffecte ou crée son poste 3CX et l'inscrit dans ses
     files, puis envoie la fiche au helpdesk.
 
-    Sans argument : assistant interactif. Avec -Job : aucun dialogue, tout vient
-    du fichier JSON (voir exemples\entree.json) — c'est le contrat avec le futur
-    portail.
+    Sans argument : assistant interactif, une étape par écran. Avec -Job :
+    aucun dialogue, tout vient du fichier JSON (voir exemples\entree.json) —
+    c'est le contrat avec le futur portail.
 
     -Simulation : aucune écriture, chaque geste est décrit (Invoke-Ecriture).
     Interface complète sous PowerShell 7 + PwshSpectreConsole ; le script s'y
@@ -58,7 +58,8 @@ if ($SansAdConnect) { $Reglages.SynchroniserAdConnect = $false }
 # ---------------------------------------------------------------------------
 
 Import-Module (Join-Path $PSScriptRoot 'Collaborateurs.psm1') -Force
-Initialize-Collaborateurs -Reglages $Reglages -Dossier $PSScriptRoot -Operation 'entree'
+$etapes = @('Le collaborateur', 'Vérifications', 'Confirmation', 'Exécution')
+Initialize-Collaborateurs -Reglages $Reglages -Dossier $PSScriptRoot -Operation 'entree' -Etapes $etapes -Interactif (-not $Job)
 $config = Get-Config
 
 # ================================================================ 1. DOSSIER
@@ -71,6 +72,7 @@ $dossier = [ordered]@{
     Poste3CX = $null; Files3CX = @()
 }
 
+Set-Etape 'Le collaborateur'
 if ($Job) {
     $j = Get-Content -Path $Job -Raw -Encoding UTF8 | ConvertFrom-Json
     $dossier.Societe = Get-Societe -Id $j.societe
@@ -79,25 +81,26 @@ if ($Job) {
     foreach ($k in 'Prenom', 'Nom', 'Fonction', 'Service', 'Titre') { $dossier[$k] = "$(Get-Prop -Objet $j -Nom $k.ToLower() -Defaut '')" }
     if (Get-Prop -Objet $j -Nom 'identifiant') { $dossier.Sam = "$(Get-Prop -Objet $j -Nom 'identifiant')" }
 } else {
-    Show-Section '1 · Le collaborateur'
     $dossier.Societe = Read-Choix -Titre 'Quelle société ?' -Elements @($config.societes) -Colonnes nom, domaineMail
-    $dossier.Site    = Read-Choix -Titre "Quel site ? ($($dossier.Societe.nom))" -Elements @($dossier.Societe.sites) -Colonnes id, adresse, codePostal, telephone
-    Show-Note "$($dossier.Societe.nom) › $($dossier.Site.id)   (q pour quitter à tout moment)" -Niveau Sourdine
-    $dossier.Prenom   = Read-Texte -Invite 'Prénom' -Obligatoire -QuitteSurQ
-    $dossier.Nom      = Read-Texte -Invite 'Nom' -Obligatoire -QuitteSurQ
-    $dossier.Fonction = Read-Texte -Invite 'Fonction' -QuitteSurQ
-    $dossier.Service  = Read-Texte -Invite 'Service' -QuitteSurQ
-    $dossier.Titre    = Read-Texte -Invite 'Titre' -QuitteSurQ
+    Add-Resume -Cle 'Société' -Valeur $dossier.Societe.id
+    $dossier.Site = Read-Choix -Titre 'Quel site ?' -Elements @($dossier.Societe.sites) -Colonnes id, adresse, codePostal, telephone
+    Add-Resume -Cle 'Site' -Valeur $dossier.Site.id
+    $dossier.Prenom   = Read-Champ -Libelle 'Prénom' -Obligatoire -QuitteSurQ
+    $dossier.Nom      = Read-Champ -Libelle 'Nom' -Obligatoire -QuitteSurQ
+    $dossier.Fonction = Read-Champ -Libelle 'Fonction' -QuitteSurQ
+    $dossier.Service  = Read-Champ -Libelle 'Service' -QuitteSurQ
+    $dossier.Titre    = Read-Champ -Libelle 'Titre' -QuitteSurQ
 }
 
 $ids = ConvertTo-Identifiants -Prenom $dossier.Prenom -Nom $dossier.Nom -DomaineMail $dossier.Societe.domaineMail
 if (-not $dossier.Sam) { $dossier.Sam = $ids.Sam }
 $dossier.Email = $ids.Email; $dossier.MailNickname = $ids.MailNickname; $dossier.DisplayName = $ids.DisplayName
 $dossier.MotDePasse = New-MotDePasse
+if (-not $Job) { Add-Resume -Cle 'Collaborateur' -Valeur $dossier.DisplayName }
 
 # ====================================================== 2. VÉRIFICATIONS
 # Avant la moindre écriture : on se connecte, on vérifie l'unicité, on lit le PBX.
-if (-not $Job) { Show-Section '2 · Vérifications et poste 3CX' }
+Set-Etape 'Vérifications'
 $ad = Connect-Domaine -Societe $dossier.Societe
 $pbx = if ($Reglages.Gerer3CX) { Get-Pbx -Societe $dossier.Societe } else { $null }
 
@@ -110,7 +113,7 @@ while ($true) {
 }
 $doublonUpn = Get-ADUser -Filter "UserPrincipalName -eq '$($dossier.Email)'" @ad -ErrorAction SilentlyContinue
 if ($doublonUpn) { throw "L'adresse $($dossier.Email) existe déjà dans l'AD ($($doublonUpn.Name))." }
-Show-Note "Identifiant $($dossier.Sam) et adresse $($dossier.Email) libres dans l'AD." -Niveau Succes
+Show-Constat -Titre "Identifiant et adresse libres dans l'Active Directory" -Valeurs @($dossier.Sam, $dossier.Email)
 
 if ($pbx) {
     $lecture = Invoke-Attente -Titre "Lecture du 3CX ($($pbx.adresse))" -Action {
@@ -129,13 +132,14 @@ if ($pbx) {
         $dossier.Poste3CX = @(Get-XapiUtilisateurs -Pbx $pbx | Where-Object { "$($_.Number)" -eq $posteVoulu })[0]
         if (-not $dossier.Poste3CX) { throw "Poste 3CX introuvable : $posteVoulu" }
     } elseif (-not $Job) {
-        Show-Note "$($candidats.Count) poste(s) libre(s) au 3CX (désactivés ou nommés « libre »)." -Niveau Sourdine
+        Show-Constat -Titre "$($candidats.Count) postes libres au 3CX — désactivés, ou nommés « libre »" -Niveau Info
         if ($candidats.Count -gt 0 -and (Confirm-Choix -Question 'Réaffecter un poste libre à ce collaborateur ?' -DefautOui)) {
             $vue = @($candidats | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled) { 'actif' } else { 'désactivé' } } })
             $dossier.Poste3CX = Read-Choix -Titre 'Quel poste 3CX réaffecter ?' -Elements $vue -Colonnes Number, DisplayName, EmailAddress, Etat
         }
     }
     if ($dossier.Poste3CX) {
+        if (-not $Job) { Add-Resume -Cle 'Poste' -Valeur "$($dossier.Poste3CX.Number)" }
         $filesVoulues = if ($Job) { @(Get-Prop -Objet $j -Nom 'files3cx' -Defaut @() | ForEach-Object { "$_" }) } else { @() }
         if ($filesVoulues.Count -gt 0) {
             $dossier.Files3CX = @($toutesFiles | Where-Object { $filesVoulues -contains "$($_.Number)" })
@@ -146,27 +150,29 @@ if ($pbx) {
 }
 
 # ====================================================== 3. RÉCAPITULATIF
+Set-Etape 'Confirmation'
+$site = $dossier.Site; $soc = $dossier.Societe
 $recap = [ordered]@{
-    'Société'          = $dossier.Societe.nom
-    'Site'             = "$($dossier.Site.id) — $($dossier.Site.adresse), $($dossier.Site.codePostal)"
-    'Nom complet'      = $dossier.DisplayName
-    'Identifiant'      = $dossier.Sam
-    'E-mail'           = $dossier.Email
-    'Fonction'         = $(if ($dossier.Fonction) { $dossier.Fonction } else { '—' })
-    'Service'          = $(if ($dossier.Service) { $dossier.Service } else { '—' })
-    'Titre'            = $(if ($dossier.Titre) { $dossier.Titre } else { '—' })
-    'OU'               = $dossier.Site.ou
-    'Groupes auto'     = $(if ($dossier.Societe.groupesAuto) { $dossier.Societe.groupesAuto -join ', ' } else { '—' })
-    'Poste 3CX'        = $(if ($dossier.Poste3CX) { "$($dossier.Poste3CX.Number) (ex « $($dossier.Poste3CX.DisplayName) »)" } elseif ($pbx) { 'aucun' } else { 'pas de PBX pour cette société' })
-    'Files 3CX'        = $(if ($dossier.Files3CX.Count) { ($dossier.Files3CX | ForEach-Object { "$($_.Number) $($_.Name)" }) -join ' · ' } else { '—' })
-    'Mode'             = $(if ($Reglages.Simulation) { 'SIMULATION — rien ne sera écrit' } else { 'RÉEL — le compte sera créé' })
+    'Société'      = $soc.nom
+    'Site'         = "$($site.id) — $($site.adresse), $($site.codePostal)"
+    'Nom complet'  = $dossier.DisplayName
+    'Identifiant'  = $dossier.Sam
+    'E-mail'       = $dossier.Email
+    'Fonction'     = $(if ($dossier.Fonction) { $dossier.Fonction } else { '—' })
+    'Service'      = $(if ($dossier.Service) { $dossier.Service } else { '—' })
+    'Titre'        = $(if ($dossier.Titre) { $dossier.Titre } else { '—' })
+    'OU'           = $site.ou
+    'Groupes auto' = $(if ($soc.groupesAuto) { $soc.groupesAuto -join ', ' } else { '—' })
+    'Poste 3CX'    = $(if ($dossier.Poste3CX) { "$($dossier.Poste3CX.Number) (ex « $($dossier.Poste3CX.DisplayName) »)" } elseif ($pbx) { 'aucun' } else { 'pas de PBX pour cette société' })
+    'Files 3CX'    = $(if ($dossier.Files3CX.Count) { ($dossier.Files3CX | ForEach-Object { "$($_.Number) $($_.Name)" }) -join ' · ' } else { '—' })
+    'Mode'         = $(if ($Reglages.Simulation) { 'SIMULATION — rien ne sera écrit' } else { 'RÉEL — le compte sera créé' })
 }
 Show-Recap -Paires $recap -Titre 'Récapitulatif avant création'
-if (-not $Job -and -not (Confirm-Choix -Question $(if ($Reglages.Simulation) { 'Lancer la simulation ?' } else { 'Confirmer et CRÉER ?' }))) { Stop-Script }
+if (-not $Job -and -not (Confirm-Choix -Question $(if ($Reglages.Simulation) { 'Lancer la simulation ?' } else { 'Confirmer et CRÉER le compte ?' }))) { Stop-Script }
 
 # ============================================================ 4. EXÉCUTION
-Show-Section '3 · Exécution'
-$site = $dossier.Site; $soc = $dossier.Societe
+Set-Etape 'Exécution'
+Start-Flux
 $proxy = @("SMTP:$($dossier.Email)")
 
 try {
@@ -180,7 +186,7 @@ try {
             AccountPassword = (ConvertTo-SecureString -AsPlainText $dossier.MotDePasse -Force)
             OtherAttributes = @{ mailNickname = $dossier.MailNickname; proxyAddresses = $proxy }
         }
-        Invoke-Ecriture -Categorie AD -Description "New-ADUser $($dossier.Sam) « $($dossier.DisplayName) » dans $($site.ou), UPN $($dossier.Email)" -Action {
+        Invoke-Ecriture -Categorie AD -Description "New-ADUser $($dossier.Sam) « $($dossier.DisplayName) », UPN $($dossier.Email), dans $($site.ou)" -Action {
             New-ADUser @params @ad
             Wait-AdUtilisateur -Sam $dossier.Sam -Ad $ad | Out-Null
             Add-Journal -Message "Compte $($dossier.Sam) créé dans $($site.ou)." -Categorie AD -Niveau Succes
@@ -199,7 +205,7 @@ try {
     Invoke-Etape -Nom 'Synchronisation AD Connect (delta)' -Categorie AD -Ignorer:(-not $Reglages.SynchroniserAdConnect) -Action { Invoke-AdConnectDelta } | Out-Null
 
     Invoke-Etape -Nom 'Poste 3CX réaffecté' -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX) -Action {
-        Set-XapiPoste -Pbx $pbx -Id $dossier.Poste3CX.Id -Proprietes @{
+        Set-XapiPoste -Pbx $pbx -Id $dossier.Poste3CX.Id -Numero "$($dossier.Poste3CX.Number)" -Proprietes @{
             FirstName = $dossier.Prenom; LastName = $dossier.Nom; EmailAddress = $dossier.Email; Enabled = $true
         }
         if (-not (Test-Simulation)) { Add-Journal -Message "Poste $($dossier.Poste3CX.Number) réaffecté à $($dossier.DisplayName) ($($dossier.Email))." -Categorie 3CX -Niveau Succes }
@@ -214,7 +220,6 @@ try {
 }
 
 # ============================================================ 5. LA FICHE
-Show-Section '4 · Fiche et rapport'
 $groupes = if (Test-Simulation) { @($soc.groupesAuto) } else { try { @(Get-ADPrincipalGroupMembership -Identity $dossier.Sam @ad -ErrorAction Stop | Select-Object -ExpandProperty Name) } catch { @($soc.groupesAuto) } }
 $pourLeMail = [ordered]@{}
 foreach ($k in $recap.Keys) { if ($k -ne 'Mode') { $pourLeMail[$k] = $recap[$k] } }   # le mode a déjà son bandeau

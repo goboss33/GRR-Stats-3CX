@@ -67,9 +67,15 @@ Comme avant : Exchange Online puis Microsoft Graph, chacun sa fenêtre de connex
 
 Les couleurs sont celles de la charte : le dégradé du site (`#085440` → `#8ccaae`) donne le vert clair de l'accent et le vert profond de l'ombre portée du titre. L'accent porte tout ce qui guide — le titre, la question, le pointeur, les coches, la bordure du panneau d'accueil ; du gris pour le secondaire, du blanc pour les données, le rouge pour les échecs et le jaune pour les avertissements. Les trois couleurs se changent dans `config.json` → `interface`.
 
-Le titre du haut est dessiné par le module (`Show-Titre`) : des lettres pleines, que des angles droits, une ombre portée décalée d'un cran. Les polices figlet livrées avec Spectre dessinent au trait (`/ \ | _`), ce n'est pas le même effet.
+Le titre du haut est dessiné par le module (`Get-LignesTitre`) : des lettres pleines, que des angles droits, une ombre portée décalée d'un cran. Les polices figlet livrées avec Spectre dessinent au trait (`/ \ | _`), ce n'est pas le même effet.
 
-Les listes se parcourent aux flèches et se filtrent en tapant ; les colonnes sont alignées ; chaque étape se termine par une coche et sa durée, ses détails en dessous. La console classique de Windows suffit ; **Windows Terminal** rend mieux les caractères et les couleurs.
+**Un écran par étape, pas un défilement.** À chaque question la console est effacée et tout est redessiné : le titre, la frise du parcours (faites, en cours, à venir), un encadré qui garde les décisions sous l'œil, puis le contenu de la **seule** étape en cours. Le bloc est centré horizontalement dans une colonne de largeur fixe et posé au tiers supérieur de la fenêtre. Les champs déjà remplis restent affichés, pastille verte à gauche, valeur alignée à droite : on lit un formulaire, pas un journal.
+
+Quand l'exécution commence, l'en-tête se cale en haut et le script bascule en **flux** : les étapes s'écrivent à la suite, chacune avec sa coche, sa durée à droite, et ses lignes de détail tenues par un filet vertical. Les textes longs sont coupés à la largeur de la colonne, jamais au hasard du terminal, et les écritures 3CX sont décrites en français (`File 906 « Compta Pully » : 4 agents — 330, 664, 110, 334`) plutôt qu'en JSON brut.
+
+En mode `-Job`, aucun effacement : le script écrit un journal linéaire, lisible dans un fichier de sortie.
+
+Les listes se parcourent aux flèches et se filtrent en tapant ; les colonnes sont alignées. La console classique de Windows suffit ; **Windows Terminal** rend mieux les caractères et les couleurs.
 
 ## La simulation ne peut pas écrire
 
