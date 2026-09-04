@@ -262,25 +262,25 @@ $m365 = [bool]$soc.tenantId
 
 try {
     Invoke-Etape -Nom 'Compte AD désactivé' -Categorie AD -Critique -Action {
-        Invoke-Ecriture -Categorie AD -Description "Disable-ADAccount $sam" -Action {
-            Disable-ADAccount -Identity $sam @ad
-            Add-Journal -Message "Compte $sam désactivé." -Categorie AD -Niveau Succes
-        } | Out-Null
+        Invoke-Ecriture -Categorie AD -Description "Désactiver le compte $sam" -Action { Disable-ADAccount -Identity $sam @ad } | Out-Null
     } | Out-Null
 
     Invoke-Etape -Nom 'Champs AD vidés (fonction, service, société, responsable, téléphones)' -Categorie AD -Action {
         $avant = Get-ADUser -Identity $sam -Properties Title, Department, Company, Manager, TelephoneNumber, Mobile @ad
-        Add-Journal -Message "Avant : fonction « $($avant.Title) », service « $($avant.Department) », société « $($avant.Company) », responsable « $($avant.Manager -replace '^CN=([^,]+).*', '$1') », fixe « $($avant.TelephoneNumber) », mobile « $($avant.Mobile) »" -Categorie AD
-        Invoke-Ecriture -Categorie AD -Description "Set-ADUser $sam -Clear Title, Department, Company, Manager, TelephoneNumber, Mobile" -Action {
+        $valeurs = [ordered]@{
+            fonction = "$($avant.Title)"; service = "$($avant.Department)"; société = "$($avant.Company)"
+            responsable = "$($avant.Manager -replace '^CN=([^,]+).*', '$1')"; fixe = "$($avant.TelephoneNumber)"; mobile = "$($avant.Mobile)"
+        }
+        $remplis = @($valeurs.Keys | Where-Object { $valeurs[$_] } | ForEach-Object { "$_ $($valeurs[$_])" })
+        Add-Journal -Message $(if ($remplis.Count) { "Avant : $($remplis -join ' · ')" } else { 'Les champs étaient déjà vides.' }) -Categorie AD
+        Invoke-Ecriture -Categorie AD -Description 'Vider fonction, service, société, responsable et téléphones' -Action {
             Set-ADUser -Identity $sam -Clear Title, Department, Company, Manager, TelephoneNumber, Mobile @ad
-            Add-Journal -Message 'Champs vidés.' -Categorie AD -Niveau Succes
         } | Out-Null
     } | Out-Null
 
     Invoke-Etape -Nom "Masqué de l'annuaire Exchange" -Categorie AD -Action {
-        Invoke-Ecriture -Categorie AD -Description "Set-ADUser $sam -Replace msExchHideFromAddressLists = true" -Action {
+        Invoke-Ecriture -Categorie AD -Description "Masquer $sam de l'annuaire Exchange" -Action {
             Set-ADUser -Identity $sam -Replace @{ msExchHideFromAddressLists = $true } @ad
-            Add-Journal -Message 'msExchHideFromAddressLists posé.' -Categorie AD -Niveau Succes
         } | Out-Null
     } | Out-Null
 
@@ -290,22 +290,23 @@ try {
         $retires = @(); $gardes = @()
         foreach ($dn in $dns) {
             $nom = $dn -replace '^CN=([^,]+).*', '$1'
-            try { $membres = @(Get-ADGroupMember -Identity $dn @ad); if ($membres.Count -eq 1 -and $membres[0].SamAccountName -eq $sam) { Add-Journal -Message "ATTENTION : $sam est le DERNIER membre de $nom." -Categorie Groupes -Niveau Alerte } } catch { }
+            try { $membres = @(Get-ADGroupMember -Identity $dn @ad); if ($membres.Count -eq 1 -and $membres[0].SamAccountName -eq $sam) { Add-Journal -Message "$sam était le DERNIER membre de $nom." -Categorie Groupes -Niveau Alerte } } catch { }
             if (@($conserves | Where-Object { $nom -like $_ }).Count -gt 0) { $gardes += $nom; continue }
-            if (Test-Simulation) { $retires += $nom; continue }
-            Invoke-Ecriture -Categorie Groupes -Description "Remove-ADGroupMember $nom -Members $sam" -Action { Remove-ADGroupMember -Identity $dn -Members $sam -Confirm:$false @ad } | Out-Null
+            Invoke-Ecriture -SansJournal -Categorie Groupes -Description "Retirer de $nom" -Action { Remove-ADGroupMember -Identity $dn -Members $sam -Confirm:$false @ad } | Out-Null
             $retires += $nom
         }
-        if (Test-Simulation) { Add-Journal -Message "SIMULATION : retrait de $($retires.Count) groupe(s) — $($retires -join ', ')" -Categorie Groupes -Niveau Simule }
-        else { Add-Journal -Message "Groupes retirés ($($retires.Count)) : $($retires -join ', ')" -Categorie Groupes -Niveau Succes }
-        if ($gardes.Count) { Add-Journal -Message "Groupes conservés ($($gardes.Count)) : $($gardes -join ', ')" -Categorie Groupes -Niveau Alerte }
+        # Le bilan en trois lignes : le compte, les retirés, les conservés.
+        if (Test-Simulation) { Add-Journal -Message "SIMULATION : retirer $($retires.Count) groupe(s), en conserver $($gardes.Count)" -Categorie Groupes -Niveau Simule }
+        else { Add-Journal -Message "$($retires.Count) groupe(s) retiré(s), $($gardes.Count) conservé(s)." -Categorie Groupes -Niveau Succes }
+        if ($retires.Count) { Add-Journal -Message "$(if (Test-Simulation) { 'À retirer' } else { 'Retirés' }) : $($retires -join '; ')" -Categorie Groupes }
+        if ($gardes.Count)  { Add-Journal -Message "Conservés : $($gardes -join '; ')" -Categorie Groupes -Niveau Alerte }
     } | Out-Null
 
     Invoke-Etape -Nom "Déplacé dans l'OU des désactivés" -Categorie AD -Ignorer:(-not $soc.ouDesactives) -Action {
         $obj = Get-ADUser -Identity $sam @ad
-        Invoke-Ecriture -Categorie AD -Description "Move-ADObject $($obj.DistinguishedName) → $($soc.ouDesactives)" -Action {
+        Invoke-Ecriture -Categorie AD -Description "Déplacer dans $($soc.ouDesactives)" -Action {
             Move-ADObject -Identity $obj.DistinguishedName -TargetPath $soc.ouDesactives @ad
-            Add-Journal -Message "Déplacé dans $($soc.ouDesactives)." -Categorie AD -Niveau Succes
+            Add-Journal -Message "Dans $($soc.ouDesactives)." -Categorie AD
         } | Out-Null
     } | Out-Null
 
@@ -313,24 +314,18 @@ try {
         $boite = Get-Mailbox -Identity $upn -ErrorAction SilentlyContinue
         if (-not $boite) { Add-Journal -Message "Pas de boîte Exchange Online pour $upn." -Categorie Exchange -Niveau Alerte; return }
         if ("$($boite.RecipientTypeDetails)" -eq 'SharedMailbox') { Add-Journal -Message "La boîte $upn est déjà partagée." -Categorie Exchange -Niveau Alerte; return }
-        Invoke-Ecriture -Categorie Exchange -Description "Set-Mailbox $upn -Type Shared" -Action {
-            Set-Mailbox -Identity $upn -Type Shared
-            Add-Journal -Message "Boîte $upn convertie en boîte partagée." -Categorie Exchange -Niveau Succes
-        } | Out-Null
+        Invoke-Ecriture -Categorie Exchange -Description 'Convertir la boîte en boîte partagée' -Action { Set-Mailbox -Identity $upn -Type Shared } | Out-Null
     } | Out-Null
 
     Invoke-Etape -Nom 'Redirection des mails' -Categorie Exchange -Ignorer:(-not $m365 -or $dossier.Redirection -eq 'aucune') -Action {
         if ($dossier.Redirection -eq 'activer') {
             if (-not (Get-Recipient -Identity $dossier.RedirectionVers -ErrorAction SilentlyContinue)) { throw "Cible de redirection inconnue d'Exchange Online : $($dossier.RedirectionVers)" }
-            Invoke-Ecriture -Categorie Exchange -Description "Set-Mailbox $upn -ForwardingAddress $($dossier.RedirectionVers) -DeliverToMailboxAndForward true" -Action {
+            Invoke-Ecriture -Categorie Exchange -Description "Rediriger vers $($dossier.RedirectionVersNom) <$($dossier.RedirectionVers)>, copie conservée" -Action {
                 Set-Mailbox -Identity $upn -ForwardingAddress $dossier.RedirectionVers -DeliverToMailboxAndForward $true
-                Add-Journal -Message "Redirection vers $($dossier.RedirectionVers) (copie conservée)." -Categorie Exchange -Niveau Succes
+                Add-Journal -Message "Vers $($dossier.RedirectionVersNom) <$($dossier.RedirectionVers)>, copie conservée." -Categorie Exchange -Niveau Succes
             } | Out-Null
         } else {
-            Invoke-Ecriture -Categorie Exchange -Description "Set-Mailbox $upn -ForwardingAddress null" -Action {
-                Set-Mailbox -Identity $upn -ForwardingAddress $null
-                Add-Journal -Message 'Redirection désactivée.' -Categorie Exchange -Niveau Succes
-            } | Out-Null
+            Invoke-Ecriture -Categorie Exchange -Description 'Retirer la redirection existante' -Action { Set-Mailbox -Identity $upn -ForwardingAddress $null } | Out-Null
         }
     } | Out-Null
 
@@ -339,15 +334,13 @@ try {
             $htmlAuto = "<div style='font-family:Montserrat,sans-serif;font-size:10pt'>$(([Net.WebUtility]::HtmlEncode($dossier.ReponseAutoTexte)) -replace "`r?`n", '<br>')</div>"
             $apercu = ($dossier.ReponseAutoTexte -replace "`r?`n", ' ')
             if ($apercu.Length -gt 90) { $apercu = $apercu.Substring(0, 89) + '…' }
-            Invoke-Ecriture -Categorie Exchange -Description "Set-MailboxAutoReplyConfiguration $upn -AutoReplyState Enabled — « $apercu »" -Action {
+            $origine = if ($dossier.ReponseAutoModele -eq 'personnalise') { 'texte personnalisé' } else { "modèle $($dossier.ReponseAutoModele)" }
+            Invoke-Ecriture -Categorie Exchange -Description "Activer la réponse automatique ($origine) : « $apercu »" -Action {
                 Set-MailboxAutoReplyConfiguration -Identity $upn -AutoReplyState Enabled -InternalMessage $htmlAuto -ExternalMessage $htmlAuto
-                Add-Journal -Message "Réponse automatique activée." -Categorie Exchange -Niveau Succes
+                Add-Journal -Message "Activée ($origine), le texte est plus haut dans ce rapport." -Categorie Exchange -Niveau Succes
             } | Out-Null
         } else {
-            Invoke-Ecriture -Categorie Exchange -Description "Set-MailboxAutoReplyConfiguration $upn -AutoReplyState Disabled" -Action {
-                Set-MailboxAutoReplyConfiguration -Identity $upn -AutoReplyState Disabled
-                Add-Journal -Message 'Réponse automatique désactivée.' -Categorie Exchange -Niveau Succes
-            } | Out-Null
+            Invoke-Ecriture -Categorie Exchange -Description 'Désactiver la réponse automatique' -Action { Set-MailboxAutoReplyConfiguration -Identity $upn -AutoReplyState Disabled } | Out-Null
         }
     } | Out-Null
 
@@ -360,10 +353,10 @@ try {
     Invoke-Etape -Nom 'Poste 3CX retiré de ses files et désactivé' -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX) -Action {
         $num = "$($dossier.Poste3CX.Number)"
         Remove-XapiPosteDesFiles -Pbx $pbx -Numero $num | Out-Null
-        Set-XapiPoste -Pbx $pbx -Id $dossier.Poste3CX.Id -Numero $num -Proprietes @{ Enabled = $false; EmailAddress = '' }
+        Set-XapiPoste -Pbx $pbx -Id $dossier.Poste3CX.Id -Numero $num -Proprietes @{ Enabled = $false; EmailAddress = '' } -Libelle "Désactiver le poste $num et vider son e-mail — le numéro reste réservé"
         if (-not (Test-Simulation)) { Add-Journal -Message "Poste $num désactivé, e-mail vidé — le numéro reste réservé." -Categorie 3CX -Niveau Succes }
         if ($dossier.Sda3CX.Count -gt 0) {
-            Add-Journal -Message "À REROUTER À LA MAIN — $($dossier.Sda3CX.Count) règle(s) entrante(s) visent encore le poste $num :" -Categorie 3CX -Niveau Alerte
+            Add-Journal -Message "$($dossier.Sda3CX.Count) règle(s) entrante(s) visent encore le poste $num, à rerouter à la main :" -Categorie 3CX -Niveau Alerte
             foreach ($s in $dossier.Sda3CX) {
                 # Deux règles peuvent porter le même nom et la même SDA : l'identifiant les départage.
                 $ref = @("règle $(Get-Prop -Objet $s -Nom 'Id' -Defaut '?')")
@@ -386,7 +379,7 @@ $pourLeMail = [ordered]@{}
 foreach ($k in $recap.Keys) { if ($k -ne 'Mode') { $pourLeMail[$k] = $recap[$k] } }   # le mode a déjà son bandeau
 $corps  = New-BlocPaires -Titre 'Le dossier' -Paires $pourLeMail
 if ($dossier.ReponseAuto -eq 'activer') { $corps += New-BlocTexte -Titre 'Message de réponse automatique' -Texte $dossier.ReponseAutoTexte }
-$html = ConvertTo-RapportHtml -Titre "Sortie — $($dossier.Nom)" -SousTitre $soc.nom -Corps $corps
+$html = ConvertTo-RapportHtml -Mot 'Sortie' -Nom $dossier.Nom -Corps $corps
 Invoke-Etape -Nom 'Rapport envoyé au helpdesk' -Categorie General -Action { Send-Rapport -Sujet "Rapport de désactivation - $($dossier.Nom)" -Html $html } | Out-Null
 $donnees = [ordered]@{}; foreach ($k in $dossier.Keys) { if ($k -ne 'Utilisateur') { $donnees[$k] = $dossier[$k] } }
 Save-Rapport -Nom "sortie-$sam" -Html $html -Donnees $donnees | Out-Null

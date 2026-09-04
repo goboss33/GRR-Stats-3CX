@@ -34,18 +34,8 @@
   },
 
   "entree": {
-    "_commentaire": "resteAFaire : la liste des cases à cocher au bas de la fiche envoyée au helpdesk. À adapter quand le parcours d'accueil change.",
-    "resteAFaire": [
-      "SDA",
-      "Imprimantes",
-      "Forticlient",
-      "Quorum",
-      "Badge",
-      "TNI",
-      "PC : GFNB*** — charger le profil",
-      "Téléphone mobile",
-      "Flyer remis aux RH"
-    ]
+    "_commentaire": "groupesSensibles : quand on reprend les groupes d'un ou d'une collègue, ceux qui correspondent à ces motifs (jokers *) sont proposés DÉCOCHÉS — l'opérateur peut les cocher en connaissance de cause. En mode -Job ils ne sont jamais repris.",
+    "groupesSensibles": [ "*ADMIN*", "Administrateurs*", "Domain Admins", "Admins du domaine", "Enterprise Admins", "Schema Admins", "Account Operators", "Server Operators", "SEC_STATS_3CX_*" ]
   },
 
   "sortie": {

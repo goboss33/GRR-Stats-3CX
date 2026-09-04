@@ -117,9 +117,8 @@ $corps  = New-BlocEncadre -Titre 'À transmettre au collaborateur' -Paires ([ord
 })
 $corps += New-BlocPaires -Titre 'Le dossier' -Paires $recap
 $corps += New-BlocTexte -Titre 'Message de réponse automatique' -Texte "Bonjour,`n`nJe ne fais plus partie de GEROFINANCE - RÉGIE DU RHÔNE SA depuis le 04.09.2026. Comptabilité Pully (comptabilite.pully@grrsa.ch) reprend mes dossiers.`n`nMeilleures salutations"
-$corps += New-BlocListe -Titre 'Membre de' -Lignes @('SEC_DOCSERIES', 'SEC_OPTIMISO_ACTEURS')
-$corps += New-BlocListe -Titre 'Reste à faire' -Cases -Lignes @(Get-Prop -Objet (Get-Prop -Objet (Get-Config) -Nom 'entree') -Nom 'resteAFaire' -Defaut @('SDA', 'Badge'))
-$html = ConvertTo-RapportHtml -Titre 'Sortie — Marie Exemple' -SousTitre 'GEROFINANCE - RÉGIE DU RHÔNE SA' -Corps $corps
+$corps += New-BlocListe -Titre 'Membre de — sur le modèle de Jean Modèle' -Lignes @('SEC_DOCSERIES', 'SEC_OPTIMISO_ACTEURS', 'SEC_PULLY_COMPTABILITE')
+$html = ConvertTo-RapportHtml -Mot 'Sortie' -Nom 'Marie Exemple' -Corps $corps
 $chemin = Join-Path (Get-Reglages).DossierLogs 'rapport-exemple.html'
 Set-Content -Path $chemin -Value $html -Encoding UTF8
 Show-Note "Rapport d'exemple écrit (ouvrez-le dans un navigateur) : $chemin" -Niveau Succes

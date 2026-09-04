@@ -126,6 +126,10 @@ Variables d'environnement utiles : `COLLABORATEURS_SANS_PWSH=1` (ne pas se relan
 
 Le JSON décrit tout, aucune question n'est posée. C'est le contrat avec le futur portail : il déposera un fichier, le script l'exécutera. Pour la sortie : `redirectionVers` (+ `redirectionVersNom`), et `reponseAuto` (texte) **ou** `reponseAutoModele` (id du modèle) avec `variables` pour ce que le script ne déduit pas.
 
+## Les groupes d'un ou d'une collègue
+
+À l'entrée, après les vérifications, le script propose de reprendre les groupes d'un modèle : la liste des collègues actifs du site s'affiche, ou une recherche par nom pour quelqu'un d'ailleurs. Ses groupes sont alors présentés cochés, sauf ceux qui correspondent aux motifs de `config.json` → `entree.groupesSensibles` (administration, opérateurs…), proposés décochés et marqués « sensible » : on les coche en connaissance de cause. Les groupes automatiques de la société ne sont pas proposés deux fois. En mode `-Job`, `groupesDe` désigne le modèle par son identifiant et les groupes sensibles ne sont jamais repris.
+
 ## Ce que fait le volet 3CX
 
 **Entrée** : propose les postes libres — désactivés, ou nommés « libre » — du site (préfixe `prefixePostes` dans `config.json`, sinon tous), pose nom, prénom, e-mail, réactive, inscrit dans les files choisies. Le lendemain, l'application de statistiques le reconnaît par l'e-mail.
@@ -134,9 +138,13 @@ Le JSON décrit tout, aucune question n'est posée. C'est le contrat avec le fut
 
 ## Le rapport envoyé au helpdesk
 
-Bandeau aux couleurs de la maison, puis le dossier, puis — avant tout le détail — un encadré **Points d'attention** qui rassemble automatiquement toutes les lignes d'alerte : SDA à rerouter à la main, groupes et licences conservés, boîtes qui redirigent vers le partant, tâche Planner non créée. C'est la partie que le helpdesk doit lire. Viennent ensuite les étapes avec leur verdict et leur durée, puis le journal complet par catégorie, les gestes simulés en gris.
+Le bandeau reprend le titre du terminal — ENTRÉE ou SORTIE en pavés, dessinés par le même alphabet mais en cellules de tableau, ce qu'Outlook rend le plus fidèlement — avec le nom de la personne en dessous. Puis le dossier, puis — avant tout le détail — un encadré **Points d'attention** qui rassemble automatiquement toutes les lignes d'alerte : SDA à rerouter à la main, groupes et licences conservés, boîtes qui redirigent vers le partant, tâche Planner non créée. C'est la partie que le helpdesk doit lire.
 
-Pour l'entrée, les identifiants sont dans un encadré vert en tête, et la liste des cases à cocher du bas se règle dans `config.json` → `entree.resteAFaire`.
+Viennent ensuite les **étapes, chacune avec son détail juste en dessous** : plus de journal séparé. Chaque étape est enveloppée dans une balise de dépliage — pliée sur iPhone, sur Mac et dans le navigateur quand vous ouvrez le rapport enregistré dans `logs\`, déployée dans Outlook qui ignore la balise. Les étapes en échec ou porteuses d'une alerte s'ouvrent d'office. Au-delà de douze lignes, le reste est dans le rapport enregistré.
+
+Le détail est écrit pour être lu : les gestes en français plutôt qu'en lignes de commande, les groupes en trois lignes (le compte, les retirés, les conservés) plutôt qu'une par groupe, les files 3CX par leur nom, et rien de ce que l'étape dit déjà.
+
+Pour l'entrée, les identifiants sont dans un encadré vert en tête, et la liste « Membre de » indique sur le modèle de qui les groupes ont été repris.
 
 Le corps propre à chaque opération se compose avec les fonctions `New-BlocPaires`, `New-BlocEncadre`, `New-BlocListe` et `New-BlocTexte` : le reste du courriel est commun aux deux scripts. Le récapitulatif affiché dans le terminal et celui du courriel viennent de la même source, il n'y a rien à tenir à jour deux fois.
 

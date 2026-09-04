@@ -45,6 +45,7 @@ $script:Ui          = @{ Spectre = $false; Tampon = $null; Params = @{}; Avertis
 $script:Ecran       = @{ Actif = $false; Flux = $false; Mot = ''; Titre = ''; Etapes = @(); Index = 0; Resume = [ordered]@{}; Lignes = @() }
 
 $script:Categories  = @('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')
+$script:EtapeCourante = ''                                      # l'étape en cours d'exécution : chaque ligne du journal s'y rattache
 
 # ====================================================================
 #  CONFIGURATION ET RÉGLAGES
@@ -708,11 +709,13 @@ function Read-Liste {
         [Parameter(Mandatory)] [string[]] $Textes,
         [string] $Aide = '',
         [switch] $Multiple,
-        [switch] $SansAnnulation
+        [switch] $SansAnnulation,
+        [int[]] $Coches = @()          # index déjà cochés à l'ouverture (sélection multiple)
     )
     $largeur = Get-Colonne
     $marge = Get-Marge
     $coches = @{}
+    foreach ($c in $Coches) { if ($c -ge 0 -and $c -lt $Textes.Count) { $coches[$c] = $true } }
     $filtre = ''
     $curseur = 0
     $sommet = 0
@@ -829,7 +832,8 @@ function Read-Choix {
         [scriptblock] $Libelle,
         [string]      $Aide = '',
         [switch]      $Multiple,
-        [switch]      $SansAnnulation
+        [switch]      $SansAnnulation,
+        [int[]]       $IndicesCoches = @()   # sélection multiple : les éléments déjà cochés à l'ouverture
     )
     if (-not $Elements -or $Elements.Count -eq 0) { throw "Rien à choisir pour « $Titre »." }
     $textes = @()
@@ -838,7 +842,7 @@ function Read-Choix {
 
     $indices = $null
     if (Test-ConsolePilotable) {
-        try { $indices = @(Read-Liste -Question $Titre -Textes $textes -Aide $Aide -Multiple:$Multiple -SansAnnulation:$SansAnnulation) }
+        try { $indices = @(Read-Liste -Question $Titre -Textes $textes -Aide $Aide -Multiple:$Multiple -SansAnnulation:$SansAnnulation -Coches $IndicesCoches) }
         catch {
             $indices = $null
             if (-not $script:Ui.Avertissements.ContainsKey('sélection')) {
@@ -972,7 +976,7 @@ function Add-Journal {
         [ValidateSet('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')] [string] $Categorie = 'General',
         [ValidateSet('Info', 'Succes', 'Alerte', 'Erreur', 'Simule')] [string] $Niveau = 'Info'
     )
-    $ligne = [pscustomobject]@{ Quand = Get-Date; Categorie = $Categorie; Niveau = $Niveau; Message = $Message }
+    $ligne = [pscustomobject]@{ Quand = Get-Date; Categorie = $Categorie; Niveau = $Niveau; Message = $Message; Etape = "$($script:EtapeCourante)" }
     [void] $script:Journal.Add($ligne)
     # Pendant une étape, l'affichage attend la fin de l'indicateur d'activité.
     if ($null -ne $script:Ui.Tampon) { [void] $script:Ui.Tampon.Add($ligne); return }
@@ -1011,10 +1015,11 @@ function Invoke-Ecriture {
     param(
         [Parameter(Mandatory)] [string]      $Description,   # ce qui serait fait, en clair
         [Parameter(Mandatory)] [scriptblock] $Action,
-        [ValidateSet('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')] [string] $Categorie = 'General'
+        [ValidateSet('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')] [string] $Categorie = 'General',
+        [switch] $SansJournal      # l'appelant résume lui-même (une ligne pour vingt groupes, pas vingt lignes)
     )
     if (Test-Simulation) {
-        Add-Journal -Message "SIMULATION : $Description" -Categorie $Categorie -Niveau Simule
+        if (-not $SansJournal) { Add-Journal -Message "SIMULATION : $Description" -Categorie $Categorie -Niveau Simule }
         return $null
     }
     return & $Action
@@ -1054,6 +1059,7 @@ function Invoke-Etape {
     $chrono = [Diagnostics.Stopwatch]::StartNew()
     $resultat = $null; $erreur = $null
     Write-LigneEtape -Etape $etape -EnCours
+    $script:EtapeCourante = $Nom
     try { $resultat = & $Action } catch { $erreur = Get-MessageErreur $_ }
     $chrono.Stop()
     $etape.Duree = [math]::Round($chrono.Elapsed.TotalSeconds, 1)
@@ -1064,11 +1070,13 @@ function Invoke-Etape {
     $script:Ui.LigneY = -1
     foreach ($l in $tampon) { Write-LigneJournal -Ligne $l }
     if ($erreur) {
-        Add-Journal -Message "$Nom : $erreur" -Categorie $Categorie -Niveau Erreur
+        Add-Journal -Message $erreur -Categorie $Categorie -Niveau Erreur
+        $script:EtapeCourante = ''
         if ($Critique) { throw "Étape critique en échec : $Nom — $erreur" }
         Write-Vide
         return $null
     }
+    $script:EtapeCourante = ''
     Write-Vide
     return $resultat
 }
@@ -1376,6 +1384,23 @@ function New-AdresseLibre {
     return ''
 }
 
+function Get-AdCollegues {
+    <# Les comptes actifs sous une OU (le site), pour choisir un modèle de groupes. #>
+    param([Parameter(Mandatory)] [string] $Ou, [Parameter(Mandatory)] [hashtable] $Ad)
+    return @(Get-ADUser -SearchBase $Ou -SearchScope Subtree -Filter 'Enabled -eq $true' -Properties Title, Department @Ad |
+        Sort-Object Name | Select-Object Name, SamAccountName, Title, Department)
+}
+
+function Get-AdGroupesDe {
+    <# Les groupes d'un compte : nom lisible et DN (c'est le DN qu'on donne à Add-ADGroupMember, le nom peut différer du sAMAccountName). #>
+    param([Parameter(Mandatory)] [string] $Sam, [Parameter(Mandatory)] [hashtable] $Ad)
+    $dns = @((Get-ADUser -Identity $Sam -Properties MemberOf @Ad).MemberOf)
+    return @($dns | ForEach-Object {
+        $nom = ([regex]::Match($_, '^CN=((?:\\,|[^,])+)').Groups[1].Value) -replace '\\,', ','
+        [pscustomobject]@{ Nom = $nom; DN = $_ }
+    } | Sort-Object Nom)
+}
+
 function Wait-AdUtilisateur {
     <# Attend que l'objet soit lisible sur le contrôleur, au lieu de dormir cinq secondes à l'aveugle. #>
     param([Parameter(Mandatory)] [string] $Sam, [Parameter(Mandatory)] [hashtable] $Ad, [int] $DelaiSec = 30)
@@ -1390,12 +1415,11 @@ function Wait-AdUtilisateur {
 function Invoke-AdConnectDelta {
     <# Synchronisation delta, déclenchée SUR le serveur AD Connect. #>
     $serveur = $script:Config.adConnect.serveur
-    Invoke-Ecriture -Categorie AD -Description "Start-ADSyncSyncCycle -PolicyType Delta sur $serveur" -Action {
+    Invoke-Ecriture -Categorie AD -Description "Déclencher la synchronisation delta sur $serveur" -Action {
         Invoke-Command -ComputerName $serveur -ScriptBlock {
             Import-Module ADSync -ErrorAction Stop
             Start-ADSyncSyncCycle -PolicyType Delta | Out-Null
         } -ErrorAction Stop
-        Add-Journal -Message "Synchronisation AD Connect (delta) déclenchée sur $serveur." -Categorie AD -Niveau Succes
     } | Out-Null
 }
 
@@ -1422,10 +1446,9 @@ function Connect-M365 {
 
     Show-Note "Connexion à Exchange Online ($upn) — fenêtre du navigateur." -Niveau Sourdine
     Connect-ExchangeOnline -UserPrincipalName $upn -ShowBanner:$false -ShowProgress:$false
-    Add-Journal -Message "Connecté à Exchange Online ($upn)." -Categorie Exchange -Niveau Succes
     Show-Note "Connexion à Microsoft Graph (tenant $($Societe.id)) — fenêtre du navigateur." -Niveau Sourdine
     Connect-MgGraph -TenantId $Societe.tenantId -Scopes 'User.ReadWrite.All', 'Directory.ReadWrite.All' -NoWelcome
-    Add-Journal -Message "Connecté à Microsoft Graph (tenant $($Societe.id))." -Categorie Licences -Niveau Succes
+    Show-Constat -Titre 'Connecté à Exchange Online et à Microsoft Graph' -Valeurs @($upn, $Societe.id)
 }
 
 function Disconnect-M365 {
@@ -1444,8 +1467,8 @@ function Remove-LicencesM365 {
     if ($licences.Count -eq 0) { Add-Journal -Message "Aucune licence active pour $Upn." -Categorie Licences -Niveau Alerte; return }
     $aRetirer = @($licences | Where-Object { $conservees -notcontains $_.SkuPartNumber } | Select-Object -ExpandProperty SkuId)
     if ($aRetirer.Count -gt 0) {
-        $libelles = @($licences | Where-Object { $aRetirer -contains $_.SkuId } | ForEach-Object { $_.SkuPartNumber }) -join ', '
-        Invoke-Ecriture -Categorie Licences -Description "Set-MgUserLicense $Upn -RemoveLicenses $libelles" -Action {
+        # Le détail par licence, en dessous, vaut description : pas de ligne de commande en plus.
+        Invoke-Ecriture -SansJournal -Categorie Licences -Description "Retirer $($aRetirer.Count) licence(s)" -Action {
             Set-MgUserLicense -UserId $Upn -RemoveLicenses $aRetirer -AddLicenses @() | Out-Null
         } | Out-Null
     }
@@ -1453,10 +1476,11 @@ function Remove-LicencesM365 {
     foreach ($l in $licences) {
         $sku = $skus | Where-Object { $_.SkuId -eq $l.SkuId }
         $libelle = if ($noms.PSObject.Properties[$l.SkuPartNumber]) { $noms.($l.SkuPartNumber) } else { $l.SkuPartNumber }
-        $restantes = if ($sku) { $sku.PrepaidUnits.Enabled - $sku.ConsumedUnits } else { '?' }
-        $total = if ($sku) { $sku.PrepaidUnits.Enabled } else { '?' }
-        if ($aRetirer -contains $l.SkuId) { Add-Journal -Message "$libelle — $(if (Test-Simulation) { 'à retirer' } else { 'retirée' }) ($restantes restante(s) sur $total)" -Categorie Licences -Niveau Succes }
-        else { Add-Journal -Message "$libelle — CONSERVÉE ($restantes restante(s) sur $total)" -Categorie Licences -Niveau Alerte }
+        $stock = if ($sku) { " · $($sku.PrepaidUnits.Enabled - $sku.ConsumedUnits) restantes sur $($sku.PrepaidUnits.Enabled)" } else { '' }
+        if ($aRetirer -contains $l.SkuId) {
+            if (Test-Simulation) { Add-Journal -Message "SIMULATION : retirer $libelle$stock" -Categorie Licences -Niveau Simule }
+            else { Add-Journal -Message "$libelle — retirée$stock" -Categorie Licences -Niveau Succes }
+        } else { Add-Journal -Message "$libelle — conservée$stock" -Categorie Licences -Niveau Alerte }
     }
 }
 
@@ -1479,7 +1503,7 @@ function Invoke-ScanDelegations {
         $valide = (Get-Date) -le ([datetime]::Parse($cache.LastUpdated)).AddHours($validite)
     }
     if ($ForcerCache -or -not $valide -or -not $cache) {
-        Add-Journal -Message "Analyse de toutes les boîtes aux lettres (cache absent, périmé ou forcé)." -Categorie Delegations
+        Add-Journal -Message "Toutes les boîtes analysées, cache reconstruit." -Categorie Delegations
         $redirs = @(); $delegs = @()
         $boites = @(Get-Mailbox -ResultSize Unlimited -RecipientTypeDetails UserMailbox, SharedMailbox)
         $i = 0
@@ -1507,33 +1531,34 @@ function Invoke-ScanDelegations {
         # Le cache est une trace locale, pas une écriture métier : il se met à jour même en simulation.
         $cache | ConvertTo-Json -Depth 4 | Set-Content -Path $fichier -Encoding UTF8
     } else {
-        Add-Journal -Message "Cache des délégations du $([datetime]::Parse($cache.LastUpdated).ToString('dd.MM.yyyy HH:mm')) utilisé." -Categorie Delegations
+        Add-Journal -Message "D'après le cache du $([datetime]::Parse($cache.LastUpdated).ToString('dd.MM.yyyy à HH:mm'))." -Categorie Delegations
     }
 
     $redirVers = @($cache.Redirections | Where-Object { "$($_.Vers)".ToLower() -eq $cible })
-    if ($redirVers.Count -gt 0) {
-        Add-Journal -Message "ATTENTION : $($redirVers.Count) boîte(s) redirigent vers $Cible :" -Categorie Delegations -Niveau Alerte
-        foreach ($r in $redirVers) { Add-Journal -Message "  $($r.Boite) → $($r.Vers)" -Categorie Delegations }
-    } else { Add-Journal -Message "$Cible n'était la cible d'aucune redirection." -Categorie Delegations -Niveau Succes }
-
     $mesDelegs = @($cache.Delegations | Where-Object { "$($_.Qui)".ToLower() -eq $cible })
-    if ($mesDelegs.Count -eq 0) { Add-Journal -Message "Aucune délégation trouvée pour $Cible." -Categorie Delegations -Niveau Succes; return }
-    Add-Journal -Message "$($mesDelegs.Count) délégation(s) trouvée(s) pour $Cible :" -Categorie Delegations -Niveau Alerte
+    if ($redirVers.Count -eq 0 -and $mesDelegs.Count -eq 0) { Add-Journal -Message 'Aucune redirection ni délégation vers ce compte.' -Categorie Delegations -Niveau Succes; return }
+    if ($redirVers.Count -gt 0) {
+        Add-Journal -Message "$($redirVers.Count) boîte(s) redirigent encore vers ce compte, à corriger à la main :" -Categorie Delegations -Niveau Alerte
+        foreach ($r in $redirVers) { Add-Journal -Message "  $($r.Boite)" -Categorie Delegations -Niveau Alerte }
+    }
+    if ($mesDelegs.Count -eq 0) { return }
+    $typesFr = @{ SendOnBehalf = 'envoi de la part de'; FullAccess = 'accès complet'; SendAs = 'envoi en tant que' }
     foreach ($d in $mesDelegs) {
+        $type = if ($typesFr.ContainsKey("$($d.Type)")) { $typesFr["$($d.Type)"] } else { "$($d.Type)" }
         try {
             switch ($d.Type) {
                 'SendOnBehalf' {
-                    Invoke-Ecriture -Categorie Delegations -Description "Set-Mailbox $($d.Boite) -GrantSendOnBehalfTo (sans $Cible)" -Action {
+                    Invoke-Ecriture -Categorie Delegations -Description "Retirer l'envoi de la part de sur $($d.Boite)" -Action {
                         $actuels = @((Get-Mailbox -Identity $d.Boite).GrantSendOnBehalfTo)
                         $nouveaux = @($actuels | Where-Object { $r = Get-Recipient -Identity "$_" -ErrorAction SilentlyContinue; -not $r -or "$($r.PrimarySmtpAddress)".ToLower() -ne $cible })
                         Set-Mailbox -Identity $d.Boite -GrantSendOnBehalfTo $nouveaux
                     } | Out-Null
                 }
-                'FullAccess' { Invoke-Ecriture -Categorie Delegations -Description "Remove-MailboxPermission $($d.Boite) -User $Cible -AccessRights FullAccess" -Action { Remove-MailboxPermission -Identity $d.Boite -User $Cible -AccessRights FullAccess -Confirm:$false | Out-Null } | Out-Null }
-                'SendAs'     { Invoke-Ecriture -Categorie Delegations -Description "Remove-RecipientPermission $($d.Boite) -Trustee $Cible -AccessRights SendAs" -Action { Remove-RecipientPermission -Identity $d.Boite -Trustee $Cible -AccessRights SendAs -Confirm:$false | Out-Null } | Out-Null }
+                'FullAccess' { Invoke-Ecriture -Categorie Delegations -Description "Retirer l'accès complet sur $($d.Boite)" -Action { Remove-MailboxPermission -Identity $d.Boite -User $Cible -AccessRights FullAccess -Confirm:$false | Out-Null } | Out-Null }
+                'SendAs'     { Invoke-Ecriture -Categorie Delegations -Description "Retirer l'envoi en tant que sur $($d.Boite)" -Action { Remove-RecipientPermission -Identity $d.Boite -Trustee $Cible -AccessRights SendAs -Confirm:$false | Out-Null } | Out-Null }
             }
-            if (-not (Test-Simulation)) { Add-Journal -Message "  $($d.Type) retirée sur $($d.Boite)" -Categorie Delegations -Niveau Succes }
-        } catch { Add-Journal -Message "  échec du retrait $($d.Type) sur $($d.Boite) : $(Get-MessageErreur $_)" -Categorie Delegations -Niveau Erreur }
+            if (-not (Test-Simulation)) { Add-Journal -Message "$type retiré sur $($d.Boite)" -Categorie Delegations -Niveau Succes }
+        } catch { Add-Journal -Message "Échec du retrait « $type » sur $($d.Boite) : $(Get-MessageErreur $_)" -Categorie Delegations -Niveau Erreur }
     }
 }
 
@@ -1682,12 +1707,16 @@ function Get-XapiFilesDuPoste {
 
 function Set-XapiAgentsDeFile {
     <# Remplace la liste des agents d'une file (PATCH). On envoie TOUJOURS la liste complète : le PBX ne fait pas de diff. #>
-    param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] $File, [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Agents)
+    param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] $File, [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Agents, [string] $Libelle = '')
     $corps = @{ Agents = @($Agents | ForEach-Object { @{ Number = "$($_.Number)"; SkillGroup = $(if ($_.SkillGroup) { "$($_.SkillGroup)" } else { "$($Pbx.skillGroupParDefaut)" }) } }) }
-    $numeros = @($Agents | ForEach-Object { "$($_.Number)" })
-    $nom = if (Get-Prop -Objet $File -Nom 'Name') { " « $($File.Name) »" } else { '' }
-    $libelle = "File $($File.Number)$nom : $($numeros.Count) agent(s) — $(if ($numeros.Count) { $numeros -join ', ' } else { 'aucun' })"
-    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Queues($($File.Id))" -Corps $corps -Libelle $libelle | Out-Null
+    if (-not $Libelle) { $Libelle = "File $($File.Number) : $(@($Agents).Count) agent(s)" }
+    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Queues($($File.Id))" -Corps $corps -Libelle $Libelle | Out-Null
+}
+
+function Get-NomFile {
+    param([Parameter(Mandatory)] $File)
+    $nom = Get-Prop -Objet $File -Nom 'Name'
+    return "file $($File.Number)$(if ($nom) { " « $nom »" })"
 }
 
 function Remove-XapiPosteDesFiles {
@@ -1696,8 +1725,8 @@ function Remove-XapiPosteDesFiles {
     $files = Get-XapiFilesDuPoste -Pbx $Pbx -Numero $Numero
     foreach ($f in $files) {
         $restants = @($f.Agents | Where-Object { "$($_.Number)" -ne $Numero })
-        Set-XapiAgentsDeFile -Pbx $Pbx -File $f -Agents $restants
-        if (-not (Test-Simulation)) { Add-Journal -Message "Poste $Numero retiré de la file $($f.Number) « $($f.Name) »" -Categorie 3CX -Niveau Succes }
+        Set-XapiAgentsDeFile -Pbx $Pbx -File $f -Agents $restants -Libelle "Retirer de la $(Get-NomFile $f) — $($restants.Count) agent(s) restant(s)"
+        if (-not (Test-Simulation)) { Add-Journal -Message "Retiré de la $(Get-NomFile $f)" -Categorie 3CX -Niveau Succes }
     }
     return $files
 }
@@ -1708,19 +1737,21 @@ function Add-XapiPosteAuxFiles {
     foreach ($choisie in $Files) {
         $f = $toutes | Where-Object { $_.Id -eq $choisie.Id } | Select-Object -First 1
         if (-not $f) { continue }
-        if (@($f.Agents | ForEach-Object { "$($_.Number)" }) -contains $Numero) { Add-Journal -Message "Poste $Numero déjà dans la file $($f.Number)" -Categorie 3CX; continue }
+        if (@($f.Agents | ForEach-Object { "$($_.Number)" }) -contains $Numero) { Add-Journal -Message "Déjà dans la $(Get-NomFile $f)" -Categorie 3CX; continue }
         $agents = @($f.Agents) + @([pscustomobject]@{ Number = $Numero; SkillGroup = $Pbx.skillGroupParDefaut })
-        Set-XapiAgentsDeFile -Pbx $Pbx -File $f -Agents $agents
-        if (-not (Test-Simulation)) { Add-Journal -Message "Poste $Numero ajouté à la file $($f.Number) « $($f.Name) »" -Categorie 3CX -Niveau Succes }
+        Set-XapiAgentsDeFile -Pbx $Pbx -File $f -Agents $agents -Libelle "Inscrire dans la $(Get-NomFile $f) — $($agents.Count) agent(s)"
+        if (-not (Test-Simulation)) { Add-Journal -Message "Inscrit dans la $(Get-NomFile $f)" -Categorie 3CX -Niveau Succes }
     }
 }
 
 function Set-XapiPoste {
     <# Modifie un utilisateur du PBX (PATCH Users({Id})). #>
-    param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [int] $Id, [Parameter(Mandatory)] [hashtable] $Proprietes, [string] $Numero = '')
-    $details = @($Proprietes.Keys | Sort-Object | ForEach-Object { "$_ = $(if ("$($Proprietes[$_])" -eq '') { '(vide)' } else { "$($Proprietes[$_])" })" })
-    $libelle = "Poste $(if ($Numero) { $Numero } else { "#$Id" }) : $($details -join ', ')"
-    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Users($Id)" -Corps $Proprietes -Libelle $libelle | Out-Null
+    param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [int] $Id, [Parameter(Mandatory)] [hashtable] $Proprietes, [string] $Numero = '', [string] $Libelle = '')
+    if (-not $Libelle) {
+        $details = @($Proprietes.Keys | Sort-Object | ForEach-Object { "$_ = $(if ("$($Proprietes[$_])" -eq '') { '(vide)' } else { "$($Proprietes[$_])" })" })
+        $Libelle = "Poste $(if ($Numero) { $Numero } else { "#$Id" }) : $($details -join ', ')"
+    }
+    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Users($Id)" -Corps $Proprietes -Libelle $Libelle | Out-Null
 }
 
 function Get-XapiSdaVersPoste {
@@ -1752,6 +1783,7 @@ function Get-XapiSdaVersPoste {
 $script:Palette = @{
     Marque   = '#085440'   # le vert profond de la charte
     Clair    = '#8ccaae'   # le vert clair de la charte
+    Bande    = '#0b1f1a'   # le fond du bandeau : presque le noir du terminal, teinté
     Encre    = '#1f2937'
     Sourdine = '#6b7280'
     Bord     = '#e5e7eb'
@@ -1856,43 +1888,118 @@ function New-BlocAttention {
     return $sb.ToString()
 }
 
-function New-BlocEtapes {
+function New-EnTeteRapport {
+    <#
+      Le titre en pavés, comme au terminal : une cellule colorée par pavé,
+      fusionnées par suites (colspan). C'est ce qu'Outlook rend le plus
+      fidèlement — mieux qu'une image, qui serait bloquée, ou qu'un SVG,
+      qu'il ignore. Le même alphabet sert les deux supports.
+    #>
+    param([Parameter(Mandatory)] [string] $Mot, [Parameter(Mandatory)] [string] $Nom)
     $p = $script:Palette
     $sb = New-Object Text.StringBuilder
-    [void]$sb.Append("<tr><td style=""padding:22px 28px 4px 28px"">$(New-TitreBloc 'Étapes')")
-    [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;$($script:Police);font-size:14px"">")
+    [void]$sb.Append("<tr><td style=""background:$($p.Bande);padding:28px 28px 24px 28px"">")
+    $grille = Get-GrilleTitre -Texte $Mot
+    if ($grille) {
+        $l = 7; $h = 14
+        $largeurMax = 0
+        foreach ($ligne in $grille) { if ($ligne.Length -gt $largeurMax) { $largeurMax = $ligne.Length } }
+        [void]$sb.Append("<table cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse"">")
+        # Une première ligne d'une cellule par colonne : Outlook calcule alors les largeurs sans se tromper sur les colspan.
+        [void]$sb.Append('<tr>')
+        for ($i = 0; $i -lt $largeurMax; $i++) { [void]$sb.Append("<td width=""$l"" height=""1"" style=""width:${l}px;height:1px;font-size:1px;line-height:1px;padding:0""></td>") }
+        [void]$sb.Append('</tr>')
+        foreach ($ligne in $grille) {
+            [void]$sb.Append('<tr>')
+            $pose = 0
+            foreach ($s in @(Get-Suites -Ligne $ligne)) {
+                $couleur = switch ($s.Signe) { 'P' { $p.Clair } 'O' { $p.Marque } default { $p.Bande } }
+                $w = $l * $s.Nombre
+                [void]$sb.Append("<td colspan=""$($s.Nombre)"" width=""$w"" height=""$h"" bgcolor=""$couleur"" style=""width:${w}px;height:${h}px;background:$couleur;font-size:1px;line-height:1px;padding:0"">&nbsp;</td>")
+                $pose += $s.Nombre
+            }
+            if ($pose -lt $largeurMax) {
+                $reste = $largeurMax - $pose
+                [void]$sb.Append("<td colspan=""$reste"" width=""$($l * $reste)"" height=""$h"" bgcolor=""$($p.Bande)"" style=""width:$($l * $reste)px;height:${h}px;background:$($p.Bande);font-size:1px;line-height:1px;padding:0"">&nbsp;</td>")
+            }
+            [void]$sb.Append('</tr>')
+        }
+        [void]$sb.Append('</table>')
+    } else {
+        [void]$sb.Append("<div style=""$($script:Police);font-size:34px;font-weight:700;letter-spacing:.12em;color:$($p.Clair)"">$(Format-Html $Mot.ToUpper())</div>")
+    }
+    [void]$sb.Append("<div style=""$($script:Police);font-size:15px;letter-spacing:.22em;text-transform:uppercase;color:#ffffff;padding-top:20px"">$(Format-Html $Nom)</div>")
+    [void]$sb.Append('</td></tr>')
+    return $sb.ToString()
+}
+
+function New-LigneDetail {
+    <# Une ligne de journal, sous son étape. #>
+    param([Parameter(Mandatory)] $Ligne)
+    $p = $script:Palette
+    $couleur = switch ($Ligne.Niveau) { 'Succes' { $p.Succes } 'Alerte' { $p.Alerte } 'Erreur' { $p.Erreur } 'Simule' { $p.Clair } default { '#9ca3af' } }
+    $encre   = switch ($Ligne.Niveau) { 'Alerte' { $p.Alerte } 'Erreur' { $p.Erreur } 'Simule' { $p.Sourdine } default { '#4b5563' } }
+    $texte   = if ($Ligne.Niveau -eq 'Simule') { $Ligne.Message -replace '^SIMULATION : ', '' } else { $Ligne.Message }
+    $puce    = if ($Ligne.Niveau -eq 'Simule') { '&#9656;' } else { '&#8226;' }
+    return "<tr><td width=""18"" style=""padding:2px 0;color:$couleur;vertical-align:top;font-size:13px"">$puce</td><td style=""padding:2px 0;color:$encre;font-size:13px;line-height:19px;word-break:break-word"">$(Format-Html $texte)</td></tr>"
+}
+
+function New-BlocEtapes {
+    <#
+      Les étapes, chacune avec son propre détail juste en dessous — plus de
+      journal séparé. Chaque étape est enveloppée dans une balise de
+      dépliage : pliée là où le client de messagerie la comprend (Apple,
+      iPhone, navigateur), déployée dans Outlook, qui l'ignore. Les étapes
+      en échec ou avec une alerte s'ouvrent d'office. Au-delà de douze
+      lignes, le reste est dans le rapport enregistré.
+    #>
+    param([int] $MaxLignes = 12)
+    $p = $script:Palette
+    $sb = New-Object Text.StringBuilder
+    [void]$sb.Append("<tr><td style=""padding:22px 28px 10px 28px"">$(New-TitreBloc 'Étapes')")
     foreach ($e in $script:Etapes) {
+        $lignes = @($script:Journal | Where-Object { $_.Etape -eq $e.Nom })
+        $simulee = @($lignes | Where-Object { $_.Niveau -eq 'Simule' }).Count -gt 0
+        $ouvert = ($e.Etat -eq 'echec') -or (@($lignes | Where-Object { $_.Niveau -eq 'Alerte' -or $_.Niveau -eq 'Erreur' }).Count -gt 0)
         $couleur = switch ($e.Etat) { 'ok' { $p.Succes } 'echec' { $p.Erreur } default { '#9ca3af' } }
         $signe   = switch ($e.Etat) { 'ok' { '&#10003;' } 'echec' { '&#10007;' } default { '&#8211;' } }
         $droite  = if ($e.Etat -eq 'ignoree') { 'ignorée' } else { "$($e.Duree) s" }
         $encre   = if ($e.Etat -eq 'ignoree') { $p.Sourdine } else { $p.Encre }
-        [void]$sb.Append("<tr><td width=""22"" style=""padding:6px 0;border-top:1px solid $($p.Bord);color:$couleur;vertical-align:top"">$signe</td>")
-        [void]$sb.Append("<td style=""padding:6px 0;border-top:1px solid $($p.Bord);color:$encre"">$(Format-Html $e.Nom)")
-        if ($e.Detail) { [void]$sb.Append("<div style=""color:$($p.Erreur);font-size:13px;padding-top:3px"">$(Format-Html $e.Detail)</div>") }
-        [void]$sb.Append("</td><td width=""80"" align=""right"" style=""padding:6px 0;border-top:1px solid $($p.Bord);color:$($p.Sourdine);font-size:13px;vertical-align:top;white-space:nowrap"">$droite</td></tr>")
+        [void]$sb.Append("<details$(if ($ouvert) { ' open' }) style=""border-top:1px solid $($p.Bord)"">")
+        [void]$sb.Append("<summary style=""$($script:Police);font-size:14px;padding:8px 0;color:$encre;cursor:pointer;list-style-position:outside"">")
+        [void]$sb.Append("<span style=""color:$couleur"">$signe</span>&nbsp;&nbsp;$(Format-Html $e.Nom)")
+        if ($simulee) { [void]$sb.Append("<span style=""color:$($p.Sourdine);font-size:12px"">&nbsp;&nbsp;&#183;&nbsp;&nbsp;simulée</span>") }
+        [void]$sb.Append("<span style=""float:right;color:$($p.Sourdine);font-size:12px;padding-left:12px"">$droite</span>")
+        [void]$sb.Append('</summary>')
+        if ($lignes.Count -gt 0) {
+            [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;$($script:Police);margin:0 0 8px 24px"">")
+            $n = 0
+            foreach ($l in $lignes) {
+                $n++
+                if ($n -gt $MaxLignes) { break }
+                [void]$sb.Append((New-LigneDetail -Ligne $l))
+            }
+            if ($lignes.Count -gt $MaxLignes) {
+                [void]$sb.Append("<tr><td></td><td style=""padding:4px 0;color:$($p.Sourdine);font-size:12px;font-style:italic"">… et $($lignes.Count - $MaxLignes) autres lignes dans le rapport enregistré</td></tr>")
+            }
+            [void]$sb.Append('</table>')
+        }
+        [void]$sb.Append('</details>')
     }
-    [void]$sb.Append('</table></td></tr>')
+    [void]$sb.Append('</td></tr>')
     return $sb.ToString()
 }
 
-function New-BlocJournal {
+function New-BlocHorsEtapes {
+    <# Ce que le journal a noté en dehors des étapes (préparation, connexions) — seulement s'il y a quelque chose. #>
     $p = $script:Palette
+    $lignes = @($script:Journal | Where-Object { -not $_.Etape -and $_.Niveau -ne 'Alerte' })
+    if ($lignes.Count -eq 0) { return '' }
     $sb = New-Object Text.StringBuilder
-    foreach ($cat in @('General', 'AD', 'Groupes', '3CX', 'Exchange', 'Licences', 'Delegations', 'Planner')) {
-        $lignes = @($script:Journal | Where-Object { $_.Categorie -eq $cat })
-        if ($lignes.Count -eq 0) { continue }
-        [void]$sb.Append("<tr><td style=""padding:16px 28px 0 28px""><div style=""$($script:Police);font-size:12px;font-weight:600;color:$($p.Sourdine);padding-bottom:6px"">$(Format-Html $cat)</div>")
-        [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;$($script:Police);font-size:13px"">")
-        foreach ($l in $lignes) {
-            $couleur = switch ($l.Niveau) { 'Succes' { $p.Succes } 'Alerte' { $p.Alerte } 'Erreur' { $p.Erreur } 'Simule' { $p.Clair } default { '#9ca3af' } }
-            $encre   = switch ($l.Niveau) { 'Alerte' { $p.Alerte } 'Erreur' { $p.Erreur } 'Simule' { $p.Sourdine } default { $p.Encre } }
-            $texte   = if ($l.Niveau -eq 'Simule') { $l.Message -replace '^SIMULATION : ', '' } else { $l.Message }
-            $puce    = if ($l.Niveau -eq 'Simule') { '&#9656;' } else { '&#8226;' }
-            [void]$sb.Append("<tr><td width=""22"" style=""padding:3px 0;color:$couleur;vertical-align:top"">$puce</td>")
-            [void]$sb.Append("<td style=""padding:3px 0;color:$encre;word-break:break-word"">$(Format-Html $texte)</td></tr>")
-        }
-        [void]$sb.Append('</table></td></tr>')
-    }
+    [void]$sb.Append("<tr><td style=""padding:6px 28px 10px 28px""><div style=""$($script:Police);font-size:12px;color:$($p.Sourdine);padding-bottom:4px"">Avant l'exécution</div>")
+    [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;$($script:Police)"">")
+    foreach ($l in $lignes) { [void]$sb.Append((New-LigneDetail -Ligne $l)) }
+    [void]$sb.Append('</table></td></tr>')
     return $sb.ToString()
 }
 
@@ -1904,8 +2011,8 @@ function ConvertTo-RapportHtml {
       journal, pied) est commun aux deux.
     #>
     param(
-        [Parameter(Mandatory)] [string] $Titre,
-        [string] $SousTitre = '',
+        [Parameter(Mandatory)] [string] $Mot,      # Sortie | Entrée — dessiné en pavés
+        [Parameter(Mandatory)] [string] $Nom,      # la personne
         [string] $Corps = ''
     )
     $p = $script:Palette
@@ -1914,12 +2021,8 @@ function ConvertTo-RapportHtml {
     [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""background:#eef2f0""><tr><td align=""center"" style=""padding:18px 10px"">")
     [void]$sb.Append("<table width=""700"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""width:700px;max-width:100%;border-collapse:collapse;background:#ffffff;border-radius:8px;overflow:hidden"">")
 
-    # Bandeau
-    [void]$sb.Append("<tr><td style=""background:$($p.Marque);padding:24px 28px"">")
-    [void]$sb.Append("<div style=""$($script:Police);font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:$($p.Clair);padding-bottom:8px"">Service Informatique</div>")
-    [void]$sb.Append("<div style=""$($script:Police);font-size:21px;font-weight:600;color:#ffffff;line-height:28px"">$(Format-Html $Titre)</div>")
-    if ($SousTitre) { [void]$sb.Append("<div style=""$($script:Police);font-size:14px;color:$($p.Clair);padding-top:5px"">$(Format-Html $SousTitre)</div>") }
-    [void]$sb.Append('</td></tr>')
+    # Bandeau : le mot en pavés, la personne en dessous
+    [void]$sb.Append((New-EnTeteRapport -Mot $Mot -Nom $Nom))
     [void]$sb.Append("<tr><td style=""height:4px;background:$($p.Clair);font-size:0;line-height:0"">&nbsp;</td></tr>")
 
     # Le mode, quand il n'est pas le mode normal
@@ -1935,8 +2038,7 @@ function ConvertTo-RapportHtml {
     [void]$sb.Append($Corps)
     [void]$sb.Append((New-BlocAttention))
     [void]$sb.Append((New-BlocEtapes))
-    [void]$sb.Append("<tr><td style=""padding:26px 28px 0 28px"">$(New-TitreBloc 'Journal détaillé')</td></tr>")
-    [void]$sb.Append((New-BlocJournal))
+    [void]$sb.Append((New-BlocHorsEtapes))
 
     # Pied
     [void]$sb.Append("<tr><td style=""padding:22px 28px;border-top:1px solid $($p.Bord);$($script:Police);font-size:12px;color:$($p.Sourdine)"">")

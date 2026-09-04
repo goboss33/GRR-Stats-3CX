@@ -3,9 +3,10 @@
     ENTRÉE D'UN COLLABORATEUR — Service Informatique.
 
     Crée le compte dans l'Active Directory de la société (OU du site, attributs,
-    adresses), l'ajoute aux groupes automatiques, déclenche la synchronisation
-    vers Microsoft 365, réaffecte ou crée son poste 3CX et l'inscrit dans ses
-    files, puis envoie la fiche au helpdesk.
+    adresses), l'ajoute aux groupes automatiques et, au choix, aux groupes
+    d'un ou d'une collègue pris pour modèle, déclenche la synchronisation
+    vers Microsoft 365, réaffecte son poste 3CX et l'inscrit dans ses files,
+    puis envoie la fiche au helpdesk.
 
     Sans argument : assistant interactif, une étape par écran. Avec -Job :
     aucun dialogue, tout vient du fichier JSON (voir exemples\entree.json) —
@@ -76,6 +77,7 @@ $config = Get-Config
 $dossier = [ordered]@{
     Societe = $null; Site = $null; Prenom = ''; Nom = ''; Fonction = ''; Service = ''; Titre = ''
     Sam = ''; Email = ''; MailNickname = ''; DisplayName = ''; MotDePasse = ''
+    Modele = ''; GroupesRepris = @()          # les groupes repris d'un ou d'une collègue
     Poste3CX = $null; Files3CX = @()
 }
 
@@ -98,8 +100,9 @@ if ($Job) {
     $dossier.Service  = Read-Champ -Libelle 'Service' -QuitteSurQ
     $dossier.Titre    = Read-Champ -Libelle 'Titre' -QuitteSurQ
 }
+$soc = $dossier.Societe; $site = $dossier.Site
 
-$ids = ConvertTo-Identifiants -Prenom $dossier.Prenom -Nom $dossier.Nom -DomaineMail $dossier.Societe.domaineMail
+$ids = ConvertTo-Identifiants -Prenom $dossier.Prenom -Nom $dossier.Nom -DomaineMail $soc.domaineMail
 if (-not $dossier.Sam) { $dossier.Sam = $ids.Sam }
 $dossier.Email = $ids.Email; $dossier.MailNickname = $ids.MailNickname; $dossier.DisplayName = $ids.DisplayName
 $dossier.MotDePasse = New-MotDePasse
@@ -108,8 +111,8 @@ if (-not $Job) { Add-Resume -Cle 'Collaborateur' -Valeur $dossier.DisplayName }
 # ====================================================== 2. VÉRIFICATIONS
 # Avant la moindre écriture : on se connecte, on vérifie l'unicité, on lit le PBX.
 Set-Etape 'Vérifications'
-$ad = Connect-Domaine -Societe $dossier.Societe
-$pbx = if ($Reglages.Gerer3CX) { Get-Pbx -Societe $dossier.Societe } else { $null }
+$ad = Connect-Domaine -Societe $soc
+$pbx = if ($Reglages.Gerer3CX) { Get-Pbx -Societe $soc } else { $null }
 
 while ($true) {
     $existant = Get-ADUser -Filter "SamAccountName -eq '$($dossier.Sam)'" @ad -ErrorAction SilentlyContinue
@@ -126,19 +129,63 @@ while ($true) {
     if (-not $occupant) { break }
     Show-Note "L'adresse $($dossier.Email) est déjà portée par $($occupant.Name)." -Niveau Alerte
     if ($Job) { throw "Adresse déjà prise : $($dossier.Email)" }
-    $proposition = New-AdresseLibre -Base $ids.MailNickname -Domaine $dossier.Societe.domaineMail -Ad $ad
+    $proposition = New-AdresseLibre -Base $ids.MailNickname -Domaine $soc.domaineMail -Ad $ad
     $saisie = Read-Texte -Invite 'Adresse e-mail à utiliser' -Defaut $proposition -Aide 'le domaine est ajouté si vous ne le mettez pas' -Obligatoire -QuitteSurQ
-    if ($saisie -notlike '*@*') { $saisie = "$saisie$($dossier.Societe.domaineMail)" }
+    if ($saisie -notlike '*@*') { $saisie = "$saisie$($soc.domaineMail)" }
     $dossier.Email = $saisie
     $dossier.MailNickname = ($saisie -split '@')[0]
 }
 Show-Constat -Titre "Identifiant et adresse libres dans l'Active Directory" -Valeurs @($dossier.Sam, $dossier.Email)
 
+# --- Les groupes d'un ou d'une collègue : le nouveau reçoit les mêmes accès.
+#     Les groupes automatiques de la société sont déjà prévus ; les groupes
+#     « sensibles » (config entree.groupesSensibles) sont proposés décochés.
+$sensibles = @(Get-Prop -Objet (Get-Prop -Objet $config -Nom 'entree') -Nom 'groupesSensibles' -Defaut @())
+function Get-GroupesReprenables {
+    param([Parameter(Mandatory)] [string] $Sam)
+    $liste = @(Get-AdGroupesDe -Sam $Sam -Ad $ad | Where-Object { $soc.groupesAuto -notcontains $_.Nom })
+    return @($liste | ForEach-Object {
+        $nom = $_.Nom
+        $sensible = @($sensibles | Where-Object { $nom -like $_ }).Count -gt 0
+        [pscustomobject]@{ Nom = $_.Nom; DN = $_.DN; Note = $(if ($sensible) { 'sensible — décoché' } else { '' }) }
+    })
+}
+if ($Job) {
+    $modeleSam = "$(Get-Prop -Objet $j -Nom 'groupesDe' -Defaut '')"
+    if ($modeleSam) {
+        $modele = Get-ADUser -Identity $modeleSam @ad
+        $dossier.Modele = $modele.Name
+        $dossier.GroupesRepris = @(Get-GroupesReprenables -Sam $modeleSam | Where-Object { -not $_.Note })
+    }
+} elseif (Confirm-Choix -Question "Reprendre les groupes d'un ou d'une collègue ?" -DefautOui) {
+    $modele = $null
+    $collegues = @(Invoke-Attente -Titre "Lecture des collègues du site $($site.id)" -Action { @(Get-AdCollegues -Ou $site.ou -Ad $ad) })
+    $ailleurs = [pscustomobject]@{ Name = "Chercher quelqu'un d'autre…"; SamAccountName = ''; Title = ''; Department = '' }
+    $choix = Read-Choix -Titre "Sur le modèle de qui ? ($($collegues.Count) sur le site)" -Elements (@($ailleurs) + $collegues) -Colonnes Name, SamAccountName, Title, Department
+    if ($choix.SamAccountName) { $modele = $choix }
+    while (-not $modele) {
+        $recherche = Read-Texte -Invite 'Qui ?' -Aide 'nom, prénom ou identifiant' -Obligatoire -QuitteSurQ
+        $trouves = @(Invoke-Attente -Titre "Recherche de « $recherche » dans l'Active Directory" -Action { @(Find-AdUtilisateur -Recherche $recherche -Ad $ad) })
+        if ($trouves.Count -eq 0) { Show-Note 'Aucun compte ne correspond.' -Niveau Alerte; continue }
+        $modele = Read-Choix -Titre "Quel compte ? ($($trouves.Count) trouvé$(if ($trouves.Count -gt 1) { 's' }))" -Elements $trouves -Colonnes Name, SamAccountName, Title, Department
+    }
+    $reprenables = @(Invoke-Attente -Titre "Lecture des groupes de $($modele.Name)" -Action { @(Get-GroupesReprenables -Sam $modele.SamAccountName) })
+    if ($reprenables.Count -eq 0) {
+        Show-Note "$($modele.Name) n'a aucun groupe à reprendre en plus des groupes automatiques." -Niveau Alerte
+    } else {
+        $coches = @(); for ($i = 0; $i -lt $reprenables.Count; $i++) { if (-not $reprenables[$i].Note) { $coches += $i } }
+        $dossier.Modele = $modele.Name
+        $dossier.GroupesRepris = @(Read-Choix -Titre "Quels groupes reprendre de $($modele.Name) ? ($($reprenables.Count))" -Elements $reprenables -Colonnes Nom, Note -Multiple -IndicesCoches $coches)
+        Show-Constat -Titre "$($dossier.GroupesRepris.Count) groupe(s) repris de $($modele.Name)" -Niveau Info
+        Add-Resume -Cle 'Groupes' -Valeur "$($dossier.GroupesRepris.Count) de $($modele.Name)"
+    }
+}
+
 if ($pbx) {
     $lecture = Invoke-Attente -Titre "Lecture du 3CX ($($pbx.adresse))" -Action {
         $memeEmail = @(Find-XapiUtilisateurParEmail -Pbx $pbx -Email $dossier.Email)
         if ($memeEmail.Count -gt 0) { throw "L'adresse $($dossier.Email) est déjà portée par le poste 3CX $($memeEmail[0].Number)." }
-        $prefixe = "$(Get-Prop -Objet $dossier.Site -Nom 'prefixePostes' -Defaut '')"
+        $prefixe = "$(Get-Prop -Objet $site -Nom 'prefixePostes' -Defaut '')"
         $candidats = @(Get-XapiPostesLibres -Pbx $pbx -Prefixe $prefixe)
         if ($candidats.Count -eq 0 -and $prefixe) { $candidats = @(Get-XapiPostesLibres -Pbx $pbx) }
         return @{ Candidats = $candidats; Files = @(Get-XapiFiles -Pbx $pbx | Select-Object Id, Number, Name | Sort-Object Name) }
@@ -170,21 +217,21 @@ if ($pbx) {
 
 # ====================================================== 3. RÉCAPITULATIF
 Set-Etape 'Confirmation'
-$site = $dossier.Site; $soc = $dossier.Societe
 $recap = [ordered]@{
-    'Société'      = $soc.nom
-    'Site'         = "$($site.id) — $($site.adresse), $($site.codePostal)"
-    'Nom complet'  = $dossier.DisplayName
-    'Identifiant'  = $dossier.Sam
-    'E-mail'       = $dossier.Email
-    'Fonction'     = $(if ($dossier.Fonction) { $dossier.Fonction } else { '—' })
-    'Service'      = $(if ($dossier.Service) { $dossier.Service } else { '—' })
-    'Titre'        = $(if ($dossier.Titre) { $dossier.Titre } else { '—' })
-    'OU'           = $site.ou
-    'Groupes auto' = $(if ($soc.groupesAuto) { $soc.groupesAuto -join ', ' } else { '—' })
-    'Poste 3CX'    = $(if ($dossier.Poste3CX) { "$($dossier.Poste3CX.Number) (ex « $($dossier.Poste3CX.DisplayName) »)" } elseif ($pbx) { 'aucun' } else { 'pas de PBX pour cette société' })
-    'Files 3CX'    = $(if ($dossier.Files3CX.Count) { ($dossier.Files3CX | ForEach-Object { "$($_.Number) $($_.Name)" }) -join ' · ' } else { '—' })
-    'Mode'         = $(if ($Reglages.Simulation) { 'SIMULATION — rien ne sera écrit' } else { 'RÉEL — le compte sera créé' })
+    'Société'         = $soc.nom
+    'Site'            = "$($site.id) — $($site.adresse), $($site.codePostal)"
+    'Nom complet'     = $dossier.DisplayName
+    'Identifiant'     = $dossier.Sam
+    'E-mail'          = $dossier.Email
+    'Fonction'        = $(if ($dossier.Fonction) { $dossier.Fonction } else { '—' })
+    'Service'         = $(if ($dossier.Service) { $dossier.Service } else { '—' })
+    'Titre'           = $(if ($dossier.Titre) { $dossier.Titre } else { '—' })
+    'OU'              = $site.ou
+    'Groupes auto'    = $(if ($soc.groupesAuto) { $soc.groupesAuto -join '; ' } else { '—' })
+    'Groupes repris'  = $(if ($dossier.GroupesRepris.Count) { "$($dossier.GroupesRepris.Count) de $($dossier.Modele) : $(($dossier.GroupesRepris | ForEach-Object { $_.Nom }) -join '; ')" } else { '—' })
+    'Poste 3CX'       = $(if ($dossier.Poste3CX) { "$($dossier.Poste3CX.Number) (ex « $($dossier.Poste3CX.DisplayName) »)" } elseif ($pbx) { 'aucun' } else { 'pas de PBX pour cette société' })
+    'Files 3CX'       = $(if ($dossier.Files3CX.Count) { ($dossier.Files3CX | ForEach-Object { "$($_.Number) $($_.Name)" }) -join ' · ' } else { '—' })
+    'Mode'            = $(if ($Reglages.Simulation) { 'SIMULATION — rien ne sera écrit' } else { 'RÉEL — le compte sera créé' })
 }
 Show-Recap -Paires $recap -Titre 'Récapitulatif avant création'
 if (-not $Job -and -not (Confirm-Choix -Question $(if ($Reglages.Simulation) { 'Lancer la simulation ?' } else { 'Confirmer et CRÉER le compte ?' }))) { Stop-Script }
@@ -205,29 +252,39 @@ try {
             AccountPassword = (ConvertTo-SecureString -AsPlainText $dossier.MotDePasse -Force)
             OtherAttributes = @{ mailNickname = $dossier.MailNickname; proxyAddresses = $proxy }
         }
-        Invoke-Ecriture -Categorie AD -Description "New-ADUser $($dossier.Sam) « $($dossier.DisplayName) », UPN $($dossier.Email), dans $($site.ou)" -Action {
+        Invoke-Ecriture -Categorie AD -Description "Créer $($dossier.DisplayName) — $($dossier.Email) — dans $($site.ou)" -Action {
             New-ADUser @params @ad
             Wait-AdUtilisateur -Sam $dossier.Sam -Ad $ad | Out-Null
-            Add-Journal -Message "Compte $($dossier.Sam) créé dans $($site.ou)." -Categorie AD -Niveau Succes
+            Add-Journal -Message "Dans $($site.ou), UPN $($dossier.Email)." -Categorie AD
         } | Out-Null
     } | Out-Null
 
     Invoke-Etape -Nom 'Groupes automatiques' -Categorie Groupes -Ignorer:(-not $soc.groupesAuto -or $soc.groupesAuto.Count -eq 0) -Action {
         foreach ($g in $soc.groupesAuto) {
-            Invoke-Ecriture -Categorie Groupes -Description "Add-ADGroupMember $g -Members $($dossier.Sam)" -Action {
-                Add-ADGroupMember -Identity $g -Members $dossier.Sam @ad
-                Add-Journal -Message "Ajouté au groupe $g." -Categorie Groupes -Niveau Succes
-            } | Out-Null
+            Invoke-Ecriture -SansJournal -Categorie Groupes -Description "Ajouter à $g" -Action { Add-ADGroupMember -Identity $g -Members $dossier.Sam @ad } | Out-Null
         }
+        if (Test-Simulation) { Add-Journal -Message "SIMULATION : ajouter à $($soc.groupesAuto -join '; ')" -Categorie Groupes -Niveau Simule }
+        else { Add-Journal -Message "Ajouté à $($soc.groupesAuto -join '; ')" -Categorie Groupes -Niveau Succes }
+    } | Out-Null
+
+    Invoke-Etape -Nom $(if ($dossier.Modele) { "Groupes repris de $($dossier.Modele)" } else { "Groupes repris d'un collègue" }) -Categorie Groupes -Ignorer:($dossier.GroupesRepris.Count -eq 0) -Action {
+        foreach ($g in $dossier.GroupesRepris) {
+            Invoke-Ecriture -SansJournal -Categorie Groupes -Description "Ajouter à $($g.Nom)" -Action { Add-ADGroupMember -Identity $g.DN -Members $dossier.Sam @ad } | Out-Null
+        }
+        $noms = @($dossier.GroupesRepris | ForEach-Object { $_.Nom })
+        if (Test-Simulation) { Add-Journal -Message "SIMULATION : ajouter à $($noms.Count) groupe(s)" -Categorie Groupes -Niveau Simule }
+        else { Add-Journal -Message "Ajouté à $($noms.Count) groupe(s)." -Categorie Groupes -Niveau Succes }
+        Add-Journal -Message ($noms -join '; ') -Categorie Groupes
     } | Out-Null
 
     Invoke-Etape -Nom 'Synchronisation AD Connect (delta)' -Categorie AD -Ignorer:(-not $Reglages.SynchroniserAdConnect) -Action { Invoke-AdConnectDelta } | Out-Null
 
     Invoke-Etape -Nom 'Poste 3CX réaffecté' -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX) -Action {
-        Set-XapiPoste -Pbx $pbx -Id $dossier.Poste3CX.Id -Numero "$($dossier.Poste3CX.Number)" -Proprietes @{
+        $num = "$($dossier.Poste3CX.Number)"
+        Set-XapiPoste -Pbx $pbx -Id $dossier.Poste3CX.Id -Numero $num -Proprietes @{
             FirstName = $dossier.Prenom; LastName = $dossier.Nom; EmailAddress = $dossier.Email; Enabled = $true
-        }
-        if (-not (Test-Simulation)) { Add-Journal -Message "Poste $($dossier.Poste3CX.Number) réaffecté à $($dossier.DisplayName) ($($dossier.Email))." -Categorie 3CX -Niveau Succes }
+        } -Libelle "Réaffecter le poste $num à $($dossier.DisplayName) ($($dossier.Email)) et le réactiver"
+        if (-not (Test-Simulation)) { Add-Journal -Message "Poste $num à $($dossier.DisplayName) ($($dossier.Email)), réactivé." -Categorie 3CX -Niveau Succes }
     } | Out-Null
 
     Invoke-Etape -Nom "Poste 3CX inscrit dans ses files d'attente" -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX -or $dossier.Files3CX.Count -eq 0) -Action {
@@ -239,18 +296,18 @@ try {
 }
 
 # ============================================================ 5. LA FICHE
-$groupes = if (Test-Simulation) { @($soc.groupesAuto) } else { try { @(Get-ADPrincipalGroupMembership -Identity $dossier.Sam @ad -ErrorAction Stop | Select-Object -ExpandProperty Name) } catch { @($soc.groupesAuto) } }
+$groupes = if (Test-Simulation) { @($soc.groupesAuto) + @($dossier.GroupesRepris | ForEach-Object { $_.Nom }) }
+           else { try { @(Get-ADPrincipalGroupMembership -Identity $dossier.Sam @ad -ErrorAction Stop | Select-Object -ExpandProperty Name | Sort-Object) } catch { @($soc.groupesAuto) + @($dossier.GroupesRepris | ForEach-Object { $_.Nom }) } }
 $pourLeMail = [ordered]@{}
-foreach ($k in $recap.Keys) { if ($k -ne 'Mode') { $pourLeMail[$k] = $recap[$k] } }   # le mode a déjà son bandeau
+foreach ($k in $recap.Keys) { if ($k -notin @('Mode', 'Groupes auto', 'Groupes repris')) { $pourLeMail[$k] = $recap[$k] } }   # le mode a son bandeau, les groupes leur liste
 $corps  = New-BlocEncadre -Titre 'À transmettre au collaborateur' -Paires ([ordered]@{
     "Nom d'utilisateur" = $dossier.Sam
     'Mot de passe'      = $dossier.MotDePasse
     'Adresse e-mail'    = $dossier.Email
 })
 $corps += New-BlocPaires -Titre 'Le dossier' -Paires $pourLeMail
-$corps += New-BlocListe -Titre 'Membre de' -Lignes $groupes
-$corps += New-BlocListe -Titre 'Reste à faire' -Cases -Lignes @(Get-Prop -Objet (Get-Prop -Objet $config -Nom 'entree') -Nom 'resteAFaire' -Defaut @('SDA', 'Imprimantes', 'Forticlient', 'Quorum', 'Badge', 'TNI', 'Téléphone mobile', 'Flyer remis aux RH'))
-$html = ConvertTo-RapportHtml -Titre "Entrée — $($dossier.DisplayName)" -SousTitre "$($soc.nom) · $($site.id)" -Corps $corps
+$corps += New-BlocListe -Titre $(if ($dossier.Modele) { "Membre de — sur le modèle de $($dossier.Modele)" } else { 'Membre de' }) -Lignes @($groupes)
+$html = ConvertTo-RapportHtml -Mot 'Entrée' -Nom $dossier.DisplayName -Corps $corps
 Invoke-Etape -Nom 'Fiche envoyée au helpdesk' -Categorie General -Action { Send-Rapport -Sujet "Fiche Outlook - $($dossier.DisplayName)" -Html $html } | Out-Null
 $donnees = [ordered]@{}; foreach ($k in $dossier.Keys) { if ($k -ne 'MotDePasse') { $donnees[$k] = $dossier[$k] } }
 Save-Rapport -Nom "entree-$($dossier.Sam)" -Html $html -Donnees $donnees | Out-Null
