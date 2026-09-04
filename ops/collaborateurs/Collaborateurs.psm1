@@ -1388,12 +1388,25 @@ function New-AdresseLibre {
 }
 
 function Get-AdGroupesDe {
-    <# Les groupes d'un compte : nom lisible et DN (c'est le DN qu'on donne à Add-ADGroupMember, le nom peut différer du sAMAccountName). #>
+    <#
+      Les groupes d'un compte : nom lisible et DN — c'est le DN qu'on donne à
+      Add-ADGroupMember, le nom affiché pouvant différer du sAMAccountName.
+
+      Deux chemins, parce qu'un seul ne suffit pas toujours : l'attribut
+      MemberOf du compte, puis, s'il ne rend rien, Get-ADPrincipalGroupMembership,
+      qui interroge l'annuaire autrement. Le groupe principal (« Utilisateurs
+      du domaine ») n'apparaît dans aucun des deux et n'a pas à être recopié.
+    #>
     param([Parameter(Mandatory)] [string] $Sam, [Parameter(Mandatory)] [hashtable] $Ad)
-    $dns = @((Get-ADUser -Identity $Sam -Properties MemberOf @Ad).MemberOf)
-    return @($dns | ForEach-Object {
-        $nom = ([regex]::Match($_, '^CN=((?:\\,|[^,])+)').Groups[1].Value) -replace '\\,', ','
-        [pscustomobject]@{ Nom = $nom; DN = $_ }
+    $dns = @()
+    try { $dns = @((Get-ADUser -Identity $Sam -Properties MemberOf @Ad).MemberOf) } catch { $dns = @() }
+    if ($dns.Count -eq 0) {
+        try { $dns = @(Get-ADPrincipalGroupMembership -Identity $Sam @Ad | Select-Object -ExpandProperty DistinguishedName) } catch { $dns = @() }
+    }
+    return @($dns | Where-Object { $_ } | ForEach-Object {
+        $nom = ([regex]::Match("$_", '^CN=((?:\\,|[^,])+)').Groups[1].Value) -replace '\\,', ','
+        if (-not $nom) { $nom = "$_" }
+        [pscustomobject]@{ Nom = $nom; DN = "$_" }
     } | Sort-Object Nom)
 }
 

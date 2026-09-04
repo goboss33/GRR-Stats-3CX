@@ -13,6 +13,7 @@ rapport JSON, et le 3CX pris en charge par la XAPI.
 | `Nouveau-Collaborateur.ps1` | L'entrée. |
 | `Sortie-Collaborateur.ps1` | La sortie. |
 | `Test-Interface.ps1` | Banc d'essai de l'interface : aucune connexion, aucune écriture. |
+| `Test-Annuaire.ps1` | Sonde de l'Active Directory : montre ce que l'annuaire répond pour un compte donné. Lecture seule. |
 | `Set-Secret.ps1` | Enregistre la clé XAPI, chiffrée pour la machine. |
 | `exemples\*.json` | Fichiers de travail pour le mode sans dialogue (`-Job`). |
 
@@ -129,6 +130,14 @@ Le JSON décrit tout, aucune question n'est posée. C'est le contrat avec le fut
 ## Les groupes d'un ou d'une collègue
 
 À l'entrée, après les vérifications, le script propose de reprendre les groupes d'un modèle : un champ de recherche, comme pour la redirection des mails — on tape un nom, on choisit parmi les comptes actifs trouvés. Ses groupes sont alors présentés cochés, sauf ceux qui correspondent aux motifs de `config.json` → `entree.groupesSensibles` (administration, opérateurs…), proposés décochés et marqués « sensible » : on les coche en connaissance de cause. Les groupes automatiques de la société ne sont pas proposés deux fois. En mode `-Job`, `groupesDe` désigne le modèle par son identifiant et les groupes sensibles ne sont jamais repris.
+
+Les **groupes automatiques** sont ceux que `config.json` → société → `groupesAuto` donne à tout nouveau compte de cette société, sans rien demander : pour GEROFINANCE, `SEC_DOCSERIES` et `SEC_OPTIMISO_ACTEURS`. Ils ne sont pas proposés une seconde fois dans la liste du modèle.
+
+Quand la lecture d'un compte ou de ses groupes ne donne pas ce qu'on attend, la sonde montre ce que l'annuaire répond vraiment, sans passer par les écrans :
+
+```powershell
+.\Test-Annuaire.ps1 parsa
+```
 
 ## Ce que fait le volet 3CX
 

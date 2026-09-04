@@ -143,8 +143,8 @@ Show-Constat -Titre "Identifiant et adresse libres dans l'Active Directory" -Val
 $sensibles = @(Get-Prop -Objet (Get-Prop -Objet $config -Nom 'entree') -Nom 'groupesSensibles' -Defaut @())
 function Get-GroupesReprenables {
     <# Les groupes du modèle, moins ceux que la société donne déjà. Les groupes sensibles sont marqués, pas retirés. #>
-    param([Parameter(Mandatory)] [string] $Sam)
-    $liste = @(Get-AdGroupesDe -Sam $Sam -Ad $ad | Where-Object { $soc.groupesAuto -notcontains $_.Nom })
+    param([AllowEmptyCollection()] [object[]] $Groupes = @())
+    $liste = @($Groupes | Where-Object { $soc.groupesAuto -notcontains $_.Nom })
     return @($liste | ForEach-Object {
         $nom = $_.Nom
         $sensible = @($sensibles | Where-Object { $nom -like $_ }).Count -gt 0
@@ -156,7 +156,7 @@ if ($Job) {
     if ($modeleSam) {
         $modele = Get-ADUser -Identity $modeleSam @ad
         $dossier.Modele = $modele.Name
-        $dossier.GroupesRepris = @(Get-GroupesReprenables -Sam $modeleSam | Where-Object { -not $_.Note })
+        $dossier.GroupesRepris = @(Get-GroupesReprenables -Groupes @(Get-AdGroupesDe -Sam $modeleSam -Ad $ad) | Where-Object { -not $_.Note })
     }
 } elseif (Confirm-Choix -Question "Reprendre les groupes d'un ou d'une collègue ?" -DefautOui) {
     # Le même champ de recherche que pour la redirection des mails, à l'identique.
@@ -164,15 +164,19 @@ if ($Job) {
     do {
         $recherche = Read-Texte -Invite 'Sur le modèle de qui ?' -Aide 'nom, prénom ou identifiant — q pour quitter' -Obligatoire -QuitteSurQ
         $trouves = @(Invoke-Attente -Titre "Recherche de « $recherche » dans l'Active Directory" -Action {
-            @(Find-AdUtilisateur -Recherche $recherche -Ad $ad | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled) { '' } else { 'désactivé' } } })
+            # « désactivé » seulement si l'annuaire l'affirme : une propriété absente n'est pas un compte fermé.
+            @(Find-AdUtilisateur -Recherche $recherche -Ad $ad | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled -eq $false) { 'désactivé' } else { '' } } })
         })
         # Le terme cherché est répété : si la recherche ne donne rien, on voit sur quoi elle a porté.
         if ($trouves.Count -eq 0) { Show-Note "Aucun compte ne correspond à « $recherche »." -Niveau Alerte; continue }
         $modele = Read-Choix -Titre "Quel compte ? ($($trouves.Count) trouvé$(if ($trouves.Count -gt 1) { 's' }))" -Elements $trouves -Colonnes Name, SamAccountName, Title, Department, Etat
     } while (-not $modele)
-    $reprenables = @(Invoke-Attente -Titre "Lecture des groupes de $($modele.Name)" -Action { @(Get-GroupesReprenables -Sam $modele.SamAccountName) })
+    $tousSesGroupes = @(Invoke-Attente -Titre "Lecture des groupes de $($modele.Name)" -Action { @(Get-AdGroupesDe -Sam $modele.SamAccountName -Ad $ad) })
+    $reprenables = @(Get-GroupesReprenables -Groupes $tousSesGroupes)
     if ($reprenables.Count -eq 0) {
-        Show-Note "$($modele.Name) n'a aucun groupe à reprendre en plus des groupes automatiques." -Niveau Alerte
+        # On distingue les deux cas : rien lu du tout, ou tout déjà couvert par la société.
+        if ($tousSesGroupes.Count -eq 0) { Show-Note "Aucun groupe lu pour $($modele.SamAccountName) — lancez .\Test-Annuaire.ps1 $($modele.SamAccountName) pour voir ce que l'annuaire répond." -Niveau Alerte }
+        else { Show-Note "Les $($tousSesGroupes.Count) groupes de $($modele.Name) sont déjà donnés à tout nouveau compte de $($soc.id) ($($soc.groupesAuto -join '; '))." -Niveau Alerte }
     } else {
         # Tout est coché d'avance : le cas courant est de tout reprendre, on décoche l'exception.
         $tous = @(0..($reprenables.Count - 1))

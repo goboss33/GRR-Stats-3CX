@@ -103,7 +103,8 @@ if ($Job) {
     do {
         $recherche = Read-Texte -Invite 'Qui part ?' -Aide 'nom, prénom, identifiant ou e-mail — q pour quitter' -Obligatoire -QuitteSurQ
         $trouves = @(Invoke-Attente -Titre "Recherche de « $recherche » dans l'Active Directory" -Action {
-            @(Find-AdUtilisateur -Recherche $recherche -Ad $ad | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled) { '' } else { 'déjà désactivé' } } })
+            # « déjà désactivé » seulement si l'annuaire l'affirme : une propriété absente n'est pas un compte fermé.
+            @(Find-AdUtilisateur -Recherche $recherche -Ad $ad | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled -eq $false) { 'déjà désactivé' } else { '' } } })
         })
         if ($trouves.Count -eq 0) { Show-Note 'Aucun compte ne correspond.' -Niveau Alerte }
     } while ($trouves.Count -eq 0)
