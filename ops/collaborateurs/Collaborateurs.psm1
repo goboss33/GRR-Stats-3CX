@@ -41,7 +41,7 @@ $script:Etapes      = New-Object System.Collections.ArrayList   # la checklist
 $script:Credentials = @{}                                        # domaine -> PSCredential (une saisie par session)
 $script:Xapi        = @{}                                        # clé PBX -> jeton + expiration
 $script:Session     = @{ Operateur = $env:USERNAME; Debut = Get-Date; Transcription = $null }
-$script:Ui          = @{ Spectre = $false; Tampon = $null; Statut = $null; Resultat = $null; Params = @{}; Avertissements = @{}; Accent = '#e07b53'; Ligne = 'grey27' }
+$script:Ui          = @{ Spectre = $false; Tampon = $null; Statut = $null; Resultat = $null; Params = @{}; Avertissements = @{}; Accent = '#8ccaae'; Ombre = '#085440'; Ligne = 'grey27' }
 
 $script:Categories  = @('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')
 
@@ -138,12 +138,19 @@ function Get-MessageErreur {
 function Initialize-Interface {
     $script:Ui.Spectre = $false
     try { [Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::InputEncoding = [Text.Encoding]::UTF8 } catch { }
+
+    # Couleurs de la charte Gérofinance (le dégradé du site : #085440 → #8ccaae),
+    # surchargeables dans config.json → interface.
+    $reglagesUi = Get-Prop -Objet $script:Config -Nom 'interface'
+    foreach ($cle in @('Accent', 'Ombre', 'Ligne')) {
+        $valeur = "$(Get-Prop -Objet $reglagesUi -Nom $cle.ToLower() -Defaut '')"
+        if ($valeur -match '^(#[0-9a-fA-F]{6}|[a-z][a-z0-9_]*)$') { $script:Ui[$cle] = $valeur }
+    }
+
     if ($PSVersionTable.PSVersion.Major -lt 7 -or $env:COLLABORATEURS_SANS_SPECTRE) { return }
     $m = Get-Module -ListAvailable PwshSpectreConsole -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
     if (-not $m -or $m.Version -lt [version]'2.0') { return }
     try { Import-Module PwshSpectreConsole -MinimumVersion 2.0 -ErrorAction Stop; $script:Ui.Spectre = $true } catch { return }
-    # La couleur d'accent en hexadécimal si Spectre l'accepte, un proche nommé sinon.
-    try { [void][Spectre.Console.Color]::FromHex($script:Ui.Accent) } catch { $script:Ui.Accent = 'salmon1' }
 }
 
 function Test-Spectre { return [bool]$script:Ui.Spectre }
@@ -219,20 +226,143 @@ function New-Panneau {
     return Format-SpectrePanel @p
 }
 
+# --------------------------------------------------------------------
+#  LE TITRE EN LETTRES PLEINES
+#
+#  Un alphabet maison : que des rectangles pleins, des montants deux fois
+#  plus larges que les traverses (une cellule de terminal est deux fois
+#  plus haute que large : à l'écran, les traits ont la même épaisseur), et
+#  une ombre portée décalée d'un cran en bas à droite, dans le vert profond
+#  de la charte. Les polices figlet livrées avec Spectre dessinent au trait
+#  ( / \ | _ ) : ce n'est pas ce qu'on veut.
+# --------------------------------------------------------------------
+
+$script:Blocs = @{
+    'A' = @('######', '##..##', '######', '##..##', '##..##')
+    'C' = @('######', '##....', '##....', '##....', '######')
+    'D' = @('#####.', '##..##', '##..##', '##..##', '#####.')
+    'E' = @('######', '##....', '#####.', '##....', '######')
+    'I' = @('######', '..##..', '..##..', '..##..', '######')
+    'N' = @('##..##', '###.##', '######', '##.###', '##..##')
+    'O' = @('######', '##..##', '##..##', '##..##', '######')
+    'P' = @('######', '##..##', '######', '##....', '##....')
+    'R' = @('######', '##..##', '######', '##.##.', '##..##')
+    'S' = @('######', '##....', '######', '....##', '######')
+    'T' = @('######', '..##..', '..##..', '..##..', '..##..')
+    'U' = @('##..##', '##..##', '##..##', '##..##', '######')
+    'É' = @('...##.', '######', '##....', '#####.', '##....', '######')
+    'È' = @('.##...', '######', '##....', '#####.', '##....', '######')
+    ' ' = @('......', '......', '......', '......', '......')
+}
+
+function Get-GrilleTitre {
+    <#
+      Le mot en grille de caractères : 'P' plein, 'O' ombre, ' ' vide.
+      Rend $null si une lettre manque à l'alphabet — l'appelant se rabat
+      alors sur du texte simple.
+    #>
+    param([Parameter(Mandatory)] [string] $Texte)
+    $glyphes = @()
+    foreach ($c in $Texte.ToUpper().ToCharArray()) {
+        if (-not $script:Blocs.ContainsKey("$c")) { return $null }
+        $glyphes += , $script:Blocs["$c"]
+    }
+    if ($glyphes.Count -eq 0) { return $null }
+
+    $hauteur = 0
+    foreach ($g in $glyphes) { if ($g.Count -gt $hauteur) { $hauteur = $g.Count } }
+
+    # Les lettres sans accent sont calées en bas.
+    $lignes = @()
+    for ($y = 0; $y -lt $hauteur; $y++) {
+        $s = ''
+        foreach ($g in $glyphes) {
+            $creux = $hauteur - $g.Count
+            $s += $(if ($y -lt $creux) { '......' } else { $g[$y - $creux] }) + '...'
+        }
+        $lignes += $s.Substring(0, $s.Length - 3)
+    }
+
+    # Composition : le plein par-dessus, l'ombre décalée d'un cran en dessous.
+    $largeur = $lignes[0].Length
+    $grille = @()
+    for ($y = 0; $y -le $hauteur; $y++) {
+        $sb = New-Object Text.StringBuilder
+        for ($x = 0; $x -le $largeur; $x++) {
+            $plein = ($y -lt $hauteur -and $x -lt $largeur -and $lignes[$y][$x] -eq '#')
+            $ombre = ($y -gt 0 -and $x -gt 0 -and $lignes[$y - 1][$x - 1] -eq '#')
+            [void]$sb.Append($(if ($plein) { 'P' } elseif ($ombre) { 'O' } else { ' ' }))
+        }
+        $grille += $sb.ToString().TrimEnd()
+    }
+    return $grille
+}
+
+function Show-Titre {
+    <# Le mot en grand, plein, avec son ombre portée. #>
+    param([Parameter(Mandatory)] [string] $Texte, [int] $Marge = 1)
+    $grille = Get-GrilleTitre -Texte $Texte
+    if (-not $grille) {
+        Invoke-Rendu -Composant 'titre' -Spectre { Write-SpectreHost "[bold $($script:Ui.Accent)]$(Protect-Texte $Texte.ToUpper())[/]" } -Repli { Write-Host "  $($Texte.ToUpper())" -ForegroundColor Green }
+        return
+    }
+    $bloc = [string][char]0x2588   # █
+    Invoke-Rendu -Composant 'titre' -Spectre {
+        foreach ($ligne in $grille) {
+            $sb = New-Object Text.StringBuilder
+            [void]$sb.Append(' ' * $Marge)
+            foreach ($suite in (Get-Suites -Ligne $ligne)) {
+                switch ($suite.Signe) {
+                    'P' { [void]$sb.Append("[$($script:Ui.Accent)]$($bloc * $suite.Nombre)[/]") }
+                    'O' { [void]$sb.Append("[$($script:Ui.Ombre)]$($bloc * $suite.Nombre)[/]") }
+                    default { [void]$sb.Append(' ' * $suite.Nombre) }
+                }
+            }
+            Write-SpectreHost $sb.ToString()
+        }
+    } -Repli {
+        foreach ($ligne in $grille) {
+            Write-Host (' ' * $Marge) -NoNewline
+            foreach ($suite in (Get-Suites -Ligne $ligne)) {
+                $texte = $(if ($suite.Signe -eq ' ') { ' ' * $suite.Nombre } else { $bloc * $suite.Nombre })
+                $couleur = switch ($suite.Signe) { 'P' { 'Green' } 'O' { 'DarkGreen' } default { 'Black' } }
+                Write-Host $texte -NoNewline -ForegroundColor $couleur
+            }
+            Write-Host ''
+        }
+    }
+}
+
+function Get-Suites {
+    <# Une ligne de grille → ses suites de caractères identiques, pour n'écrire qu'une balise par suite. #>
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Ligne)
+    $suites = @()
+    if (-not $Ligne) { return $suites }
+    $signe = $Ligne[0]; $n = 0
+    foreach ($c in $Ligne.ToCharArray()) {
+        if ($c -eq $signe) { $n++; continue }
+        $suites += [pscustomobject]@{ Signe = "$signe"; Nombre = $n }
+        $signe = $c; $n = 1
+    }
+    $suites += [pscustomobject]@{ Signe = "$signe"; Nombre = $n }
+    return $suites
+}
+
 function Show-EnTete {
     param([Parameter(Mandatory)] [string] $Titre)
     $r = $script:Reglages
     $a = $script:Ui.Accent
-    $mot = if ($Titre -like 'Entrée*') { 'Entree' } else { 'Sortie' }
+    $mot = if ($Titre -like 'Entrée*') { 'Entrée' } else { 'Sortie' }
     $culture = [Globalization.CultureInfo]::GetCultureInfo('fr-CH')
     $quand = (Get-Date).ToString('dddd d MMMM yyyy, HH:mm', $culture)
     $modes = @()
-    if ($r.Simulation) { $modes += @{ Point = 'green'; Nom = 'SIMULATION'; Texte = 'rien ne sera écrit, chaque geste est décrit'; Console = 'Green' } }
+    if ($r.Simulation) { $modes += @{ Point = $script:Ui.Accent; Nom = 'SIMULATION'; Texte = 'rien ne sera écrit, chaque geste est décrit'; Console = 'Green' } }
     else               { $modes += @{ Point = 'red';   Nom = 'RÉEL';       Texte = 'les actions seront exécutées';               Console = 'Red' } }
     if ($r.ModeTest)   { $modes += @{ Point = 'grey62'; Nom = 'MODE TEST'; Texte = "rapport vers $($r.DestinataireTest), pas de tâche Planner"; Console = 'Cyan' } }
     Invoke-Rendu -Composant 'en-tête' -Spectre {
         Write-SpectreHost ''
-        try { Write-SpectreFigletText -Text $mot -Alignment Left -Color $a } catch { }
+        Show-Titre -Texte $mot
+        Write-SpectreHost ''
         $lignes = @(
             '',
             " [bold white]$(Protect-Texte $Titre)[/]   [grey62]Service Informatique[/]",
@@ -246,6 +376,8 @@ function Show-EnTete {
         Write-SpectreHost ''
     } -Repli {
         $ligne = '=' * 72
+        Write-Host ''
+        Show-Titre -Texte $mot
         Write-Host ''
         Write-Host $ligne -ForegroundColor DarkGray
         Write-Host "  $Titre   Service Informatique" -ForegroundColor White
@@ -274,7 +406,7 @@ function Show-Section {
 function Show-Note {
     <# Une ligne d'information hors journal. Niveau : Info | Sourdine | Succes | Alerte | Erreur #>
     param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Texte, [ValidateSet('Info', 'Sourdine', 'Succes', 'Alerte', 'Erreur')] [string] $Niveau = 'Info')
-    $couleurSpectre = switch ($Niveau) { 'Sourdine' { 'grey50' } 'Succes' { 'green' } 'Alerte' { 'yellow' } 'Erreur' { 'red' } default { 'grey85' } }
+    $couleurSpectre = switch ($Niveau) { 'Sourdine' { 'grey50' } 'Succes' { $script:Ui.Accent } 'Alerte' { 'yellow' } 'Erreur' { 'red' } default { 'grey85' } }
     $couleurConsole = switch ($Niveau) { 'Sourdine' { 'DarkGray' } 'Succes' { 'Green' } 'Alerte' { 'Yellow' } 'Erreur' { 'Red' } default { 'Gray' } }
     $puce = switch ($Niveau) { 'Succes' { '✓ ' } 'Alerte' { '! ' } 'Erreur' { '✗ ' } default { '' } }
     Invoke-Rendu -Composant 'note' -Spectre { Write-SpectreHost "  [$couleurSpectre]$puce$(Protect-Texte $Texte)[/]" } -Repli { Write-Host "  $Texte" -ForegroundColor $couleurConsole }
@@ -565,7 +697,7 @@ function Write-LigneJournal {
     Invoke-Rendu -Composant 'journal' -Spectre {
         $a = $script:Ui.Accent
         switch ($Ligne.Niveau) {
-            'Succes' { Write-SpectreHost "      [green]·[/] [grey85]$(Protect-Texte $texte)[/]" }
+            'Succes' { Write-SpectreHost "      [$a]·[/] [grey85]$(Protect-Texte $texte)[/]" }
             'Alerte' { Write-SpectreHost "      [yellow]![/] [yellow]$(Protect-Texte $texte)[/]" }
             'Erreur' { Write-SpectreHost "      [red]✗[/] [red]$(Protect-Texte $texte)[/]" }
             'Simule' { Write-SpectreHost "      [$a]▸[/] [grey62]$(Protect-Texte ($texte -replace '^SIMULATION : ', ''))[/]" }
@@ -600,7 +732,7 @@ function Write-LigneEtape {
     $droite = if ($Etape.Etat -eq 'ignoree') { 'ignorée' } else { "$($Etape.Duree) s$Suffixe" }
     $espace = [Math]::Max(2, $largeur - 4 - $nom.Length - $droite.Length)
     Invoke-Rendu -Composant 'étape' -Spectre {
-        $coche = switch ($Etape.Etat) { 'ok' { '[green]✓[/]' } 'echec' { '[red]✗[/]' } default { '[grey35]○[/]' } }
+        $coche = switch ($Etape.Etat) { 'ok' { "[$($script:Ui.Accent)]✓[/]" } 'echec' { '[red]✗[/]' } default { '[grey35]○[/]' } }
         $texte = if ($Etape.Etat -eq 'ignoree') { "[grey35]$(Protect-Texte $nom)[/]" } else { "[white]$(Protect-Texte $nom)[/]" }
         Write-SpectreHost "  $coche $texte$(' ' * $espace)[grey50]$(Protect-Texte $droite)[/]"
     } -Repli {
@@ -664,7 +796,7 @@ function Show-Checklist {
     $ig = @($script:Etapes | Where-Object { $_.Etat -eq 'ignoree' }).Count
     Show-Section 'Bilan'
     Invoke-Rendu -Composant 'bilan' -Spectre {
-        $parts = @("[bold green]$ok réussie$(if ($ok -gt 1) { 's' })[/]")
+        $parts = @("[bold $($script:Ui.Accent)]$ok réussie$(if ($ok -gt 1) { 's' })[/]")
         if ($ko -gt 0) { $parts += "[bold red]$ko en échec[/]" } else { $parts += "[grey50]0 en échec[/]" }
         $parts += "[grey50]$ig ignorée$(if ($ig -gt 1) { 's' })[/]"
         if (Test-Simulation) { $parts += "[$($script:Ui.Accent)]simulation — rien n'a été écrit[/]" }

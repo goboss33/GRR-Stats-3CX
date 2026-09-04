@@ -63,7 +63,11 @@ Comme avant : Exchange Online puis Microsoft Graph, chacun sa fenêtre de connex
 
 ## L'interface
 
-Une seule couleur d'accent (terracotta) pour ce qui guide : le titre, la question, le pointeur, la bordure du panneau d'accueil. Du gris pour le secondaire, du blanc pour les données, vert et rouge réservés aux verdicts. Les listes se parcourent aux flèches et se filtrent en tapant ; les colonnes sont alignées ; chaque étape se termine par une coche et sa durée, ses détails en dessous. La console classique de Windows suffit ; **Windows Terminal** rend mieux les caractères et les couleurs.
+Les couleurs sont celles de la charte : le dégradé du site (`#085440` → `#8ccaae`) donne le vert clair de l'accent et le vert profond de l'ombre portée du titre. L'accent porte tout ce qui guide — le titre, la question, le pointeur, les coches, la bordure du panneau d'accueil ; du gris pour le secondaire, du blanc pour les données, le rouge pour les échecs et le jaune pour les avertissements. Les trois couleurs se changent dans `config.json` → `interface`.
+
+Le titre du haut est dessiné par le module (`Show-Titre`) : des lettres pleines, que des angles droits, une ombre portée décalée d'un cran. Les polices figlet livrées avec Spectre dessinent au trait (`/ \ | _`), ce n'est pas le même effet.
+
+Les listes se parcourent aux flèches et se filtrent en tapant ; les colonnes sont alignées ; chaque étape se termine par une coche et sa durée, ses détails en dessous. La console classique de Windows suffit ; **Windows Terminal** rend mieux les caractères et les couleurs.
 
 ## La simulation ne peut pas écrire
 

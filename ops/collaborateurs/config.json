@@ -8,6 +8,13 @@
     "helpdesk": "helpdesk@grrsa.ch"
   },
 
+  "interface": {
+    "_commentaire": "Couleurs du terminal, reprises du dégradé de la charte Gérofinance (gerofinance.ch : linear-gradient #085440 → #8ccaae). accent = titre, questions, pointeur, coches ; ombre = ombre portée du titre ; ligne = bordures discrètes. Hexadécimal #rrggbb ou nom de couleur Spectre.",
+    "accent": "#8ccaae",
+    "ombre": "#085440",
+    "ligne": "grey27"
+  },
+
   "adConnect": {
     "_commentaire": "Serveur qui porte Azure AD Connect : la synchronisation delta y est déclenchée à distance (Invoke-Command). L'ancien script l'appelait en local et échouait silencieusement hors de ce serveur.",
     "serveur": "giffre.gerofinance.local"
