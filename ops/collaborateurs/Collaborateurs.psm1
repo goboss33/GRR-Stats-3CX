@@ -750,6 +750,10 @@ function Read-Liste {
             if ($Textes.Count -gt 6) { $aideAffichee += 'tapez pour filtrer' }
             if ($Aide) { $aideAffichee = @($Aide) + $aideAffichee }
             Write-Ligne (Format-Question -Texte $Question)
+            $prefixe = if ($filtre) { "filtre « $filtre »   " } else { '' }
+            while ($aideAffichee.Count -gt 1 -and ($prefixe.Length + ($aideAffichee -join '  ·  ').Length) -gt $largeur - 4) {
+                $aideAffichee = @($aideAffichee[0..($aideAffichee.Count - 2)])
+            }
             $etat = "[grey50]$(Protect-Texte ($aideAffichee -join '  ·  '))[/]"
             if ($filtre) { $etat = "[$($script:Ui.Accent)]filtre « $(Protect-Texte $filtre) »[/]   $etat" }
             Write-Ligne "   $etat$(' ' * [Math]::Max(0, $largeur - 3 - (Get-LongueurVisible $etat)))"
@@ -760,14 +764,19 @@ function Read-Liste {
                 if ($n -ge $indices.Count) { Write-Ligne (' ' * $largeur); continue }
                 $i = $indices[$n]
                 $texte = $Textes[$i]
-                $case = if ($Multiple) { $(if ($coches.ContainsKey($i)) { '◼ ' } else { '◻ ' }) } else { '' }
-                $brut = "$case$texte"
-                if ($brut.Length -gt $largeur - 4) { $brut = $brut.Substring(0, $largeur - 5) + '…' }
-                $bourre = ' ' * [Math]::Max(0, $largeur - 4 - $brut.Length)
+                $largeurCase = if ($Multiple) { 2 } else { 0 }
+                $place = $largeur - 4 - $largeurCase
+                if ($texte.Length -gt $place) { $texte = $texte.Substring(0, $place - 1) + '…' }
+                $case = ''
+                if ($Multiple) {
+                    $case = if ($coches.ContainsKey($i)) { "[$($script:Ui.Succes)]●[/] " } else { '[grey35]○[/] ' }
+                }
+                $encre = if ($n -eq $curseur) { 'white' } else { 'grey70' }
+                $corps = "$case[$encre]$(Protect-Texte $texte)[/]$(' ' * [Math]::Max(0, $place - $texte.Length))"
                 if ($n -eq $curseur) {
-                    Write-Ligne "[$($script:Ui.Accent)]›[/] [on $($script:Ui.Champ)][white] $(Protect-Texte $brut)$bourre [/][/]"
+                    Write-Ligne "[$($script:Ui.Accent)]›[/] [on $($script:Ui.Champ)] $corps [/]"
                 } else {
-                    Write-Ligne "  [grey70] $(Protect-Texte $brut)$bourre [/]"
+                    Write-Ligne "   $corps "
                 }
             }
             $pied = if ($indices.Count -eq 0) { 'aucune correspondance' } elseif ($indices.Count -gt $visible) { "$($curseur + 1) / $($indices.Count)" } else { '' }
