@@ -216,27 +216,20 @@ try {
 # ============================================================ 5. LA FICHE
 Show-Section '4 · Fiche et rapport'
 $groupes = if (Test-Simulation) { @($soc.groupesAuto) } else { try { @(Get-ADPrincipalGroupMembership -Identity $dossier.Sam @ad -ErrorAction Stop | Select-Object -ExpandProperty Name) } catch { @($soc.groupesAuto) } }
-$fiche = @"
-<h2 style='color:#0000ff;font-size:16px'>Informations utilisateur</h2>
-<b>Nom :</b> $($dossier.DisplayName)<br>
-<b>Nom d'utilisateur :</b> $($dossier.Sam)<br>
-<b>Mot de passe :</b> $($dossier.MotDePasse)<br>
-<b>E-mail :</b> $($dossier.Email)<br>
-<b>Service :</b> $($dossier.Service)<br>
-<b>Fonction :</b> $($dossier.Fonction)<br>
-<b>Titre :</b> $($dossier.Titre)<br>
-<b>Société :</b> $($soc.nom) — $($site.id)<br>
-<b>Téléphone fixe :</b> $(if ($dossier.Poste3CX) { "poste $($dossier.Poste3CX.Number)" } else { '' })<br>
-<b>Téléphone mobile :</b> <br>
-<h2 style='color:#0000ff;font-size:16px'>Membre de</h2>$(($groupes | ForEach-Object { "$_<br>" }) -join '')
-<h2 style='color:#0000ff;font-size:16px'>Files 3CX</h2>$(if ($dossier.Files3CX.Count) { ($dossier.Files3CX | ForEach-Object { "$($_.Number) $($_.Name)<br>" }) -join '' } else { '—<br>' })
-<h2 style='color:#0000ff;font-size:16px'>Reste à faire</h2>
-<b>SDA :</b> <br><b>Imprimantes :</b> <br><b>Forticlient :</b> <br><b>Quorum :</b> <br><b>Badge :</b> <br><b>TNI :</b> <br><b>PC :</b> GFNB*** — charger profil<br><b>Flyer remis aux RH :</b> <br>
-"@
-$html = ConvertTo-RapportHtml -Titre "Entrée — $($dossier.DisplayName)" -EnTete $fiche
+$pourLeMail = [ordered]@{}
+foreach ($k in $recap.Keys) { if ($k -ne 'Mode') { $pourLeMail[$k] = $recap[$k] } }   # le mode a déjà son bandeau
+$corps  = New-BlocEncadre -Titre 'À transmettre au collaborateur' -Paires ([ordered]@{
+    "Nom d'utilisateur" = $dossier.Sam
+    'Mot de passe'      = $dossier.MotDePasse
+    'Adresse e-mail'    = $dossier.Email
+})
+$corps += New-BlocPaires -Titre 'Le dossier' -Paires $pourLeMail
+$corps += New-BlocListe -Titre 'Membre de' -Lignes $groupes
+$corps += New-BlocListe -Titre 'Reste à faire' -Cases -Lignes @(Get-Prop -Objet (Get-Prop -Objet $config -Nom 'entree') -Nom 'resteAFaire' -Defaut @('SDA', 'Imprimantes', 'Forticlient', 'Quorum', 'Badge', 'TNI', 'Téléphone mobile', 'Flyer remis aux RH'))
+$html = ConvertTo-RapportHtml -Titre "Entrée — $($dossier.DisplayName)" -SousTitre "$($soc.nom) · $($site.id)" -Corps $corps
 Invoke-Etape -Nom 'Fiche envoyée au helpdesk' -Categorie General -Action { Send-Rapport -Sujet "Fiche Outlook - $($dossier.DisplayName)" -Html $html } | Out-Null
 $donnees = [ordered]@{}; foreach ($k in $dossier.Keys) { if ($k -ne 'MotDePasse') { $donnees[$k] = $dossier[$k] } }
 Save-Rapport -Nom "entree-$($dossier.Sam)" -Html $html -Donnees $donnees | Out-Null
 
 Complete-Session
-Show-Panneau -Texte "Identifiant : $($dossier.Sam)`nMot de passe initial : $($dossier.MotDePasse)" -Titre 'À transmettre' -Couleur Yellow
+Show-Panneau -Texte "Identifiant : $($dossier.Sam)`nMot de passe initial : $($dossier.MotDePasse)" -Titre 'À transmettre' -Accent

@@ -69,9 +69,37 @@ Invoke-Etape -Nom 'Étape longue avec statut' -Categorie Delegations -Action {
     for ($i = 1; $i -le 5; $i++) { Update-Statut -Texte "Analyse des boîtes  $i / 5" -Pourcent (20 * $i); Start-Sleep -Milliseconds 300 }
     Add-Journal -Message 'Aucune délégation trouvée.' -Categorie Delegations -Niveau Succes
 } | Out-Null
+Invoke-Etape -Nom 'Étape qui laisse du travail à la main' -Categorie 3CX -Action {
+    Add-Journal -Message 'À REROUTER À LA MAIN — 2 règle(s) entrante(s) visent encore le poste 129 :' -Categorie 3CX -Niveau Alerte
+    Add-Journal -Message '  Direct Marie Exemple — SDA +41219257110  (règle 41)' -Categorie 3CX -Niveau Alerte
+    Add-Journal -Message '  Libre Marie Exemple — SDA +41223255110  (règle 42)' -Categorie 3CX -Niveau Alerte
+    Add-Journal -Message 'Groupes conservés : SEC_MFILES_IT_RR; SEC_MFILES_IT_BS' -Categorie Groupes -Niveau Alerte
+} | Out-Null
 Invoke-Etape -Nom 'Étape ignorée (réglage éteint)' -Categorie Planner -Ignorer -Action { } | Out-Null
 Invoke-Etape -Nom 'Étape qui échoue (secondaire)' -Categorie 3CX -Action { Start-Sleep -Milliseconds 400; throw "Le PBX a répondu 401 [non autorisé]" } | Out-Null
 
 Complete-Session
 Show-Panneau -Texte "Identifiant : mexemple`nMot de passe initial : Xk7#pQ2m!vR9" -Titre 'À transmettre (exemple)' -Accent
+
+# Le rapport tel qu'il arrivera dans Outlook, écrit sur le disque sans rien envoyer.
+Show-Section 'Rapport'
+$corps  = New-BlocEncadre -Titre 'À transmettre au collaborateur' -Paires ([ordered]@{
+    "Nom d'utilisateur" = 'mexemple'; 'Mot de passe' = 'Xk7#pQ2m!vR9'; 'Adresse e-mail' = 'marie.exemple@grrsa.ch'
+})
+$corps += New-BlocPaires -Titre 'Le dossier' -Paires ([ordered]@{
+    'Société'             = 'GEROFINANCE - RÉGIE DU RHÔNE SA'
+    'Compte'              = 'Marie Exemple  (mexemple)  —  marie.exemple@grrsa.ch'
+    'Bureau'              = 'Pully'
+    'Redirection'         = 'vers Comptabilité Pully <comptabilite.pully@grrsa.ch>'
+    'Réponse automatique' = 'activée (modèle successeur)'
+    'OU de destination'   = 'OU=99 - DISABLED USERS,DC=gerofinance,DC=local'
+    'Poste 3CX'           = '129 « Exemple, Marie » — 2 file(s), 2 SDA'
+})
+$corps += New-BlocTexte -Titre 'Message de réponse automatique' -Texte "Bonjour,`n`nJe ne fais plus partie de GEROFINANCE - RÉGIE DU RHÔNE SA depuis le 04.09.2026. Comptabilité Pully (comptabilite.pully@grrsa.ch) reprend mes dossiers.`n`nMeilleures salutations"
+$corps += New-BlocListe -Titre 'Membre de' -Lignes @('SEC_DOCSERIES', 'SEC_OPTIMISO_ACTEURS')
+$corps += New-BlocListe -Titre 'Reste à faire' -Cases -Lignes @(Get-Prop -Objet (Get-Prop -Objet (Get-Config) -Nom 'entree') -Nom 'resteAFaire' -Defaut @('SDA', 'Badge'))
+$html = ConvertTo-RapportHtml -Titre 'Sortie — Marie Exemple' -SousTitre 'GEROFINANCE - RÉGIE DU RHÔNE SA' -Corps $corps
+$chemin = Join-Path (Get-Reglages).DossierLogs 'rapport-exemple.html'
+Set-Content -Path $chemin -Value $html -Encoding UTF8
+Show-Note "Rapport d'exemple écrit (ouvrez-le dans un navigateur) : $chemin" -Niveau Succes
 Show-Note "Transcription : $((Get-Reglages).DossierLogs)" -Niveau Sourdine

@@ -332,8 +332,13 @@ try {
         Set-XapiPoste -Pbx $pbx -Id $dossier.Poste3CX.Id -Proprietes @{ Enabled = $false; EmailAddress = '' }
         if (-not (Test-Simulation)) { Add-Journal -Message "Poste $num désactivé, e-mail vidé — le numéro reste réservé." -Categorie 3CX -Niveau Succes }
         if ($dossier.Sda3CX.Count -gt 0) {
-            Add-Journal -Message "À REROUTER À LA MAIN — $($dossier.Sda3CX.Count) règle(s) entrante(s) visent encore ce poste :" -Categorie 3CX -Niveau Alerte
-            foreach ($s in $dossier.Sda3CX) { Add-Journal -Message "  $($s.RuleName) — SDA $($s.Data)$(if ($s.TrunkDN) { " (trunk $($s.TrunkDN))" })" -Categorie 3CX }
+            Add-Journal -Message "À REROUTER À LA MAIN — $($dossier.Sda3CX.Count) règle(s) entrante(s) visent encore le poste $num :" -Categorie 3CX -Niveau Alerte
+            foreach ($s in $dossier.Sda3CX) {
+                # Deux règles peuvent porter le même nom et la même SDA : l'identifiant les départage.
+                $ref = @("règle $(Get-Prop -Objet $s -Nom 'Id' -Defaut '?')")
+                if (Get-Prop -Objet $s -Nom 'TrunkDN') { $ref += "trunk $($s.TrunkDN)" }
+                Add-Journal -Message "  $($s.RuleName) — SDA $($s.Data)  ($($ref -join ', '))" -Categorie 3CX -Niveau Alerte
+            }
         } else { Add-Journal -Message 'Aucune règle entrante ne vise ce poste.' -Categorie 3CX -Niveau Succes }
     } | Out-Null
 
@@ -347,8 +352,11 @@ try {
 
 # ============================================================== 5. RAPPORT
 Show-Section '5 · Rapport'
-$entete = "<p><b>Société :</b> $($soc.nom)<br><b>Utilisateur :</b> $($dossier.Nom) ($upn)<br><b>Redirection :</b> $([Net.WebUtility]::HtmlEncode($texteRedirection))<br><b>Réponse automatique :</b> $([Net.WebUtility]::HtmlEncode($texteReponse))</p>"
-$html = ConvertTo-RapportHtml -Titre "Sortie — $($dossier.Nom)" -EnTete $entete
+$pourLeMail = [ordered]@{}
+foreach ($k in $recap.Keys) { if ($k -ne 'Mode') { $pourLeMail[$k] = $recap[$k] } }   # le mode a déjà son bandeau
+$corps  = New-BlocPaires -Titre 'Le dossier' -Paires $pourLeMail
+if ($dossier.ReponseAuto -eq 'activer') { $corps += New-BlocTexte -Titre 'Message de réponse automatique' -Texte $dossier.ReponseAutoTexte }
+$html = ConvertTo-RapportHtml -Titre "Sortie — $($dossier.Nom)" -SousTitre $soc.nom -Corps $corps
 Invoke-Etape -Nom 'Rapport envoyé au helpdesk' -Categorie General -Action { Send-Rapport -Sujet "Rapport de désactivation - $($dossier.Nom)" -Html $html } | Out-Null
 $donnees = [ordered]@{}; foreach ($k in $dossier.Keys) { if ($k -ne 'Utilisateur') { $donnees[$k] = $dossier[$k] } }
 Save-Rapport -Nom "sortie-$sam" -Html $html -Donnees $donnees | Out-Null

@@ -32,6 +32,21 @@
     "categoriesParBureau": { "PULLY": "category22", "GENEVE": "category5", "GENÈVE": "category5" }
   },
 
+  "entree": {
+    "_commentaire": "resteAFaire : la liste des cases à cocher au bas de la fiche envoyée au helpdesk. À adapter quand le parcours d'accueil change.",
+    "resteAFaire": [
+      "SDA",
+      "Imprimantes",
+      "Forticlient",
+      "Quorum",
+      "Badge",
+      "TNI",
+      "PC : GFNB*** — charger le profil",
+      "Téléphone mobile",
+      "Flyer remis aux RH"
+    ]
+  },
+
   "sortie": {
     "groupesConserves": [ "SEC_MFILES_*" ],
     "licencesConservees": [ "EXCHANGEENTERPRISE" ],

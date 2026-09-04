@@ -195,17 +195,26 @@ function Invoke-Rendu {
       nue sinon. Si Spectre échoue (paramètre inconnu selon la version…), on
       bascule sur la version nue et on le dit UNE fois : le script continue.
     #>
-    param([Parameter(Mandatory)] [scriptblock] $Spectre, [Parameter(Mandatory)] [scriptblock] $Repli, [string] $Composant = 'composant')
+    param(
+        [Parameter(Mandatory)] [scriptblock] $Spectre,
+        [Parameter(Mandatory)] [scriptblock] $Repli,
+        [string] $Composant = 'composant',
+        [switch] $Valeur          # sans lui, ce que le bloc écrit est jeté : un affichage ne rend rien
+    )
     if (Test-Spectre) {
-        try { return & $Spectre }
+        $r = $null; $echec = $false
+        try { $r = & $Spectre }
         catch {
+            $echec = $true
             if (-not $script:Ui.Avertissements.ContainsKey($Composant)) {
                 $script:Ui.Avertissements[$Composant] = $true
                 Write-Host "  (interface Spectre indisponible pour « $Composant » : $(Get-MessageErreur $_) — affichage simple)" -ForegroundColor DarkYellow
             }
         }
+        if (-not $echec) { if ($Valeur) { return $r } else { return } }
     }
-    return & $Repli
+    $r = & $Repli
+    if ($Valeur) { return $r }
 }
 
 function Out-Rendu {
@@ -358,7 +367,7 @@ function Show-EnTete {
     $modes = @()
     if ($r.Simulation) { $modes += @{ Point = $script:Ui.Succes; Nom = 'SIMULATION'; Texte = 'rien ne sera écrit, chaque geste est décrit'; Console = 'Green' } }
     else               { $modes += @{ Point = 'red';   Nom = 'RÉEL';       Texte = 'les actions seront exécutées';               Console = 'Red' } }
-    if ($r.ModeTest)   { $modes += @{ Point = 'grey62'; Nom = 'MODE TEST'; Texte = "rapport vers $($r.DestinataireTest), pas de tâche Planner"; Console = 'Cyan' } }
+    if ($r.ModeTest)   { $modes += @{ Point = 'grey62'; Nom = 'MODE TEST'; Texte = "rapport vers $($r['DestinataireTest']), pas de tâche Planner"; Console = 'Cyan' } }
     Invoke-Rendu -Composant 'en-tête' -Spectre {
         Write-SpectreHost ''
         Show-Titre -Texte $mot
@@ -390,17 +399,27 @@ function Show-EnTete {
 
 function Show-Section {
     param([Parameter(Mandatory)] [string] $Titre)
-    $a = $script:Ui.Accent
+    $trait = [string][char]0x2500
+    $reste = [Math]::Max(3, (Get-Largeur) - $Titre.Length - 4)
     Invoke-Rendu -Composant 'section' -Spectre {
         Write-SpectreHost ''
-        Write-SpectreRule -Title "[bold $a]$(Protect-Texte $Titre)[/]" -Alignment Left -Color $script:Ui.Ligne
+        Write-SpectreHost "[$($script:Ui.Ligne)]$($trait * 2)[/] [bold $($script:Ui.Accent)]$(Protect-Texte $Titre)[/] [$($script:Ui.Ligne)]$($trait * $reste)[/]"
         Write-SpectreHost ''
     } -Repli {
         Write-Host ''
         Write-Host "-- $Titre " -ForegroundColor Cyan -NoNewline
-        Write-Host ('-' * [math]::Max(4, 68 - $Titre.Length)) -ForegroundColor DarkGray
+        Write-Host ('-' * $reste) -ForegroundColor DarkGray
         Write-Host ''
     }
+}
+
+function Show-Filet {
+    <# Un filet plein, à la largeur des panneaux. #>
+    param([string] $Couleur = '')
+    if (-not $Couleur) { $Couleur = $script:Ui.Ligne }
+    $trait = [string][char]0x2500
+    $largeur = Get-Largeur
+    Invoke-Rendu -Composant 'filet' -Spectre { Write-SpectreHost "[$Couleur]$($trait * $largeur)[/]" } -Repli { Write-Host ($trait * $largeur) -ForegroundColor DarkGray }
 }
 
 function Show-Note {
@@ -470,7 +489,7 @@ function Format-Question {
 function Read-Texte {
     param([Parameter(Mandatory)] [string] $Invite, [string] $Defaut = '', [switch] $Obligatoire, [switch] $QuitteSurQ)
     do {
-        $valeur = Invoke-Rendu -Composant 'saisie' -Spectre {
+        $valeur = Invoke-Rendu -Valeur -Composant 'saisie' -Spectre {
             $p = @{ AllowEmpty = (-not $Obligatoire) }
             $p[(Get-NomInvite 'Read-SpectreText')] = Format-Question $Invite
             if ($Defaut) { $p.DefaultAnswer = $Defaut }
@@ -501,11 +520,11 @@ function Read-TexteMultiligne {
     Invoke-Rendu -Composant 'saisie multiligne' -Spectre {
         Write-SpectreHost (Format-Question $Invite)
         Write-SpectreHost "  [grey50]Tapez ou collez le texte. Pour terminer : deux fois Entrée sur une ligne vide, ou un point seul.[/]"
-        Write-SpectreRule -Color $a
     } -Repli {
         Write-Host "  $Invite" -ForegroundColor Cyan
         Write-Host '  Tapez ou collez le texte. Pour terminer : deux fois Entrée sur une ligne vide, ou un point seul.' -ForegroundColor DarkGray
     }
+    Show-Filet -Couleur $a
     $lignes = New-Object System.Collections.ArrayList
     $vides = 0
     while ($true) {
@@ -525,14 +544,14 @@ function Read-TexteMultiligne {
         [void]$lignes.Add($l.TrimEnd())
     }
     while ($lignes.Count -gt 0 -and $lignes[$lignes.Count - 1] -eq '') { $lignes.RemoveAt($lignes.Count - 1) }
-    Invoke-Rendu -Composant 'saisie multiligne' -Spectre { Write-SpectreRule -Color $a } -Repli { }
+    Show-Filet -Couleur $a
     return (@($lignes) -join "`n")
 }
 
 function Confirm-Choix {
     <# Oui / Non au clavier, le choix par défaut sous le pointeur. #>
     param([Parameter(Mandatory)] [string] $Question, [switch] $DefautOui)
-    return [bool](Invoke-Rendu -Composant 'confirmation' -Spectre {
+    return [bool](Invoke-Rendu -Valeur -Composant 'confirmation' -Spectre {
         $choix = if ($DefautOui) { @('Oui', 'Non') } else { @('Non', 'Oui') }
         $p = @{ Choices = $choix; Color = $script:Ui.Accent }
         $p[(Get-NomInvite 'Read-SpectreSelection')] = Format-Question $Question
@@ -594,7 +613,7 @@ function Read-Choix {
     $aide = if ($Aide) { $Aide } elseif ($Multiple) { 'espace pour cocher, Entrée pour valider' } elseif ($textes.Count -gt 6) { 'tapez pour filtrer' } else { '' }
     $question = (Format-Question $Titre) + $(if ($aide) { "  [grey50]$(Protect-Texte $aide)[/]" } else { '' })
 
-    $indices = Invoke-Rendu -Composant 'sélection' -Spectre {
+    $indices = Invoke-Rendu -Valeur -Composant 'sélection' -Spectre {
         $affiches = @($textes | ForEach-Object { Protect-Texte $_ })
         Write-SpectreHost ''
         if ($Multiple) {
@@ -1293,32 +1312,214 @@ function Get-XapiSdaVersPoste {
 
 # ====================================================================
 #  RAPPORT ET MAIL
+#
+#  Le rapport part au helpdesk : il doit se lire d'un coup d'œil, sur un
+#  téléphone comme dans Outlook. D'où : un bandeau aux couleurs de la
+#  maison, le dossier en tête, LES POINTS D'ATTENTION REMONTÉS AVANT LE
+#  DÉTAIL (SDA à rerouter, groupes et licences conservés…), puis les
+#  étapes, puis le journal complet par catégorie.
+#
+#  Contraintes du courriel : Outlook rend le HTML avec le moteur de Word.
+#  Pas de flexbox, pas de grille, pas de dégradé, pas de feuille de style
+#  externe : des tableaux, des styles en ligne, des couleurs pleines.
 # ====================================================================
 
-function ConvertTo-RapportHtml {
-    param([Parameter(Mandatory)] [string] $Titre, [string] $EnTete = '')
+$script:Palette = @{
+    Marque   = '#085440'   # le vert profond de la charte
+    Clair    = '#8ccaae'   # le vert clair de la charte
+    Encre    = '#1f2937'
+    Sourdine = '#6b7280'
+    Bord     = '#e5e7eb'
+    Fond     = '#f6faf8'
+    Succes   = '#15803d'
+    Alerte   = '#b45309'
+    Erreur   = '#b91c1c'
+}
+$script:Police = "font-family:'Segoe UI',Arial,Helvetica,sans-serif"
+
+function Format-Html {
+    param([AllowNull()] [AllowEmptyString()] [string] $Texte)
+    if ($null -eq $Texte) { return '' }
+    return ([Net.WebUtility]::HtmlEncode($Texte) -replace "`r?`n", '<br>')
+}
+
+function New-TitreBloc {
+    param([Parameter(Mandatory)] [string] $Texte)
+    $p = $script:Palette
+    return "<div style=""$($script:Police);font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:$($p.Marque);padding-bottom:10px"">$(Format-Html $Texte)</div>"
+}
+
+function New-BlocPaires {
+    <# Un bloc « libellé → valeur » : le dossier, le récapitulatif. #>
+    param([Parameter(Mandatory)] [string] $Titre, [Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $Paires)
+    $p = $script:Palette
     $sb = New-Object Text.StringBuilder
-    [void]$sb.Append("<html><body style='font-family:Arial,sans-serif;font-size:14px'><h1 style='color:#00B400;font-size:22px'>$Titre</h1>$EnTete")
-    [void]$sb.Append("<p>Date : $(Get-Date -Format 'dd.MM.yyyy HH:mm') · Opérateur : $($script:Session.Operateur)")
-    if (Test-Simulation) { [void]$sb.Append(" · <b style='color:#b45309'>SIMULATION — rien n'a été écrit</b>") }
-    [void]$sb.Append("</p><h2 style='color:#0000ff;font-size:16px'>Étapes</h2><table style='border-collapse:collapse'>")
-    foreach ($e in $script:Etapes) {
-        $c = switch ($e.Etat) { 'ok' { '#16a34a' } 'echec' { '#dc2626' } default { '#94a3b8' } }
-        $s = switch ($e.Etat) { 'ok' { '&#10003;' } 'echec' { '&#10007;' } default { '&ndash;' } }
-        [void]$sb.Append("<tr><td style='color:$c;padding:2px 8px'>$s</td><td style='padding:2px 8px'>$([Net.WebUtility]::HtmlEncode($e.Nom))</td><td style='color:#64748b;padding:2px 8px'>$([Net.WebUtility]::HtmlEncode($e.Detail))</td></tr>")
+    [void]$sb.Append("<tr><td style=""padding:22px 28px 4px 28px"">$(New-TitreBloc $Titre)")
+    [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;$($script:Police);font-size:14px"">")
+    foreach ($k in $Paires.Keys) {
+        [void]$sb.Append("<tr><td width=""170"" style=""padding:5px 14px 5px 0;color:$($p.Sourdine);vertical-align:top;white-space:nowrap"">$(Format-Html "$k")</td>")
+        [void]$sb.Append("<td style=""padding:5px 0;color:$($p.Encre);vertical-align:top"">$(Format-Html "$($Paires[$k])")</td></tr>")
     }
-    [void]$sb.Append("</table>")
+    [void]$sb.Append('</table></td></tr>')
+    return $sb.ToString()
+}
+
+function New-BlocEncadre {
+    <# Un encadré vert clair : ce que le helpdesk doit recopier (identifiants). #>
+    param([Parameter(Mandatory)] [string] $Titre, [Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $Paires)
+    $p = $script:Palette
+    $sb = New-Object Text.StringBuilder
+    [void]$sb.Append("<tr><td style=""padding:22px 28px 4px 28px"">")
+    [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;background:$($p.Fond);border:1px solid $($p.Clair);border-radius:6px"">")
+    [void]$sb.Append("<tr><td style=""padding:18px 20px"">$(New-TitreBloc $Titre)")
+    [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;$($script:Police);font-size:15px"">")
+    foreach ($k in $Paires.Keys) {
+        [void]$sb.Append("<tr><td width=""150"" style=""padding:5px 14px 5px 0;color:$($p.Sourdine);font-size:14px;vertical-align:top;white-space:nowrap"">$(Format-Html "$k")</td>")
+        [void]$sb.Append("<td style=""padding:5px 0;color:$($p.Marque);font-weight:600;vertical-align:top"">$(Format-Html "$($Paires[$k])")</td></tr>")
+    }
+    [void]$sb.Append('</table></td></tr></table></td></tr>')
+    return $sb.ToString()
+}
+
+function New-BlocListe {
+    <# Une liste : groupes, files, cases à cocher de ce qui reste à faire. #>
+    param([Parameter(Mandatory)] [string] $Titre, [AllowEmptyCollection()] [string[]] $Lignes, [switch] $Cases, [string] $SiVide = '—')
+    $p = $script:Palette
+    $sb = New-Object Text.StringBuilder
+    [void]$sb.Append("<tr><td style=""padding:22px 28px 4px 28px"">$(New-TitreBloc $Titre)")
+    [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;$($script:Police);font-size:14px"">")
+    $liste = @($Lignes | Where-Object { "$_" })
+    if ($liste.Count -eq 0) { $liste = @($SiVide) }
+    foreach ($l in $liste) {
+        $puce = if ($Cases) { '&#9744;' } else { '&#8226;' }
+        [void]$sb.Append("<tr><td width=""22"" style=""padding:4px 0;color:$($p.Clair);vertical-align:top"">$puce</td>")
+        [void]$sb.Append("<td style=""padding:4px 0;color:$($p.Encre)"">$(Format-Html "$l")</td></tr>")
+    }
+    [void]$sb.Append('</table></td></tr>')
+    return $sb.ToString()
+}
+
+function New-BlocTexte {
+    <# Un bloc de texte tel quel, encadré : le message de réponse automatique. #>
+    param([Parameter(Mandatory)] [string] $Titre, [AllowEmptyString()] [string] $Texte)
+    if (-not $Texte) { return '' }
+    $p = $script:Palette
+    $sb = New-Object Text.StringBuilder
+    [void]$sb.Append("<tr><td style=""padding:22px 28px 4px 28px"">$(New-TitreBloc $Titre)")
+    [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;border-left:3px solid $($p.Clair);background:$($p.Fond)"">")
+    [void]$sb.Append("<tr><td style=""padding:14px 18px;$($script:Police);font-size:14px;color:$($p.Encre);line-height:21px"">$(Format-Html $Texte)</td></tr>")
+    [void]$sb.Append('</table></td></tr>')
+    return $sb.ToString()
+}
+
+function New-BlocAttention {
+    <# Les lignes d'alerte du journal, remontées AVANT le détail : c'est ce qui reste à traiter à la main. #>
+    $p = $script:Palette
+    $alertes = @($script:Journal | Where-Object { $_.Niveau -eq 'Alerte' })
+    if ($alertes.Count -eq 0) { return '' }
+    $sb = New-Object Text.StringBuilder
+    [void]$sb.Append("<tr><td style=""padding:22px 28px 4px 28px"">")
+    [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;border:1px solid #fcd9a4;background:#fffbf3;border-radius:6px"">")
+    [void]$sb.Append("<tr><td style=""padding:18px 20px""><div style=""$($script:Police);font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:$($p.Alerte);padding-bottom:10px"">Points d'attention &#183; $($alertes.Count)</div>")
+    [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;$($script:Police);font-size:14px"">")
+    foreach ($a in $alertes) {
+        [void]$sb.Append("<tr><td width=""22"" style=""padding:4px 0;color:$($p.Alerte);vertical-align:top"">&#8226;</td>")
+        [void]$sb.Append("<td style=""padding:4px 0;color:$($p.Encre)"">$(Format-Html $a.Message)</td>")
+        [void]$sb.Append("<td width=""90"" align=""right"" style=""padding:4px 0;color:$($p.Sourdine);font-size:12px;vertical-align:top"">$(Format-Html $a.Categorie)</td></tr>")
+    }
+    [void]$sb.Append('</table></td></tr></table></td></tr>')
+    return $sb.ToString()
+}
+
+function New-BlocEtapes {
+    $p = $script:Palette
+    $sb = New-Object Text.StringBuilder
+    [void]$sb.Append("<tr><td style=""padding:22px 28px 4px 28px"">$(New-TitreBloc 'Étapes')")
+    [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;$($script:Police);font-size:14px"">")
+    foreach ($e in $script:Etapes) {
+        $couleur = switch ($e.Etat) { 'ok' { $p.Succes } 'echec' { $p.Erreur } default { '#9ca3af' } }
+        $signe   = switch ($e.Etat) { 'ok' { '&#10003;' } 'echec' { '&#10007;' } default { '&#8211;' } }
+        $droite  = if ($e.Etat -eq 'ignoree') { 'ignorée' } else { "$($e.Duree) s" }
+        $encre   = if ($e.Etat -eq 'ignoree') { $p.Sourdine } else { $p.Encre }
+        [void]$sb.Append("<tr><td width=""22"" style=""padding:6px 0;border-top:1px solid $($p.Bord);color:$couleur;vertical-align:top"">$signe</td>")
+        [void]$sb.Append("<td style=""padding:6px 0;border-top:1px solid $($p.Bord);color:$encre"">$(Format-Html $e.Nom)")
+        if ($e.Detail) { [void]$sb.Append("<div style=""color:$($p.Erreur);font-size:13px;padding-top:3px"">$(Format-Html $e.Detail)</div>") }
+        [void]$sb.Append("</td><td width=""80"" align=""right"" style=""padding:6px 0;border-top:1px solid $($p.Bord);color:$($p.Sourdine);font-size:13px;vertical-align:top;white-space:nowrap"">$droite</td></tr>")
+    }
+    [void]$sb.Append('</table></td></tr>')
+    return $sb.ToString()
+}
+
+function New-BlocJournal {
+    $p = $script:Palette
+    $sb = New-Object Text.StringBuilder
     foreach ($cat in @('General', 'AD', 'Groupes', '3CX', 'Exchange', 'Licences', 'Delegations', 'Planner')) {
         $lignes = @($script:Journal | Where-Object { $_.Categorie -eq $cat })
         if ($lignes.Count -eq 0) { continue }
-        [void]$sb.Append("<h2 style='color:#0000ff;font-size:16px'>$cat</h2><p>")
+        [void]$sb.Append("<tr><td style=""padding:16px 28px 0 28px""><div style=""$($script:Police);font-size:12px;font-weight:600;color:$($p.Sourdine);padding-bottom:6px"">$(Format-Html $cat)</div>")
+        [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""border-collapse:collapse;$($script:Police);font-size:13px"">")
         foreach ($l in $lignes) {
-            $c = switch ($l.Niveau) { 'Succes' { '#16a34a' } 'Alerte' { '#d97706' } 'Erreur' { '#dc2626' } 'Simule' { '#b45309' } default { '#334155' } }
-            [void]$sb.Append("<span style='color:$c'>&#9679;</span> $([Net.WebUtility]::HtmlEncode($l.Message))<br>")
+            $couleur = switch ($l.Niveau) { 'Succes' { $p.Succes } 'Alerte' { $p.Alerte } 'Erreur' { $p.Erreur } 'Simule' { $p.Clair } default { '#9ca3af' } }
+            $encre   = switch ($l.Niveau) { 'Alerte' { $p.Alerte } 'Erreur' { $p.Erreur } 'Simule' { $p.Sourdine } default { $p.Encre } }
+            $texte   = if ($l.Niveau -eq 'Simule') { $l.Message -replace '^SIMULATION : ', '' } else { $l.Message }
+            $puce    = if ($l.Niveau -eq 'Simule') { '&#9656;' } else { '&#8226;' }
+            [void]$sb.Append("<tr><td width=""22"" style=""padding:3px 0;color:$couleur;vertical-align:top"">$puce</td>")
+            [void]$sb.Append("<td style=""padding:3px 0;color:$encre;word-break:break-word"">$(Format-Html $texte)</td></tr>")
         }
-        [void]$sb.Append("</p>")
+        [void]$sb.Append('</table></td></tr>')
     }
-    [void]$sb.Append("</body></html>")
+    return $sb.ToString()
+}
+
+function ConvertTo-RapportHtml {
+    <#
+      Le rapport complet. -Corps reçoit les blocs propres à l'opération,
+      composés par le script avec New-BlocPaires / New-BlocListe /
+      New-BlocEncadre. Le reste (bandeau, points d'attention, étapes,
+      journal, pied) est commun aux deux.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $Titre,
+        [string] $SousTitre = '',
+        [string] $Corps = ''
+    )
+    $p = $script:Palette
+    $sb = New-Object Text.StringBuilder
+    [void]$sb.Append("<html><body style=""margin:0;padding:0;background:#eef2f0"">")
+    [void]$sb.Append("<table width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""background:#eef2f0""><tr><td align=""center"" style=""padding:18px 10px"">")
+    [void]$sb.Append("<table width=""700"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""width:700px;max-width:100%;border-collapse:collapse;background:#ffffff;border-radius:8px;overflow:hidden"">")
+
+    # Bandeau
+    [void]$sb.Append("<tr><td style=""background:$($p.Marque);padding:24px 28px"">")
+    [void]$sb.Append("<div style=""$($script:Police);font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:$($p.Clair);padding-bottom:8px"">Service Informatique</div>")
+    [void]$sb.Append("<div style=""$($script:Police);font-size:21px;font-weight:600;color:#ffffff;line-height:28px"">$(Format-Html $Titre)</div>")
+    if ($SousTitre) { [void]$sb.Append("<div style=""$($script:Police);font-size:14px;color:$($p.Clair);padding-top:5px"">$(Format-Html $SousTitre)</div>") }
+    [void]$sb.Append('</td></tr>')
+    [void]$sb.Append("<tr><td style=""height:4px;background:$($p.Clair);font-size:0;line-height:0"">&nbsp;</td></tr>")
+
+    # Le mode, quand il n'est pas le mode normal
+    $etiquettes = @()
+    if (Test-Simulation) { $etiquettes += "SIMULATION &#183; rien n'a été écrit, chaque geste est seulement décrit" }
+    if (Test-ModeTest)   { $etiquettes += "MODE TEST &#183; rapport détourné, aucune tâche Planner créée" }
+    if ($etiquettes.Count -gt 0) {
+        [void]$sb.Append("<tr><td style=""background:#fff7ed;border-bottom:1px solid #fcd9a4;padding:12px 28px;$($script:Police);font-size:13px;color:$($p.Alerte)"">")
+        [void]$sb.Append(($etiquettes -join '<br>'))
+        [void]$sb.Append('</td></tr>')
+    }
+
+    [void]$sb.Append($Corps)
+    [void]$sb.Append((New-BlocAttention))
+    [void]$sb.Append((New-BlocEtapes))
+    [void]$sb.Append("<tr><td style=""padding:26px 28px 0 28px"">$(New-TitreBloc 'Journal détaillé')</td></tr>")
+    [void]$sb.Append((New-BlocJournal))
+
+    # Pied
+    [void]$sb.Append("<tr><td style=""padding:22px 28px;border-top:1px solid $($p.Bord);$($script:Police);font-size:12px;color:$($p.Sourdine)"">")
+    [void]$sb.Append("$(Format-Html "$(Get-Date -Format 'dd.MM.yyyy à HH:mm') · opérateur $($script:Session.Operateur) · $($env:COMPUTERNAME) · PowerShell $($PSVersionTable.PSVersion)")<br>")
+    [void]$sb.Append("Message émis automatiquement par les scripts d'entrée et de sortie des collaborateurs.")
+    [void]$sb.Append('</td></tr>')
+
+    [void]$sb.Append('</table></td></tr></table></body></html>')
     return $sb.ToString()
 }
 

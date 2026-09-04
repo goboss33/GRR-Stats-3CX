@@ -45,6 +45,8 @@ Get-Module -ListAvailable ActiveDirectory, PwshSpectreConsole, ExchangeOnlineMan
 .\Test-Interface.ps1
 ```
 
+   Il fait défiler tous les composants sur des données inventées et écrit un **rapport d'exemple** dans `logs\rapport-exemple.html` : ouvrez-le dans un navigateur pour voir la tête du courriel sans rien envoyer.
+
 5. Enregistrer la clé XAPI (une fois par machine) :
 
 ```powershell
@@ -121,6 +123,14 @@ Le JSON décrit tout, aucune question n'est posée. C'est le contrat avec le fut
 **Entrée** : propose les postes libres — désactivés, ou nommés « libre » — du site (préfixe `prefixePostes` dans `config.json`, sinon tous), pose nom, prénom, e-mail, réactive, inscrit dans les files choisies. Le lendemain, l'application de statistiques le reconnaît par l'e-mail.
 
 **Sortie** : retrouve le poste par l'e-mail, le retire de toutes ses files, vide l'e-mail, le **désactive** — le numéro reste réservé. Les règles entrantes (SDA) qui visent encore le poste sont **listées dans le rapport, pas réécrites** : à faire à la main pour l'instant.
+
+## Le rapport envoyé au helpdesk
+
+Bandeau aux couleurs de la maison, puis le dossier, puis — avant tout le détail — un encadré **Points d'attention** qui rassemble automatiquement toutes les lignes d'alerte : SDA à rerouter à la main, groupes et licences conservés, boîtes qui redirigent vers le partant, tâche Planner non créée. C'est la partie que le helpdesk doit lire. Viennent ensuite les étapes avec leur verdict et leur durée, puis le journal complet par catégorie, les gestes simulés en gris.
+
+Pour l'entrée, les identifiants sont dans un encadré vert en tête, et la liste des cases à cocher du bas se règle dans `config.json` → `entree.resteAFaire`.
+
+Le corps propre à chaque opération se compose avec les fonctions `New-BlocPaires`, `New-BlocEncadre`, `New-BlocListe` et `New-BlocTexte` : le reste du courriel est commun aux deux scripts. Le récapitulatif affiché dans le terminal et celui du courriel viennent de la même source, il n'y a rien à tenir à jour deux fois.
 
 ## Où sont les traces
 
