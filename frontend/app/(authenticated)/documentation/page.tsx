@@ -37,6 +37,15 @@ interface Decision {
 
 const decisions: Decision[] = [
     {
+        id: "1.17",
+        category: "Statistiques Queue",
+        title: "« Hors horaires » : les appels clos par les heures de bureau ne comptent nulle part",
+        date: "7 septembre 2026",
+        summary: "Depuis la bascule des files vers les heures de bureau natives des départements 3CX (plus de scripts d'horaires ni de groupes d'appel), un appel reçu bureau fermé, en pause ou un jour férié est clos par le PBX : annonce puis raccroché, ou routage vers le répondeur « GRR Horaires Fermé » (998). Ces appels reçoivent un statut propre, « Hors horaires », distinct de « Perdu » et de « Messagerie ». Ils ne sont comptés dans aucune statistique — ni reçus, ni perdus, ni tableau de bord — et ne se listent dans les journaux qu'en choisissant explicitement ce statut.",
+        justification: "3CX ne tague l'appel que lorsque le PBX lui-même le clôt : avec « Terminer l'appel », un appelant qui raccroche pendant l'annonce ne laissait aucune trace et devenait un Perdu (88 % des cas mesurés sur la file 807 en août 2026 ; ~300 appels par mois pour la seule réception de Pully, soit un doublement des Perdus). Le remède est double : côté PBX, router fermé, pause et férié vers un répondeur numérique — le tag devient systématique, sur la sortie du segment de file et sur le segment du répondeur ; côté application, lire ce tag. Il se lit toujours sur la SORTIE d'un passage : porté à l'entrée, il décrit le saut précédent (une file en pause qui renvoie vers la réception tague le segment de la réception).",
+        impact: "Nouveau statut final out_of_hours (premier de la préséance : une messagerie atteinte par ce routage reste hors horaires) et nouveau sort de passage out_of_hours (après « répondu », avant « débordé »), exclus de queue_calls, de direct_calls (non répondus), des métriques globales, de la courbe et de la heatmap. Population par défaut des journaux et de l'API logs : tout sauf hors horaires ; paramètre statuses=out_of_hours pour les lister. L'API queue expose outcomeCounts.out_of_hours à titre d'information. La modale « Chaîne d'appel » fusionne les jambes jumelles d'un routage (tentatives parallèles du PBX, la seconde annulée completed_elsewhere) observées sur le répondeur 998.",
+    },
+    {
         id: "1.16",
         category: "Statistiques Queue",
         title: "Le transfert accompli est un Répondu ; « Redirigés » devient « Débordements »",

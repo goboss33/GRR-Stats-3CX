@@ -28,6 +28,7 @@ const rules = (over: Partial<ClassificationRules> = {}): ClassificationRules => 
 
 const facts = (over: Partial<PassageFacts> = {}): PassageFacts => ({
     answeredHere: false,
+    outOfHours: false,
     overflowed: false,
     toVoicemail: false,
     clockSeconds: 60,
@@ -46,6 +47,19 @@ describe("classifyPassage — préséance", () => {
         // pas de celle-ci.
         const f = facts({ overflowed: true, toVoicemail: true });
         expect(classifyPassage(f, rules())).toBe("overflow");
+    });
+
+    it("« hors horaires » passe avant le débordement et la messagerie, jamais avant « répondu »", () => {
+        // La destination fermé/pause peut être une autre file ou une messagerie :
+        // c'est le PBX qui a écarté l'appel, la file n'a ni débordé ni renvoyé.
+        const f = facts({ outOfHours: true, overflowed: true, toVoicemail: true, clockSeconds: 1 });
+        expect(classifyPassage(f, rules())).toBe("out_of_hours");
+        expect(classifyPassage(facts({ outOfHours: true, answeredHere: true }), rules())).toBe("answered");
+    });
+
+    it("« hors horaires » ne dépend d'aucune règle reconfigurable", () => {
+        const f = facts({ outOfHours: true });
+        expect(classifyPassage(f, rules({ overflow: "lost", voicemail: "lost", shortAbandonThresholdSeconds: null }))).toBe("out_of_hours");
     });
 
     it("un abandon court n'est pas un abandon", () => {
@@ -211,9 +225,12 @@ describe("exclusion des messageries (voicemail: « excluded »)", () => {
         expect(sql).toContain("destination_entity_type");
     });
 
-    it("sous les autres règles, le bloc direct est inchangé", () => {
+    it("sous les autres règles, le bloc direct ne filtre plus la messagerie", () => {
         const sql = buildDirectCallsCTE(rules({ voicemail: "separate" }));
-        expect(sql).not.toContain("answered OR NOT EXISTS");
+        // Le garde-fou hors horaires, lui, est toujours présent (07.09.2026) ;
+        // seul le critère messagerie disparaît.
+        expect(sql).toContain("answered OR NOT EXISTS");
+        expect(sql).not.toContain("destination_entity_type, '') = 'voicemail'");
     });
 
     it("le SQL du statut de passage garde la branche « voicemail »", () => {
@@ -257,7 +274,7 @@ describe("cohérence TypeScript / SQL", () => {
     // décrire la même chose, sinon on recrée exactement le bug qu'on corrige.
     it("le SQL couvre les mêmes branches que la fonction, dans le même ordre", () => {
         const sql = buildPassageOutcomeSQL(rules());
-        const ordre = ["answered_here", "overflowed", "to_voicemail", "clock_seconds"];
+        const ordre = ["answered_here", "out_of_hours", "overflowed", "to_voicemail", "clock_seconds"];
         const positions = ordre.map((k) => sql.indexOf(k));
         expect(positions.every((p) => p >= 0)).toBe(true);
         expect([...positions]).toEqual([...positions].sort((a, b) => a - b));
@@ -400,6 +417,53 @@ describe("seuil de bruit et abandons courts exclus", () => {
 
     it("« lost » (défaut) : les abandons courts restent comptés", () => {
         expect(buildTeamCTEChain(rules(), P)).not.toContain("cqo.outcome <> 'short_abandon'");
+    });
+});
+
+describe("hors horaires — clos par les heures de bureau du département", () => {
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
+
+    it("le fait se lit sur la SORTIE du passage : détail de fin ou successeur créé depuis lui", () => {
+        const sql = buildTeamCTEChain(rules(), P);
+        expect(sql).toContain("AS out_of_hours");
+        expect(sql).toContain("c.termination_reason_details, '')) IN ('out_of_office', 'break_time', 'holiday')");
+        // Le successeur est lu dans la sonde LATERAL des enfants du passage
+        // (p.originating_cdr_id = c.cdr_id), sans seconde lecture.
+        expect(sql).toContain("p.creation_forward_reason, '')) IN ('out_of_office', 'break_time', 'holiday')) AS routed_by_hours");
+        expect(sql).toContain("COALESCE(poll.routed_by_hours, FALSE)");
+        // Jamais sur l'entrée : le motif de création du passage décrit le saut précédent.
+        expect(sql).not.toContain("c.creation_forward_reason, '')) IN ('out_of_office'");
+    });
+
+    it("la sonde LATERAL garde la sémantique des sonneries : polling vers une extension seulement", () => {
+        const sql = buildTeamCTEChain(rules(), P);
+        expect(sql).toContain("FILTER (WHERE p.creation_forward_reason = 'polling' AND p.destination_dn_type = 'extension') AS answered_here");
+        expect(sql).not.toContain("WHERE p.originating_cdr_id = c.cdr_id\n              AND p.creation_forward_reason = 'polling'");
+    });
+
+    it("le bloc file les écarte toujours, quelles que soient les règles", () => {
+        expect(buildTeamCTEChain(rules(), P)).toContain("cqo.outcome <> 'out_of_hours'");
+        expect(buildTeamCTEChain(rules({ voicemail: "lost", shortAbandonDisposition: "lost" }), P))
+            .toContain("cqo.outcome <> 'out_of_hours'");
+    });
+
+    it("le bloc direct écarte les appels non répondus écartés par les heures de bureau", () => {
+        const sql = buildDirectCallsCTE(rules());
+        expect(sql).toContain("answered OR NOT EXISTS");
+        expect(sql).toContain("v.creation_forward_reason, '')) IN ('out_of_office', 'break_time', 'holiday')");
+    });
+
+    it("hors de toute vignette : ni « Total reçus », ni « Perdus »", () => {
+        expect(DEFAULT_OUTCOME_GROUPING.out_of_hours).toBeNull();
+        expect(outcomesForBucket("received")).not.toContain("out_of_hours");
+        expect(outcomesForBucket("lost")).not.toContain("out_of_hours");
+        expect(sumBucket({ out_of_hours: 12, abandoned: 3 }, "lost")).toBe(3);
+    });
+
+    it("dernier rang : un passage joué dans la file l'emporte sur un passage écarté", () => {
+        expect(OUTCOME_RANK.out_of_hours).toBeGreaterThan(OUTCOME_RANK.short_abandon);
+        expect(reducePassages(["out_of_hours", "abandoned"], rules())).toBe("abandoned");
+        expect(reducePassages(["out_of_hours"], rules())).toBe("out_of_hours");
     });
 });
 

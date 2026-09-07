@@ -28,6 +28,7 @@ import {
     SQL_SYSTEM_DEST_TYPES,
     SQL_REAL_PARTY_DEST_TYPES,
     buildFinalStatusCaseSQL,
+    sqlIsOfficeHoursRouted,
     buildDirectionConditionSQL,
     buildCallSensCaseSQL,
     SQL_SYSTEM_ENTITY_TYPES,
@@ -125,6 +126,14 @@ function buildScopeFilter(scope: AccessScope | undefined, table: Prisma.Sql): Pr
         SELECT call_history_id FROM ${table} WHERE ${Prisma.join(conditions, " OR ")}
     )`;
 }
+
+/**
+ * « Le dernier segment porte un routage par les heures de bureau » — alias
+ * `ls` des CTE last_segments / lasts. Ces appels ne comptent nulle part
+ * (décision du 7 septembre 2026) : les requêtes du tableau de bord les
+ * écartent avec ce prédicat, la même définition que le statut final.
+ */
+const LS_OFFICE_HOURS = Prisma.raw(sqlIsOfficeHoursRouted("ls.creation_forward_reason", "ls.termination_reason_details"));
 
 // ============================================
 // MÉTRIQUES GLOBALES (KPIs du dashboard)
@@ -233,7 +242,8 @@ export async function getGlobalMetricsRaw(
                 cdr_answered_at,
                 cdr_started_at as last_started_at,
                 cdr_ended_at as last_ended_at,
-                termination_reason_details
+                termination_reason_details,
+                creation_forward_reason
             FROM ${cdr}
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
@@ -283,6 +293,7 @@ export async function getGlobalMetricsRaw(
                 ls.last_started_at       as ls_last_started_at,
                 ls.last_ended_at         as ls_last_ended_at,
                 ls.termination_reason_details as ls_termination_reason_details,
+                ls.creation_forward_reason as ls_creation_forward_reason,
                 ans.answered_at,
                 lrp.lh_answered_at,
                 lrp.lh_started_at,
@@ -326,6 +337,8 @@ export async function getGlobalMetricsRaw(
             COUNT(*) FILTER (WHERE agent_count = 2) as agents_2,
             COUNT(*) FILTER (WHERE agent_count >= 3) as agents_3_plus
         FROM enrichi
+        -- Hors horaires : jamais comptés (07.09.2026) — ni total, ni perdus.
+        WHERE status <> 'out_of_hours'
     `;
 
     const rows = await prisma.$queryRaw<GlobalMetricsRow[]>(query);
@@ -438,7 +451,8 @@ export async function getGlobalMetricsByOriginRaw(
                 cdr_answered_at,
                 cdr_started_at as last_started_at,
                 cdr_ended_at as last_ended_at,
-                termination_reason_details
+                termination_reason_details,
+                creation_forward_reason
             FROM ${cdr}
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
@@ -489,6 +503,7 @@ export async function getGlobalMetricsByOriginRaw(
                 ls.last_started_at       as ls_last_started_at,
                 ls.last_ended_at         as ls_last_ended_at,
                 ls.termination_reason_details as ls_termination_reason_details,
+                ls.creation_forward_reason as ls_creation_forward_reason,
                 ans.answered_at,
                 lrp.lh_answered_at,
                 lrp.lh_started_at,
@@ -530,6 +545,8 @@ export async function getGlobalMetricsByOriginRaw(
             COUNT(*) FILTER (WHERE agent_count = 2) as agents_2,
             COUNT(*) FILTER (WHERE agent_count >= 3) as agents_3_plus
         FROM enrichi
+        -- Hors horaires : jamais comptés (07.09.2026) — ni total, ni perdus.
+        WHERE status <> 'out_of_hours'
         GROUP BY direction_class
     `;
 
@@ -570,7 +587,8 @@ export async function getTimelineByOriginRaw(
                 cdr_answered_at AS last_answered_at,
                 cdr_started_at AS last_started_at,
                 cdr_ended_at AS last_ended_at,
-                termination_reason_details
+                termination_reason_details,
+                creation_forward_reason
             FROM ${cdr}
             WHERE call_history_id IN (SELECT call_history_id FROM call_aggregates)
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
@@ -591,6 +609,8 @@ export async function getTimelineByOriginRaw(
                 ca.first_started_at,
                 ${oc.directionClassExpr} AS direction_class,
                 CASE
+                    -- Hors horaires : ni répondu ni manqué, la courbe n'en compte aucun.
+                    WHEN ${LS_OFFICE_HOURS} THEN 'out_of_hours'
                     WHEN ls.last_dest_type IN ('vmail_console', 'voicemail') OR ls.last_dest_entity_type = 'voicemail'
                         THEN 'voicemail'
                     WHEN LOWER(COALESCE(ls.termination_reason_details, '')) LIKE '%busy%'
@@ -648,7 +668,8 @@ export async function getHeatmapByOriginRaw(
         ),${oc.firstsCTE}
         lasts AS (
             SELECT DISTINCT ON (call_history_id)
-                call_history_id, destination_dn_type AS last_dest_type
+                call_history_id, destination_dn_type AS last_dest_type,
+                creation_forward_reason, termination_reason_details
             FROM ${cdr}
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
@@ -662,6 +683,8 @@ export async function getHeatmapByOriginRaw(
         FROM unique_calls ca
         JOIN firsts fs ON fs.call_history_id = ca.call_history_id
         JOIN lasts ls ON ls.call_history_id = ca.call_history_id
+        -- Hors horaires : jamais comptés (07.09.2026).
+        WHERE NOT ${LS_OFFICE_HOURS}
         GROUP BY day_of_week, hour_of_day, direction_class
         ORDER BY day_of_week, hour_of_day
     `;
@@ -717,7 +740,8 @@ export async function getTimelineDataRaw(
                 cdr_answered_at AS last_answered_at,
                 cdr_started_at AS last_started_at,
                 cdr_ended_at AS last_ended_at,
-                termination_reason_details
+                termination_reason_details,
+                creation_forward_reason
             FROM ${cdr}
             WHERE call_history_id IN (SELECT call_history_id FROM call_aggregates)
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
@@ -737,6 +761,8 @@ export async function getTimelineDataRaw(
                 ca.call_history_id,
                 ca.first_started_at,
                 CASE
+                    -- Hors horaires : ni répondu ni manqué, la courbe n'en compte aucun.
+                    WHEN ${LS_OFFICE_HOURS} THEN 'out_of_hours'
                     WHEN ls.last_dest_type IN ('vmail_console', 'voicemail') OR ls.last_dest_entity_type = 'voicemail'
                         THEN 'voicemail'
                     WHEN LOWER(COALESCE(ls.termination_reason_details, '')) LIKE '%busy%'
@@ -841,7 +867,10 @@ export async function getHeatmapDataRaw(
     // Filtre de direction : la heatmap n'a ni CTE des premiers ni des derniers
     // segments — elle reçoit les deux, en bloc, quand le filtre est demandé.
     const dir = buildDirectionFragments(direction, origin, cdr, startDate, endDate);
-    const extraCTEs = direction
+    // Les premiers segments ne servent qu'au filtre de direction ; les derniers
+    // servent toujours : ils portent le routage par les heures de bureau, dont
+    // les appels ne comptent nulle part (07.09.2026).
+    const firstsCTE = direction
         ? Prisma.sql`,
         firsts AS (
             SELECT DISTINCT ON (call_history_id)
@@ -852,19 +881,18 @@ export async function getHeatmapDataRaw(
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
             ORDER BY call_history_id, cdr_started_at ASC, cdr_id ASC
-        ),
+        )`
+        : Prisma.empty;
+    const lastsCTE = Prisma.sql`,
         lasts AS (
             SELECT DISTINCT ON (call_history_id)
-                call_history_id, destination_dn_type AS last_dest_type
+                call_history_id, destination_dn_type AS last_dest_type,
+                creation_forward_reason, termination_reason_details
             FROM ${cdr}
             WHERE cdr_started_at >= ${startDate}
               AND cdr_started_at <= ${endDate}
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
-        )`
-        : Prisma.empty;
-    const lastsJoin = direction
-        ? Prisma.raw(`JOIN lasts ls ON ls.call_history_id = ca.call_history_id`)
-        : Prisma.empty;
+        )`;
 
     // ⚠️ La requête est composée avec Prisma.sql PUIS passée en argument unique à
     // $queryRaw(). Dans la forme "tagged template" (`$queryRaw`...``), un fragment
@@ -881,15 +909,15 @@ export async function getHeatmapDataRaw(
               ${queueFilter}
               ${buildScopeFilter(scope, cdr)}
             GROUP BY call_history_id
-        )${extraCTEs}
+        )${firstsCTE}${lastsCTE}
         SELECT
             EXTRACT(ISODOW FROM first_started_at AT TIME ZONE ${timezone})::int AS day_of_week,
             EXTRACT(HOUR FROM first_started_at AT TIME ZONE ${timezone})::int AS hour_of_day,
             COUNT(*) AS volume
         FROM unique_calls ca
         ${dir.firstsJoin}
-        ${lastsJoin}
-        WHERE TRUE ${dir.condition}
+        JOIN lasts ls ON ls.call_history_id = ca.call_history_id
+        WHERE NOT ${LS_OFFICE_HOURS} ${dir.condition}
         GROUP BY day_of_week, hour_of_day
     `;
 

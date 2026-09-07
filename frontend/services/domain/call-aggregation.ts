@@ -68,6 +68,50 @@ export const INTERNAL_SYSTEM_DEST_TYPES = [
 ];
 
 // ============================================
+// ROUTAGE PAR LES HEURES DE BUREAU (3CX)
+// ============================================
+
+/**
+ * Motifs 3CX d'un routage décidé par les heures de bureau du DÉPARTEMENT :
+ * bureau fermé, pause, jour férié. Le PBX les écrit à deux endroits, selon la
+ * destination configurée sur la file :
+ *
+ * - destination réelle (répondeur numérique, messagerie, autre file) : le
+ *   segment de file finit `continued_in` avec ce motif en
+ *   `termination_reason_details`, et le segment suivant naît `route_to` avec
+ *   le même motif en `creation_forward_reason` ;
+ * - « Terminer l'appel » + annonce : l'annonce joue DANS le segment de file ;
+ *   si l'appelant l'écoute jusqu'au bout, le PBX raccroche avec le motif en
+ *   `termination_reason_details` ; s'il raccroche avant, RIEN n'est écrit —
+ *   l'angle mort qui a motivé le routage vers un répondeur (07.09.2026).
+ *
+ * ⚠️ Le motif porté à l'ENTRÉE d'un segment décrit la sortie du saut
+ * précédent (une file en pause qui renvoie vers la réception tague le segment
+ * de la réception), jamais l'état de la destination : un passage se juge
+ * toujours sur sa SORTIE — son propre détail de fin, ou le motif de création
+ * de son successeur direct.
+ */
+export const OFFICE_HOURS_FORWARD_REASONS = ['out_of_office', 'break_time', 'holiday'] as const;
+
+/** Liste SQL des motifs ci-dessus. */
+export const SQL_OFFICE_HOURS_REASONS = OFFICE_HOURS_FORWARD_REASONS.map((r) => `'${r}'`).join(', ');
+
+/** Le motif (création ou fin) est-il un routage par les heures de bureau ? */
+export function isOfficeHoursReason(reason: string | null | undefined): boolean {
+    return (OFFICE_HOURS_FORWARD_REASONS as readonly string[]).includes(reason?.toLowerCase() ?? '');
+}
+
+/**
+ * Condition SQL « ce segment porte un routage par les heures de bureau », sur
+ * son motif de création OU son détail de fin. Les deux expressions sont des
+ * colonnes (ou alias) fournies par l'appelant — miroir de `isOfficeHoursReason`.
+ */
+export function sqlIsOfficeHoursRouted(creationForwardReasonExpr: string, terminationDetailsExpr: string): string {
+    return `(LOWER(COALESCE(${creationForwardReasonExpr}, '')) IN (${SQL_OFFICE_HOURS_REASONS})`
+        + ` OR LOWER(COALESCE(${terminationDetailsExpr}, '')) IN (${SQL_OFFICE_HOURS_REASONS}))`;
+}
+
+// ============================================
 // STATUS DETERMINATION — SINGLE SOURCE OF TRUTH
 // ============================================
 
@@ -82,7 +126,8 @@ export const INTERNAL_SYSTEM_DEST_TYPES = [
  * Les deux dérivent désormais de cette table ordonnée. Ajouter ou modifier un
  * statut d'un seul côté n'est plus possible : il n'y a plus qu'un côté.
  *
- * L'ORDRE est la sémantique : messagerie > occupé > répondu > manqué. Le premier
+ * L'ORDRE est la sémantique : hors horaires > messagerie > occupé > répondu >
+ * manqué. Le premier
  * critère satisfait l'emporte, et le SQL reproduit cette priorité en excluant
  * les statuts de rang supérieur.
  */
@@ -90,6 +135,8 @@ export interface FinalStatusParams {
     lastDestType: string | null;
     lastDestEntityType: string | null;
     terminationReasonDetails: string | null;
+    /** Motif de création du DERNIER segment — porte le routage par les heures de bureau. */
+    lastCreationForwardReason: string | null;
     lastHumanAnsweredAt: Date | null;
     lastHumanStartedAt: Date | null;
     lastHumanEndedAt: Date | null;
@@ -121,7 +168,8 @@ export const SQL_REAL_PARTY_DEST_TYPES = "'extension', 'provider', 'external_lin
  * le même ordre de priorité.
  *
  * Attend des colonnes nommées : `ls_last_dest_type`, `ls_last_dest_entity_type`,
- * `ls_termination_reason_details` pour le dernier segment, et `lh_answered_at`,
+ * `ls_termination_reason_details`, `ls_creation_forward_reason` pour le dernier
+ * segment, et `lh_answered_at`,
  * `lh_started_at`, `lh_ended_at` pour le dernier segment ayant joint une vraie
  * partie.
  *
@@ -131,6 +179,7 @@ export const SQL_REAL_PARTY_DEST_TYPES = "'extension', 'provider', 'external_lin
  */
 export function buildFinalStatusCaseSQL(minAnswerSeconds: number = DEFAULT_MIN_ANSWER_SECONDS): string {
     return `CASE
+        WHEN ${sqlIsOfficeHoursRouted('ls_creation_forward_reason', 'ls_termination_reason_details')} THEN 'out_of_hours'
         WHEN ls_last_dest_type IN ('vmail_console', 'voicemail') OR ls_last_dest_entity_type = 'voicemail' THEN 'voicemail'
         WHEN ls_termination_reason_details ILIKE '%busy%' THEN 'busy'
         WHEN lh_answered_at IS NOT NULL
@@ -148,6 +197,7 @@ interface FinalStatusRule {
     sql: (minAnswerSeconds: number) => string;
 }
 
+const SQL_IS_OUT_OF_HOURS = sqlIsOfficeHoursRouted('ls.creation_forward_reason', 'ls.termination_reason_details');
 const SQL_IS_VOICEMAIL =
     "(COALESCE(ls.last_dest_type, '') IN ('vmail_console', 'voicemail') OR COALESCE(ls.last_dest_entity_type, '') = 'voicemail')";
 const SQL_IS_BUSY = "(COALESCE(ls.termination_reason_details, '') ILIKE '%busy%')";
@@ -157,6 +207,16 @@ const sqlIsAnswered = (min: number) => `(
 )`;
 
 export const FINAL_STATUS_RULES: FinalStatusRule[] = [
+    {
+        // Clos par les heures de bureau du département (fermé, pause, férié) :
+        // ni un client perdu, ni une vraie messagerie. Premier de la liste — il
+        // dit COMMENT l'appel s'est terminé, et une messagerie atteinte par ce
+        // routage reste un appel hors horaires. Jamais compté dans les
+        // statistiques, listé dans les journaux à la demande (07.09.2026).
+        status: "out_of_hours",
+        matches: (p) => isOfficeHoursReason(p.lastCreationForwardReason) || isOfficeHoursReason(p.terminationReasonDetails),
+        sql: () => SQL_IS_OUT_OF_HOURS,
+    },
     {
         status: "voicemail",
         matches: (p) => {
@@ -208,12 +268,16 @@ export const FINAL_STATUS_RULES: FinalStatusRule[] = [
 export function finalStatusLabel(status: CallStatus, sens: CallSens): string {
     if (status === "answered") return "Répondu";
     if (status === "voicemail") return "Messagerie";
+    if (status === "out_of_hours") return "Hors horaires";
     return sens === "outbound" ? "Non répondu" : "Perdu";
 }
-export type FinalBucket = "answered" | "lost" | "voicemail";
+export type FinalBucket = "answered" | "lost" | "voicemail" | "out_of_hours";
 
 export const DEFAULT_FINAL_GROUPING: Record<CallStatus, FinalBucket> = {
     answered: "answered",
+    // Hors horaires : sa propre case, jamais fondue dans Perdu ni Messagerie.
+    // Aucune vignette ne la montre : la case ne sert qu'au filtre des journaux.
+    out_of_hours: "out_of_hours",
     // La messagerie reste distincte : elle ne dit pas la même chose qu'un
     // abandon. Hors heures, elle est le fonctionnement normal ; en heures, elle
     // signale un renvoi par un agent. La fondre dans « Perdu » effacerait une
@@ -227,6 +291,17 @@ export const DEFAULT_FINAL_GROUPING: Record<CallStatus, FinalBucket> = {
 export function finalStatusesForBucket(bucket: FinalBucket): CallStatus[] {
     return (Object.keys(DEFAULT_FINAL_GROUPING) as CallStatus[])
         .filter((s) => DEFAULT_FINAL_GROUPING[s] === bucket);
+}
+
+/**
+ * Population PAR DÉFAUT des journaux et des statistiques d'entreprise, quand
+ * aucun statut n'est demandé : tout SAUF les appels hors horaires. Ces appels
+ * ne comptent nulle part — le tableau de bord les ignore — et ne se listent
+ * qu'en choisissant explicitement leur statut (décision du 7 septembre 2026).
+ * Attend l'alias `ls` du dernier segment, comme les filtres de statut.
+ */
+export function buildDefaultFinalStatusPopulationSQL(): string {
+    return `NOT ${SQL_IS_OUT_OF_HOURS}`;
 }
 
 /**

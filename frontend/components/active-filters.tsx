@@ -50,6 +50,7 @@ const statusLabels: Record<CallStatus, string> = {
     voicemail: "Messagerie",
     missed: "Perdu",
     busy: "Perdu",
+    out_of_hours: "Hors horaires",
 };
 
 function formatConditionLabel(

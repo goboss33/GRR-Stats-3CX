@@ -3,6 +3,13 @@ import {
     determineCallStatus,
     FINAL_STATUS_RULES,
     buildFinalStatusFilterSQL,
+    buildFinalStatusCaseSQL,
+    buildDefaultFinalStatusPopulationSQL,
+    finalStatusLabel,
+    finalStatusesForBucket,
+    DEFAULT_FINAL_GROUPING,
+    isOfficeHoursReason,
+    sqlIsOfficeHoursRouted,
     DEFAULT_MIN_ANSWER_SECONDS,
     determineCallProvenance,
     determineCallSens,
@@ -34,6 +41,7 @@ function statusParams(over: Partial<Parameters<typeof determineCallStatus>[0]> =
         lastDestType: null,
         lastDestEntityType: null,
         terminationReasonDetails: null,
+        lastCreationForwardReason: null,
         lastHumanAnsweredAt: null,
         lastHumanStartedAt: null,
         lastHumanEndedAt: null,
@@ -293,7 +301,13 @@ describe("statut final — définition unique TypeScript / SQL", () => {
     });
 
     it("tous les statuts demandés : aucun filtre", () => {
-        expect(buildFinalStatusFilterSQL(["answered", "voicemail", "missed", "busy"])).toBe("");
+        expect(buildFinalStatusFilterSQL(["answered", "voicemail", "missed", "busy", "out_of_hours"])).toBe("");
+    });
+
+    it("les quatre statuts historiques ne suffisent plus : ils excluent les hors horaires", () => {
+        const sql = buildFinalStatusFilterSQL(["answered", "voicemail", "missed", "busy"]);
+        expect(sql).not.toBe("");
+        expect(sql).toContain("NOT (LOWER(COALESCE(ls.creation_forward_reason");
     });
 
     it("aucun statut demandé : aucun filtre", () => {
@@ -318,6 +332,72 @@ describe("statut final — définition unique TypeScript / SQL", () => {
 
     it("le seuil par défaut reste celui d'avant la mise en réglage", () => {
         expect(DEFAULT_MIN_ANSWER_SECONDS).toBe(1);
+    });
+});
+
+describe("hors horaires — clos par les heures de bureau du département (07.09.2026)", () => {
+    const conversationDe5s = {
+        lastDestType: "extension",
+        lastHumanAnsweredAt: answeredAt,
+        lastHumanStartedAt: start,
+        lastHumanEndedAt: end5s,
+    };
+
+    it("le motif de création du dernier segment fait foi : fermé, pause, férié", () => {
+        for (const motif of ["out_of_office", "break_time", "holiday"]) {
+            expect(determineCallStatus(statusParams({ lastDestType: "ivr", lastCreationForwardReason: motif })), motif).toBe("out_of_hours");
+        }
+    });
+
+    it("variante « Terminer l'appel » : le PBX raccroche avec le motif en détail de fin", () => {
+        expect(determineCallStatus(statusParams({ lastDestType: "queue", terminationReasonDetails: "out_of_office" }))).toBe("out_of_hours");
+    });
+
+    it("un autre motif ne change rien", () => {
+        expect(determineCallStatus(statusParams({ lastDestType: "ivr", lastCreationForwardReason: "no_answer" }))).toBe("missed");
+        expect(isOfficeHoursReason("no_answer")).toBe(false);
+        expect(isOfficeHoursReason(null)).toBe(false);
+        expect(isOfficeHoursReason("Break_Time")).toBe(true);
+    });
+
+    it("prime sur la messagerie : une messagerie atteinte par ce routage reste hors horaires", () => {
+        expect(determineCallStatus(statusParams({ lastDestEntityType: "voicemail", lastCreationForwardReason: "out_of_office" }))).toBe("out_of_hours");
+    });
+
+    it("prime sur « répondu », comme la messagerie : c'est la fin de l'appel qui parle", () => {
+        expect(determineCallStatus(statusParams({ ...conversationDe5s, lastCreationForwardReason: "break_time" }))).toBe("out_of_hours");
+        expect(determineCallStatus(statusParams(conversationDe5s))).toBe("answered");
+    });
+
+    it("le SQL agrégé et le SQL de filtre portent la même branche, en tête", () => {
+        const cas = buildFinalStatusCaseSQL();
+        expect(cas.indexOf("'out_of_hours'")).toBeLessThan(cas.indexOf("'voicemail'"));
+        expect(cas).toContain("ls_creation_forward_reason");
+        const filtre = buildFinalStatusFilterSQL(["out_of_hours"]);
+        expect(filtre).toContain("ls.creation_forward_reason");
+        expect(filtre).toContain("ls.termination_reason_details");
+        expect(filtre).toContain("'out_of_office', 'break_time', 'holiday'");
+        // Un statut de rang inférieur exclut les hors horaires.
+        expect(buildFinalStatusFilterSQL(["voicemail"])).toContain("NOT (LOWER(COALESCE(ls.creation_forward_reason");
+    });
+
+    it("la population par défaut les exclut ; on ne les voit qu'en les demandant", () => {
+        const sql = buildDefaultFinalStatusPopulationSQL();
+        expect(sql.startsWith("NOT ")).toBe(true);
+        expect(sql).toContain("'out_of_office', 'break_time', 'holiday'");
+    });
+
+    it("le miroir SQL du motif regarde création ET fin, insensible à la casse", () => {
+        const sql = sqlIsOfficeHoursRouted("x.cfr", "x.trd");
+        expect(sql).toContain("LOWER(COALESCE(x.cfr, ''))");
+        expect(sql).toContain("LOWER(COALESCE(x.trd, ''))");
+    });
+
+    it("sa propre case d'affichage : ni Perdu, ni Messagerie", () => {
+        expect(finalStatusLabel("out_of_hours", "inbound")).toBe("Hors horaires");
+        expect(DEFAULT_FINAL_GROUPING.out_of_hours).toBe("out_of_hours");
+        expect(finalStatusesForBucket("out_of_hours")).toEqual(["out_of_hours"]);
+        expect(finalStatusesForBucket("lost")).not.toContain("out_of_hours");
     });
 });
 

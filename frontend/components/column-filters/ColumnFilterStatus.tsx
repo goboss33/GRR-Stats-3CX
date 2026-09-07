@@ -22,13 +22,17 @@ interface ColumnFilterStatusProps {
 }
 
 /**
- * Trois choix, comme le tableau. « Perdu » recouvre les manqués et les occupés ;
+ * Quatre choix, comme le tableau. « Perdu » recouvre les manqués et les occupés ;
  * la messagerie garde sa case, elle ne dit pas la même chose qu'un abandon.
+ * « Hors horaires » (clos par les heures de bureau du département) ne fait
+ * partie d'aucune statistique : « Tous » ne le montre pas — il ne se liste
+ * qu'en le cochant explicitement (07.09.2026).
  */
 const statusOptions: { value: CallStatus; label: string; covers: CallStatus[] }[] = [
     { value: "answered", label: "Répondu", covers: ["answered"] },
     { value: "missed", label: "Perdu", covers: ["missed", "busy"] },
     { value: "voicemail", label: "Messagerie", covers: ["voicemail"] },
+    { value: "out_of_hours", label: "Hors horaires", covers: ["out_of_hours"] },
 ];
 
 export function ColumnFilterStatus({
@@ -74,12 +78,11 @@ export function ColumnFilterStatus({
         );
     };
 
+    // « Tous » est un état, pas une bascule : la population par défaut, sans
+    // les hors horaires. Tout cocher revient au même, aux hors horaires près —
+    // qu'on ne montre que sur demande explicite.
     const handleSelectAll = () => {
-        if (localSelected.length === statusOptions.length || localSelected.length === 0) {
-            setLocalSelected([]);
-        } else {
-            setLocalSelected(statusOptions.flatMap((o) => o.covers));
-        }
+        setLocalSelected([]);
     };
 
     const getLabel = () => {
@@ -109,7 +112,7 @@ export function ColumnFilterStatus({
                         <ChevronDown className="ml-1 h-3 w-3 text-slate-500" />
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-36 p-2" align="start">
+                <PopoverContent className="w-40 p-2" align="start">
                     <div className="space-y-2">
                         {/* Select All */}
                         <div

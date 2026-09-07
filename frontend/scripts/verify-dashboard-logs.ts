@@ -45,7 +45,8 @@ const ORIGINS: CallOrigin[] = ["external", "internal", "both"];
                     GROUP BY call_history_id),
         ls AS (SELECT DISTINCT ON (call_history_id) call_history_id,
                   destination_dn_type ls_last_dest_type, destination_entity_type ls_last_dest_entity_type,
-                  termination_reason_details ls_termination_reason_details
+                  termination_reason_details ls_termination_reason_details,
+                  creation_forward_reason ls_creation_forward_reason
                FROM ${cdrSql} WHERE cdr_started_at >= ${START} AND cdr_started_at <= ${END}
                ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC),
         lh AS (SELECT DISTINCT ON (call_history_id) call_history_id,
@@ -54,7 +55,8 @@ const ORIGINS: CallOrigin[] = ["external", "internal", "both"];
                  AND destination_dn_type IN (${Prisma.raw(SQL_REAL_PARTY_DEST_TYPES)})
                  AND COALESCE(destination_entity_type,'') != 'voicemail'
                ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC)
-        SELECT COUNT(*) total,
+        SELECT COUNT(*) FILTER (WHERE statut <> 'out_of_hours') total,
+               COUNT(*) FILTER (WHERE statut = 'out_of_hours') hors_horaires,
                COUNT(*) FILTER (WHERE statut = 'answered') repondus,
                COUNT(*) FILTER (WHERE statut = 'voicemail') messagerie,
                COUNT(*) FILTER (WHERE statut IN ('missed','busy')) perdus
@@ -72,6 +74,8 @@ const ORIGINS: CallOrigin[] = ["external", "internal", "both"];
         if (a !== b) ko++;
         console.log(nom.padEnd(12), String(a).padStart(16), String(b).padStart(10), a === b ? "  ✓" : `  ✗ écart de ${a - b}`);
     }
+    // Hors horaires : exclus des DEUX côtés par construction — affichés pour information.
+    console.log("hors horaires".padEnd(12), "—".padStart(16), String(Number(l.hors_horaires)).padStart(10), "  (exclus des deux côtés)");
 
     // ---- 2. Toggle Externe / Interne / Les deux -----------------------------
     // Le côté « tableau de bord » est le sens (la classe des requêtes

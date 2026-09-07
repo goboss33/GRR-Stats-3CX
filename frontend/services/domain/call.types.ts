@@ -24,7 +24,12 @@ export type CallProvenance = "external" | "internal";
  * construction. Le pont n'est pas un sens : c'est l'attribut `viaBridge`.
  */
 export type CallSens = "inbound" | "outbound" | "intra";
-export type CallStatus = "answered" | "voicemail" | "missed" | "busy";
+/**
+ * Statut final d'un appel. « out_of_hours » : l'appel a été clos par les heures
+ * de bureau du département (fermé, pause, férié) — ni perdu, ni messagerie ;
+ * jamais compté dans les statistiques, listé dans les journaux à la demande.
+ */
+export type CallStatus = "answered" | "voicemail" | "missed" | "busy" | "out_of_hours";
 export type EntityType = "extension" | "external" | "queue" | "ivr" | "script" | "unknown";
 export type QueueCallOutcome = 'answered' | 'abandoned' | 'overflow';
 

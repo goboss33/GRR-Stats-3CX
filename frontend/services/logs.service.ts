@@ -35,6 +35,7 @@ import {
     buildPopulationFilterSQL,
     determineCallStatus,
     buildFinalStatusFilterSQL,
+    buildDefaultFinalStatusPopulationSQL,
     determineSegmentStatus,
     determineSegmentCategory,
     formatDuration,
@@ -42,6 +43,7 @@ import {
     getDisplayName,
     buildDirectSegmentWhereClause,
 } from "@/services/domain/call-aggregation";
+import { mergeTwinLegs } from "@/services/domain/call-chain";
 
 // ============================================
 // SEARCH PATTERN PARSER
@@ -327,7 +329,9 @@ function buildAggregatedQueryParts(
     // celle agrégée par la vignette « Total reçus », donc le compte affiché en
     // haut des logs est celui de la statistique. Sans filtre explicite on prend
     // tout ; le filtre de colonne ne fait ensuite que réduire à l'intérieur.
-    const ALL_OUTCOMES: PassageOutcome[] = ["answered", "handed_off", "overflow", "voicemail", "short_abandon", "abandoned"];
+    // « out_of_hours » figure pour la complétude du type : ces passages sont
+    // exclus de queue_calls par construction, la vue file ne les liste pas.
+    const ALL_OUTCOMES: PassageOutcome[] = ["answered", "handed_off", "overflow", "voicemail", "short_abandon", "abandoned", "out_of_hours"];
     const outcomeFilter = filters.queueOutcomeFilter
         ?? (viewQueue ? { queueNumber: viewQueue, outcomes: ALL_OUTCOMES, includeTeamDirect: true } : null);
 
@@ -371,7 +375,15 @@ function buildAggregatedQueryParts(
     const fsExprs = { sourceTypeExpr: "fs.source_dn_type", firstDestTypeExpr: "fs.destination_dn_type" };
     aggregatedWhereConditions.push(...buildPopulationFilterSQL(filters.callOrigin, filters.sens, fsExprs));
     const statusFilter = buildFinalStatusFilterSQL(filters.statuses, rules.minAnswerSeconds);
-    if (statusFilter) aggregatedWhereConditions.push(statusFilter);
+    if (statusFilter) {
+        aggregatedWhereConditions.push(statusFilter);
+    } else if (!filters.statuses || filters.statuses.length === 0) {
+        // Aucun statut demandé : la population par défaut EXCLUT les appels
+        // hors horaires — ils ne comptent nulle part et ne se listent qu'à la
+        // demande (07.09.2026). Comptage et liste appliquent le même prédicat,
+        // sur le même alias `ls`.
+        aggregatedWhereConditions.push(buildDefaultFinalStatusPopulationSQL());
+    }
 
     if (filters.handledBySearch?.trim()) {
         const pattern = parseSearchPattern(filters.handledBySearch);
@@ -561,7 +573,8 @@ function buildAggregateCTEs(
                 cdr_started_at as last_started_at,
                 cdr_ended_at as last_ended_at,
                 termination_reason,
-                termination_reason_details
+                termination_reason_details,
+                creation_forward_reason
             FROM ${cdr}
             WHERE ${whereClause}
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
@@ -781,6 +794,7 @@ const DATA_SELECT_BASE = `
             ls.last_ended_at,
             ls.termination_reason,
             ls.termination_reason_details,
+            ls.creation_forward_reason as last_creation_forward_reason,
             lhs.last_human_answered_at,
             lhs.last_human_started_at,
             lhs.last_human_ended_at,
@@ -1043,7 +1057,8 @@ function buildCountQuery(
                 cdr_started_at as last_started_at,
                 cdr_ended_at as last_ended_at,
                 termination_reason,
-                termination_reason_details
+                termination_reason_details,
+                creation_forward_reason
             FROM ${cdr}
             WHERE ${whereClause}
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
@@ -1165,6 +1180,7 @@ function transformRow(row: any, maskNumbers = false, scope?: AccessScope, rules?
         lastDestType: row.last_dest_type,
         lastDestEntityType: row.last_dest_entity_type,
         terminationReasonDetails: row.termination_reason_details,
+        lastCreationForwardReason: row.last_creation_forward_reason ?? null,
         lastHumanAnsweredAt: row.last_human_answered_at ? new Date(row.last_human_answered_at) : null,
         lastHumanStartedAt: row.last_human_started_at ? new Date(row.last_human_started_at) : null,
         lastHumanEndedAt: row.last_human_ended_at ? new Date(row.last_human_ended_at) : null,
@@ -1396,7 +1412,9 @@ export async function getCallChain(serverId: ServerId, callHistoryId: string): P
             callHistoryId,
         );
 
-        return segments.map((seg) => {
+        // Jambes jumelles d'un routage (tentatives parallèles du PBX, la
+        // seconde annulée) : une seule existe pour l'appelant, une seule s'affiche.
+        return mergeTwinLegs(segments.map((seg) => {
             const startedAt = seg.cdr_started_at ? new Date(seg.cdr_started_at) : null;
             const endedAt = seg.cdr_ended_at ? new Date(seg.cdr_ended_at) : null;
             const answeredAt = seg.cdr_answered_at ? new Date(seg.cdr_answered_at) : null;
@@ -1462,7 +1480,7 @@ export async function getCallChain(serverId: ServerId, callHistoryId: string): P
                     && !!seg.leg_call_history_id
                     && seg.leg_call_history_id !== callHistoryId,
             };
-        });
+        }));
     } catch (error) {
         console.error("❌ Error fetching call chain:", error);
         return [];

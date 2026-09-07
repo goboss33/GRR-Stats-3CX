@@ -105,6 +105,7 @@ export async function runDiagnostic(
             cdr_started_at: Date | null;
             cdr_ended_at: Date | null;
             termination_reason_details: string | null;
+            creation_forward_reason: string | null;
         }>
     >`
         SELECT DISTINCT ON (call_history_id)
@@ -114,7 +115,8 @@ export async function runDiagnostic(
             cdr_answered_at,
             cdr_started_at,
             cdr_ended_at,
-            termination_reason_details
+            termination_reason_details,
+            creation_forward_reason
         FROM cdroutput
         WHERE call_history_id = ANY(${callIds}::uuid[])
         ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
@@ -174,7 +176,8 @@ export async function runDiagnostic(
                 call_history_id,
                 destination_dn_type AS last_dest_type,
                 destination_entity_type AS last_dest_entity_type,
-                termination_reason_details
+                termination_reason_details,
+                creation_forward_reason
             FROM cdroutput
             WHERE call_history_id = ANY(${callIds}::uuid[])
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
@@ -194,6 +197,11 @@ export async function runDiagnostic(
         SELECT
             ls.call_history_id,
             CASE
+                -- Hors horaires (miroir littéral d'OFFICE_HOURS_FORWARD_REASONS :
+                -- ce gabarit n'accepte pas de fragment SQL).
+                WHEN LOWER(COALESCE(ls.creation_forward_reason, '')) IN ('out_of_office', 'break_time', 'holiday')
+                     OR LOWER(COALESCE(ls.termination_reason_details, '')) IN ('out_of_office', 'break_time', 'holiday')
+                    THEN 'out_of_hours'
                 WHEN ls.last_dest_type IN ('vmail_console', 'voicemail') OR ls.last_dest_entity_type = 'voicemail'
                     THEN 'voicemail'
                 WHEN LOWER(COALESCE(ls.termination_reason_details, '')) LIKE '%busy%'
@@ -221,6 +229,7 @@ export async function runDiagnostic(
             lastDestType: seg.destination_dn_type,
             lastDestEntityType: seg.destination_entity_type,
             terminationReasonDetails: seg.termination_reason_details,
+            lastCreationForwardReason: seg.creation_forward_reason,
             lastHumanAnsweredAt: lastHuman?.answeredAt || null,
             lastHumanStartedAt: lastHuman?.startedAt || null,
             lastHumanEndedAt: lastHuman?.endedAt || null,

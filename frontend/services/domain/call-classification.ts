@@ -1,4 +1,9 @@
-import { buildDirectSegmentWhereClause, SQL_REAL_PARTY_DEST_TYPES } from "./call-aggregation";
+import {
+    buildDirectSegmentWhereClause,
+    SQL_REAL_PARTY_DEST_TYPES,
+    SQL_OFFICE_HOURS_REASONS,
+    sqlIsOfficeHoursRouted,
+} from "./call-aggregation";
 
 /**
  * Socle de classement des appels — SOURCE UNIQUE DE VÉRITÉ.
@@ -41,7 +46,8 @@ export type PassageOutcome =
     | "overflow"        // reparti vers une autre file SANS avoir été décroché ici
     | "voicemail"       // l'appel s'est terminé sur la messagerie
     | "short_abandon"   // raccroché avant le seuil (hésitation, erreur de numéro)
-    | "abandoned";      // abandon caractérisé
+    | "abandoned"       // abandon caractérisé
+    | "out_of_hours";   // clos par les heures de bureau du département (fermé, pause, férié) — HORS statistiques
 
 /**
  * Ordre de préséance quand un appel repasse plusieurs fois dans la même file et
@@ -60,6 +66,8 @@ export const OUTCOME_RANK: Record<PassageOutcome, number> = {
     voicemail: 4,
     abandoned: 5,
     short_abandon: 6,
+    // Le PBX a écarté l'appel : rien ne s'est joué dans la file. Dernier rang.
+    out_of_hours: 7,
 };
 
 /**
@@ -79,7 +87,14 @@ export type KpiBucket = "received" | "answered" | "lost" | "overflow";
  * à construire le lien vers les logs. Les deux ne peuvent donc pas diverger,
  * même si le regroupement change.
  */
-export const DEFAULT_OUTCOME_GROUPING: Record<PassageOutcome, Exclude<KpiBucket, "received">> = {
+/**
+ * Vignette alimentée par chaque statut fin. `null` = HORS statistiques : le
+ * statut existe (journaux, filtre), mais aucune vignette ne le compte — pas
+ * même « Total reçus ».
+ */
+export type OutcomeGrouping = Record<PassageOutcome, Exclude<KpiBucket, "received"> | null>;
+
+export const DEFAULT_OUTCOME_GROUPING: OutcomeGrouping = {
     answered: "answered",
     // Le transfert accompli s'affiche dans « Répondus » (décision août 2026) :
     // l'équipe a décroché et le client a fini servi — c'est du travail fait,
@@ -93,15 +108,18 @@ export const DEFAULT_OUTCOME_GROUPING: Record<PassageOutcome, Exclude<KpiBucket,
     voicemail: "lost",
     short_abandon: "lost",
     abandoned: "lost",
+    // Hors horaires : jamais compté (décision du 7 septembre 2026). Un appel
+    // clos par les heures de bureau n'est pas un appel reçu par l'équipe.
+    out_of_hours: null,
 };
 
-/** Statuts fins agrégés par une vignette donnée. */
+/** Statuts fins agrégés par une vignette donnée (« received » = tous ceux qui comptent). */
 export function outcomesForBucket(
     bucket: KpiBucket,
-    grouping: Record<PassageOutcome, Exclude<KpiBucket, "received">> = DEFAULT_OUTCOME_GROUPING,
+    grouping: OutcomeGrouping = DEFAULT_OUTCOME_GROUPING,
 ): PassageOutcome[] {
     const all = Object.keys(grouping) as PassageOutcome[];
-    if (bucket === "received") return all;
+    if (bucket === "received") return all.filter((o) => grouping[o] !== null);
     return all.filter((o) => grouping[o] === bucket);
 }
 
@@ -109,7 +127,7 @@ export function outcomesForBucket(
 export function sumBucket(
     counts: Partial<Record<PassageOutcome, number>>,
     bucket: KpiBucket,
-    grouping: Record<PassageOutcome, Exclude<KpiBucket, "received">> = DEFAULT_OUTCOME_GROUPING,
+    grouping: OutcomeGrouping = DEFAULT_OUTCOME_GROUPING,
 ): number {
     return outcomesForBucket(bucket, grouping).reduce((total, o) => total + (counts[o] ?? 0), 0);
 }
@@ -368,6 +386,12 @@ export const DEFAULT_CLASSIFICATION_RULES: ClassificationRules = {
 /** Faits observés sur un passage en file, indépendamment des règles. */
 export interface PassageFacts {
     answeredHere: boolean;
+    /**
+     * Le passage a été clos par les heures de bureau du département (fermé,
+     * pause, férié) : le PBX a raccroché avec ce motif, ou a routé l'appel
+     * vers la destination configurée pour ce cas. Lu sur la SORTIE du passage.
+     */
+    outOfHours: boolean;
     overflowed: boolean;
     toVoicemail: boolean;
     /**
@@ -389,7 +413,7 @@ export interface PassageFacts {
  * Applique les règles à un passage pour en déduire son statut dans la file.
  *
  * L'ordre des tests EST la sémantique métier :
- *   répondu > débordement > messagerie > abandon (court ou non).
+ *   répondu > hors horaires > débordement > messagerie > abandon (court ou non).
  *
  * Le débordement passe avant la messagerie parce qu'il décrit la façon dont
  * l'appel a quitté CETTE file ; une messagerie survenue après coup relève de la
@@ -402,6 +426,11 @@ export function classifyPassage(facts: PassageFacts, rules: ClassificationRules)
         if (rules.answeredThenTransferred === "overflow" && !facts.servedInTeam) return "handed_off";
         return "answered";
     }
+
+    // Fermé, pause ou férié : le PBX a lui-même écarté l'appel. Avant le
+    // débordement, car la destination fermé/pause peut être une autre file —
+    // ce n'est pas pour autant que celle-ci a « débordé ». Jamais compté.
+    if (facts.outOfHours) return "out_of_hours";
 
     if (facts.overflowed) {
         if (rules.overflow === "answered") return "answered";
@@ -484,6 +513,7 @@ export function buildPassageOutcomeSQL(rules: ClassificationRules): string {
 
     return `CASE
         WHEN answered_here THEN ${answeredResult}
+        WHEN out_of_hours  THEN 'out_of_hours'
         WHEN overflowed    THEN ${overflowResult}
         WHEN to_voicemail  THEN ${voicemailResult}
         ${shortAbandonBranch}
@@ -628,6 +658,16 @@ export function buildQueuePassagesCTE(rules: ClassificationRules, params: Passag
             COALESCE(poll.answered_here, FALSE) AS answered_here,
             poll.talk_seconds,
             poll.answer_wait_seconds,
+            -- Routage par les heures de bureau du département (fermé, pause,
+            -- férié), lu sur la SORTIE du passage : le PBX a raccroché avec ce
+            -- motif (« Terminer l'appel » + annonce écoutée jusqu'au bout), ou a
+            -- créé depuis ce passage un successeur portant ce motif (répondeur,
+            -- messagerie, autre file). Jamais sur l'entrée : le motif d'entrée
+            -- décrit le saut précédent. Le successeur est lu dans la sonde
+            -- LATERAL ci-dessous, déjà payée pour les sonneries : aucune
+            -- lecture supplémentaire par passage (mesuré : +35 % sinon).
+            (LOWER(COALESCE(c.termination_reason_details, '')) IN (${SQL_OFFICE_HOURS_REASONS})
+             OR COALESCE(poll.routed_by_hours, FALSE)) AS out_of_hours,
             -- Débordement : une AUTRE file est sollicitée plus tard dans l'appel.
             EXISTS (
                 SELECT 1 FROM ${cdr} o
@@ -656,16 +696,22 @@ export function buildQueuePassagesCTE(rules: ClassificationRules, params: Passag
             ${buildServedInTeamSQL(rules, "c.call_history_id", params)} AS served_in_team
         FROM ${cdr} c${teamClockJoin}
         LEFT JOIN LATERAL (
+            -- Une seule lecture des enfants du passage : les sonneries d'agents
+            -- (polling vers une extension) alimentent les trois premières
+            -- mesures, le successeur du routage par les heures de bureau la
+            -- quatrième. Les FILTER reproduisent l'ancien WHERE des sonneries.
             SELECT
-                bool_or(p.cdr_answered_at IS NOT NULL) AS answered_here,
+                bool_or(p.cdr_answered_at IS NOT NULL)
+                    FILTER (WHERE p.creation_forward_reason = 'polling' AND p.destination_dn_type = 'extension') AS answered_here,
                 MAX(EXTRACT(EPOCH FROM (p.cdr_ended_at - p.cdr_answered_at)))
-                    FILTER (WHERE p.cdr_answered_at IS NOT NULL) AS talk_seconds,
+                    FILTER (WHERE p.cdr_answered_at IS NOT NULL
+                            AND p.creation_forward_reason = 'polling' AND p.destination_dn_type = 'extension') AS talk_seconds,
                 MIN(EXTRACT(EPOCH FROM (p.cdr_answered_at - c.cdr_started_at)))
-                    FILTER (WHERE p.cdr_answered_at IS NOT NULL) AS answer_wait_seconds
+                    FILTER (WHERE p.cdr_answered_at IS NOT NULL
+                            AND p.creation_forward_reason = 'polling' AND p.destination_dn_type = 'extension') AS answer_wait_seconds,
+                bool_or(LOWER(COALESCE(p.creation_forward_reason, '')) IN (${SQL_OFFICE_HOURS_REASONS})) AS routed_by_hours
             FROM ${cdr} p
             WHERE p.originating_cdr_id = c.cdr_id
-              AND p.creation_forward_reason = 'polling'
-              AND p.destination_dn_type = 'extension'
         ) poll ON TRUE
         WHERE c.destination_dn_type = 'queue'
           ${queueFilter}
@@ -816,6 +862,16 @@ export function buildDirectCallsCTE(
               AND COALESCE(v.destination_entity_type, '') = 'voicemail'
         ))`);
     }
+    // Hors horaires (décision du 7 septembre 2026) : un appel direct NON
+    // répondu que le PBX a écarté par les heures de bureau du département —
+    // agent absent renvoyé vers une file fermée ou en pause, par exemple —
+    // n'est pas un appel reçu par l'équipe. Même préséance que la messagerie :
+    // un appel RÉPONDU reste compté, quelle que soit sa fin.
+    wrapperConditions.push(`(answered OR NOT EXISTS (
+            SELECT 1 FROM ${cdrTable(rules)} v
+            WHERE v.call_history_id = direct_grouped.call_history_id
+              AND ${sqlIsOfficeHoursRouted("v.creation_forward_reason", "v.termination_reason_details")}
+        ))`);
     if (extraCallCondition) {
         wrapperConditions.push(extraCallCondition);
     }
@@ -1021,7 +1077,10 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
     queue_calls AS (
         SELECT cqo.*
         FROM call_queue_outcomes cqo
-        WHERE ${buildQueueExclusionSQL(rules, "cqo.call_history_id", "cqo.cdr_started_at")}${
+        WHERE ${buildQueueExclusionSQL(rules, "cqo.call_history_id", "cqo.cdr_started_at")}
+          -- Hors horaires : jamais comptés (décision du 7 septembre 2026). Le
+          -- statut existe pour les journaux, aucune vignette ne le lit.
+          AND cqo.outcome <> 'out_of_hours'${
             // Règle `voicemail: "excluded"` : les appels finis sur la messagerie
             // ne comptent pas comme reçus. Écarter ici, dans la table que TOUS
             // les consommateurs lisent (KPIs, logs, graphiques), garantit que

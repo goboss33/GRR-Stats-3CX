@@ -118,7 +118,7 @@ export default function AdminLogsPage() {
     const getInitialStatuses = (): CallStatus[] => {
         const param = searchParams.get("statuses");
         if (!param) return [];
-        const bruts = param.split(",").filter(s => ["answered", "voicemail", "missed", "busy"].includes(s)) as CallStatus[];
+        const bruts = param.split(",").filter(s => ["answered", "voicemail", "missed", "busy", "out_of_hours"].includes(s)) as CallStatus[];
         // L'écran ne connaît que deux statuts, Répondu et Perdu, alors que
         // « Perdu » en recouvre trois. Une URL ne portant qu'un statut fin est
         // donc complétée : sans cela le filtre affichait « 1 sél. » sans qu'aucune

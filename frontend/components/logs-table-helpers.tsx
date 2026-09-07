@@ -15,6 +15,7 @@ import {
     PhoneOff,
     Voicemail,
     PhoneCall,
+    Clock,
     ArrowUpDown,
     ArrowUp,
     ArrowDown,
@@ -40,7 +41,7 @@ export const sensConfig: Record<CallSens, { icon: typeof ArrowDownLeft; label: s
     intra: { icon: ArrowLeftRight, label: "Intra", className: "bg-slate-100 text-slate-700" },
 };
 
-// Trois statuts finaux : Répondu, Perdu, Messagerie. « Occupé » rejoint
+// Quatre statuts finaux : Répondu, Perdu, Messagerie, Hors horaires. « Occupé » rejoint
 // « Perdu » — c'est un appel qu'on n'a pas pris. L'étiquette exacte dépend du
 // sens de l'appel (cf. finalStatusLabel) : « Perdu » n'a de sens qu'en entrant.
 export const statusConfig: Record<CallStatus, { icon: typeof Phone; className: string }> = {
@@ -48,6 +49,9 @@ export const statusConfig: Record<CallStatus, { icon: typeof Phone; className: s
     voicemail: { icon: Voicemail, className: "bg-indigo-100 text-indigo-700" },
     missed: { icon: PhoneOff, className: "bg-red-100 text-red-700" },
     busy: { icon: PhoneCall, className: "bg-red-100 text-red-700" },
+    // Hors horaires : clos par les heures de bureau du département — teinte
+    // neutre, ce n'est ni un échec ni une messagerie, et rien ne le compte.
+    out_of_hours: { icon: Clock, className: "bg-slate-100 text-slate-600" },
 };
 
 /**
@@ -71,6 +75,9 @@ export const queueOutcomeConfig: Record<PassageOutcome, { label: string; classNa
     voicemail: { label: "Perdu", className: "bg-red-100 text-red-700" },
     short_abandon: { label: "Perdu", className: "bg-red-100 text-red-700" },
     abandoned: { label: "Perdu", className: "bg-red-100 text-red-700" },
+    // Jamais affiché en pratique : un passage hors horaires est exclu de la
+    // population de la vue file. Présent pour la complétude du type.
+    out_of_hours: { label: "Hors horaires", className: "bg-slate-100 text-slate-600" },
 };
 
 // Journey step icon & style config — dynamic based on result

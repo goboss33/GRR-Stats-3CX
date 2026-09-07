@@ -361,6 +361,7 @@ export const GLOSSARY = [
     { label: "Débordé", className: "bg-orange-50 text-orange-700 border-orange-200", title: "Parti vers une autre file SANS décroché ici" },
     { label: "Perdu", className: "bg-red-50 text-red-700 border-red-200", title: "Personne n'a servi le client" },
     { label: "Messagerie", className: "bg-indigo-50 text-indigo-700 border-indigo-200", title: "Terminé sur la messagerie vocale" },
+    { label: "Hors horaires", className: "bg-slate-50 text-slate-600 border-slate-200", title: "Clos par les heures de bureau du département (fermé, pause, férié) — exclu des statistiques, visible dans les journaux à la demande" },
 ] as const;
 
 /** Valeur affichée par une règle à choix, quelle que soit sa forme. */

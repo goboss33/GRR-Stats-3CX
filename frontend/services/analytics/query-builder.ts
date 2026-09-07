@@ -107,7 +107,8 @@ export function buildAnalyticsCTEs(
                 cdr_started_at as last_started_at,
                 cdr_ended_at as last_ended_at,
                 termination_reason,
-                termination_reason_details
+                termination_reason_details,
+                creation_forward_reason
             FROM ${cdr}
             WHERE ${whereClause}
             ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
@@ -329,6 +330,7 @@ export const ANALYTICS_DATA_SELECT = `
             ls.last_ended_at,
             ls.termination_reason,
             ls.termination_reason_details,
+            ls.creation_forward_reason as last_creation_forward_reason,
             lhs.last_human_answered_at,
             lhs.last_human_started_at,
             lhs.last_human_ended_at,
@@ -374,8 +376,14 @@ export function buildAnalyticsCountQuery(
     cdr: string = "cdroutput"
 ): string {
     const whereClause = buildBaseWhereClause(startDate, endDate, queueNumber, cdr);
+    const dateOnlyWhereClause = buildDateOnlyWhereClause(startDate, endDate, queueNumber, cdr);
 
-    return `
+    // Sans condition, compter les appels suffit. Avec (filtre de statut,
+    // population par défaut sans les hors horaires), le comptage doit joindre
+    // les MÊMES segments que la requête de données — premier, dernier, dernier
+    // humain — pour que le total annoncé soit celui des lignes renvoyées.
+    if (aggregatedWhereConditions.length === 0) {
+        return `
         WITH call_aggregates AS (
             SELECT call_history_id
             FROM ${cdr}
@@ -384,6 +392,54 @@ export function buildAnalyticsCountQuery(
         )
         SELECT COUNT(*) as total
         FROM call_aggregates ca`;
+    }
+
+    return `
+        WITH call_aggregates AS (
+            SELECT call_history_id
+            FROM ${cdr}
+            WHERE ${whereClause}
+            GROUP BY call_history_id
+        ),
+        first_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                source_dn_type,
+                destination_dn_type
+            FROM ${cdr}
+            WHERE ${dateOnlyWhereClause}
+              AND call_history_id IN (SELECT call_history_id FROM call_aggregates)
+            ORDER BY call_history_id, cdr_started_at ASC
+        ),
+        last_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                destination_dn_type as last_dest_type,
+                destination_entity_type as last_dest_entity_type,
+                termination_reason_details,
+                creation_forward_reason
+            FROM ${cdr}
+            WHERE ${whereClause}
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        ),
+        last_human_segments AS (
+            SELECT DISTINCT ON (call_history_id)
+                call_history_id,
+                cdr_answered_at as last_human_answered_at,
+                cdr_started_at as last_human_started_at,
+                cdr_ended_at as last_human_ended_at
+            FROM ${cdr}
+            WHERE ${whereClause}
+              AND destination_dn_type = 'extension'
+              AND COALESCE(destination_entity_type, '') != 'voicemail'
+            ORDER BY call_history_id, cdr_ended_at DESC, cdr_started_at DESC, cdr_id DESC
+        )
+        SELECT COUNT(*) as total
+        FROM call_aggregates ca
+        JOIN first_segments fs ON ca.call_history_id = fs.call_history_id
+        JOIN last_segments ls ON ca.call_history_id = ls.call_history_id
+        LEFT JOIN last_human_segments lhs ON ca.call_history_id = lhs.call_history_id
+        WHERE ${aggregatedWhereConditions.join(' AND ')}`;
 }
 
 export function buildAnalyticsOrderByClause(sort?: LogsSort, timezone: string = "Europe/Zurich"): string {

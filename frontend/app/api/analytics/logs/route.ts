@@ -12,6 +12,8 @@ import {
 } from "@/services/analytics/query-builder";
 import {
     determineCallStatus,
+    buildFinalStatusFilterSQL,
+    buildDefaultFinalStatusPopulationSQL,
     determineCallProvenance,
     determineCallSens,
     callTouchesBridge,
@@ -52,6 +54,13 @@ export async function GET(request: NextRequest) {
         const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
         const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10)));
         const sort = parseSortParam(url.searchParams.get("sort") || undefined, url.searchParams.get("dir") || undefined);
+        // Statuts finaux demandés (ex. `statuses=out_of_hours`). Sans paramètre,
+        // la population par défaut de l'application : tout SAUF les appels hors
+        // horaires, qui ne se listent qu'à la demande (07.09.2026).
+        const STATUSES: CallStatus[] = ["answered", "voicemail", "missed", "busy", "out_of_hours"];
+        const statuses = (url.searchParams.get("statuses") ?? "")
+            .split(",")
+            .filter((s): s is CallStatus => (STATUSES as string[]).includes(s));
 
         const skip = (page - 1) * pageSize;
 
@@ -61,9 +70,13 @@ export async function GET(request: NextRequest) {
         const ctes = buildAnalyticsCTEs(start, end, queueNumber, cdr, rules.minSignificantDurationSeconds);
         const timezone = await getServerTimezone(serverId);
         const orderBy = buildAnalyticsOrderByClause(sort, timezone);
-        const countQuery = buildAnalyticsCountQuery(start, end, queueNumber, [], cdr);
+        const statusFilter = buildFinalStatusFilterSQL(statuses, rules.minAnswerSeconds);
+        const aggregatedWhereConditions = statusFilter
+            ? [statusFilter]
+            : statuses.length === 0 ? [buildDefaultFinalStatusPopulationSQL()] : [];
+        const countQuery = buildAnalyticsCountQuery(start, end, queueNumber, aggregatedWhereConditions, cdr);
 
-        const dataQuery = ctes + ANALYTICS_DATA_SELECT + buildAnalyticsDataJoins([], orderBy, pageSize, skip);
+        const dataQuery = ctes + ANALYTICS_DATA_SELECT + buildAnalyticsDataJoins(aggregatedWhereConditions, orderBy, pageSize, skip);
 
         const [rawResults, countResult] = await Promise.all([
             prisma.$queryRawUnsafe(dataQuery),
@@ -102,6 +115,7 @@ export async function GET(request: NextRequest) {
                 lastDestType: row.last_dest_type,
                 lastDestEntityType: row.last_dest_entity_type,
                 terminationReasonDetails: row.termination_reason_details,
+                lastCreationForwardReason: row.last_creation_forward_reason ?? null,
                 lastHumanAnsweredAt: row.last_human_answered_at ? new Date(row.last_human_answered_at) : null,
                 lastHumanStartedAt: row.last_human_started_at ? new Date(row.last_human_started_at) : null,
                 lastHumanEndedAt: row.last_human_ended_at ? new Date(row.last_human_ended_at) : null,

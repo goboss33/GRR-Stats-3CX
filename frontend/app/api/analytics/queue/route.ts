@@ -74,6 +74,9 @@ export async function GET(request: NextRequest) {
                 FROM queue_calls
             ),
             passage_count AS (SELECT COUNT(*) as n FROM queue_passages),
+            -- Hors horaires : exclus de queue_calls par construction ; comptés
+            -- ici à titre d'information (API, Excel), jamais dans une vignette.
+            hors_horaires AS (SELECT COUNT(*) as n FROM call_queue_outcomes WHERE outcome = 'out_of_hours'),
             direct_calls_stats AS (
                 SELECT
                     COUNT(*) as direct_received,
@@ -114,6 +117,7 @@ export async function GET(request: NextRequest) {
                 qk.unique_handed_off,
                 qk.unique_voicemail,
                 pc.n as total_passages,
+                hh.n as hors_horaires,
                 qk.avg_wait_time,
                 qk.avg_talk_time,
                 COALESCE(dcs.direct_received, 0) as direct_received,
@@ -128,6 +132,7 @@ export async function GET(request: NextRequest) {
             FROM queue_kpis qk
             CROSS JOIN queue_name qn
             CROSS JOIN passage_count pc
+            CROSS JOIN hors_horaires hh
             CROSS JOIN direct_calls_stats dcs
         `;
 
@@ -172,6 +177,8 @@ export async function GET(request: NextRequest) {
                 voicemail: Number(row.unique_voicemail),
                 short_abandon: Number(row.unique_short_abandon),
                 abandoned: Number(row.unique_abandoned),
+                // Jamais dans une vignette (regroupement null) : information seule.
+                out_of_hours: Number(row.hors_horaires),
             },
             abandonedBefore10s: Number(row.unique_short_abandon),
             abandonedAfter10s: Number(row.unique_abandoned),

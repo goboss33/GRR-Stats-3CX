@@ -11,7 +11,7 @@ import {
 const QUEUE = process.argv[2] ?? "972";
 const START = new Date(process.argv[3] ?? "2026-07-01T00:00:00.000Z");
 const END = new Date(process.argv[4] ?? "2026-08-01T00:00:00.000Z");
-const ALL: PassageOutcome[] = ["answered", "handed_off", "overflow", "voicemail", "short_abandon", "abandoned"];
+const ALL: PassageOutcome[] = ["answered", "handed_off", "overflow", "voicemail", "short_abandon", "abandoned", "out_of_hours"];
 
 async function main() {
     const prisma = getPrismaCdr("gerofinance");
