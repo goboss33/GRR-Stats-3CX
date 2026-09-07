@@ -54,15 +54,16 @@ async function main() {
 
     for (const carte of CARTES) {
         // Côté KPI : agrégation de la couche `queue_calls` (+ `direct_calls`).
+        // Les directs ont quatre sorts (répondu, transféré, débordé, perdu) :
+        // la carte additionne ceux qu'elle regroupe — le miroir exact de
+        // computeTeamTotals et de buildQueueOutcomeSubquery. L'ancienne
+        // écriture oubliait les transferts accomplis des directs dans
+        // « Répondus » et signalait un faux écart dès qu'il y en avait un.
         const outcomeList = carte.outcomes.map((o) => `'${o}'`).join(", ");
-        const directPart = carte.team
-            ? carte.outcomes.includes("answered") && carte.outcomes.includes("abandoned")
-                ? "+ (SELECT COUNT(*) FROM direct_calls)"
-                : carte.outcomes.includes("answered")
-                    ? "+ (SELECT COUNT(*) FROM direct_calls WHERE outcome = 'answered')"
-                    : carte.outcomes.includes("abandoned")
-                        ? "+ (SELECT COUNT(*) FROM direct_calls WHERE outcome = 'abandoned')"
-                        : ""
+        const DIRECT_OUTCOMES: PassageOutcome[] = ["answered", "handed_off", "overflow", "abandoned"];
+        const directWanted = DIRECT_OUTCOMES.filter((o) => carte.outcomes.includes(o));
+        const directPart = carte.team && directWanted.length > 0
+            ? `+ (SELECT COUNT(*) FROM direct_calls WHERE outcome IN (${directWanted.map((o) => `'${o}'`).join(", ")}))`
             : "";
 
         const kpiRows = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
