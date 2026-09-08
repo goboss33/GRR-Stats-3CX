@@ -15,6 +15,44 @@
 /** Délai au-delà duquel on considère le PBX injoignable (ms). */
 const TIMEOUT_MS = 10_000;
 
+/**
+ * UN jeton par (PBX, ID client, clé), partagé par tous les appelants — le
+ * relevé nocturne du journal, l'échantillonnage de présence à la minute, le
+ * test des réglages. Vérifié le 8 sept. 2026 : le 3CX INVALIDE le jeton
+ * précédent dès qu'il en émet un nouveau pour le même principal de service ;
+ * deux appelants demandant chacun le leur se coupaient l'herbe sous le pied à
+ * tour de rôle (le journal a fait tomber l'échantillonneur à 16:21:58).
+ * Réutilisé tant qu'il lui reste plus que la marge ; jamais mis en cache si
+ * le PBX n'annonce pas sa durée de vie.
+ */
+const JETON_MARGE_S = 120;
+const jetons = new Map<string, { token: string; expiresAt: number; expiresInSeconds: number | null }>();
+
+/** Empreinte courte de la clé pour la clé de cache — pas une protection, une distinction. */
+function empreinte(texte: string): string {
+    let h = 5381;
+    for (let i = 0; i < texte.length; i++) h = ((h * 33) ^ texte.charCodeAt(i)) >>> 0;
+    return h.toString(16);
+}
+
+function cleJeton(origin: string, clientId: string, apiKey: string): string {
+    return `${origin}|${clientId.trim()}|${empreinte(apiKey)}`;
+}
+
+/**
+ * Oublie le jeton partagé de ce principal — à appeler après un 401 sur un
+ * appel métier (jeton révoqué par une émission concurrente, ou périmé côté
+ * PBX) : le prochain requestXapiToken en obtient un frais.
+ */
+export function forgetXapiToken(baseUrl: string, clientId: string): void {
+    const origin = normalizeXapiBaseUrl(baseUrl);
+    if (!origin) return;
+    const prefixe = `${origin}|${clientId.trim()}|`;
+    for (const cle of [...jetons.keys()]) {
+        if (cle.startsWith(prefixe)) jetons.delete(cle);
+    }
+}
+
 export type XapiTokenResult =
     | { ok: true; accessToken: string; expiresInSeconds: number | null }
     | { ok: false; reason: string };
@@ -53,6 +91,12 @@ export async function requestXapiToken(
     }
     if (!clientId.trim()) return { ok: false, reason: "ID client manquant." };
     if (!apiKey) return { ok: false, reason: "Aucune clé API enregistrée." };
+
+    const cle = cleJeton(origin, clientId, apiKey);
+    const enCache = jetons.get(cle);
+    if (enCache && enCache.expiresAt > Date.now()) {
+        return { ok: true, accessToken: enCache.token, expiresInSeconds: enCache.expiresInSeconds };
+    }
 
     let response: Response;
     try {
@@ -98,12 +142,12 @@ export async function requestXapiToken(
         return { ok: false, reason: "Réponse du PBX sans jeton d'accès." };
     }
     const expires = (payload as { expires_in?: unknown })?.expires_in;
+    const expiresInSeconds = typeof expires === "number" ? expires : null;
+    if (expiresInSeconds !== null && expiresInSeconds > 2 * JETON_MARGE_S) {
+        jetons.set(cle, { token, expiresAt: Date.now() + (expiresInSeconds - JETON_MARGE_S) * 1000, expiresInSeconds });
+    }
 
-    return {
-        ok: true,
-        accessToken: token,
-        expiresInSeconds: typeof expires === "number" ? expires : null,
-    };
+    return { ok: true, accessToken: token, expiresInSeconds };
 }
 
 /**

@@ -2,7 +2,7 @@ import { prismaAuth } from "@/lib/prisma-auth";
 import type { ServerId } from "@/lib/prisma-cdr";
 import { getServerTimezone } from "@/lib/servers";
 import { getServerXapiConfig, isXapiUsable, type XapiConfig } from "@/lib/xapi-config";
-import { normalizeXapiBaseUrl, requestXapiToken } from "@/lib/xapi-client";
+import { forgetXapiToken, normalizeXapiBaseUrl, requestXapiToken } from "@/lib/xapi-client";
 import {
     etatDe,
     instantLocal,
@@ -35,8 +35,6 @@ import {
  */
 
 const PAGE_LIMIT = 20;
-/** Marge avant l'expiration du jeton, en secondes. */
-const JETON_MARGE_S = 120;
 /** Au-delà, l'état « maintenant » n'est plus montré (relevé arrêté ?). */
 const FRAICHEUR_MS = 3 * 60_000;
 const CONSOLIDATION_EVERY_MS = 15 * 60_000;
@@ -75,7 +73,6 @@ interface Memoire {
     amorcee: boolean;
     postes: Map<string, EtatPoste>;
     sampledAt: number | null;
-    jeton: { valeur: string; expireA: number } | null;
     derniereConsolidation: number;
     horairesDuJour: string | null;
 }
@@ -84,7 +81,7 @@ const memoires = new Map<string, Memoire>();
 function memoireDe(serverId: ServerId): Memoire {
     let m = memoires.get(serverId);
     if (!m) {
-        m = { amorcee: false, postes: new Map(), sampledAt: null, jeton: null, derniereConsolidation: 0, horairesDuJour: null };
+        m = { amorcee: false, postes: new Map(), sampledAt: null, derniereConsolidation: 0, horairesDuJour: null };
         memoires.set(serverId, m);
     }
     return m;
@@ -94,14 +91,34 @@ function memoireDe(serverId: ServerId): Memoire {
 // XAPI
 // ============================================
 
-async function accesXapi(config: XapiConfig, mem: Memoire): Promise<{ base: string; jeton: string } | { erreur: string }> {
+/** Le jeton PARTAGÉ du client XAPI (cf. lib/xapi-client) : une émission par heure, pour tout le monde. */
+async function accesXapi(config: XapiConfig): Promise<{ base: string; jeton: string } | { erreur: string }> {
     const base = normalizeXapiBaseUrl(config.baseUrl ?? "");
     if (!base) return { erreur: "adresse du PBX invalide" };
-    if (mem.jeton && mem.jeton.expireA > Date.now()) return { base, jeton: mem.jeton.valeur };
     const token = await requestXapiToken(config.baseUrl!, config.clientId ?? "", config.key ?? "");
     if (!token.ok) return { erreur: token.reason };
-    mem.jeton = { valeur: token.accessToken, expireA: Date.now() + Math.max(60, (token.expiresInSeconds ?? 300) - JETON_MARGE_S) * 1000 };
     return { base, jeton: token.accessToken };
+}
+
+/**
+ * Lit les postes ; un 401 (jeton révoqué par une émission concurrente, ou
+ * périmé côté PBX) vaut UN nouvel essai avec un jeton frais, dans la même
+ * minute — le relevé ne saute pas.
+ */
+async function lireUsers(config: XapiConfig): Promise<{ users: UserXapi[]; base: string; jeton: string } | { erreur: string }> {
+    for (let essai = 0; essai < 2; essai++) {
+        const acces = await accesXapi(config);
+        if ("erreur" in acces) return { erreur: `jeton : ${acces.erreur}` };
+        try {
+            const users = await lirePages<UserXapi>(acces.base, acces.jeton, REQUETE_USERS);
+            return { users, base: acces.base, jeton: acces.jeton };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (!/HTTP 401/.test(message) || essai === 1) return { erreur: `lecture des postes : ${message}` };
+            forgetXapiToken(config.baseUrl!, config.clientId ?? "");
+        }
+    }
+    return { erreur: "lecture des postes : jeton refusé deux fois" };
 }
 
 /**
@@ -164,22 +181,13 @@ export async function echantillonner(serverId: ServerId): Promise<ResumeEchantil
     if (!isXapiUsable(config)) return { serverId, ran: false, reason: "XAPI inutilisable" };
 
     const mem = memoireDe(serverId);
-    const acces = await accesXapi(config, mem);
-    if ("erreur" in acces) {
-        await noterErreur(serverId, `jeton : ${acces.erreur}`);
-        return { serverId, ran: false, reason: acces.erreur };
+    const lecture = await lireUsers(config);
+    if ("erreur" in lecture) {
+        await noterErreur(serverId, lecture.erreur);
+        return { serverId, ran: false, reason: lecture.erreur };
     }
-
-    let users: UserXapi[];
-    try {
-        users = await lirePages<UserXapi>(acces.base, acces.jeton, REQUETE_USERS);
-    } catch (error) {
-        // Un jeton révoqué se manifeste ici : on le jette pour le redemander.
-        mem.jeton = null;
-        const message = error instanceof Error ? error.message : String(error);
-        await noterErreur(serverId, `lecture des postes : ${message}`);
-        return { serverId, ran: false, reason: message };
-    }
+    const { users } = lecture;
+    const acces = { base: lecture.base, jeton: lecture.jeton };
 
     const now = new Date();
     if (!mem.amorcee) {
