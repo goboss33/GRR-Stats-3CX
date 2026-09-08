@@ -19,6 +19,18 @@ import type {
     AgentStats,
     OverflowDestination,
 } from "@/services/domain/call.types";
+import { appliquerPerimetreProvenances } from "@/services/domain/provenance-appels";
+import {
+    appliquerPerimetreDestinations,
+    choisirEquipePrincipale,
+    composerDestinations,
+    type ActiviteFile,
+    type AppartenanceJournal,
+} from "@/services/domain/destinations-appels";
+import { resolveJournalMemberships } from "@/services/xapi-journal.service";
+import type { FicheAnnuaire } from "@/services/queue-directory.service";
+import type { AccessScope } from "@/lib/access-scope";
+import type { OutboundExit, OutboundTeam, PersonTeamActivity } from "@/services/domain/call.types";
 import type { CallOrigin, PassageOutcome } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
 import { previousPeriod, weekAlignedPreviousPeriod } from "@/services/domain/period-comparison";
@@ -95,8 +107,20 @@ interface ApiQueueResponse {
     directHandedOff: number;
     directOverflow: number;
     directLost: number;
-    classificationRules?: { handedOffInPerformance?: "success" | "neutral" };
+    classificationRules?: {
+        handedOffInPerformance?: "success" | "neutral";
+        outOfScopeFinalStatus?: "name" | "anonymize" | "hide";
+    };
     overflowDestinations: Array<{ destination: string; destinationName: string; count: number }>;
+    inboundSources: Array<{ queueNumber: string; queueName: string; calls: number }>;
+    outboundExits?: OutboundExit[];
+    personTeams?: PersonTeamActivity[];
+}
+
+/** Ce que la route rend en plus des KPI : les faits bruts des destinations. */
+interface FaitsSorties {
+    exits: OutboundExit[];
+    personTeams: PersonTeamActivity[];
 }
 
 interface ApiAgentResponse {
@@ -134,17 +158,27 @@ export async function getQueueStatistics(
 
     // Nom et département : l'annuaire du PBX passe devant quand il connaît la
     // file, les appels prennent le relais sinon (cf. queue-directory.service).
-    const [nomCdr, departementCdr, annuaire, kpis, agents, timelineData, heatmapData] = await Promise.all([
+    const [nomCdr, departementCdr, annuaire, { kpis, sorties }, agents, timelineData, heatmapData] = await Promise.all([
         getQueueName(serverId, queueNumber),
         getQueueDepartment(serverId, queueNumber),
         getAnnuaireXapi(serverId),
-        computeQueueKPIs(serverId, queueNumber, startDate, endDate, origin),
+        fetchQueueKpis(serverId, queueNumber, startDate, endDate, origin, scope),
         computeAgentStats(serverId, queueNumber, startDate, endDate, origin),
         getQueueTimelineData(serverId, queueNumber, startDate, endDate, origin),
         getQueueHeatmapData(serverId, queueNumber, startDate, endDate, origin),
     ]);
 
-    const profils = await getProfilsCollaborateurs(serverId, agents, { start: startDate, end: endDate });
+    const [profils, outboundTeams] = await Promise.all([
+        getProfilsCollaborateurs(serverId, agents, { start: startDate, end: endDate }),
+        composerDestinationsEquipe(serverId, sorties, { start: startDate, end: endDate }, scope, annuaire),
+    ]);
+
+    // Les équipes d'origine prennent, elles aussi, le nom que l'annuaire du
+    // PBX leur donne : une file renommée est la même équipe.
+    const inboundSources = kpis.inboundSources.map((s) => {
+        const fiche = s.queueNumber ? annuaire?.get(s.queueNumber) : undefined;
+        return fiche?.queueName ? { ...s, queueName: fiche.queueName } : s;
+    });
 
     return {
         queueNumber,
@@ -154,14 +188,77 @@ export async function getQueueStatistics(
             start: startDate.toISOString(),
             end: endDate.toISOString(),
         },
-        kpis,
+        kpis: { ...kpis, inboundSources },
         // Titre de poste et photo, résolus par POSTE + NOM dans le journal des
         // collaborateurs : les noms d'époque du tableau ne se voient jamais
         // attribuer le visage du titulaire actuel d'un poste réattribué.
         agents: agents.map((a) => ({ ...a, ...(profils.get(cleAgent(a)) ?? {}) })),
         timelineData,
         heatmapData,
+        outboundTeams,
     };
+}
+
+/**
+ * « Où partent nos appels » : des faits bruts de la route aux lignes par
+ * équipe — équipe principale (journal XAPI départagé par l'activité, ou
+ * activité seule), noms de l'annuaire, règle de périmètre, puis photos et
+ * titres des personnes. Réservé à l'écran détail : les cartes de l'aperçu
+ * n'en ont pas besoin, elles ne paient rien de tout ceci.
+ */
+async function composerDestinationsEquipe(
+    serverId: ServerId,
+    sorties: FaitsSorties,
+    periode: { start: Date; end: Date },
+    scope: AccessScope,
+    annuaire: Map<string, FicheAnnuaire> | null,
+): Promise<OutboundTeam[]> {
+    if (sorties.exits.length === 0) return [];
+    const rules = await getClassificationRules();
+    const nomFile = (numero: string, secours?: string | null) =>
+        annuaire?.get(numero)?.queueName || secours || numero;
+
+    // Activité par poste (sollicitations par file sur la période).
+    const activite = new Map<string, ActiviteFile[]>();
+    for (const t of sorties.personTeams) {
+        const liste = activite.get(t.extension) ?? [];
+        liste.push({ queueNumber: t.queueNumber, queueName: nomFile(t.queueNumber, t.queueName), calls: t.calls, lastAt: new Date(t.lastAt) });
+        activite.set(t.extension, liste);
+    }
+
+    // Appartenances du journal, pour les personnes jointes sur leur ligne
+    // directe seulement — sous la règle rosterSource, comme le roster.
+    const postesDirects = [...new Set(sorties.exits.filter((e) => e.firstHop === "person" && e.extension).map((e) => e.extension as string))];
+    const journal = rules.rosterSource === "journalAuto"
+        ? await resolveJournalMemberships(serverId, postesDirects, periode.start, periode.end)
+        : null;
+    const equipePrincipale = (extension: string) => {
+        const appartenances: AppartenanceJournal[] | null = journal
+            ? (journal.get(extension) ?? []).map((m) => {
+                const nomActivite = activite.get(extension)?.find((a) => a.queueNumber === m.queueNumber)?.queueName;
+                return { queueNumber: m.queueNumber, queueName: nomFile(m.queueNumber, nomActivite), lastSeenAt: m.lastSeenAt };
+            })
+            : null;
+        return choisirEquipePrincipale(appartenances, activite.get(extension) ?? []);
+    };
+
+    const composees = composerDestinations(sorties.exits, equipePrincipale)
+        .map((t) => (t.queueNumber ? { ...t, queueName: nomFile(t.queueNumber, t.queueName) } : t));
+    const teams = appliquerPerimetreDestinations(
+        composees,
+        (n) => isQueueInScope(scope, n),
+        rules.outOfScopeFinalStatus,
+    );
+
+    // Photos et titres : par POSTE + NOM d'époque, comme le tableau des
+    // collaborateurs — jamais le visage du titulaire actuel d'un poste
+    // réattribué.
+    const personnes = teams.flatMap((t) => t.persons.map((p) => ({ extension: p.extension, name: p.name })));
+    const profils = await getProfilsCollaborateurs(serverId, personnes, periode);
+    return teams.map((t) => ({
+        ...t,
+        persons: t.persons.map((p) => ({ ...p, ...(profils.get(cleAgent(p)) ?? {}) })),
+    }));
 }
 
 /**
@@ -183,7 +280,20 @@ export async function getQueueOverviewKpis(
     if (!isQueueInScope(scope, queueNumber)) {
         throw new Error("Cette file d'attente n'est pas dans votre périmètre");
     }
-    return computeQueueKPIs(serverId, queueNumber, startDate, endDate, origin);
+    return computeQueueKPIs(serverId, queueNumber, startDate, endDate, origin, scope);
+}
+
+/** KPI seuls — les faits des destinations sont laissés de côté (aperçu, N-1). */
+async function computeQueueKPIs(
+    serverId: ServerId,
+    queueNumber: string,
+    startDate: Date,
+    endDate: Date,
+    origin: CallOrigin,
+    scope: AccessScope,
+): Promise<QueueKPIs> {
+    const { kpis } = await fetchQueueKpis(serverId, queueNumber, startDate, endDate, origin, scope);
+    return kpis;
 }
 
 /**
@@ -208,7 +318,7 @@ export async function getQueuePreviousStats(
     }
     const prev = previousPeriod(startDate, endDate);
     const [kpis, agents] = await Promise.all([
-        computeQueueKPIs(serverId, queueNumber, prev.startDate, prev.endDate, origin),
+        computeQueueKPIs(serverId, queueNumber, prev.startDate, prev.endDate, origin, scope),
         computeAgentStats(serverId, queueNumber, prev.startDate, prev.endDate, origin),
     ]);
     return { kpis, agents };
@@ -238,13 +348,16 @@ export async function getQueuePreviousTimeline(
     return getQueueTimelineData(serverId, queueNumber, prev.startDate, prev.endDate, origin);
 }
 
-async function computeQueueKPIs(
+async function fetchQueueKpis(
     serverId: ServerId,
     queueNumber: string,
     startDate: Date,
     endDate: Date,
-    origin: CallOrigin = "both"
-): Promise<QueueKPIs> {
+    origin: CallOrigin,
+    // Périmètre de l'UTILISATEUR (pas celui de la clé interne) : décide, avec
+    // la règle outOfScopeFinalStatus, si une équipe d'origine est nommée.
+    scope: AccessScope,
+): Promise<{ kpis: QueueKPIs; sorties: FaitsSorties }> {
     const apiData = await fetchApi<ApiQueueResponse>("/api/analytics/queue", {
         server: serverId,
         queueNumber,
@@ -264,7 +377,20 @@ async function computeQueueKPIs(
         count: d.count,
     }));
 
-    return {
+    // Règle de périmètre appliquée CÔTÉ SERVEUR, comme la colonne « répondu
+    // par » des journaux : masquer au client ne suffirait pas.
+    const inboundSources = appliquerPerimetreProvenances(
+        apiData.inboundSources ?? [],
+        (n) => isQueueInScope(scope, n),
+        apiData.classificationRules?.outOfScopeFinalStatus ?? "name",
+    );
+
+    const sorties: FaitsSorties = {
+        exits: apiData.outboundExits ?? [],
+        personTeams: apiData.personTeams ?? [],
+    };
+
+    const kpis: QueueKPIs = {
         callsReceived: apiData.callsReceived,
         callsAnswered: teamQueueAnswered,
         callsAbandoned: apiData.callsAbandoned,
@@ -285,9 +411,11 @@ async function computeQueueKPIs(
         directLost: apiData.directLost,
         handedOffInPerformance: apiData.classificationRules?.handedOffInPerformance ?? "success",
         overflowDestinations,
+        inboundSources,
         avgWaitTimeSeconds: apiData.avgWaitTimeSeconds,
         avgTalkTimeSeconds: apiData.avgTalkTimeSeconds,
     };
+    return { kpis, sorties };
 }
 
 async function computeAgentStats(

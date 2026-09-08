@@ -685,6 +685,14 @@ export function buildQueuePassagesCTE(rules: ClassificationRules, params: Passag
                   AND COALESCE(v.destination_entity_type, '') = 'voicemail'
                   AND v.cdr_started_at >= c.cdr_started_at
             ) AS to_voicemail,
+            -- Provenance : la DERNIÈRE autre file sollicitée AVANT ce passage
+            -- dans le même appel (« D'où viennent nos appels ») — le miroir
+            -- exact du débordement ci-dessus. Le chemin réel entre les deux
+            -- files (script, groupe d'appel, renvoi de poste — ou plus rien
+            -- depuis les horaires natifs de septembre 2026) est ignoré à
+            -- dessein : remonter les parents s'arrêtait au groupe d'appel.
+            prev.queue_number AS from_queue,
+            prev.queue_name AS from_queue_name,
             -- Temps réellement passé DANS la file. L'ancien calcul mesurait le
             -- délai entre le début de l'appel et l'entrée en file, ce qui n'est
             -- pas une attente.
@@ -713,6 +721,20 @@ export function buildQueuePassagesCTE(rules: ClassificationRules, params: Passag
             FROM ${cdr} p
             WHERE p.originating_cdr_id = c.cdr_id
         ) poll ON TRUE
+        LEFT JOIN LATERAL (
+            -- Le passage en file immédiatement antérieur du même appel, dans
+            -- une autre file. Même index que le débordement (appel + date),
+            -- lu à rebours : mesuré 0,06 s sur un mois de la plus grosse file.
+            SELECT o.destination_dn_number AS queue_number,
+                   COALESCE(NULLIF(o.destination_dn_name, ''), o.destination_dn_number) AS queue_name
+            FROM ${cdr} o
+            WHERE o.call_history_id = c.call_history_id
+              AND o.destination_dn_type = 'queue'
+              AND o.destination_dn_number <> c.destination_dn_number
+              AND o.cdr_started_at < c.cdr_started_at
+            ORDER BY o.cdr_started_at DESC
+            LIMIT 1
+        ) prev ON TRUE
         WHERE c.destination_dn_type = 'queue'
           ${queueFilter}
           AND c.cdr_started_at >= ${params.startExpr}
@@ -735,7 +757,8 @@ export function buildCallQueueOutcomesCTE(rules: ClassificationRules): string {
         return `
     call_queue_outcomes AS (
         SELECT call_history_id, queue_number, outcome, cdr_started_at, cdr_ended_at,
-            wait_seconds, talk_seconds, answer_wait_seconds
+            wait_seconds, talk_seconds, answer_wait_seconds,
+            from_queue, from_queue_name
         FROM queue_passages
     )`;
     }
@@ -745,7 +768,8 @@ export function buildCallQueueOutcomesCTE(rules: ClassificationRules): string {
     call_queue_outcomes AS (
         SELECT DISTINCT ON (call_history_id, queue_number)
             call_history_id, queue_number, outcome, cdr_started_at, cdr_ended_at,
-            wait_seconds, talk_seconds, answer_wait_seconds
+            wait_seconds, talk_seconds, answer_wait_seconds,
+            from_queue, from_queue_name
         FROM queue_passages
         ORDER BY call_history_id, queue_number, cdr_started_at DESC
     )`;
@@ -756,7 +780,8 @@ export function buildCallQueueOutcomesCTE(rules: ClassificationRules): string {
     call_queue_outcomes AS (
         SELECT DISTINCT ON (call_history_id, queue_number)
             call_history_id, queue_number, outcome, cdr_started_at, cdr_ended_at,
-            wait_seconds, talk_seconds, answer_wait_seconds
+            wait_seconds, talk_seconds, answer_wait_seconds,
+            from_queue, from_queue_name
         FROM queue_passages
         ORDER BY call_history_id, queue_number, ${sqlOutcomeRankCase("outcome")} ASC, cdr_started_at ASC
     )`;

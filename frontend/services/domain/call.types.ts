@@ -320,6 +320,87 @@ export interface OverflowDestination {
     count: number;
 }
 
+/**
+ * Une équipe qui nous a envoyé des appels (« D'où viennent nos appels ») :
+ * la file sollicitée juste avant la nôtre dans le même appel.
+ */
+export interface InboundSource {
+    /** Numéro de file ; null pour le regroupement anonyme « hors périmètre ». */
+    queueNumber: string | null;
+    queueName: string;
+    /** Appels reçus par l'équipe en provenance de cette file — même population que « Reçus ». */
+    calls: number;
+    /** La file est dans le périmètre de l'utilisateur (sinon nommée ou anonymisée selon la règle). */
+    inScope: boolean;
+}
+
+/**
+ * « Où partent nos appels » — une sortie BRUTE de l'API : un groupe d'appels
+ * partis de l'équipe (transférés ou débordés) partageant la même issue et la
+ * même PREMIÈRE destination après nous.
+ */
+export interface OutboundExit {
+    outcome: "handed_off" | "overflow";
+    /**
+     * Le premier saut après nous : une file (débordement, transfert vers une
+     * file, ligne directe renvoyée dans une file), une personne jointe sur sa
+     * ligne directe, un numéro externe, ou rien (personne n'a décroché et
+     * aucune file n'a été sollicitée).
+     */
+    firstHop: "queue" | "person" | "external" | "none";
+    /** La file de destination (firstHop = queue). */
+    queueNumber: string | null;
+    queueName: string | null;
+    /**
+     * Le visage : la personne jointe sur sa ligne directe (firstHop = person),
+     * ou celle qui a décroché dans la file de destination (firstHop = queue,
+     * null si personne n'y a décroché ou si l'appel a été servi plus loin).
+     */
+    extension: string | null;
+    personName: string | null;
+    calls: number;
+}
+
+/** Sollicitations d'un poste par une file sur la période — pour l'équipe principale. */
+export interface PersonTeamActivity {
+    extension: string;
+    queueNumber: string;
+    queueName: string;
+    calls: number;
+    /** ISO 8601. */
+    lastAt: string;
+}
+
+export interface OutboundPerson {
+    extension: string;
+    name: string;
+    calls: number;
+    /** dont jointe par sa ligne directe (le reste : par la distribution de la file). */
+    viaDirectLine: number;
+    jobTitle?: string | null;
+    photoUrl?: string | null;
+    /** Autres équipes dont la personne est membre — la règle de l'équipe principale, rendue visible. */
+    alsoIn: string[];
+}
+
+export type OutboundTeamKind = "team" | "no_team" | "external" | "unknown" | "out_of_scope";
+
+export interface OutboundTeam {
+    /** Numéro de file ; null pour les regroupements (sans équipe, externes, inconnus, hors périmètre). */
+    queueNumber: string | null;
+    queueName: string;
+    kind: OutboundTeamKind;
+    calls: number;
+    /** dont partis SANS décroché ici (débordements). */
+    overflow: number;
+    /** dont débordés vers cette file sans que personne n'y décroche. */
+    unanswered: number;
+    /** dont joints par une ligne directe (rattachés par l'équipe principale). */
+    directLine: number;
+    persons: OutboundPerson[];
+    inScope: boolean;
+}
+
 export interface QueueKPIs {
     callsReceived: number;
     callsAnswered: number;
@@ -349,6 +430,8 @@ export interface QueueKPIs {
     /** Le transfert accompli compte-t-il dans le taux de prise en charge ? */
     handedOffInPerformance: "success" | "neutral";
     overflowDestinations: OverflowDestination[];
+    /** « D'où viennent nos appels » : équipes d'origine, règle de périmètre déjà appliquée. */
+    inboundSources: InboundSource[];
     avgWaitTimeSeconds: number;
     avgTalkTimeSeconds: number;
 }
@@ -387,6 +470,8 @@ export interface QueueStatistics {
     agents: AgentStats[];
     timelineData: TimelineDataPoint[];
     heatmapData: HeatmapDataPoint[];
+    /** « Où partent nos appels » : destinations par équipe, visages compris, règle de périmètre appliquée. */
+    outboundTeams: OutboundTeam[];
 }
 
 // ============================================

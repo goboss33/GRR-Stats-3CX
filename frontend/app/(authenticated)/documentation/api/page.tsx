@@ -194,6 +194,9 @@ const endpoints: ApiEndpoint[] = [
             { name: "teamDirectReceived", type: "integer", description: "Appels directs reçus par l'équipe" },
             { name: "teamDirectAnswered", type: "integer", description: "Appels directs répondus par l'équipe" },
             { name: "overflowDestinations", type: "array", description: "Top 10 des destinations d'overflow" },
+            { name: "inboundSources", type: "array", description: "Équipes d'origine (« D'où viennent nos appels ») : la file sollicitée juste avant celle-ci dans le même appel — { queueNumber, queueName, calls }, par volume décroissant, même population que callsReceived" },
+            { name: "outboundExits", type: "array", description: "Sorties brutes (« Où partent nos appels ») : les appels transférés + débordés (file et directs) groupés par première destination après cette file — { outcome, firstHop: queue|person|external|none, queueNumber, queueName, extension, personName, calls }. L'écran rattache ensuite les personnes jointes en direct à leur équipe principale" },
+            { name: "personTeams", type: "array", description: "Sollicitations par file, sur la période, des personnes jointes sur leur ligne directe — { extension, queueNumber, queueName, calls, lastAt } ; sert à départager les appartenances du journal XAPI" },
         ],
         example: `curl -X GET "https://your-domain.com/api/analytics/queue?queueNumber=993&start=2026-04-01&end=2026-04-30" \\
   -H "X-API-Key: votre-cle-api"`,
@@ -216,6 +219,17 @@ const endpoints: ApiEndpoint[] = [
   "overflowDestinations": [
     { "destination": "905", "destinationName": "Transport", "count": 28 },
     { "destination": "910", "destinationName": "Comptabilité", "count": 12 }
+  ],
+  "inboundSources": [
+    { "queueNumber": "900", "queueName": "Réception Pully", "calls": 62 },
+    { "queueNumber": "904", "queueName": "Gérance PU-G01", "calls": 9 }
+  ],
+  "outboundExits": [
+    { "outcome": "overflow", "firstHop": "queue", "queueNumber": "900", "queueName": "Réception Pully", "extension": "100", "personName": "Sequeiros, Lucia", "calls": 28 },
+    { "outcome": "handed_off", "firstHop": "person", "queueNumber": null, "queueName": null, "extension": "221", "personName": "Mermoud, Sébastien", "calls": 3 }
+  ],
+  "personTeams": [
+    { "extension": "221", "queueNumber": "933", "queueName": "Gérance NY-G01", "calls": 41, "lastAt": "2026-04-29T14:02:11.000Z" }
   ]
 }`,
     },

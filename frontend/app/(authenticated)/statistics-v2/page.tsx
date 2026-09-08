@@ -17,6 +17,8 @@ import { TeamOverview } from "@/components/stats-v2/team-overview";
 import { AgentPerformanceTableV2 } from "@/components/stats-v2/agent-performance-table-v2";
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
+import { ProvenanceAppels } from "@/components/stats-v2/provenance-appels";
+import { DestinationsAppels } from "@/components/stats-v2/destinations-appels";
 import { PeriodComparisonToggle, usePeriodComparisonPreference } from "@/components/period-comparison-toggle";
 import { weekAlignedPreviousPeriod } from "@/services/domain/period-comparison";
 import type { QueueStatistics, QueueKPIs, AgentStats } from "@/types/statistics.types";
@@ -340,6 +342,29 @@ export default function StatisticsV2Page() {
                                 <HeatmapChart data={statistics.heatmapData} />
                             </div>
                         </div>
+                    </div>
+
+                    {/* Les échanges avec les autres équipes, côte à côte : d'où
+                        viennent nos appels (par équipe d'origine) et où ils
+                        partent (par équipe de destination, visages compris).
+                        Même garde « logs » que les vignettes du bilan. */}
+                    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                        <ProvenanceAppels
+                            kpis={statistics.kpis}
+                            logsEnabled={canViewLogs === true}
+                            queueNumber={statistics.queueNumber}
+                            startDate={format(dateRange.startDate, "yyyy-MM-dd")}
+                            endDate={format(dateRange.endDate, "yyyy-MM-dd")}
+                            origin={origin}
+                        />
+                        <DestinationsAppels
+                            teams={statistics.outboundTeams}
+                            logsEnabled={canViewLogs === true}
+                            queueNumber={statistics.queueNumber}
+                            startDate={format(dateRange.startDate, "yyyy-MM-dd")}
+                            endDate={format(dateRange.endDate, "yyyy-MM-dd")}
+                            origin={origin}
+                        />
                     </div>
                 </ContenuPerime>
             )}

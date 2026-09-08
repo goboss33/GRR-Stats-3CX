@@ -10,6 +10,8 @@ import {
     cdrTable,
     type CallOrigin,
 } from "@/services/domain/call-classification";
+import { SQL_REAL_PARTY_DEST_TYPES } from "@/services/domain/call-aggregation";
+import { DEPARTED_OUTCOMES } from "@/services/domain/destinations-appels";
 import { getClassificationRules } from "@/lib/classification-rules";
 import { resolveRosterForRules } from "@/services/xapi-journal.service";
 
@@ -57,6 +59,10 @@ export async function GET(request: NextRequest) {
         const origin: CallOrigin = originParam === "internal" || originParam === "external"
             ? originParam : "both";
 
+        // Sorts « partis » (transféré, débordé) en littéraux SQL, depuis la
+        // constante partagée avec la carte des destinations.
+        const departedList = DEPARTED_OUTCOMES.map((o) => `'${o}'`).join(", ");
+
         // Requête paramétrée : $1 = queueNumber (texte), $2 = start, $3 = end (Date).
         const query = `
             WITH ${buildTeamCTEChain(rules, { queueExpr: "$1", startExpr: "$2", endExpr: "$3", origin, rosterMembers })},
@@ -101,6 +107,129 @@ export async function GET(request: NextRequest) {
                 ORDER BY count DESC
                 LIMIT 10
             ),
+            -- « D'où viennent nos appels » : les appels reçus ici PARCE QU'une
+            -- autre équipe ne les a pas pris, par file d'origine (la file
+            -- sollicitée juste avant la nôtre, cf. from_queue du socle).
+            -- Population = queue_calls, donc les mêmes règles que les
+            -- vignettes : la somme est un sous-ensemble exact de « Reçus ».
+            -- Le nom retenu est le plus récent de la période — une file
+            -- renommée reste la même équipe ; le service superpose ensuite
+            -- l'annuaire du PBX quand il la connaît.
+            inbound_sources AS (
+                SELECT
+                    qc.from_queue AS queue_number,
+                    (ARRAY_AGG(qc.from_queue_name ORDER BY qc.cdr_started_at DESC))[1] AS queue_name,
+                    COUNT(*) AS calls
+                FROM queue_calls qc
+                WHERE qc.from_queue IS NOT NULL
+                GROUP BY qc.from_queue
+            ),
+            -- « Où partent nos appels » : les appels transférés (décrochés ici,
+            -- servis ailleurs) et débordés (partis sans décroché), file ET
+            -- directs — la même population que les vignettes Transférés +
+            -- Débordés. Pour chacun, la PREMIÈRE destination après nous : une
+            -- file (débordement, transfert vers la file, ligne directe renvoyée
+            -- dans une file), une personne jointe sur sa ligne directe, un
+            -- numéro externe, ou rien. Une personne jointe par la distribution
+            -- d'une file est rattachée à cette file ; jointe sur sa ligne
+            -- directe, le service la rattache à son équipe principale.
+            departures AS (
+                SELECT call_history_id, outcome, cdr_started_at AS left_after FROM queue_calls
+                WHERE outcome IN (${departedList})
+                UNION ALL
+                SELECT call_history_id, outcome, started_at FROM direct_calls
+                WHERE outcome IN (${departedList})
+            ),
+            exits_raw AS (
+                SELECT d.outcome,
+                       -- Le premier saut : la file si elle a été sollicitée avant
+                       -- (ou sans) qu'une personne décroche, sinon la personne.
+                       CASE WHEN nxt.queue_number IS NOT NULL
+                                 AND (fo.extension IS NULL OR nxt.started_at <= fo.started_at) THEN 'queue'
+                            WHEN fo.dest_type = 'extension' THEN 'person'
+                            WHEN fo.dest_type IS NOT NULL THEN 'external'
+                            ELSE 'none' END AS first_hop,
+                       nxt.queue_number, nxt.queue_name, nxt.started_at AS queue_at,
+                       fo.extension, fo.person_name, fo.via_queue
+                FROM departures d
+                LEFT JOIN LATERAL (
+                    -- Première autre file sollicitée après notre passage.
+                    SELECT o.destination_dn_number AS queue_number,
+                           COALESCE(NULLIF(o.destination_dn_name, ''), o.destination_dn_number) AS queue_name,
+                           o.cdr_started_at AS started_at
+                    FROM ${cdrTable(rules)} o
+                    WHERE o.call_history_id = d.call_history_id
+                      AND o.destination_dn_type = 'queue'
+                      AND o.destination_dn_number <> $1
+                      AND o.cdr_started_at > d.left_after
+                    ORDER BY o.cdr_started_at ASC
+                    LIMIT 1
+                ) nxt ON TRUE
+                LEFT JOIN LATERAL (
+                    -- Premier correspondant HORS équipe qui a décroché après nous,
+                    -- mêmes critères que le « dernier décroché humain » du socle
+                    -- (buildServedInTeamSQL), et la file dont la distribution
+                    -- l'a atteint quand c'est le cas (sonnerie « polling »).
+                    SELECT la.destination_dn_type AS dest_type,
+                           la.destination_dn_number AS extension,
+                           COALESCE(NULLIF(la.destination_dn_name, ''), NULLIF(la.destination_participant_name, ''), la.destination_dn_number) AS person_name,
+                           q.destination_dn_number AS via_queue,
+                           la.cdr_started_at AS started_at
+                    FROM ${cdrTable(rules)} la
+                    LEFT JOIN ${cdrTable(rules)} q
+                           ON la.creation_forward_reason = 'polling'
+                          AND q.cdr_id = la.originating_cdr_id
+                          AND q.destination_dn_type = 'queue'
+                    WHERE la.call_history_id = d.call_history_id
+                      AND la.cdr_answered_at IS NOT NULL
+                      AND la.destination_dn_type IN (${SQL_REAL_PARTY_DEST_TYPES})
+                      AND COALESCE(la.destination_entity_type, '') <> 'voicemail'
+                      AND la.destination_dn_number NOT IN (SELECT extension FROM queue_agents)
+                      AND la.cdr_started_at > d.left_after
+                      AND la.cdr_started_at <= $3
+                    ORDER BY la.cdr_answered_at ASC, la.cdr_id ASC
+                    LIMIT 1
+                ) fo ON TRUE
+            ),
+            exits AS (
+                SELECT outcome, first_hop, queue_number,
+                       -- Une file renommée sur la période reste la même équipe :
+                       -- son nom le plus récent. Un poste réattribué, lui, reste
+                       -- deux personnes : le nom d'époque fait partie de la clé.
+                       (ARRAY_AGG(queue_name ORDER BY queue_at DESC NULLS LAST))[1] AS queue_name,
+                       extension, person_name,
+                       COUNT(*) AS calls
+                FROM (
+                    SELECT outcome, first_hop,
+                           CASE WHEN first_hop = 'queue' THEN queue_number END AS queue_number,
+                           CASE WHEN first_hop = 'queue' THEN queue_name END AS queue_name,
+                           queue_at,
+                           -- Le visage : la personne jointe sur sa ligne directe, ou
+                           -- celle qui a décroché DANS la file de destination.
+                           CASE WHEN first_hop = 'person' OR (first_hop = 'queue' AND via_queue = queue_number) THEN extension END AS extension,
+                           CASE WHEN first_hop = 'person' OR (first_hop = 'queue' AND via_queue = queue_number) THEN person_name END AS person_name
+                    FROM exits_raw
+                ) x
+                GROUP BY 1, 2, 3, 5, 6
+            ),
+            -- Équipe principale des personnes jointes sur leur ligne directe :
+            -- leurs sollicitations par file sur la période départagent les
+            -- appartenances du journal XAPI — ou les remplacent quand le
+            -- journal ne couvre pas la période (cf. choisirEquipePrincipale).
+            person_teams AS (
+                SELECT a.destination_dn_number AS extension,
+                       q.destination_dn_number AS queue_number,
+                       (ARRAY_AGG(COALESCE(NULLIF(q.destination_dn_name, ''), q.destination_dn_number) ORDER BY a.cdr_started_at DESC))[1] AS queue_name,
+                       COUNT(*) AS calls,
+                       MAX(a.cdr_started_at) AS last_at
+                FROM ${cdrTable(rules)} a
+                JOIN ${cdrTable(rules)} q ON q.cdr_id = a.originating_cdr_id AND q.destination_dn_type = 'queue'
+                WHERE a.creation_forward_reason = 'polling'
+                  AND a.destination_dn_type = 'extension'
+                  AND a.destination_dn_number IN (SELECT DISTINCT e.extension FROM exits e WHERE e.first_hop = 'person')
+                  AND a.cdr_started_at >= $2 AND a.cdr_started_at <= $3
+                GROUP BY 1, 2
+            ),
             queue_name AS (
                 SELECT COALESCE(destination_dn_name, destination_dn_number) as name
                 FROM cdroutput
@@ -128,7 +257,28 @@ export async function GET(request: NextRequest) {
                     (SELECT json_agg(json_build_object('destination', od.destination, 'destinationName', od.destination_name, 'count', od.count))
                      FROM overflow_destinations od),
                     '[]'
-                ) as overflow_destinations
+                ) as overflow_destinations,
+                COALESCE(
+                    (SELECT json_agg(json_build_object('queueNumber', s.queue_number, 'queueName', s.queue_name, 'calls', s.calls)
+                                     ORDER BY s.calls DESC, s.queue_number)
+                     FROM inbound_sources s),
+                    '[]'
+                ) as inbound_sources,
+                COALESCE(
+                    (SELECT json_agg(json_build_object(
+                        'outcome', e.outcome, 'firstHop', e.first_hop,
+                        'queueNumber', e.queue_number, 'queueName', e.queue_name,
+                        'extension', e.extension, 'personName', e.person_name, 'calls', e.calls))
+                     FROM exits e),
+                    '[]'
+                ) as outbound_exits,
+                COALESCE(
+                    (SELECT json_agg(json_build_object(
+                        'extension', t.extension, 'queueNumber', t.queue_number, 'queueName', t.queue_name,
+                        'calls', t.calls, 'lastAt', t.last_at))
+                     FROM person_teams t),
+                    '[]'
+                ) as person_teams
             FROM queue_kpis qk
             CROSS JOIN queue_name qn
             CROSS JOIN passage_count pc
@@ -157,6 +307,23 @@ export async function GET(request: NextRequest) {
             callsReceived: uniqueCalls,
             callsAnswered: Number(row.unique_answered),
         });
+        // Équipes d'origine (« D'où viennent nos appels »), triées par volume.
+        // COUNT(*) est un bigint côté SQL : json_agg le sérialise en nombre,
+        // on normalise par prudence.
+        const inboundRows: Array<{ queueNumber: string; queueName: string | null; calls: number | string }> =
+            (typeof row.inbound_sources === 'string' ? JSON.parse(row.inbound_sources) : row.inbound_sources) ?? [];
+        // Sorties brutes et activité des personnes jointes en direct : le
+        // service compose les lignes par équipe (journal XAPI, périmètre,
+        // photos) — la route ne rend que les faits.
+        const parseJsonCol = <T,>(value: unknown): T[] =>
+            (typeof value === 'string' ? JSON.parse(value) : value) ?? [];
+        const outboundRows = parseJsonCol<{
+            outcome: string; firstHop: string; queueNumber: string | null; queueName: string | null;
+            extension: string | null; personName: string | null; calls: number | string;
+        }>(row.outbound_exits);
+        const personTeamRows = parseJsonCol<{
+            extension: string; queueNumber: string; queueName: string | null; calls: number | string; lastAt: string;
+        }>(row.person_teams);
         return NextResponse.json({
             queueNumber,
             queueName: row.queue_name,
@@ -204,6 +371,27 @@ export async function GET(request: NextRequest) {
             overflowDestinations: typeof row.overflow_destinations === 'string'
                 ? JSON.parse(row.overflow_destinations)
                 : row.overflow_destinations,
+            inboundSources: inboundRows.map((s) => ({
+                queueNumber: String(s.queueNumber),
+                queueName: s.queueName || String(s.queueNumber),
+                calls: Number(s.calls),
+            })),
+            outboundExits: outboundRows.map((e) => ({
+                outcome: e.outcome,
+                firstHop: e.firstHop,
+                queueNumber: e.queueNumber ?? null,
+                queueName: e.queueName ?? null,
+                extension: e.extension ?? null,
+                personName: e.personName ?? null,
+                calls: Number(e.calls),
+            })),
+            personTeams: personTeamRows.map((t) => ({
+                extension: String(t.extension),
+                queueNumber: String(t.queueNumber),
+                queueName: t.queueName || String(t.queueNumber),
+                calls: Number(t.calls),
+                lastAt: t.lastAt,
+            })),
         });
     } catch (error) {
         logger.error("[queue/route] Error:", error);

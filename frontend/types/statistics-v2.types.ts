@@ -92,4 +92,5 @@ export type {
     AgentStats,
     QueueKPIs,
     OverflowDestination,
+    InboundSource,
 } from "@/services/domain/call.types";

@@ -598,3 +598,58 @@ export async function resolveRosterForRules(
     if (rules.rosterSource !== "journalAuto") return null;
     return resolveJournalRoster(serverId, queueNumber, start, end);
 }
+
+/** Une appartenance du journal, vue depuis le poste. */
+export interface JournalMembership {
+    queueNumber: string;
+    lastSeenAt: Date;
+}
+
+/**
+ * APPARTENANCES PAR POSTE — le journal lu à l'envers (poste → files), pour la
+ * règle de l'équipe principale de « Où partent nos appels ».
+ *
+ * Mêmes conditions que le roster : null si le journal ne couvre pas la
+ * fenêtre (ou n'existe pas), et l'appelant retombe sur l'activité. Même
+ * filet : un journal indisponible n'est jamais une erreur des statistiques.
+ * Les noms de files ne sont pas rendus ici — l'annuaire et les segments les
+ * portent déjà.
+ */
+export async function resolveJournalMemberships(
+    serverId: ServerId,
+    extensions: readonly string[],
+    start: Date,
+    end: Date,
+): Promise<Map<string, JournalMembership[]> | null> {
+    if (extensions.length === 0) return new Map();
+    try {
+        const firstOk = await prismaAuth.xapiSnapshotRun.findFirst({
+            where: { serverId, ok: true },
+            orderBy: { ranAt: "asc" },
+            select: { ranAt: true },
+        });
+        if (!firstOk) return null;
+        const timezone = await getServerTimezone(serverId);
+        if (!windowReachesCutover(start, firstOk.ranAt, timezone)) return null;
+
+        const intervals = await prismaAuth.queueMembershipInterval.findMany({
+            where: {
+                serverId,
+                extension: { in: [...extensions] },
+                firstSeenAt: { lte: end },
+                OR: [{ closedAt: null }, { closedAt: { gte: start } }],
+            },
+            select: { extension: true, queueNumber: true, lastSeenAt: true },
+        });
+        const parPoste = new Map<string, JournalMembership[]>();
+        for (const i of intervals) {
+            const liste = parPoste.get(i.extension) ?? [];
+            liste.push({ queueNumber: i.queueNumber, lastSeenAt: i.lastSeenAt });
+            parPoste.set(i.extension, liste);
+        }
+        return parPoste;
+    } catch (error) {
+        console.error("[journal-xapi] appartenances indisponibles, repli sur l'activité :", error instanceof Error ? error.message : error);
+        return null;
+    }
+}

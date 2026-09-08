@@ -12,7 +12,7 @@ const kpis = (over: Partial<QueueKPIs> = {}): QueueKPIs => ({
     callsOverflow: 5, callsHandedOff: 7, totalPassages: 0, pingPongCount: 0,
     pingPongPercentage: 0, teamDirectReceived: 50, teamDirectAnswered: 30,
     directHandedOff: 4, directOverflow: 2, directLost: 14,
-    handedOffInPerformance: "success", overflowDestinations: [],
+    handedOffInPerformance: "success", overflowDestinations: [], inboundSources: [],
     avgWaitTimeSeconds: 0, avgTalkTimeSeconds: 0,
     ...over,
 });

@@ -241,6 +241,39 @@ export function SqueletteAffluences({ titre = "Carte des Affluences" }: { titre?
     );
 }
 
+/** Largeurs FIXES des barres de provenance (en %), décroissantes comme le vrai. */
+const LARGEURS_PROVENANCE = [100, 42, 27, 22, 20, 15];
+
+/**
+ * D'où viennent nos appels : le titre est écrit, la grille des barres a sa
+ * forme (libellé, barre, nombre) ; seuls les noms, les longueurs et les
+ * chiffres manquent.
+ */
+export function SqueletteProvenance({ titre = "D'où viennent nos appels" }: { titre?: string }) {
+    return (
+        <div className="rounded-xl border border-slate-200 bg-white p-6">
+            <div className="mb-4 flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-slate-900">{titre}</h3>
+                <Skeleton className="h-4 w-4 rounded-full" />
+            </div>
+            <div className="mb-5 flex items-baseline gap-3">
+                <Skeleton className="h-8 w-16" />
+                <Skeleton className="h-3 w-80" />
+            </div>
+            <div className="space-y-1">
+                {LARGEURS_PROVENANCE.map((l, i) => (
+                    <div key={i} className="grid grid-cols-[1.75rem_minmax(0,11rem)_1fr_3.25rem] items-center gap-3 px-2 py-1">
+                        <Skeleton className="h-7 w-7 rounded-full" />
+                        <Skeleton className="h-3.5 w-36" />
+                        <Skeleton className="h-3.5 rounded-r rounded-l-none" style={{ width: `${l}%` }} />
+                        <Skeleton className="ml-auto h-3.5 w-8" />
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 /** L'écran de statistiques au complet, à sa taille définitive. */
 export function SqueletteEcranStats() {
     return (
@@ -250,6 +283,10 @@ export function SqueletteEcranStats() {
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                 <div className="lg:col-span-2"><SqueletteCourbe /></div>
                 <div className="lg:col-span-1"><SqueletteAffluences /></div>
+            </div>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <SqueletteProvenance />
+                <SqueletteProvenance titre="Où partent nos appels" />
             </div>
         </div>
     );

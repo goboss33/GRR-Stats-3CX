@@ -609,3 +609,28 @@ describe("roster fermé (règle « source de l'équipe », journal XAPI)", () =>
         expect(sql).toContain("('152', 'D''Angelo, Marie')");
     });
 });
+
+describe("provenance — la file sollicitée juste avant la nôtre (from_queue)", () => {
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
+
+    it("est lue à rebours dans le même appel, sur une AUTRE file, la plus récente d'abord", () => {
+        const sql = buildTeamCTEChain(rules(), P);
+        expect(sql).toContain("prev.queue_number AS from_queue");
+        expect(sql).toContain("prev.queue_name AS from_queue_name");
+        expect(sql).toContain("AND o.cdr_started_at < c.cdr_started_at\n            ORDER BY o.cdr_started_at DESC\n            LIMIT 1\n        ) prev ON TRUE");
+        // Le débordement reste son miroir exact : même corrélation, sens opposé.
+        expect(sql).toContain("AND o.cdr_started_at > c.cdr_started_at\n            ) AS overflowed");
+    });
+
+    it("lit la table au grain choisi, comme le débordement", () => {
+        const sql = buildTeamCTEChain(rules({ callGrain: "merged" }), P);
+        expect(sql).toContain("FROM cdroutput_merged o");
+        expect(sql).not.toContain("FROM cdroutput o\n");
+    });
+
+    it("traverse call_queue_outcomes sous les trois règles multiPassage", () => {
+        for (const multiPassage of ["best", "last", "each"] as const) {
+            expect(buildCallQueueOutcomesCTE(rules({ multiPassage }))).toContain("from_queue, from_queue_name");
+        }
+    });
+});
