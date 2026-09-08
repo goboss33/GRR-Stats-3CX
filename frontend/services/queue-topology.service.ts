@@ -157,7 +157,17 @@ async function queryOutcomes(serverId: ServerId, queueNumber: string, since: Dat
         prisma.$queryRaw<Array<{ passages: bigint; answered: bigint; abandoned: bigint; others: bigint }>>`
             SELECT
                 COUNT(*) AS passages,
-                COUNT(*) FILTER (WHERE q.termination_reason_details = 'polling') AS answered,
+                -- Répondu : la sonnerie décrochée (le passage finit en « polling »),
+                -- ou la PRISE de l'appel en attente par un agent depuis son client
+                -- 3CX (segment transfer du passage vers son poste, décroché) —
+                -- même définition que le socle (sqlAgentLegOfPassage).
+                COUNT(*) FILTER (WHERE q.termination_reason_details = 'polling'
+                    OR EXISTS (SELECT 1 FROM cdroutput a
+                               WHERE a.originating_cdr_id = q.cdr_id
+                                 AND a.creation_method = 'transfer'
+                                 AND a.destination_dn_type = 'extension'
+                                 AND COALESCE(a.destination_entity_type, '') <> 'voicemail'
+                                 AND a.cdr_answered_at IS NOT NULL)) AS answered,
                 COUNT(*) FILTER (WHERE q.continued_in_cdr_id IS NULL
                     AND q.termination_reason = 'src_participant_terminated'
                     AND COALESCE(q.termination_reason_details, '') <> 'polling') AS abandoned,
@@ -184,6 +194,10 @@ async function queryOutcomes(serverId: ServerId, queueNumber: string, since: Dat
             WHERE q.destination_dn_number = ${queueNumber} AND q.destination_dn_type = 'queue'
               AND q.cdr_started_at >= ${since}
               AND COALESCE(q.termination_reason_details, '') <> 'polling'
+              -- Une prise dans la file continue vers le poste de l'agent : c'est
+              -- un décroché (compté ci-dessus), pas un routage.
+              AND NOT (n.creation_method = 'transfer' AND n.destination_dn_type = 'extension'
+                       AND COALESCE(n.destination_entity_type, '') <> 'voicemail' AND n.cdr_answered_at IS NOT NULL)
             GROUP BY 1, 2, 3, 4, 5, 6, 7 ORDER BY 8 DESC
         `,
     ]);
@@ -268,6 +282,8 @@ async function computeTopology(serverId: ServerId, queueNumber: string): Promise
                    MAX(c.cdr_started_at) AS last_polled
             FROM cdroutput c
             JOIN cdroutput q ON q.cdr_id = c.originating_cdr_id
+            -- Membre = SONNÉ par la file ; une prise dans la file ne fait pas
+            -- une appartenance (même doctrine que queue_agents du socle).
             WHERE c.creation_method = 'route_to' AND c.creation_forward_reason = 'polling'
               AND q.destination_dn_type = 'queue' AND q.destination_dn_number = ${queueNumber}
               AND c.cdr_started_at >= ${memberSince}

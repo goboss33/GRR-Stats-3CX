@@ -6,6 +6,7 @@ import {
 } from "@/services/domain/call-aggregation";
 import type { LogsFilters, LogsSort } from "@/services/domain/call.types";
 import { parseSearchPattern } from "@/services/domain/extension-search";
+import { sqlAgentLegOfPassage } from "@/services/domain/call-classification";
 
 export interface AnalyticsQueryParams {
     startDate: Date;
@@ -193,7 +194,7 @@ export function buildAnalyticsCTEs(
             FROM ${cdr} p
             WHERE ${dateOnlyWhereClause}
               AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-              AND p.creation_forward_reason = 'polling'
+              AND ${sqlAgentLegOfPassage("p")}
               AND p.cdr_answered_at IS NOT NULL
             ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC, p.cdr_id ASC
         ),
@@ -206,7 +207,7 @@ export function buildAnalyticsCTEs(
               AND NOT EXISTS (
                   SELECT 1 FROM ${cdr} p
                   WHERE p.originating_cdr_id = c.cdr_id
-                    AND p.creation_forward_reason = 'polling'
+                    AND ${sqlAgentLegOfPassage("p")}
                     AND p.cdr_answered_at IS NOT NULL
               )
               AND EXISTS (

@@ -14,6 +14,7 @@ import {
     cdrTable,
     type ClassificationRules,
     type PassageOutcome,
+    sqlAgentLegOfPassage,
 } from "@/services/domain/call-classification";
 import { getClassificationRules } from "@/lib/classification-rules";
 import { resolveRosterForRules } from "@/services/xapi-journal.service";
@@ -305,9 +306,8 @@ function buildAggregatedQueryParts(
               AND EXISTS (
                   SELECT 1 FROM ${cdr} p
                   WHERE p.originating_cdr_id = c.cdr_id
-                    AND p.creation_forward_reason = 'polling'
+                    AND ${sqlAgentLegOfPassage("p")}
                     AND p.cdr_answered_at IS NOT NULL
-                    AND p.destination_dn_type = 'extension'
               )
             ORDER BY c.call_history_id, c.cdr_started_at DESC
         )`;
@@ -665,7 +665,7 @@ function buildAggregateCTEs(
             FROM ${cdr} p
             WHERE ${dateOnlyWhereClause}
               AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-              AND p.creation_forward_reason = 'polling'
+              AND ${sqlAgentLegOfPassage("p")}
               AND p.cdr_answered_at IS NOT NULL
             ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC, p.cdr_id ASC
         ),
@@ -678,7 +678,7 @@ function buildAggregateCTEs(
               AND NOT EXISTS (
                   SELECT 1 FROM ${cdr} p
                   WHERE p.originating_cdr_id = c.cdr_id
-                    AND p.creation_forward_reason = 'polling'
+                    AND ${sqlAgentLegOfPassage("p")}
                     AND p.cdr_answered_at IS NOT NULL
               )
               AND EXISTS (
@@ -944,7 +944,7 @@ function buildCountQuery(
             FROM ${cdr} p
             WHERE ${dateOnlyWhereClause}
               AND p.call_history_id IN (SELECT call_history_id FROM call_aggregates)
-              AND p.creation_forward_reason = 'polling'
+              AND ${sqlAgentLegOfPassage("p")}
               AND p.cdr_answered_at IS NOT NULL
             ORDER BY p.originating_cdr_id, p.cdr_answered_at ASC, p.cdr_id ASC
         ),
@@ -957,7 +957,7 @@ function buildCountQuery(
               AND NOT EXISTS (
                   SELECT 1 FROM ${cdr} p
                   WHERE p.originating_cdr_id = c.cdr_id
-                    AND p.creation_forward_reason = 'polling'
+                    AND ${sqlAgentLegOfPassage("p")}
                     AND p.cdr_answered_at IS NOT NULL
               )
               AND EXISTS (

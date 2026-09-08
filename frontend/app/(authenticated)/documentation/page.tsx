@@ -37,6 +37,15 @@ interface Decision {
 
 const decisions: Decision[] = [
     {
+        id: "1.19",
+        category: "Statistiques Queue",
+        title: "La prise d'un appel dans la file est un décroché",
+        date: "8 septembre 2026",
+        summary: "Un agent peut prendre un appel en attente depuis son client 3CX au lieu d'attendre que la file le sonne. 3CX écrit alors un segment « transfer » du passage en file vers son poste, sans aucune sonnerie « polling ». Ce segment décroché est désormais reconnu comme un décroché dans la file — pour le statut du passage (Répondu, Transféré), le crédit du collaborateur, les journaux et la carte de parcours. Il ne fait PAS de son auteur un membre de l'équipe : membre = sonné par la file (une gérante qui récupère son propre appel en attente au Service Client n'en devient pas agent — sinon ses appels directs tomberaient dans l'équipe : +1 150 directs et 6 faux agents mesurés sur la 958). Rien ne change pour les décrochés par sonnerie, et un passage ne porte jamais les deux signaux (vérifié sur août 2026, toutes files).",
+        justification: "Le socle ne connaissait qu'une façon de décrocher : une sonnerie distribuée par la file, décrochée. Sur le Service Client de Genève (« Sonne tous » à 3 600 s), un agent qui raccroche prend l'appel suivant dans la file : 624 prises sur 7 816 passages en août 2026, invisibles pour le socle. Conséquences mesurées : ~570 appels servis par Casas, Chautems ou Valente-Ribeiro classés Perdus, et 49 appels pris puis transférés à une gérance classés Débordés — sur une file qui, par configuration, ne peut pas déborder (non-réponse → groupe → script → retour dans la file). Le phénomène est propre à cette file (900 : 2 cas, ailleurs 0).",
+        impact: "Prédicat partagé sqlAgentLegOfPassage (sonnerie polling OU transfer du passage vers un poste, hors messagerie) dans la sonde de queue_passage_facts (answered_here, temps de conversation et d'attente), queue_polling du tableau des collaborateurs, les CTE queue_outcome / queue_overflow des journaux, la vue « file de réponse » des journaux, la carte de parcours (répondus, routages) et les destinations (« Où partent nos appels »). L'appartenance (queue_agents du socle, membres de la carte de parcours) reste fondée sur la sonnerie. Effet sur la 958 en août 2026 : ~570 Perdus deviennent Répondus ou Transférés, 49 Débordés deviennent Transférés ; aucune autre file ne bouge. Effet rétroactif : les périodes passées du Service Client changent.",
+    },
+    {
         id: "1.18",
         category: "Statistiques Queue",
         title: "« D'où viennent nos appels » et « Où partent nos appels » : les échanges avec les autres équipes",

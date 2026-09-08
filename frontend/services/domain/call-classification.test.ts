@@ -16,6 +16,7 @@ import {
     DEFAULT_OUTCOME_GROUPING,
     outcomesForBucket,
     sumBucket,
+    sqlAgentLegOfPassage,
     type ClassificationRules,
     type PassageFacts,
     type PassageOutcome,
@@ -435,9 +436,9 @@ describe("hors horaires — clos par les heures de bureau du département", () =
         expect(sql).not.toContain("c.creation_forward_reason, '')) IN ('out_of_office'");
     });
 
-    it("la sonde LATERAL garde la sémantique des sonneries : polling vers une extension seulement", () => {
+    it("la sonde LATERAL ne juge « décroché ici » que les sonneries et prises d'agents, jamais le successeur horaire", () => {
         const sql = buildTeamCTEChain(rules(), P);
-        expect(sql).toContain("FILTER (WHERE p.creation_forward_reason = 'polling' AND p.destination_dn_type = 'extension') AS answered_here");
+        expect(sql).toContain(`FILTER (WHERE ${sqlAgentLegOfPassage("p")}) AS answered_here`);
         expect(sql).not.toContain("WHERE p.originating_cdr_id = c.cdr_id\n              AND p.creation_forward_reason = 'polling'");
     });
 
@@ -607,6 +608,38 @@ describe("roster fermé (règle « source de l'équipe », journal XAPI)", () =>
         });
         expect(sql).not.toContain("DROP TABLE");
         expect(sql).toContain("('152', 'D''Angelo, Marie')");
+    });
+});
+
+describe("prise dans la file — un décroché sans sonnerie (sqlAgentLegOfPassage)", () => {
+    const P = { queueExpr: "$1", startExpr: "$2", endExpr: "$3" };
+
+    it("reconnaît la sonnerie distribuée ET la prise depuis le client 3CX, vers un poste, hors messagerie", () => {
+        const sql = sqlAgentLegOfPassage("p");
+        expect(sql).toContain("p.creation_forward_reason = 'polling' OR p.creation_method = 'transfer'");
+        expect(sql).toContain("p.destination_dn_type = 'extension'");
+        expect(sql).toContain("COALESCE(p.destination_entity_type, '') <> 'voicemail'");
+    });
+
+    it("le même prédicat sert au statut du passage et au crédit des collaborateurs", () => {
+        const chaine = buildTeamCTEChain(rules(), P);
+        // Statut du passage : les trois mesures de la sonde.
+        expect(chaine.split(sqlAgentLegOfPassage("p")).length - 1).toBe(3);
+        // Crédit des collaborateurs.
+        expect(buildAgentCTEChain(rules())).toContain(`WHERE ${sqlAgentLegOfPassage("p")}`);
+        // Plus aucune hypothèse « polling seul » sur un décroché d'agent.
+        expect(chaine).not.toContain("p.creation_forward_reason = 'polling' AND p.destination_dn_type = 'extension'");
+    });
+
+    it("mais PAS à l'appartenance : membre = sonné par la file, une prise n'en fait pas un agent", () => {
+        // Cas réel : une gérante récupère son propre appel en attente au
+        // Service Client — la compter membre ferait tomber ses directs dans
+        // l'équipe (+1 150 sur la 958 en août 2026).
+        const roster = "child.creation_method = 'route_to'\n          AND child.creation_forward_reason = 'polling'";
+        expect(buildTeamCTEChain(rules(), P)).toContain(roster);
+        expect(buildTeamCTEChain(rules(), { ...P, rosterMembers: [{ extension: "355", name: "Casas, Dimitri" }] }))
+            .toContain("child.creation_method = 'route_to'\n              AND child.creation_forward_reason = 'polling'");
+        expect(buildTeamCTEChain(rules(), P)).not.toContain(`WHERE ${sqlAgentLegOfPassage("child")}`);
     });
 });
 

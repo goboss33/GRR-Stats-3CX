@@ -614,6 +614,30 @@ export interface PassageCTEParams {
 }
 
 /**
+ * Un enfant du passage en file par lequel un agent « décroche ici ».
+ *
+ * Deux signatures, qui ne se recouvrent jamais (0 passage portant les deux
+ * en août 2026, toutes files) :
+ * - la sonnerie distribuée par la file (route_to/polling) — le cas général ;
+ * - la PRISE de l'appel en attente par un agent depuis son client 3CX : un
+ *   segment `transfer` du passage vers son poste, sans qu'aucune sonnerie
+ *   n'ait été émise. Constaté sur le Service Client de Genève (« Sonne tous »
+ *   à 3 600 s : un agent qui raccroche prend l'appel suivant dans la file
+ *   plutôt que d'attendre d'être sonné) : 624 prises sur 7 816 passages en
+ *   août 2026, dont ~570 classées Perdues et 49 Débordées faute de les voir.
+ *
+ * Même prédicat pour le statut du passage, le crédit des collaborateurs et
+ * les journaux : un décroché est un décroché. PAS pour l'appartenance à
+ * l'équipe (queue_agents) : membre = sonné par la file — quelqu'un d'une
+ * autre équipe peut prendre un appel en attente sans être de la maison.
+ */
+export function sqlAgentLegOfPassage(alias: string): string {
+    return `(${alias}.destination_dn_type = 'extension'
+              AND COALESCE(${alias}.destination_entity_type, '') <> 'voicemail'
+              AND (${alias}.creation_forward_reason = 'polling' OR ${alias}.creation_method = 'transfer'))`;
+}
+
+/**
  * COUCHE 2 — un enregistrement par passage en file, avec son statut.
  *
  * Produit deux CTE : `queue_passage_facts` (les faits bruts) puis
@@ -710,13 +734,11 @@ export function buildQueuePassagesCTE(rules: ClassificationRules, params: Passag
             -- quatrième. Les FILTER reproduisent l'ancien WHERE des sonneries.
             SELECT
                 bool_or(p.cdr_answered_at IS NOT NULL)
-                    FILTER (WHERE p.creation_forward_reason = 'polling' AND p.destination_dn_type = 'extension') AS answered_here,
+                    FILTER (WHERE ${sqlAgentLegOfPassage("p")}) AS answered_here,
                 MAX(EXTRACT(EPOCH FROM (p.cdr_ended_at - p.cdr_answered_at)))
-                    FILTER (WHERE p.cdr_answered_at IS NOT NULL
-                            AND p.creation_forward_reason = 'polling' AND p.destination_dn_type = 'extension') AS talk_seconds,
+                    FILTER (WHERE p.cdr_answered_at IS NOT NULL AND ${sqlAgentLegOfPassage("p")}) AS talk_seconds,
                 MIN(EXTRACT(EPOCH FROM (p.cdr_answered_at - c.cdr_started_at)))
-                    FILTER (WHERE p.cdr_answered_at IS NOT NULL
-                            AND p.creation_forward_reason = 'polling' AND p.destination_dn_type = 'extension') AS answer_wait_seconds,
+                    FILTER (WHERE p.cdr_answered_at IS NOT NULL AND ${sqlAgentLegOfPassage("p")}) AS answer_wait_seconds,
                 bool_or(LOWER(COALESCE(p.creation_forward_reason, '')) IN (${SQL_OFFICE_HOURS_REASONS})) AS routed_by_hours
             FROM ${cdr} p
             WHERE p.originating_cdr_id = c.cdr_id
@@ -1071,6 +1093,11 @@ export function buildTeamCTEChain(rules: ClassificationRules, params: PassageCTE
             COALESCE(child.destination_dn_name, child.destination_participant_name, child.destination_dn_number) AS agent_name
         FROM ${cdr} child
         JOIN ${cdr} parent ON child.originating_cdr_id = parent.cdr_id
+        -- Membre = SONNÉ par la file. Une prise dans la file (cf.
+        -- sqlAgentLegOfPassage) est un décroché, pas une appartenance : une
+        -- gérante qui récupère son propre appel en attente au Service Client
+        -- n'en devient pas membre — sinon ses appels directs tomberaient dans
+        -- l'équipe (mesuré : +1 150 directs et 6 faux agents sur la 958).
         WHERE child.creation_method = 'route_to'
           AND child.creation_forward_reason = 'polling'
           AND parent.destination_dn_type = 'queue'
@@ -1210,8 +1237,7 @@ export function buildAgentCTEChain(rules: ClassificationRules): string {
         FROM ${cdrTable(rules)} p
         JOIN queue_passages qp ON qp.cdr_id = p.originating_cdr_id
         JOIN queue_calls qc ON qc.call_history_id = p.call_history_id
-        WHERE p.creation_forward_reason = 'polling'
-          AND p.destination_dn_type = 'extension'
+        WHERE ${sqlAgentLegOfPassage("p")}
     ),
     agent_queue_stats AS (
         SELECT

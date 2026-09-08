@@ -8,6 +8,7 @@ import { resolveApiKeyScope, isQueueInScope } from "@/lib/access-scope";
 import {
     buildTeamCTEChain,
     cdrTable,
+    sqlAgentLegOfPassage,
     type CallOrigin,
 } from "@/services/domain/call-classification";
 import { SQL_REAL_PARTY_DEST_TYPES } from "@/services/domain/call-aggregation";
@@ -177,7 +178,7 @@ export async function GET(request: NextRequest) {
                            la.cdr_started_at AS started_at
                     FROM ${cdrTable(rules)} la
                     LEFT JOIN ${cdrTable(rules)} q
-                           ON la.creation_forward_reason = 'polling'
+                           ON (la.creation_forward_reason = 'polling' OR la.creation_method = 'transfer')
                           AND q.cdr_id = la.originating_cdr_id
                           AND q.destination_dn_type = 'queue'
                     WHERE la.call_history_id = d.call_history_id
@@ -224,8 +225,7 @@ export async function GET(request: NextRequest) {
                        MAX(a.cdr_started_at) AS last_at
                 FROM ${cdrTable(rules)} a
                 JOIN ${cdrTable(rules)} q ON q.cdr_id = a.originating_cdr_id AND q.destination_dn_type = 'queue'
-                WHERE a.creation_forward_reason = 'polling'
-                  AND a.destination_dn_type = 'extension'
+                WHERE ${sqlAgentLegOfPassage("a")}
                   AND a.destination_dn_number IN (SELECT DISTINCT e.extension FROM exits e WHERE e.first_hop = 'person')
                   AND a.cdr_started_at >= $2 AND a.cdr_started_at <= $3
                 GROUP BY 1, 2
