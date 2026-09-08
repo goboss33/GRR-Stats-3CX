@@ -108,13 +108,21 @@ function parVolume<T extends { calls: number; queueName: string }>(a: T, b: T): 
 export function composerDestinations(
     exits: readonly OutboundExit[],
     equipePrincipale: (extension: string) => EquipePrincipale | null,
+    /**
+     * La personne est-elle MEMBRE de cette file, c'est-à-dire sonnée par elle
+     * sur la période (décision 1.19) ? Un visage ne s'affiche sous une équipe
+     * que s'il lui appartient : quelqu'un à qui la réception passe un appel,
+     * ou qui récupère son propre appel en attente, a bien pris l'appel — mais
+     * il n'est pas de la maison, et l'y montrer ferait croire le contraire.
+     */
+    estMembre: (extension: string, queueNumber: string) => boolean,
 ): OutboundTeam[] {
     type Ligne = Omit<OutboundTeam, "persons"> & { personnes: Map<string, OutboundPerson> };
     const lignes = new Map<string, Ligne>();
-    const ligne = (key: string, init: () => Omit<Ligne, "calls" | "overflow" | "unanswered" | "directLine" | "personnes">): Ligne => {
+    const ligne = (key: string, init: () => Omit<Ligne, "calls" | "overflow" | "notTaken" | "directLine" | "personnes">): Ligne => {
         let l = lignes.get(key);
         if (!l) {
-            l = { ...init(), calls: 0, overflow: 0, unanswered: 0, directLine: 0, personnes: new Map() };
+            l = { ...init(), calls: 0, overflow: 0, notTaken: 0, directLine: 0, personnes: new Map() };
             lignes.set(key, l);
         }
         return l;
@@ -139,18 +147,21 @@ export function composerDestinations(
         let l: Ligne;
         let alsoIn: string[] = [];
         let direct = false;
+        // Un visage n'est posé que s'il a sa place sur cette ligne.
+        let poseVisage = false;
         switch (e.firstHop) {
             case "queue": {
                 if (!e.queueNumber) { l = regroupement("unknown"); break; }
                 const numero = e.queueNumber;
                 l = ligne(numero, () => ({ queueNumber: numero, queueName: e.queueName || numero, kind: "team", inScope: true }));
-                if (e.outcome === "overflow" && !e.extension) l.unanswered += e.calls;
+                poseVisage = !!e.extension && estMembre(e.extension, numero);
                 break;
             }
             case "person": {
                 if (!e.extension) { l = regroupement("unknown"); break; }
                 const ep = equipePrincipale(e.extension);
                 direct = true;
+                poseVisage = true;
                 if (ep) {
                     const numero = ep.queueNumber;
                     l = ligne(numero, () => ({ queueNumber: numero, queueName: ep.queueName, kind: "team", inScope: true }));
@@ -169,14 +180,17 @@ export function composerDestinations(
         }
         l.calls += e.calls;
         if (e.outcome === "overflow") l.overflow += e.calls;
-        if (e.firstHop === "queue" || e.firstHop === "person") visage(l, e, direct, alsoIn);
+        if (poseVisage) visage(l, e, direct, alsoIn);
     }
 
     return [...lignes.values()]
-        .map(({ personnes, ...reste }) => ({
-            ...reste,
-            persons: [...personnes.values()].sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name, "fr")),
-        }))
+        .map(({ personnes, ...reste }) => {
+            const persons = [...personnes.values()].sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name, "fr"));
+            // Ce que les visages ne portent pas : personne de l'équipe n'a pris
+            // ces appels. La somme se referme, à l'écran comme ici.
+            const notTaken = reste.calls - persons.reduce((acc, p) => acc + p.calls, 0);
+            return { ...reste, persons, notTaken };
+        })
         .sort(parVolume);
 }
 
@@ -199,11 +213,12 @@ export function appliquerPerimetreDestinations(
         if (inScope || regle === "name") { resultat.push({ ...t, inScope }); continue; }
         anonyme ??= {
             queueNumber: null, queueName: LIBELLES_REGROUPEMENTS.out_of_scope, kind: "out_of_scope",
-            calls: 0, overflow: 0, unanswered: 0, directLine: 0, persons: [], inScope: false,
+            calls: 0, overflow: 0, notTaken: 0, directLine: 0, persons: [], inScope: false,
         };
         anonyme.calls += t.calls;
         anonyme.overflow += t.overflow;
-        anonyme.unanswered += t.unanswered;
+        // Le regroupement perd ses visages : tous ses appels y deviennent « non pris ».
+        anonyme.notTaken += t.calls;
         anonyme.directLine += t.directLine;
     }
     if (anonyme) resultat.push(anonyme);

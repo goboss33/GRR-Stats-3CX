@@ -62,7 +62,9 @@ export function DestinationsAppels({ teams, logsEnabled, queueNumber, startDate,
             href={null}
             discret={discret}
             teinte={t.kind === "team" ? undefined : "bg-blue-300"}
-            visages={t.persons.length > 0 ? <PileVisages persons={t.persons} lien={lienPersonne} /> : undefined}
+            visages={t.persons.length > 0 || (t.kind === "team" && t.notTaken > 0)
+                ? <PileVisages persons={t.persons} notTaken={t.kind === "team" ? t.notTaken : 0} lien={lienPersonne} />
+                : undefined}
         />
     );
 
@@ -140,7 +142,12 @@ function iconeDe(t: OutboundTeam, discret: boolean) {
  * Les personnes d'une équipe : les premières en pile, le reste derrière un
  * « +N » qui ouvre la liste complète — tout le monde y est, avec son nombre.
  */
-function PileVisages({ persons, lien }: { persons: OutboundPerson[]; lien: (p: OutboundPerson) => string | null }) {
+function PileVisages({ persons, notTaken, lien }: {
+    persons: OutboundPerson[];
+    /** Appels que personne de l'équipe n'a pris : la somme des visages ne fait pas le total sans eux. */
+    notTaken: number;
+    lien: (p: OutboundPerson) => string | null;
+}) {
     const visibles = persons.slice(0, VISAGES_MAX);
     const reste = persons.length - visibles.length;
     const visage = (p: OutboundPerson, taille = "h-6 w-6") => {
@@ -161,6 +168,13 @@ function PileVisages({ persons, lien }: { persons: OutboundPerson[]; lien: (p: O
                     {visage(p)}
                 </Tip>
             ))}
+            {notTaken > 0 && (
+                <Tip content={`${notTaken} appel${notTaken > 1 ? "s" : ""} que personne de cette équipe n'a pris`}>
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-50 text-[10px] font-medium text-red-700 ring-2 ring-white">
+                        {notTaken}
+                    </span>
+                </Tip>
+            )}
             {reste > 0 && (
                 <Popover>
                     <PopoverTrigger asChild>

@@ -16,6 +16,8 @@ const exit = (over: Partial<OutboundExit>): OutboundExit => ({
 });
 
 const d = (iso: string) => new Date(iso);
+/** Par défaut, tout le monde est membre de la file où il décroche. */
+const membre = () => true;
 
 describe("équipe principale (arbitrage du 8 sept. 2026)", () => {
     const activite = [
@@ -79,9 +81,9 @@ describe("composition par équipe", () => {
         const teams = composerDestinations([
             exit({ outcome: "overflow", firstHop: "queue", queueNumber: "900", queueName: "Réception Pully", extension: "100", personName: "Sequeiros, Lucia", calls: 20 }),
             exit({ outcome: "overflow", firstHop: "queue", queueNumber: "900", queueName: "Réception Pully", calls: 8 }),
-        ], resoudre);
+        ], resoudre, membre);
         expect(teams).toHaveLength(1);
-        expect(teams[0]).toMatchObject({ queueNumber: "900", kind: "team", calls: 28, overflow: 28, unanswered: 8, directLine: 0 });
+        expect(teams[0]).toMatchObject({ queueNumber: "900", kind: "team", calls: 28, overflow: 28, notTaken: 8, directLine: 0 });
         expect(teams[0].persons).toEqual([{ extension: "100", name: "Sequeiros, Lucia", calls: 20, viaDirectLine: 0, alsoIn: [] }]);
     });
 
@@ -89,7 +91,7 @@ describe("composition par équipe", () => {
         const teams = composerDestinations([
             exit({ firstHop: "person", extension: "790", personName: "Schneider, Matthew", calls: 2 }),
             exit({ firstHop: "queue", queueNumber: "947", queueName: "Gérance GE-G01", extension: "790", personName: "Schneider, Matthew", calls: 3 }),
-        ], resoudre);
+        ], resoudre, membre);
         expect(teams).toHaveLength(1);
         expect(teams[0]).toMatchObject({ queueNumber: "947", calls: 5, directLine: 2 });
         expect(teams[0].persons[0]).toMatchObject({ extension: "790", calls: 5, viaDirectLine: 2, alsoIn: ["Gérance GE-G05"] });
@@ -101,12 +103,35 @@ describe("composition par équipe", () => {
             exit({ firstHop: "external", calls: 4 }),
             exit({ firstHop: "none", calls: 2 }),
             exit({ firstHop: "queue", queueNumber: null, calls: 1 }),
-        ], resoudre);
+        ], resoudre, membre);
         const parKind = Object.fromEntries(teams.map((t) => [t.kind, t]));
         expect(parKind.no_team).toMatchObject({ queueName: LIBELLES_REGROUPEMENTS.no_team, calls: 1, directLine: 1 });
         expect(parKind.no_team.persons[0].extension).toBe("999");
         expect(parKind.external).toMatchObject({ calls: 4, persons: [] });
         expect(parKind.unknown).toMatchObject({ calls: 3, persons: [] });
+    });
+
+    it("un visage ne s'affiche que sous une équipe dont la personne est MEMBRE", () => {
+        // Cas réel du 25 août 2026 : la Réception Pully passe un appel à
+        // Lulzim Adzami (Gérance PU-C03), qu'elle n'a jamais sonné. L'appel
+        // reste sur la ligne de la réception, mais sans son visage.
+        const teams = composerDestinations([
+            exit({ outcome: "overflow", firstHop: "queue", queueNumber: "900", queueName: "Réception Pully", extension: "100", personName: "Sequeiros, Lucia", calls: 19 }),
+            exit({ outcome: "overflow", firstHop: "queue", queueNumber: "900", queueName: "Réception Pully", extension: "151", personName: "Adzami, Lulzim", calls: 1 }),
+        ], () => null, (ext) => ext === "100");
+        expect(teams[0].calls).toBe(20);
+        expect(teams[0].persons.map((p) => p.extension)).toEqual(["100"]);
+        expect(teams[0].notTaken).toBe(1);
+    });
+
+    it("« non pris » = le total moins les visages : sans décroché comme avec un décrocheur extérieur", () => {
+        const teams = composerDestinations([
+            exit({ outcome: "overflow", firstHop: "queue", queueNumber: "900", queueName: "R", extension: "100", personName: "S", calls: 19 }),
+            exit({ outcome: "overflow", firstHop: "queue", queueNumber: "900", queueName: "R", extension: "106", personName: "P", calls: 13 }),
+            exit({ outcome: "overflow", firstHop: "queue", queueNumber: "900", queueName: "R", calls: 3 }),
+        ], () => null, membre);
+        expect(teams[0]).toMatchObject({ calls: 35, notTaken: 3 });
+        expect(teams[0].persons.reduce((a, p) => a + p.calls, 0) + teams[0].notTaken).toBe(teams[0].calls);
     });
 
     it("conservation : chaque appel parti tombe dans exactement une ligne", () => {
@@ -117,7 +142,7 @@ describe("composition par équipe", () => {
             exit({ firstHop: "external", calls: 3 }),
             exit({ firstHop: "none", calls: 1 }),
         ];
-        const teams = composerDestinations(exits, resoudre);
+        const teams = composerDestinations(exits, resoudre, membre);
         const total = exits.reduce((acc, e) => acc + e.calls, 0);
         expect(teams.reduce((acc, t) => acc + t.calls, 0)).toBe(total);
         expect(teams.reduce((acc, t) => acc + t.overflow, 0)).toBe(28);
@@ -128,7 +153,7 @@ describe("composition par équipe", () => {
             exit({ firstHop: "queue", queueNumber: "993", queueName: "G", extension: "139", personName: "Robert-Charrue, A.", calls: 4 }),
             exit({ firstHop: "queue", queueNumber: "993", queueName: "G", extension: "139", personName: "Thaqi, Arlind", calls: 6 }),
             exit({ outcome: "overflow", firstHop: "queue", queueNumber: "993", queueName: "G", extension: "139", personName: "Thaqi, Arlind", calls: 2 }),
-        ], () => null);
+        ], () => null, membre);
         expect(teams[0].persons.map((p) => [p.name, p.calls])).toEqual([["Thaqi, Arlind", 8], ["Robert-Charrue, A.", 4]]);
     });
 
@@ -137,7 +162,7 @@ describe("composition par équipe", () => {
             exit({ firstHop: "queue", queueNumber: "958", queueName: "SC", extension: "355", personName: "Casas", calls: 2 }),
             exit({ firstHop: "queue", queueNumber: "958", queueName: "SC", extension: "365", personName: "Valente", calls: 9 }),
             exit({ firstHop: "queue", queueNumber: "900", queueName: "R", extension: "100", personName: "Sequeiros", calls: 30 }),
-        ], resoudre);
+        ], resoudre, membre);
         expect(teams.map((t) => t.queueNumber)).toEqual(["900", "958"]);
         expect(teams[1].persons.map((p) => p.extension)).toEqual(["365", "355"]);
     });
@@ -148,7 +173,7 @@ describe("règle de périmètre sur les destinations", () => {
         exit({ firstHop: "queue", queueNumber: "900", queueName: "R", extension: "100", personName: "S", calls: 30 }),
         exit({ firstHop: "queue", queueNumber: "958", queueName: "SC", extension: "365", personName: "V", calls: 9 }),
         exit({ firstHop: "external", calls: 3 }),
-    ], () => null);
+    ], () => null, membre);
     const dansPerimetre = (n: string) => n === "900";
 
     it("« name » : nommées, périmètre annoté", () => {

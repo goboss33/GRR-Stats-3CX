@@ -393,8 +393,13 @@ export interface OutboundTeam {
     calls: number;
     /** dont partis SANS décroché ici (débordements). */
     overflow: number;
-    /** dont débordés vers cette file sans que personne n'y décroche. */
-    unanswered: number;
+    /**
+     * Appels que PERSONNE DE CETTE ÉQUIPE n'a pris : ni décroché du tout, ni
+     * décroché par quelqu'un d'extérieur qui a récupéré l'appel. C'est
+     * exactement l'écart entre `calls` et la somme des visages — la pastille
+     * rouge de la carte.
+     */
+    notTaken: number;
     /** dont joints par une ligne directe (rattachés par l'équipe principale). */
     directLine: number;
     persons: OutboundPerson[];

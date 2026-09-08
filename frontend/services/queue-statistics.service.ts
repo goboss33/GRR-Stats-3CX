@@ -242,7 +242,13 @@ async function composerDestinationsEquipe(
         return choisirEquipePrincipale(appartenances, activite.get(extension) ?? []);
     };
 
-    const composees = composerDestinations(sorties.exits, equipePrincipale)
+    // Appartenance : sonné par cette file sur la période (person_teams ne
+    // compte que les sonneries). Un visage ne s'affiche pas sous une équipe
+    // dont la personne n'est pas membre.
+    const membres = new Set(sorties.personTeams.map((t) => `${t.extension}|${t.queueNumber}`));
+    const estMembre = (extension: string, queueNumber: string) => membres.has(`${extension}|${queueNumber}`);
+
+    const composees = composerDestinations(sorties.exits, equipePrincipale, estMembre)
         .map((t) => (t.queueNumber ? { ...t, queueName: nomFile(t.queueNumber, t.queueName) } : t));
     const teams = appliquerPerimetreDestinations(
         composees,

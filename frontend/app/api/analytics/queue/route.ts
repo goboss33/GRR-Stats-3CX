@@ -8,7 +8,6 @@ import { resolveApiKeyScope, isQueueInScope } from "@/lib/access-scope";
 import {
     buildTeamCTEChain,
     cdrTable,
-    sqlAgentLegOfPassage,
     type CallOrigin,
 } from "@/services/domain/call-classification";
 import { SQL_REAL_PARTY_DEST_TYPES } from "@/services/domain/call-aggregation";
@@ -213,10 +212,13 @@ export async function GET(request: NextRequest) {
                 ) x
                 GROUP BY 1, 2, 3, 5, 6
             ),
-            -- Équipe principale des personnes jointes sur leur ligne directe :
-            -- leurs sollicitations par file sur la période départagent les
-            -- appartenances du journal XAPI — ou les remplacent quand le
-            -- journal ne couvre pas la période (cf. choisirEquipePrincipale).
+            -- Appartenance et volume par file des personnes qui apparaissent
+            -- dans les sorties : SONNERIES seulement — « membre = sonné par la
+            -- file » (décision 1.19). Sert deux fois : départager l'équipe
+            -- principale d'une personne jointe sur sa ligne directe, et
+            -- vérifier qu'un visage appartient bien à la file sous laquelle il
+            -- s'affiche. Compter aussi les transferts ferait passer pour
+            -- membre de la réception quiconque reçoit d'elle un appel.
             person_teams AS (
                 SELECT a.destination_dn_number AS extension,
                        q.destination_dn_number AS queue_number,
@@ -225,8 +227,10 @@ export async function GET(request: NextRequest) {
                        MAX(a.cdr_started_at) AS last_at
                 FROM ${cdrTable(rules)} a
                 JOIN ${cdrTable(rules)} q ON q.cdr_id = a.originating_cdr_id AND q.destination_dn_type = 'queue'
-                WHERE ${sqlAgentLegOfPassage("a")}
-                  AND a.destination_dn_number IN (SELECT DISTINCT e.extension FROM exits e WHERE e.first_hop = 'person')
+                WHERE a.creation_method = 'route_to'
+                  AND a.creation_forward_reason = 'polling'
+                  AND a.destination_dn_type = 'extension'
+                  AND a.destination_dn_number IN (SELECT DISTINCT e.extension FROM exits e WHERE e.extension IS NOT NULL)
                   AND a.cdr_started_at >= $2 AND a.cdr_started_at <= $3
                 GROUP BY 1, 2
             ),
