@@ -113,7 +113,6 @@ export function ProvenanceAppels({ kpis, logsEnabled, queueNumber, startDate, en
                                         <span className="block h-3.5 rounded-r bg-blue-300" style={{ width: `${Math.max(1, (traine.calls / max) * 100)}%` }} />
                                     </span>
                                     <span className="text-right text-sm tabular-nums text-slate-500">{traine.calls}</span>
-                                    <span />
                                 </button>
                                 {traineOuverte && (
                                     <ul className="mt-1 space-y-1 border-l-2 border-slate-100 pl-3">

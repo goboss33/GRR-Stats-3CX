@@ -10,7 +10,7 @@ import type { OutboundPerson, OutboundTeam } from "@/services/domain/call.types"
 import type { CallOrigin } from "@/services/domain/call-classification";
 import { replierTraine } from "@/services/domain/provenance-appels";
 import { lienJournauxPersonne } from "@/services/domain/destinations-appels";
-import { GRILLE_ECHANGE, IconeEquipe, LigneEchange } from "@/components/stats-v2/ligne-echange";
+import { GRILLE_ECHANGE_VISAGES, IconeEquipe, LigneEchange } from "@/components/stats-v2/ligne-echange";
 
 interface DestinationsAppelsProps {
     teams: OutboundTeam[];
@@ -65,7 +65,10 @@ export function DestinationsAppels({ teams, logsEnabled, queueNumber, startDate,
             href={null}
             discret={discret}
             teinte={t.kind === "team" ? undefined : "bg-blue-300"}
-            visages={t.persons.length > 0 ? <PileVisages persons={t.persons} lien={lienPersonne} /> : undefined}
+            // Toujours la cellule des visages, même vide : les colonnes de
+            // toutes les lignes doivent s'aligner, chiffres compris.
+            visages={t.persons.length > 0 ? <PileVisages persons={t.persons} lien={lienPersonne} /> : null}
+            grille={GRILLE_ECHANGE_VISAGES}
         />
     );
 
@@ -99,7 +102,7 @@ export function DestinationsAppels({ teams, logsEnabled, queueNumber, startDate,
                                     type="button"
                                     onClick={() => setTraineOuverte((o) => !o)}
                                     aria-expanded={traineOuverte}
-                                    className={`-mx-2 ${GRILLE_ECHANGE} w-[calc(100%+1rem)] rounded-md px-2 py-1 text-left transition-colors hover:bg-slate-50`}
+                                    className={`-mx-2 ${GRILLE_ECHANGE_VISAGES} w-[calc(100%+1rem)] rounded-md px-2 py-1 text-left transition-colors hover:bg-slate-50`}
                                 >
                                     <span className="flex items-center justify-center text-slate-400">
                                         {traineOuverte ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
