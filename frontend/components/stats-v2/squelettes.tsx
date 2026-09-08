@@ -262,9 +262,9 @@ export function SqueletteProvenance({ titre = "D'où viennent nos appels" }: { t
             </div>
             <div className="space-y-1">
                 {LARGEURS_PROVENANCE.map((l, i) => (
-                    <div key={i} className="grid grid-cols-[1.75rem_minmax(0,11rem)_1fr_3.25rem] items-center gap-3 px-2 py-1">
+                    <div key={i} className="grid grid-cols-[1.75rem_minmax(0,15rem)_1fr_3.25rem] items-center gap-3 px-2 py-1">
                         <Skeleton className="h-7 w-7 rounded-full" />
-                        <Skeleton className="h-3.5 w-36" />
+                        <Skeleton className="h-3.5 w-44" />
                         <Skeleton className="h-3.5 rounded-r rounded-l-none" style={{ width: `${l}%` }} />
                         <Skeleton className="ml-auto h-3.5 w-8" />
                     </div>

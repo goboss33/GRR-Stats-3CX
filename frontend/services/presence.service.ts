@@ -253,7 +253,10 @@ export async function echantillonner(serverId: ServerId): Promise<ResumeEchantil
             }
             await consoliderPresence(serverId);
         } catch (error) {
-            console.error(`[présence] ${serverId} : consolidation en échec`, error);
+            // Une ligne, jamais une trace de pile : la consolidation repasse
+            // au quart d'heure suivant et refait le jour en cours.
+            const motif = (error instanceof Error ? error.message : String(error)).replace(/\s+/g, " ").trim().slice(0, 200);
+            console.warn(`[présence] ${serverId} : consolidation en échec — ${motif}`);
         }
     }
 

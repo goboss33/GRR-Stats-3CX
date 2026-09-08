@@ -12,7 +12,9 @@ import { Tip } from "@/components/ui/tooltip";
  * parce qu'on y a veillé. Une seule ligne de texte par ligne : les deux
  * cartes gardent la même hauteur de rangée (retour du 8 sept. 2026).
  */
-export const GRILLE_ECHANGE = "grid grid-cols-[1.75rem_minmax(0,11rem)_1fr_3.25rem_auto] items-center gap-3";
+// Le nom de l'équipe prime sur la barre : « Gérance GE-01 + GE-03 + GE-20 »
+// tient en entier, la barre prend ce qui reste (elle ne sert qu'à comparer).
+export const GRILLE_ECHANGE = "grid grid-cols-[1.75rem_minmax(0,15rem)_1fr_3.25rem_auto] items-center gap-3";
 
 /** Une équipe : l'icône du titre de l'écran, dans un rond discret. */
 export function IconeEquipe({ discret = false }: { discret?: boolean }) {

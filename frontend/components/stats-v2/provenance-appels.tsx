@@ -73,7 +73,7 @@ export function ProvenanceAppels({ kpis, logsEnabled, queueNumber, startDate, en
         <div className="rounded-xl border border-slate-200 bg-white p-6">
             <div className="mb-4 flex items-center gap-2">
                 <h3 className="text-lg font-semibold text-slate-900">D&apos;où viennent nos appels</h3>
-                <Tip content="Appels arrivés dans l'équipe parce qu'une autre équipe ne les a pas pris (ou nous les a transmis). C'est l'équipe sollicitée juste avant la nôtre qui est comptée.">
+                <Tip content="Appels arrivés dans l'équipe parce qu'une autre équipe ne les a pas pris (ou nous les a transmis).">
                     <Info className="h-4 w-4 text-slate-400 hover:text-slate-600" />
                 </Tip>
             </div>

@@ -16,6 +16,28 @@ import { getAvailableServers } from "@/lib/servers";
 const SAMPLE_EVERY_MS = 60 * 1000;
 const FIRST_SAMPLE_AFTER_MS = 20 * 1000;
 
+/**
+ * Dernier motif d'échec ANNONCÉ, par tenant : un relevé qui tourne à la
+ * minute ne doit pas noyer les logs du conteneur. Une base injoignable
+ * pendant une heure écrit UNE ligne, pas soixante traces de pile — et le
+ * retour à la normale s'annonce une fois.
+ */
+const dernierMotif = new Map<string, string | null>();
+
+/** Message d'erreur sur UNE ligne, borné — les traces Prisma font 25 lignes. */
+function bref(erreur: unknown): string {
+    const texte = erreur instanceof Error ? erreur.message : String(erreur);
+    return texte.replace(/\s+/g, " ").trim().slice(0, 200);
+}
+
+function signaler(serverId: string, motif: string | null): void {
+    const avant = dernierMotif.get(serverId) ?? null;
+    if (motif === avant) return;
+    dernierMotif.set(serverId, motif);
+    if (motif) console.warn(`[présence] ${serverId} : relevé en échec — ${motif}`);
+    else console.log(`[présence] ${serverId} : relevé rétabli`);
+}
+
 // Garde anti-double-enregistrement : le rechargement à chaud de next dev
 // réévalue les modules, mais globalThis survit.
 const FLAG = Symbol.for("grr-stats.presence-sampler");
@@ -30,13 +52,14 @@ async function tick(): Promise<void> {
         for (const serverId of getAvailableServers()) {
             try {
                 const r = await echantillonner(serverId);
-                // Un relevé qui tourne ne parle qu'aux changements notables ;
-                // l'échec, lui, se voit toujours.
-                if (!r.ran && r.reason && r.reason !== "éteint" && r.reason !== "XAPI inutilisable") {
-                    console.warn(`[présence] ${serverId} : relevé en échec — ${r.reason}`);
-                }
+                // Éteint ou sans XAPI : un silence complet, pas même une
+                // remise à zéro du motif — ce tenant ne relève rien.
+                if (r.reason === "éteint" || r.reason === "XAPI inutilisable") continue;
+                signaler(serverId, r.ran ? null : (r.reason ?? "motif inconnu"));
             } catch (error) {
-                console.error(`[présence] ${serverId} : erreur inattendue`, error);
+                // Base d'authentification injoignable, par exemple : une seule
+                // ligne, sur une seule ligne, tant que le motif ne change pas.
+                signaler(serverId, bref(error));
             }
         }
     } finally {

@@ -70,7 +70,7 @@ export function DestinationsAppels({ teams, logsEnabled, queueNumber, startDate,
         <div className="rounded-xl border border-slate-200 bg-white p-6">
             <div className="mb-4 flex items-center gap-2">
                 <h3 className="text-lg font-semibold text-slate-900">Où partent nos appels</h3>
-                <Tip content="Appels décrochés ici puis servis ailleurs (transférés) ou repartis sans décroché (débordés). Chaque appel est rattaché à sa première destination après nous : l'équipe dont la file l'a distribué, ou l'équipe principale de la personne jointe sur sa ligne directe.">
+                <Tip content="Appels décrochés ici puis servis ailleurs (transférés) ou repartis sans décroché (débordés).">
                     <Info className="h-4 w-4 text-slate-400 hover:text-slate-600" />
                 </Tip>
             </div>
@@ -136,14 +136,6 @@ function iconeDe(t: OutboundTeam, discret: boolean) {
     }
 }
 
-function descPersonne(p: OutboundPerson): string {
-    const parts = [`${p.name}${p.jobTitle ? ` — ${p.jobTitle}` : ""}`, `${p.calls} appel${p.calls > 1 ? "s" : ""}`];
-    if (p.viaDirectLine > 0 && p.viaDirectLine < p.calls) parts.push(`dont ${p.viaDirectLine} par sa ligne directe`);
-    else if (p.viaDirectLine > 0) parts.push("par sa ligne directe");
-    if (p.alsoIn.length > 0) parts.push(`aussi dans ${p.alsoIn.join(", ")}`);
-    return parts.join(" · ");
-}
-
 /**
  * Les personnes d'une équipe : les premières en pile, le reste derrière un
  * « +N » qui ouvre la liste complète — tout le monde y est, avec son nombre.
@@ -165,7 +157,7 @@ function PileVisages({ persons, lien }: { persons: OutboundPerson[]; lien: (p: O
     return (
         <span className="flex items-center -space-x-1.5">
             {visibles.map((p) => (
-                <Tip key={p.extension} content={descPersonne(p)}>
+                <Tip key={p.extension} content={`${p.name} · ${p.calls} appel${p.calls > 1 ? "s" : ""}`}>
                     {visage(p)}
                 </Tip>
             ))}
