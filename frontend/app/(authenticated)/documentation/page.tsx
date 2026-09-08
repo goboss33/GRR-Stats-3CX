@@ -37,6 +37,15 @@ interface Decision {
 
 const decisions: Decision[] = [
     {
+        id: "1.20",
+        category: "Collaborateurs",
+        title: "Présence : des parts de temps de bureau, relevées à la minute, jamais une chronologie",
+        date: "8 septembre 2026",
+        summary: "Sans taux d'activité RH, la question « ce collaborateur est-il là, prêt à recevoir les appels ? » se mesure au PBX : toutes les minutes, l'état de chaque poste est relevé dans le XAPI (profil disponible / absent / ne pas déranger, connexion aux files — l'icône Q —, téléphone enregistré) et seuls les changements sont conservés. Chaque jour est ventilé sur les heures de bureau du département 3CX (pauses et fériés déduits ; horaires de repli 08:00–17:30 pour un département sans horaires déclarés). L'annuaire des collaborateurs montre l'état au dernier relevé (pastille sur l'avatar) et, sur 30 jours, la part de temps disponible, absent, ne pas déranger et hors ligne, avec la part de temps connecté aux files.",
+        justification: "Les CDR ne voient la présence que quand un appel arrive : suffisant pour une réception (64 % du temps ouvré observé sur le Service Client), pas pour une gérance (24 %). Le XAPI donne l'état exact, mais seulement l'instant présent : il faut l'échantillonner. Le temps de connexion aux files seul surestime — la connexion persiste la nuit (15 h 41 de « connexion » relevées un 8 septembre) — et un profil Disponible sur un téléphone non enregistré ne reçoit rien : « prêt » exige les trois signaux. Une coupure du relevé n'est pas de l'absence : les parts se calculent sur le temps effectivement observé.",
+        impact: "Interrupteur par tenant (presenceSamplingEnabled, éteint par défaut, distinct de la surcouche XAPI) : c'est une mesure de présence individuelle, à annoncer aux collaborateurs avant de l'allumer (art. 26 OLT 3) — parts de temps par période, jamais de chronologie individuelle. Tables PresenceInterval, PresenceDay, PresenceGroupSchedule, PresenceSampler dans la base d'authentification ; échantillonneur lib/presence-sampler (à la minute), consolidation toutes les quinze minutes, jour en cours compris. Aucun ratio dans le tableau d'activité des collaborateurs (décision : non).",
+    },
+    {
         id: "1.19",
         category: "Statistiques Queue",
         title: "La prise d'un appel dans la file est un décroché",

@@ -32,6 +32,8 @@ interface TenantInfo {
     xapiClientId: string;
     /** Annuaire XAPI pour les noms et départements de toute l'application. */
     xapiDirectoryEnabled: boolean;
+    /** Échantillonnage de présence (XAPI, à la minute) — mesure individuelle, éteint par défaut. */
+    presenceSamplingEnabled: boolean;
     /** Une clé est-elle enregistrée ? Sa valeur ne quitte jamais le serveur. */
     xapiKeyConfigured: boolean;
     xapiKeyUpdatedAt: string | null;
@@ -198,17 +200,21 @@ export function TenantTab() {
     // Surcouche XAPI — l'interrupteur. Éteindre ne supprime PAS la clé : le
     // tenant retombe simplement sur le socle CDR, qui reste complet en toute
     // circonstance, et rallumer ne demande pas de ressaisie.
-    const MESSAGES_INTERRUPTEUR: Record<"xapiEnabled" | "xapiDirectoryEnabled", [string, string]> = {
+    const MESSAGES_INTERRUPTEUR: Record<"xapiEnabled" | "xapiDirectoryEnabled" | "presenceSamplingEnabled", [string, string]> = {
         xapiEnabled: ["XAPI activée pour ce tenant", "XAPI désactivée — retour au socle CDR seul"],
         xapiDirectoryEnabled: [
             "Noms et départements pris dans l'annuaire du 3CX",
             "Noms et départements repris de l'historique des appels",
         ],
+        presenceSamplingEnabled: [
+            "Échantillonnage de présence activé — relevé toutes les minutes",
+            "Échantillonnage de présence arrêté",
+        ],
     };
 
     const handleXapiInterrupteur = async (
         serverId: string,
-        champ: "xapiEnabled" | "xapiDirectoryEnabled",
+        champ: "xapiEnabled" | "xapiDirectoryEnabled" | "presenceSamplingEnabled",
         valeur: boolean,
     ) => {
         setSaving(true);

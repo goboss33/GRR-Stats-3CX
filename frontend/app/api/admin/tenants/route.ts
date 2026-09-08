@@ -31,6 +31,7 @@ export async function GET() {
             trunkThreshold: settingsMap.get(id)?.trunkThreshold ?? servers[id].trunkThreshold,
             xapiEnabled: settingsMap.get(id)?.xapiEnabled ?? false,
             xapiDirectoryEnabled: settingsMap.get(id)?.xapiDirectoryEnabled ?? false,
+            presenceSamplingEnabled: settingsMap.get(id)?.presenceSamplingEnabled ?? false,
             // Adresse et ID client ne sont pas des secrets : ils s'affichent.
             xapiBaseUrl: settingsMap.get(id)?.xapiBaseUrl ?? "",
             xapiClientId: settingsMap.get(id)?.xapiClientId ?? "",
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
     try {
         const {
             serverId, timezone, licenceThreshold, trunkThreshold,
-            xapiEnabled, xapiDirectoryEnabled, xapiKey, xapiBaseUrl, xapiClientId,
+            xapiEnabled, xapiDirectoryEnabled, presenceSamplingEnabled, xapiKey, xapiBaseUrl, xapiClientId,
             m365Enabled, m365TenantId, m365ClientId, m365Secret, m365SecretExpiresAt,
         } = await request.json();
         
@@ -158,6 +159,21 @@ export async function POST(request: Request) {
             // allumé qui ne pourrait plus rien faire.
             await invaliderCacheAnnuaire(serverId as ServerId);
             return NextResponse.json({ success: true, serverId, xapiEnabled });
+        }
+
+        // Échantillonnage de présence — mesure INDIVIDUELLE, donc interrupteur
+        // distinct, éteint par défaut ; l'échantillonneur (lib/presence-sampler)
+        // le relit à chaque minute, l'effet est immédiat.
+        if (presenceSamplingEnabled !== undefined) {
+            if (typeof presenceSamplingEnabled !== "boolean") {
+                return NextResponse.json({ error: "Invalid presenceSamplingEnabled" }, { status: 400 });
+            }
+            await prismaAuth.tenantSettings.upsert({
+                where: { serverId },
+                update: { presenceSamplingEnabled },
+                create: { serverId, presenceSamplingEnabled },
+            });
+            return NextResponse.json({ success: true, serverId, presenceSamplingEnabled });
         }
 
         // Annuaire XAPI pour les noms et départements de TOUTE l'application.

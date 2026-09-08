@@ -1,5 +1,7 @@
 import { prismaAuth } from "@/lib/prisma-auth";
 import type { ServerId } from "@/lib/prisma-cdr";
+import { getPresenceMaintenant, getPresenceRecente, PRESENCE_JOURS, type AgregatPresence } from "@/services/presence.service";
+import type { PresenceState } from "@/services/domain/presence";
 
 /**
  * LES COLLABORATEURS, POUR L'ONGLET DU JOURNAL — une ligne par poste du 3CX,
@@ -22,6 +24,22 @@ export interface CollaborateurRow {
     /** Première apparition de ce poste dans le journal. */
     depuis: string;
     equipes: { queueNumber: string; queueName: string }[];
+    /** Présence (échantillonnage XAPI) ; null quand le relevé est éteint pour ce tenant. */
+    presence: PresenceCollaborateur | null;
+}
+
+export interface PresenceCollaborateur {
+    /** État au dernier relevé (moins de trois minutes) ; null si le relevé date ou ignore ce poste. */
+    now: { state: PresenceState; queueLoggedIn: boolean } | null;
+    /** Les PRESENCE_JOURS derniers jours ; null sans aucune heure de bureau observée. */
+    recent: AgregatPresence | null;
+}
+
+export interface EtatPresence {
+    enabled: boolean;
+    jours: number;
+    /** Instant du dernier relevé encore frais ; null si le relevé est arrêté ou en retard. */
+    sampledAt: string | null;
 }
 
 export interface ResumeM365 {
@@ -39,8 +57,8 @@ const photoUrl = (serverId: string, graphId: string) =>
 
 const ETATS_NON_RAPPROCHES = ["sans-email", "inconnu-m365", "compte-desactive"];
 
-export async function getCollaborateurs(serverId: ServerId): Promise<{ lignes: CollaborateurRow[]; resume: ResumeM365 }> {
-    const [ouvertes, premieres, membres, annuaire, photos] = await Promise.all([
+export async function getCollaborateurs(serverId: ServerId): Promise<{ lignes: CollaborateurRow[]; resume: ResumeM365; presence: EtatPresence }> {
+    const [ouvertes, premieres, membres, annuaire, photos, reglages] = await Promise.all([
         prismaAuth.collaboratorDirectoryInterval.findMany({
             where: { serverId, closedAt: null },
             select: { extension: true, displayName: true, email: true, jobTitle: true, matchState: true },
@@ -58,7 +76,15 @@ export async function getCollaborateurs(serverId: ServerId): Promise<{ lignes: C
             select: { queueNumber: true, queueName: true },
         }),
         prismaAuth.collaboratorPhoto.findMany({ where: { serverId }, select: { email: true, graphId: true } }),
+        prismaAuth.tenantSettings.findUnique({ where: { serverId }, select: { presenceSamplingEnabled: true } }),
     ]);
+
+    // Présence : parts de temps sur les derniers jours (base) et état au
+    // dernier relevé (mémoire de l'échantillonneur, même processus) — rien de
+    // tout cela n'est lu quand le tenant n'a pas demandé le relevé.
+    const presenceActive = reglages?.presenceSamplingEnabled ?? false;
+    const recente = presenceActive ? await getPresenceRecente(serverId) : new Map<string, AgregatPresence>();
+    const maintenant = presenceActive ? getPresenceMaintenant(serverId) : null;
 
     const depuis = new Map(premieres.map((p) => [p.extension, p._min.firstSeenAt]));
     const nomFile = new Map(annuaire.map((q) => [q.queueNumber, q.queueName]));
@@ -80,9 +106,16 @@ export async function getCollaborateurs(serverId: ServerId): Promise<{ lignes: C
         photoUrl: c.email && photoDe.has(c.email) ? photoUrl(serverId, photoDe.get(c.email)!) : null,
         depuis: (depuis.get(c.extension) ?? new Date()).toISOString(),
         equipes: (equipesDe.get(c.extension) ?? []).sort((a, b) => a.queueName.localeCompare(b.queueName, "fr")),
+        presence: presenceActive
+            ? { now: maintenant?.postes.get(c.extension) ?? null, recent: recente.get(c.extension) ?? null }
+            : null,
     }));
 
-    return { lignes, resume: resumer(lignes, photos.length) };
+    return {
+        lignes,
+        resume: resumer(lignes, photos.length),
+        presence: { enabled: presenceActive, jours: PRESENCE_JOURS, sampledAt: maintenant?.at.toISOString() ?? null },
+    };
 }
 
 function resumer(lignes: Pick<CollaborateurRow, "matchState" | "equipes">[], photos: number): ResumeM365 {

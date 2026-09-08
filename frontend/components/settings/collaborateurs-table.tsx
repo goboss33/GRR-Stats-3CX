@@ -11,7 +11,8 @@ import { AvatarCollaborateur } from "@/components/avatar-collaborateur";
 import { BadgeM365, LIBELLES_M365, LogoMicrosoft } from "@/components/badge-m365";
 import { EnTeteTri, MenuFiltre, PucesDeFiltres, basculerDansSet } from "@/components/tableau-filtrable";
 import { basculerTri, trierLignes, type DefinitionColonne, type TriTableau } from "@/services/domain/tri-tableau";
-import type { CollaborateurRow, ResumeM365 } from "@/services/collaborators.service";
+import type { CollaborateurRow, EtatPresence, PresenceCollaborateur, ResumeM365 } from "@/services/collaborators.service";
+import { formatHeures, partsPresence, type PresenceState } from "@/services/domain/presence";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,7 +27,7 @@ import { cn } from "@/lib/utils";
  * moitié cassée. Ils restent à un clic.
  */
 
-type Colonne = "nom" | "poste" | "email" | "equipes" | "etat" | "depuis";
+type Colonne = "nom" | "poste" | "email" | "equipes" | "etat" | "depuis" | "presence";
 
 const COLONNES: Record<Colonne, DefinitionColonne<CollaborateurRow>> = {
     nom: { type: "texte", valeur: (c) => c.displayName },
@@ -36,6 +37,16 @@ const COLONNES: Record<Colonne, DefinitionColonne<CollaborateurRow>> = {
     // L'ordre des états est celui de l'urgence : ce qui se corrige d'abord.
     etat: { type: "nombre", valeur: (c) => ({ "compte-desactive": 0, "inconnu-m365": 1, "sans-email": 2, "m365-inactif": 3, "ok": 4 }[c.matchState] ?? 5) },
     depuis: { type: "date", valeur: (c) => c.depuis },
+    // Part de temps disponible ; sans relevé, en queue de tri.
+    presence: { type: "nombre", valeur: (c) => (c.presence?.recent ? partsPresence(c.presence.recent)?.available ?? -1 : -1) },
+};
+
+/** Grammaire des états de présence — la même que la pastille du client 3CX. */
+const ETATS_PRESENCE: Record<PresenceState, { libelle: string; pastille: string; barre: string }> = {
+    available: { libelle: "Disponible", pastille: "bg-emerald-500", barre: "bg-emerald-500" },
+    absent: { libelle: "Absent", pastille: "bg-amber-400", barre: "bg-amber-400" },
+    dnd: { libelle: "Ne pas déranger", pastille: "bg-red-500", barre: "bg-red-500" },
+    offline: { libelle: "Hors ligne (téléphone non enregistré)", pastille: "bg-slate-300", barre: "bg-slate-300" },
 };
 
 const TRI_PAR_DEFAUT: TriTableau<Colonne> = { colonne: "nom", sens: "asc" };
@@ -51,7 +62,7 @@ export function CollaborateursTable({
     /** États à précocher à l'ouverture (le lien « Voir les non rapprochés » du relevé). */
     filtreEtatInitial?: string[] | null;
 }) {
-    const [donnees, setDonnees] = useState<{ lignes: CollaborateurRow[]; resume: ResumeM365 } | "chargement" | "échec">("chargement");
+    const [donnees, setDonnees] = useState<{ lignes: CollaborateurRow[]; resume: ResumeM365; presence: EtatPresence } | "chargement" | "échec">("chargement");
     const [search, setSearch] = useState("");
     const [tri, setTri] = useState(TRI_PAR_DEFAUT);
     const [filtreEtat, setFiltreEtat] = useState<Set<string>>(new Set(filtreEtatInitial ?? []));
@@ -63,7 +74,11 @@ export function CollaborateursTable({
         setDonnees("chargement");
         fetch(`/api/admin/xapi-journal?server=${encodeURIComponent(serverId)}&view=collaborateurs`)
             .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-            .then((d) => setDonnees({ lignes: d.lignes as CollaborateurRow[], resume: d.resume as ResumeM365 }))
+            .then((d) => setDonnees({
+                lignes: d.lignes as CollaborateurRow[],
+                resume: d.resume as ResumeM365,
+                presence: (d.presence as EtatPresence | undefined) ?? { enabled: false, jours: 30, sampledAt: null },
+            }))
             .catch(() => setDonnees("échec"));
     };
     useEffect(charger, [serverId]);
@@ -128,7 +143,8 @@ export function CollaborateursTable({
 
     if (donnees === "chargement") return <div className="py-10"><Attente libelle="Lecture des collaborateurs…" /></div>;
     if (donnees === "échec") return <ZoneEnEchec message="La liste des collaborateurs n'a pas pu être lue." onReessayer={charger} />;
-    const { resume } = donnees;
+    const { resume, presence } = donnees;
+    const nbColonnes = presence.enabled ? 7 : 6;
 
     return (
         <div className="space-y-4">
@@ -141,6 +157,14 @@ export function CollaborateursTable({
                 </span>
                 <span>{resume.total} postes au 3CX</span>
                 <span>{resume.photos} photos</span>
+                {presence.enabled && (
+                    <span className={cn("flex items-center gap-1.5", presence.sampledAt ? "text-slate-600" : "text-amber-700")}>
+                        <span className={cn("h-2 w-2 rounded-full", presence.sampledAt ? "bg-emerald-500" : "bg-amber-400")} />
+                        {presence.sampledAt
+                            ? `présence relevée il y a ${Math.max(0, Math.round((Date.now() - new Date(presence.sampledAt).getTime()) / 1000))} s`
+                            : "présence : relevé arrêté ou en retard"}
+                    </span>
+                )}
             </div>
 
             <div className="space-y-3">
@@ -175,6 +199,9 @@ export function CollaborateursTable({
                                     <EnTeteTri colonne="equipes" libelle="Équipes" tri={tri} onTrier={(c) => setTri((t) => basculerTri(t, c, COLONNES))} />
                                     <EnTeteTri colonne="etat" libelle="Microsoft 365" tri={tri} onTrier={(c) => setTri((t) => basculerTri(t, c, COLONNES))} />
                                     <EnTeteTri colonne="depuis" libelle="Depuis" tri={tri} onTrier={(c) => setTri((t) => basculerTri(t, c, COLONNES))} />
+                                    {presence.enabled && (
+                                        <EnTeteTri colonne="presence" libelle={`Présence (${presence.jours} j)`} tri={tri} onTrier={(c) => setTri((t) => basculerTri(t, c, COLONNES))} />
+                                    )}
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
@@ -187,7 +214,7 @@ export function CollaborateursTable({
                                     >
                                         <td className="px-4 py-2">
                                             <div className="flex items-center gap-3">
-                                                <AvatarCollaborateur name={c.displayName} photoUrl={c.photoUrl} />
+                                                <AvatarAvecPresence collaborateur={c} />
                                                 <div>
                                                     <p className="font-medium text-slate-900">{c.displayName}</p>
                                                     {c.jobTitle && <p className="text-xs text-slate-500">{c.jobTitle}</p>}
@@ -201,11 +228,14 @@ export function CollaborateursTable({
                                         </td>
                                         <td className="px-4 py-2"><BadgeM365 etat={c.matchState} /></td>
                                         <td className="px-4 py-2 text-xs text-slate-500">{dateCourte(c.depuis)}</td>
+                                        {presence.enabled && (
+                                            <td className="px-4 py-2"><CellulePresence presence={c.presence} jours={presence.jours} /></td>
+                                        )}
                                     </tr>
                                 ))}
                                 {affichees.length === 0 && (
                                     <tr>
-                                        <td colSpan={6} className="py-8 text-center text-slate-500">
+                                        <td colSpan={nbColonnes} className="py-8 text-center text-slate-500">
                                             Aucun collaborateur ne correspond à ces critères
                                             <button type="button" onClick={toutEffacer} className="ml-2 text-blue-600 underline underline-offset-2 hover:text-blue-800">
                                                 Tout effacer
@@ -221,6 +251,61 @@ export function CollaborateursTable({
 
             <FicheCollaborateur serverId={serverId} collaborateur={fiche} onClose={() => setFiche(null)} />
         </div>
+    );
+}
+
+/**
+ * L'avatar, avec la pastille de l'état au dernier relevé quand le tenant
+ * échantillonne la présence — même code de couleurs que le client 3CX.
+ */
+function AvatarAvecPresence({ collaborateur: c }: { collaborateur: CollaborateurRow }) {
+    const now = c.presence?.now ?? null;
+    if (!now) return <AvatarCollaborateur name={c.displayName} photoUrl={c.photoUrl} />;
+    const etat = ETATS_PRESENCE[now.state];
+    return (
+        <Tip content={`${etat.libelle}${now.state === "offline" ? "" : now.queueLoggedIn ? " · connecté aux files" : " · déconnecté des files"} — au dernier relevé`}>
+            <span className="relative inline-flex">
+                <AvatarCollaborateur name={c.displayName} photoUrl={c.photoUrl} />
+                <span className={cn("absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white", etat.pastille)} />
+            </span>
+        </Tip>
+    );
+}
+
+/**
+ * Les parts de temps de bureau des derniers jours : une barre empilée, le
+ * pourcentage disponible en avant, la connexion aux files en badge. Le détail
+ * (heures observées, horaires appliqués, les quatre parts) vit dans l'infobulle
+ * — jamais une chronologie.
+ */
+function CellulePresence({ presence, jours }: { presence: PresenceCollaborateur | null; jours: number }) {
+    const recent = presence?.recent ?? null;
+    const parts = recent ? partsPresence(recent) : null;
+    if (!recent || !parts) {
+        return (
+            <Tip content={`Aucune heure de bureau observée sur ${jours} jours.`}>
+                <span className="text-xs text-slate-400">—</span>
+            </Tip>
+        );
+    }
+    const horaires = recent.hoursSource === "department" && recent.departement
+        ? `horaires ${recent.departement}`
+        : "horaires par défaut, le département n'en déclare pas";
+    const detail = `Sur ${formatHeures(recent.sampledSeconds)} de bureau observées (${recent.days} jour${recent.days > 1 ? "s" : ""}, ${horaires}) : `
+        + `disponible ${parts.available} % · absent ${parts.absent} % · ne pas déranger ${parts.dnd} % · hors ligne ${parts.offline} % · connecté aux files ${parts.queue} %`;
+    const segments: Array<[PresenceState, number]> = [["available", parts.available], ["absent", parts.absent], ["dnd", parts.dnd], ["offline", parts.offline]];
+    return (
+        <Tip content={detail} align="start">
+            <div className="flex items-center gap-2.5">
+                <span className="flex h-2 w-28 shrink-0 gap-px overflow-hidden rounded-full">
+                    {segments.map(([etat, part]) => part > 0 && (
+                        <span key={etat} className={cn("h-full", ETATS_PRESENCE[etat].barre)} style={{ width: `${part}%` }} />
+                    ))}
+                </span>
+                <span className="w-10 text-sm font-medium tabular-nums text-slate-900">{parts.available}&nbsp;%</span>
+                <span className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] tabular-nums text-slate-600">Q {parts.queue}&nbsp;%</span>
+            </div>
+        </Tip>
     );
 }
 

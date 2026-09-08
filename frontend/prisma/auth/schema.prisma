@@ -357,6 +357,14 @@ model TenantSettings {
   /// Expiration du secret telle que DÉCLARÉE par l'administrateur (Graph ne la
   /// laisse pas lire sans Application.Read.All). Sert à prévenir un mois avant.
   m365SecretExpiresAt  DateTime?
+  /// ÉCHANTILLONNAGE DE PRÉSENCE (septembre 2026) — relevé XAPI de l'état des
+  /// postes toutes les minutes (profil, connexion aux files, téléphone
+  /// enregistré), consolidé par jour sur les heures de bureau du département
+  /// (cf. services/presence.service). Interrupteur DISTINCT de la surcouche :
+  /// c'est une mesure de présence individuelle, qui se décide et s'annonce aux
+  /// collaborateurs (art. 26 OLT 3). Éteint par défaut ; sans XAPI utilisable,
+  /// ne fait rien.
+  presenceSamplingEnabled Boolean @default(false)
   /// DÉPRÉCIÉ (août 2026) — plus lu par aucun écran, voir
   /// QueueRegistry.excludedFromStats. Les postes hors file sont désormais
   /// visibles des seuls rôles globaux, via leur périmètre.
@@ -541,4 +549,79 @@ model CollaboratorPhoto {
   fetchedAt   DateTime
 
   @@id([serverId, email])
+}
+
+/// PRÉSENCE — un intervalle d'état d'un poste, tel qu'échantillonné par le
+/// XAPI (cf. services/presence.service). Une ligne par CHANGEMENT : l'intervalle
+/// ouvert (endedAt null) court jusqu'au changement suivant, ou jusqu'au dernier
+/// relevé réussi (PresenceSampler.lastSampleAt) quand le relevé s'arrête.
+model PresenceInterval {
+  id            String    @id @default(cuid())
+  serverId      String
+  extension     String
+  /// available | absent | dnd | offline (téléphone non enregistré)
+  state         String
+  /// Connecté aux files — l'icône Q du client 3CX.
+  queueLoggedIn Boolean
+  /// Département 3CX du poste au moment du relevé : ses horaires font le dénominateur.
+  groupId       Int?
+  startedAt     DateTime
+  endedAt       DateTime?
+
+  @@index([serverId, extension, startedAt])
+  @@index([serverId, endedAt])
+}
+
+/// PRÉSENCE — un jour de présence consolidé par poste, découpé aux heures de
+/// bureau de son département (secondes). Refait toutes les quinze minutes pour
+/// le jour en cours ; l'annuaire des collaborateurs lit ses 30 derniers jours ici.
+model PresenceDay {
+  id               String @id @default(cuid())
+  serverId         String
+  extension        String
+  /// AAAA-MM-JJ, fuseau du tenant.
+  day              String
+  /// Secondes d'heures de bureau du jour, pauses et fériés déduits.
+  officeSeconds    Int
+  /// … dont couvertes par l'échantillonnage : le dénominateur des parts.
+  sampledSeconds   Int
+  availableSeconds Int
+  absentSeconds    Int
+  dndSeconds       Int
+  offlineSeconds   Int
+  /// Connecté aux files, pendant les heures de bureau échantillonnées.
+  queueSeconds     Int
+  groupId          Int?
+  /// D'où viennent les horaires : department | default
+  hoursSource      String
+
+  @@unique([serverId, extension, day])
+  @@index([serverId, day])
+}
+
+/// PRÉSENCE — les horaires de bureau d'un département 3CX (Groups.Hours,
+/// BreakTime, OfficeHolidays), relevés une fois par jour.
+model PresenceGroupSchedule {
+  serverId  String
+  groupId   Int
+  name      String
+  hours     Json
+  breakTime Json
+  holidays  Json
+  fetchedAt DateTime
+
+  @@id([serverId, groupId])
+}
+
+/// PRÉSENCE — l'état de l'échantillonneur d'un tenant.
+model PresenceSampler {
+  serverId            String    @id
+  /// Dernier relevé réussi : clôt les intervalles ouverts après une coupure.
+  lastSampleAt        DateTime?
+  /// Dernier jour (AAAA-MM-JJ) consolidé dans PresenceDay.
+  lastConsolidatedDay String?
+  samples             Int       @default(0)
+  lastError           String?
+  lastErrorAt         DateTime?
+  updatedAt           DateTime  @updatedAt
 }

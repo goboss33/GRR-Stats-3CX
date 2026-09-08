@@ -44,4 +44,13 @@ export async function register() {
     } catch (error) {
         console.error("[journal-xapi] déclencheur non armé :", error);
     }
+
+    // Échantillonnage de présence (surcouche XAPI, à la minute) : n'agit que
+    // pour les tenants qui l'ont demandé dans leurs réglages.
+    try {
+        const { registerPresenceSampler } = await import("@/lib/presence-sampler");
+        registerPresenceSampler();
+    } catch (error) {
+        console.error("[présence] échantillonneur non armé :", error);
+    }
 }

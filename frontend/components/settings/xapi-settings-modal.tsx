@@ -29,6 +29,7 @@ export interface ReglagesXapi {
     name: string;
     xapiEnabled: boolean;
     xapiDirectoryEnabled: boolean;
+    presenceSamplingEnabled: boolean;
     xapiBaseUrl: string;
     xapiClientId: string;
     xapiKeyConfigured: boolean;
@@ -48,7 +49,7 @@ export function XapiSettingsModal({
     onOpenChange: (open: boolean) => void;
     /** Enregistre l'adresse ou l'ID client (à la sortie du champ). */
     onChampSauve: (champ: "xapiBaseUrl" | "xapiClientId", valeur: string) => Promise<void>;
-    onInterrupteur: (champ: "xapiEnabled" | "xapiDirectoryEnabled", valeur: boolean) => Promise<void>;
+    onInterrupteur: (champ: "xapiEnabled" | "xapiDirectoryEnabled" | "presenceSamplingEnabled", valeur: boolean) => Promise<void>;
     /** Une chaîne vide supprime la clé enregistrée. */
     onCleSauvee: (cle: string) => Promise<void>;
 }) {
@@ -231,6 +232,31 @@ export function XapiSettingsModal({
                                     id="xapi-annuaire"
                                     checked={serveur.xapiDirectoryEnabled}
                                     onCheckedChange={(v) => onInterrupteur("xapiDirectoryEnabled", v)}
+                                    disabled={!configurationComplete}
+                                    className="mt-1 data-[state=checked]:bg-blue-600"
+                                />
+                            </div>
+
+                            {/* Le troisième interrupteur, à part : une mesure de
+                                présence individuelle se décide, elle ne se
+                                déduit pas de la surcouche. */}
+                            <div className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                                <div>
+                                    <Label htmlFor="xapi-presence" className="text-sm font-medium text-slate-900">
+                                        Échantillonnage de présence
+                                    </Label>
+                                    <p className="mt-0.5 text-xs text-slate-500">
+                                        Toutes les minutes, l&apos;état de chaque poste est relevé (disponible, absent,
+                                        ne pas déranger, hors ligne, connecté aux files) et ventilé par jour sur les
+                                        heures de bureau de son département. L&apos;annuaire des collaborateurs en montre
+                                        des parts de temps sur 30 jours — jamais de chronologie. C&apos;est une mesure de
+                                        présence individuelle : à annoncer aux collaborateurs avant de l&apos;allumer.
+                                    </p>
+                                </div>
+                                <Switch
+                                    id="xapi-presence"
+                                    checked={serveur.presenceSamplingEnabled}
+                                    onCheckedChange={(v) => onInterrupteur("presenceSamplingEnabled", v)}
                                     disabled={!configurationComplete}
                                     className="mt-1 data-[state=checked]:bg-blue-600"
                                 />
