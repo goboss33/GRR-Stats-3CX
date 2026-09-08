@@ -101,9 +101,15 @@ function parVolume<T extends { calls: number; queueName: string }>(a: T, b: T): 
  *
  * Chaque appel parti tombe dans EXACTEMENT une ligne : la somme des lignes
  * est le total des vignettes Transférés + Débordés. Une file de destination
- * fait une ligne ; une personne jointe sur sa ligne directe rejoint son
- * équipe principale (ou « Sans équipe ») ; les numéros externes et les
- * destinations non retrouvées font chacun leur regroupement.
+ * fait une ligne ; une personne à qui l'appel a été PASSÉ — répondu ou non —
+ * rejoint son équipe principale (ou « Sans équipe ») ; les numéros externes
+ * et les destinations non retrouvées font chacun leur regroupement.
+ *
+ * Le nombre porté par un visage est celui des appels qui lui sont PARTIS,
+ * sans distinguer ceux qu'il a pris : c'est la question à laquelle la carte
+ * répond (arbitrage du 8 sept. 2026). Une ligne peut donc porter plus
+ * d'appels que la somme de ses visages — les appels débordés vers une file
+ * où personne n'a décroché n'ont personne à nommer.
  */
 export function composerDestinations(
     exits: readonly OutboundExit[],
@@ -119,10 +125,10 @@ export function composerDestinations(
 ): OutboundTeam[] {
     type Ligne = Omit<OutboundTeam, "persons"> & { personnes: Map<string, OutboundPerson> };
     const lignes = new Map<string, Ligne>();
-    const ligne = (key: string, init: () => Omit<Ligne, "calls" | "overflow" | "notTaken" | "directLine" | "personnes">): Ligne => {
+    const ligne = (key: string, init: () => Omit<Ligne, "calls" | "overflow" | "directLine" | "personnes">): Ligne => {
         let l = lignes.get(key);
         if (!l) {
-            l = { ...init(), calls: 0, overflow: 0, notTaken: 0, directLine: 0, personnes: new Map() };
+            l = { ...init(), calls: 0, overflow: 0, directLine: 0, personnes: new Map() };
             lignes.set(key, l);
         }
         return l;
@@ -184,13 +190,10 @@ export function composerDestinations(
     }
 
     return [...lignes.values()]
-        .map(({ personnes, ...reste }) => {
-            const persons = [...personnes.values()].sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name, "fr"));
-            // Ce que les visages ne portent pas : personne de l'équipe n'a pris
-            // ces appels. La somme se referme, à l'écran comme ici.
-            const notTaken = reste.calls - persons.reduce((acc, p) => acc + p.calls, 0);
-            return { ...reste, persons, notTaken };
-        })
+        .map(({ personnes, ...reste }) => ({
+            ...reste,
+            persons: [...personnes.values()].sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name, "fr")),
+        }))
         .sort(parVolume);
 }
 
@@ -213,12 +216,10 @@ export function appliquerPerimetreDestinations(
         if (inScope || regle === "name") { resultat.push({ ...t, inScope }); continue; }
         anonyme ??= {
             queueNumber: null, queueName: LIBELLES_REGROUPEMENTS.out_of_scope, kind: "out_of_scope",
-            calls: 0, overflow: 0, notTaken: 0, directLine: 0, persons: [], inScope: false,
+            calls: 0, overflow: 0, directLine: 0, persons: [], inScope: false,
         };
         anonyme.calls += t.calls;
         anonyme.overflow += t.overflow;
-        // Le regroupement perd ses visages : tous ses appels y deviennent « non pris ».
-        anonyme.notTaken += t.calls;
         anonyme.directLine += t.directLine;
     }
     if (anonyme) resultat.push(anonyme);

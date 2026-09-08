@@ -34,8 +34,11 @@ const VISAGES_MAX = 4;
  * Même grammaire de ligne que « D'où viennent nos appels ». La barre, c'est
  * l'équipe (la concentration, et la somme fait le chiffre en tête) ; les
  * visages, ce sont les personnes — toutes, pas un top 10 : les 4 premières en
- * pile, les autres derrière le « +N ». Une personne jointe sur sa ligne
- * directe est rattachée à son équipe principale, et son infobulle le dit.
+ * pile, les autres derrière le « +N ». Une personne à qui l'appel a été passé
+ * est rattachée à son équipe principale, et le nombre sous son visage compte
+ * les appels qui lui sont PARTIS, pris ou non. Une ligne peut donc porter
+ * plus d'appels que ses visages : ceux qui ont débordé vers la file sans que
+ * personne y décroche n'ont personne à nommer.
  *
  * Les lignes d'équipe ne sont pas des liens : les journaux ne savent pas
  * encore lister « les appels partis vers cette équipe » (ligne directe
@@ -62,9 +65,7 @@ export function DestinationsAppels({ teams, logsEnabled, queueNumber, startDate,
             href={null}
             discret={discret}
             teinte={t.kind === "team" ? undefined : "bg-blue-300"}
-            visages={t.persons.length > 0 || (t.kind === "team" && t.notTaken > 0)
-                ? <PileVisages persons={t.persons} notTaken={t.kind === "team" ? t.notTaken : 0} lien={lienPersonne} />
-                : undefined}
+            visages={t.persons.length > 0 ? <PileVisages persons={t.persons} lien={lienPersonne} /> : undefined}
         />
     );
 
@@ -142,12 +143,7 @@ function iconeDe(t: OutboundTeam, discret: boolean) {
  * Les personnes d'une équipe : les premières en pile, le reste derrière un
  * « +N » qui ouvre la liste complète — tout le monde y est, avec son nombre.
  */
-function PileVisages({ persons, notTaken, lien }: {
-    persons: OutboundPerson[];
-    /** Appels que personne de l'équipe n'a pris : la somme des visages ne fait pas le total sans eux. */
-    notTaken: number;
-    lien: (p: OutboundPerson) => string | null;
-}) {
+function PileVisages({ persons, lien }: { persons: OutboundPerson[]; lien: (p: OutboundPerson) => string | null }) {
     const visibles = persons.slice(0, VISAGES_MAX);
     const reste = persons.length - visibles.length;
     const visage = (p: OutboundPerson, taille = "h-6 w-6") => {
@@ -168,13 +164,6 @@ function PileVisages({ persons, notTaken, lien }: {
                     {visage(p)}
                 </Tip>
             ))}
-            {notTaken > 0 && (
-                <Tip content={`${notTaken} appel${notTaken > 1 ? "s" : ""} que personne de cette équipe n'a pris`}>
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-50 text-[10px] font-medium text-red-700 ring-2 ring-white">
-                        {notTaken}
-                    </span>
-                </Tip>
-            )}
             {reste > 0 && (
                 <Popover>
                     <PopoverTrigger asChild>

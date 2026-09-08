@@ -142,14 +142,25 @@ export async function GET(request: NextRequest) {
             ),
             exits_raw AS (
                 SELECT d.outcome,
-                       -- Le premier saut : la file si elle a été sollicitée avant
-                       -- (ou sans) qu'une personne décroche, sinon la personne.
-                       CASE WHEN nxt.queue_number IS NOT NULL
+                       -- Le PREMIER SAUT après nous, dans l'ordre du temps : la
+                       -- ligne directe visée par un transfert (qu'elle réponde
+                       -- ou non), sinon la file sollicitée, sinon la personne
+                       -- qui a fini par décrocher. Prendre la ligne directe même
+                       -- sans réponse est décisif : un transfert non pris
+                       -- retombe dans la file de l'équipe du destinataire, et
+                       -- l'appel paraissait alors « parti vers cette file »
+                       -- alors qu'il était parti vers QUELQU'UN (mesuré le
+                       -- 8 sept. 2026 : les 64 départs du Service Client rangés
+                       -- sous une file visaient tous une ligne directe).
+                       CASE WHEN dir.extension IS NOT NULL
+                                 AND (nxt.queue_number IS NULL OR dir.started_at <= nxt.started_at) THEN 'person'
+                            WHEN nxt.queue_number IS NOT NULL
                                  AND (fo.extension IS NULL OR nxt.started_at <= fo.started_at) THEN 'queue'
                             WHEN fo.dest_type = 'extension' THEN 'person'
                             WHEN fo.dest_type IS NOT NULL THEN 'external'
                             ELSE 'none' END AS first_hop,
                        nxt.queue_number, nxt.queue_name, nxt.started_at AS queue_at,
+                       dir.extension AS dir_extension, dir.person_name AS dir_person_name, dir.started_at AS dir_at,
                        fo.extension, fo.person_name, fo.via_queue
                 FROM departures d
                 LEFT JOIN LATERAL (
@@ -190,6 +201,28 @@ export async function GET(request: NextRequest) {
                     ORDER BY la.cdr_answered_at ASC, la.cdr_id ASC
                     LIMIT 1
                 ) fo ON TRUE
+                LEFT JOIN LATERAL (
+                    -- Première LIGNE DIRECTE visée hors de l'équipe, répondue ou
+                    -- non : le transfert que l'agent a fait. Les sonneries de
+                    -- file (« polling ») sont exclues — elles ne visent
+                    -- personne en particulier —, ainsi que la messagerie et les
+                    -- segments trop courts pour être une vraie sollicitation.
+                    SELECT la.destination_dn_number AS extension,
+                           COALESCE(NULLIF(la.destination_dn_name, ''), NULLIF(la.destination_participant_name, ''), la.destination_dn_number) AS person_name,
+                           la.cdr_started_at AS started_at
+                    FROM ${cdrTable(rules)} la
+                    WHERE la.call_history_id = d.call_history_id
+                      AND la.destination_dn_type = 'extension'
+                      AND COALESCE(la.destination_entity_type, '') <> 'voicemail'
+                      AND la.creation_forward_reason IS DISTINCT FROM 'polling'
+                      AND la.destination_dn_number NOT IN (SELECT extension FROM queue_agents)
+                      AND la.cdr_started_at > d.left_after
+                      AND la.cdr_started_at <= $3
+                      AND (la.cdr_answered_at IS NOT NULL
+                           OR EXTRACT(EPOCH FROM (la.cdr_ended_at - la.cdr_started_at)) >= ${rules.minSignificantDurationSeconds})
+                    ORDER BY la.cdr_started_at ASC, la.cdr_id ASC
+                    LIMIT 1
+                ) dir ON TRUE
             ),
             exits AS (
                 SELECT outcome, first_hop, queue_number,
@@ -204,10 +237,13 @@ export async function GET(request: NextRequest) {
                            CASE WHEN first_hop = 'queue' THEN queue_number END AS queue_number,
                            CASE WHEN first_hop = 'queue' THEN queue_name END AS queue_name,
                            queue_at,
-                           -- Le visage : la personne jointe sur sa ligne directe, ou
-                           -- celle qui a décroché DANS la file de destination.
-                           CASE WHEN first_hop = 'person' OR (first_hop = 'queue' AND via_queue = queue_number) THEN extension END AS extension,
-                           CASE WHEN first_hop = 'person' OR (first_hop = 'queue' AND via_queue = queue_number) THEN person_name END AS person_name
+                           -- Le visage : la personne à qui l'appel a été passé
+                           -- (transfert vers sa ligne directe, répondu ou non),
+                           -- ou celle qui a décroché DANS la file de destination.
+                           CASE WHEN first_hop = 'person' THEN COALESCE(dir_extension, extension)
+                                WHEN first_hop = 'queue' AND via_queue = queue_number THEN extension END AS extension,
+                           CASE WHEN first_hop = 'person' THEN COALESCE(dir_person_name, person_name)
+                                WHEN first_hop = 'queue' AND via_queue = queue_number THEN person_name END AS person_name
                     FROM exits_raw
                 ) x
                 GROUP BY 1, 2, 3, 5, 6

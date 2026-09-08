@@ -374,8 +374,9 @@ export interface PersonTeamActivity {
 export interface OutboundPerson {
     extension: string;
     name: string;
+    /** Appels partis vers cette personne — pris ou non : c'est là qu'ils ont été envoyés. */
     calls: number;
-    /** dont jointe par sa ligne directe (le reste : par la distribution de la file). */
+    /** dont passés à sa ligne directe (le reste : pris par elle dans la file de destination). */
     viaDirectLine: number;
     jobTitle?: string | null;
     photoUrl?: string | null;
@@ -393,13 +394,6 @@ export interface OutboundTeam {
     calls: number;
     /** dont partis SANS décroché ici (débordements). */
     overflow: number;
-    /**
-     * Appels que PERSONNE DE CETTE ÉQUIPE n'a pris : ni décroché du tout, ni
-     * décroché par quelqu'un d'extérieur qui a récupéré l'appel. C'est
-     * exactement l'écart entre `calls` et la somme des visages — la pastille
-     * rouge de la carte.
-     */
-    notTaken: number;
     /** dont joints par une ligne directe (rattachés par l'équipe principale). */
     directLine: number;
     persons: OutboundPerson[];

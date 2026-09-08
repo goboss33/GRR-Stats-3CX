@@ -83,8 +83,20 @@ describe("composition par équipe", () => {
             exit({ outcome: "overflow", firstHop: "queue", queueNumber: "900", queueName: "Réception Pully", calls: 8 }),
         ], resoudre, membre);
         expect(teams).toHaveLength(1);
-        expect(teams[0]).toMatchObject({ queueNumber: "900", kind: "team", calls: 28, overflow: 28, notTaken: 8, directLine: 0 });
+        expect(teams[0]).toMatchObject({ queueNumber: "900", kind: "team", calls: 28, overflow: 28, directLine: 0 });
         expect(teams[0].persons).toEqual([{ extension: "100", name: "Sequeiros, Lucia", calls: 20, viaDirectLine: 0, alsoIn: [] }]);
+    });
+
+    it("un transfert NON répondu compte pour son destinataire, comme un transfert pris", () => {
+        // Arbitrage du 8 sept. 2026 : la carte dit où les appels sont PARTIS.
+        // Le Service Client passe trois appels à Bruna Maia (Gérance GE-G17),
+        // qui n'en prend aucun — ils sont quand même les siens.
+        const teams = composerDestinations([
+            exit({ firstHop: "person", extension: "612", personName: "Maia, Bruna", calls: 3 }),
+        ], (ext) => ext === "612" ? { queueNumber: "948", queueName: "Gérance GE-G17", autres: [] } : null, () => false);
+        expect(teams).toHaveLength(1);
+        expect(teams[0]).toMatchObject({ queueNumber: "948", calls: 3, directLine: 3 });
+        expect(teams[0].persons[0]).toMatchObject({ extension: "612", calls: 3, viaDirectLine: 3 });
     });
 
     it("ligne directe : la personne rejoint son équipe principale, avec ses autres appartenances visibles", () => {
@@ -121,17 +133,16 @@ describe("composition par équipe", () => {
         ], () => null, (ext) => ext === "100");
         expect(teams[0].calls).toBe(20);
         expect(teams[0].persons.map((p) => p.extension)).toEqual(["100"]);
-        expect(teams[0].notTaken).toBe(1);
     });
 
-    it("« non pris » = le total moins les visages : sans décroché comme avec un décrocheur extérieur", () => {
+    it("une ligne peut porter plus d'appels que ses visages : un débordement sans preneur ne nomme personne", () => {
         const teams = composerDestinations([
             exit({ outcome: "overflow", firstHop: "queue", queueNumber: "900", queueName: "R", extension: "100", personName: "S", calls: 19 }),
             exit({ outcome: "overflow", firstHop: "queue", queueNumber: "900", queueName: "R", extension: "106", personName: "P", calls: 13 }),
             exit({ outcome: "overflow", firstHop: "queue", queueNumber: "900", queueName: "R", calls: 3 }),
         ], () => null, membre);
-        expect(teams[0]).toMatchObject({ calls: 35, notTaken: 3 });
-        expect(teams[0].persons.reduce((a, p) => a + p.calls, 0) + teams[0].notTaken).toBe(teams[0].calls);
+        expect(teams[0].calls).toBe(35);
+        expect(teams[0].persons.reduce((a, p) => a + p.calls, 0)).toBe(32);
     });
 
     it("conservation : chaque appel parti tombe dans exactement une ligne", () => {
