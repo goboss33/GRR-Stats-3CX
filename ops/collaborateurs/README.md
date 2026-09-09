@@ -108,6 +108,7 @@ En tête de chaque script, un bloc `$Reglages` ; chaque clé se surcharge en lig
 |---|---|
 | `ModeTest` | Mails vers `DestinataireTest`, sujet `[TEST]`, pas de tâche Planner. **Les actions sont réelles.** |
 | `Simulation` | **Aucune écriture** : AD, Exchange, Graph, 3CX, Planner. Tout est décrit. Se combine avec `ModeTest`. |
+| `Simulation3CX` | Le central téléphonique a son propre interrupteur. Vide, il suit `Simulation`. `-Simulation3CX` l'épargne alors que le reste s'exécute ; **`-Reel3CX` fait l'inverse** : tout est simulé sauf le 3CX, qui est écrit pour de vrai. L'en-tête, le bilan et le rapport le disent en toutes lettres quand les deux modes divergent. |
 | `EnvoyerMail` | Couper le mail (`-SansMail`). |
 | `Gerer3CX` | Couper le volet 3CX (`-Sans3CX`). |
 | `SynchroniserAdConnect` | Entrée : déclencher la synchronisation delta sur le serveur AD Connect (`giffre`), à distance. |
@@ -148,6 +149,10 @@ Quand la lecture d'un compte ou de ses groupes ne donne pas ce qu'on attend, la 
 Ce que la copie reprend, chaque bloc décochable : les réglages généraux et les touches BLF, les profils de renvoi et leurs exceptions, les départements avec les droits « Visualiser » du modèle. Ce qu'elle ne reprend **jamais** : le numéro, l'identité, l'adresse, l'identifiant appelant sortant qui est le numéro direct du modèle, les mots de passe SIP, le code de messagerie, la photo, le téléphone physique, la poste flexible, et les réglages de double authentification. La touche BLF qui pointait sur le modèle est reportée sur le nouveau numéro.
 
 Deux contraintes du PBX, constatées à l'essai : le nom affiché est composé par le 3CX à partir du nom et du prénom, et le **département principal n'est accepté qu'une fois le poste membre du département** — le script fait donc le rattachement d'abord.
+
+**Le numéro direct.** Le script propose la liste des SDA du central, une ligne par numéro et non par trunk, avec ce vers quoi chacune pointe aujourd'hui. On tape le début d'un numéro pour filtrer, `+4122` par exemple. Le numéro retenu est dirigé vers le nouveau poste sur **les deux trunks**, aux heures ouvrables comme en dehors et les jours fériés, et les deux règles prennent le nom de la personne. Une SDA qui n'a encore aucune règle en reçoit une par trunk.
+
+**Le central n'est interrogé que pour Gérofinance.** Les autres sociétés ont `pbx: null` dans la configuration : ni lecture ni écriture, à l'entrée comme à la sortie.
 
 **Sortie** : retrouve le poste par l'e-mail, le retire de toutes ses files, vide l'e-mail, le **désactive** — le numéro reste réservé. Les règles entrantes (SDA) qui visent encore le poste sont **listées dans le rapport, pas réécrites** : à faire à la main pour l'instant.
 

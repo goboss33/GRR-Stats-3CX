@@ -23,7 +23,9 @@ param(
     [switch] $Simulation,
     [switch] $SansMail,
     [switch] $Sans3CX,
-    [switch] $SansAdConnect
+    [switch] $SansAdConnect,
+    [switch] $Simulation3CX,      # simuler le 3CX même si le reste est réel
+    [switch] $Reel3CX             # écrire sur le 3CX POUR DE VRAI même si le reste est simulé
 )
 
 # ------------------------------------------- RELANCE SOUS POWERSHELL 7
@@ -45,7 +47,8 @@ if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $env:COLLABORATEURS_SANS_PWS
 $Reglages = @{
     ModeTest              = $true        # mails détournés vers DestinataireTest, sujet [TEST]
     DestinataireTest      = 'geoffrey.bossens@grrsa.ch'
-    Simulation            = $false       # AUCUNE écriture (AD, 3CX) : tout est décrit
+    Simulation            = $false       # AUCUNE écriture : tout est décrit
+    Simulation3CX         = $null        # $null = suit Simulation ; $true/$false pour trancher à part
     EnvoyerMail           = $true
     Gerer3CX              = $true
     SynchroniserAdConnect = $true
@@ -53,6 +56,8 @@ $Reglages = @{
 }
 if ($ModeTest)      { $Reglages.ModeTest = $true }
 if ($Simulation)    { $Reglages.Simulation = $true }
+if ($Simulation3CX) { $Reglages.Simulation3CX = $true }
+if ($Reel3CX)       { $Reglages.Simulation3CX = $false }
 if ($SansMail)      { $Reglages.EnvoyerMail = $false }
 if ($Sans3CX)       { $Reglages.Gerer3CX = $false }
 if ($SansAdConnect) { $Reglages.SynchroniserAdConnect = $false }
@@ -79,7 +84,7 @@ $dossier = [ordered]@{
     Sam = ''; Email = ''; MailNickname = ''; DisplayName = ''; MotDePasse = ''
     Modele = ''; GroupesRepris = @()          # les groupes repris d'un ou d'une collègue
     Poste3CX = $null; Files3CX = @(); Numero3CX = ''; NouveauPoste = $false
-    Modele3CX = $null; Copie3CX = @(); Departements3CX = @()
+    Modele3CX = $null; Copie3CX = @(); Departements3CX = @(); Sda3CX = $null
 }
 
 Set-Etape 'Le collaborateur'
@@ -201,10 +206,11 @@ if ($pbx) {
             Utilisateurs  = @(Get-XapiUtilisateurs -Pbx $pbx)
             Departements  = @(Get-XapiDepartements -Pbx $pbx)
             NumeroLibre   = "$(Get-XapiNumeroLibre -Pbx $pbx)"
+            Sda           = @(Get-XapiSda -Pbx $pbx)
         }
     }
     $candidats = @($lecture.Candidats); $toutesFiles = @($lecture.Files)
-    $tousPostes = @($lecture.Utilisateurs); $departements = @($lecture.Departements)
+    $tousPostes = @($lecture.Utilisateurs); $departements = @($lecture.Departements); $sda = @($lecture.Sda)
 
     if ($Job) {
         # Sans dialogue : le fichier de travail décide.
@@ -220,6 +226,11 @@ if ($pbx) {
         }
         $filesVoulues = @(Get-Prop -Objet $j -Nom 'files3cx' -Defaut @() | ForEach-Object { "$_" })
         if ($filesVoulues.Count -gt 0) { $dossier.Files3CX = @($toutesFiles | Where-Object { $filesVoulues -contains "$($_.Number)" }) }
+        $sdaVoulue = "$(Get-Prop -Objet $j -Nom 'sda' -Defaut '')"
+        if ($sdaVoulue) {
+            $dossier.Sda3CX = @($sda | Where-Object { $_.Numero -eq $sdaVoulue })[0]
+            if (-not $dossier.Sda3CX) { throw "SDA inconnue du PBX : $sdaVoulue" }
+        }
         $modeleVoulu = "$(Get-Prop -Objet $j -Nom 'copierPoste3cxDe' -Defaut '')"
         if ($modeleVoulu -and $dossier.NouveauPoste) {
             $dossier.Modele3CX = Get-XapiPosteComplet -Pbx $pbx -Numero $modeleVoulu
@@ -251,6 +262,17 @@ if ($pbx) {
             # --- Les files d'attente AVANT le modèle : elles désignent les bons collègues.
             if (Confirm-Choix -Question "Inscrire ce poste dans des files d'attente ?" -DefautOui) {
                 $dossier.Files3CX = @(Read-Choix -Titre "Dans quelles files d'attente ?" -Elements $toutesFiles -Colonnes Number, Name -Multiple)
+            }
+
+            # --- La SDA : un numéro direct, choisi dans la liste du PBX.
+            if (Confirm-Choix -Question 'Attribuer un numéro direct (SDA) à ce poste ?' -DefautOui) {
+                $vueSda = @($sda | Select-Object Numero, @{ n = 'Actuellement'; e = { $_.Pointe } }, Nom)
+                $choisie = Read-Choix -Titre "Quel numéro direct ? ($($sda.Count) SDA)" `
+                    -Aide 'tapez le début du numéro pour filtrer, +4122 par exemple' -Elements $vueSda -Colonnes Numero, Actuellement, Nom
+                $dossier.Sda3CX = @($sda | Where-Object { $_.Numero -eq $choisie.Numero })[0]
+                $combien = if ($dossier.Sda3CX.Regles.Count) { "$($dossier.Sda3CX.Regles.Count) règle(s) à réécrire" } else { "$(@($dossier.Sda3CX.Trunks).Count) règle(s) à créer" }
+                Show-Constat -Titre "Numéro direct retenu — $combien" -Valeurs @($dossier.Sda3CX.Numero, "vers le poste $($dossier.Numero3CX)") -Niveau Info
+                Add-Resume -Cle 'SDA' -Valeur $dossier.Sda3CX.Numero
             }
 
             # --- Copier la configuration d'un collègue : réglages, renvois, BLF, départements.
@@ -312,7 +334,8 @@ $recap = [ordered]@{
     'Files 3CX'       = $(if ($dossier.Files3CX.Count) { ($dossier.Files3CX | ForEach-Object { "$($_.Number) $($_.Name)" }) -join ' · ' } else { '—' })
     'Config 3CX'      = $(if ($dossier.Modele3CX) { "copiée du poste $($dossier.Modele3CX.Number) « $($dossier.Modele3CX.DisplayName) » : $($dossier.Copie3CX -join ', ')" } else { '—' })
     'Départements'    = $(if ($dossier.Departements3CX.Count) { ($dossier.Departements3CX | ForEach-Object { $_.Name }) -join '; ' } else { '—' })
-    'Mode'            = $(if ($Reglages.Simulation) { 'SIMULATION — rien ne sera écrit' } else { 'RÉEL — le compte sera créé' })
+    'Numéro direct'   = $(if ($dossier.Sda3CX) { "$($dossier.Sda3CX.Numero) — aujourd'hui : $($dossier.Sda3CX.Pointe)" } else { '—' })
+    'Mode'            = (Get-ModeEcriture)
 }
 Show-Recap -Paires $recap -Titre 'Récapitulatif avant création'
 if (-not $Job -and -not (Confirm-Choix -Question $(if ($Reglages.Simulation) { 'Lancer la simulation ?' } else { 'Confirmer et CRÉER le compte ?' }))) { Stop-Script }
@@ -398,6 +421,11 @@ try {
 
     Invoke-Etape -Nom "Poste 3CX inscrit dans ses files d'attente" -Categorie 3CX -Ignorer:(-not $dossier.Numero3CX -or $dossier.Files3CX.Count -eq 0) -Action {
         Add-XapiPosteAuxFiles -Pbx $pbx -Numero $dossier.Numero3CX -Files $dossier.Files3CX
+    } | Out-Null
+
+    Invoke-Etape -Nom $(if ($dossier.Sda3CX) { "Numéro direct $($dossier.Sda3CX.Numero) dirigé vers le poste" } else { 'Numéro direct' }) `
+                 -Categorie 3CX -Ignorer:(-not $dossier.Sda3CX -or -not $dossier.Numero3CX) -Action {
+        Set-XapiSdaVersPoste -Pbx $pbx -Sda $dossier.Sda3CX -Numero $dossier.Numero3CX -NomRegle $dossier.DisplayName
     } | Out-Null
 } catch {
     Show-Note "Exécution interrompue : $(Get-MessageErreur $_)" -Niveau Erreur

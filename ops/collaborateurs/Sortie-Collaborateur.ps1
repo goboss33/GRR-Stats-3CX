@@ -24,7 +24,9 @@ param(
     [switch] $SansMail,
     [switch] $Sans3CX,
     [switch] $SansPlanner,
-    [switch] $SansScanDelegations
+    [switch] $SansScanDelegations,
+    [switch] $Simulation3CX,      # simuler le 3CX même si le reste est réel
+    [switch] $Reel3CX             # écrire sur le 3CX POUR DE VRAI même si le reste est simulé
 )
 
 # ------------------------------------------- RELANCE SOUS POWERSHELL 7
@@ -47,6 +49,7 @@ $Reglages = @{
     ModeTest           = $true          # mails détournés vers DestinataireTest, sujet [TEST], pas de tâche Planner
     DestinataireTest   = 'geoffrey.bossens@grrsa.ch'
     Simulation         = $false         # AUCUNE écriture : tout est décrit
+    Simulation3CX      = $null          # $null = suit Simulation ; $true/$false pour trancher à part
     EnvoyerMail        = $true
     Gerer3CX           = $true
     CreerTachePlanner  = $true
@@ -55,6 +58,8 @@ $Reglages = @{
 }
 if ($ModeTest)            { $Reglages.ModeTest = $true }
 if ($Simulation)          { $Reglages.Simulation = $true }
+if ($Simulation3CX)       { $Reglages.Simulation3CX = $true }
+if ($Reel3CX)             { $Reglages.Simulation3CX = $false }
 if ($SansMail)            { $Reglages.EnvoyerMail = $false }
 if ($Sans3CX)             { $Reglages.Gerer3CX = $false }
 if ($SansPlanner)         { $Reglages.CreerTachePlanner = $false }
@@ -250,7 +255,7 @@ $recap = [ordered]@{
     'OU de destination'   = $(if ($soc.ouDesactives) { $soc.ouDesactives } else { 'AUCUNE (pas de déplacement)' })
     'Microsoft 365'       = $(if ($soc.tenantId) { 'boîte partagée, licences, délégations' } else { 'pas de tenant : ignoré' })
     'Poste 3CX'           = $(if ($dossier.Poste3CX) { "$($dossier.Poste3CX.Number) « $($dossier.Poste3CX.DisplayName) » — $($dossier.Files3CX.Count) file(s), $($dossier.Sda3CX.Count) SDA" } elseif ($pbx) { 'aucun trouvé' } else { 'pas de PBX / désactivé' })
-    'Mode'                = $(if ($Reglages.Simulation) { 'SIMULATION — rien ne sera écrit' } else { 'RÉEL — les actions seront faites' })
+    'Mode'            = (Get-ModeEcriture)
 }
 Show-Recap -Paires $recap -Titre 'Récapitulatif avant exécution'
 if (-not $Job -and -not (Confirm-Choix -Question $(if ($Reglages.Simulation) { 'Lancer la simulation ?' } else { 'Confirmer et EXÉCUTER ?' }))) { Stop-Script }

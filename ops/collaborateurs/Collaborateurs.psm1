@@ -102,6 +102,28 @@ function Get-Prop {
 }
 function Get-Reglages { return $script:Reglages }
 function Test-Simulation { return [bool]$script:Reglages.Simulation }
+
+function Test-Simulation3CX {
+    <#
+      Le 3CX peut être simulé à part : c'est le seul système où l'on veut
+      parfois écrire pour de vrai pendant qu'on simule tout le reste (créer
+      la ligne d'un arrivant sans toucher à l'AD ni à Exchange), et parfois
+      l'épargner alors qu'on exécute le reste. Sans réglage explicite, il
+      suit la simulation générale — un « -Simulation » n'écrit nulle part.
+    #>
+    if ($script:Reglages.ContainsKey('Simulation3CX') -and $null -ne $script:Reglages['Simulation3CX']) {
+        return [bool]$script:Reglages['Simulation3CX']
+    }
+    return (Test-Simulation)
+}
+
+function Get-ModeEcriture {
+    <# Ce que les deux modes donnent, en clair, pour l'en-tête et le récapitulatif. #>
+    $g = Test-Simulation; $p = Test-Simulation3CX
+    if ($g -eq $p) { return $(if ($g) { 'SIMULATION — rien ne sera écrit' } else { 'RÉEL — les actions seront exécutées' }) }
+    if ($g) { return 'SIMULATION partout, SAUF le 3CX qui sera écrit POUR DE VRAI' }
+    return 'RÉEL partout, sauf le 3CX qui est simulé'
+}
 function Test-ModeTest { return [bool]$script:Reglages.ModeTest }
 
 function Get-Societe {
@@ -371,6 +393,9 @@ function Get-LignesEnTete {
 
     $modes = @()
     if ($r.Simulation) { $modes += "[$($script:Ui.Succes)]●[/] [grey62]SIMULATION[/]" } else { $modes += "[red]●[/] [grey62]RÉEL[/]" }
+    if ((Test-Simulation) -ne (Test-Simulation3CX)) {
+        $modes += $(if (Test-Simulation3CX) { "[$($script:Ui.Succes)]●[/] [grey62]3CX SIMULÉ[/]" } else { "[red]●[/] [bold red]3CX RÉEL[/]" })
+    }
     if ($r.ModeTest)   { $modes += "[grey50]●[/] [grey62]MODE TEST[/]" }
     $lignes += Format-Deux -Gauche "[bold white]$(Protect-Texte $e.Titre)[/]" -Droite ($modes -join '   ')
     $lignes += "[grey50]$(Protect-Texte "Service Informatique · $($script:Session.Operateur) · $(Get-Date -Format 'dd.MM.yyyy HH:mm')")[/]"
@@ -1021,7 +1046,9 @@ function Invoke-Ecriture {
         [ValidateSet('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')] [string] $Categorie = 'General',
         [switch] $SansJournal      # l'appelant résume lui-même (une ligne pour vingt groupes, pas vingt lignes)
     )
-    if (Test-Simulation) {
+    # Le 3CX a son propre interrupteur : voir Test-Simulation3CX.
+    $simule = if ($Categorie -eq '3CX') { Test-Simulation3CX } else { Test-Simulation }
+    if ($simule) {
         if (-not $SansJournal) { Add-Journal -Message "SIMULATION : $Description" -Categorie $Categorie -Niveau Simule }
         return $null
     }
@@ -1093,6 +1120,7 @@ function Show-Checklist {
     if ($ko -gt 0) { $parts += "[bold red]$ko en échec[/]" } else { $parts += '[grey50]0 en échec[/]' }
     $parts += "[grey50]$ig ignorée$(if ($ig -gt 1) { 's' })[/]"
     if (Test-Simulation) { $parts += "[$($script:Ui.Accent)]simulation — rien n'a été écrit[/]" }
+    if ((Test-Simulation) -ne (Test-Simulation3CX)) { $parts += $(if (Test-Simulation3CX) { '[grey50]3CX simulé[/]' } else { '[bold red]3CX écrit pour de vrai[/]' }) }
     Write-Vide
     Write-Ligne "[$($script:Ui.Ligne)]$('─' * (Get-Colonne))[/]"
     Write-Vide
@@ -1921,6 +1949,104 @@ function Set-XapiDepartementPrincipal {
         -Libelle "Département principal : $(if ($Nom) { $Nom } else { $DepartementId })" | Out-Null
 }
 
+function Get-XapiSda {
+    <#
+      Les SDA du PBX, une ligne par NUMÉRO et non par trunk : chaque numéro
+      est déclaré sur les deux trunks, et porte donc deux règles entrantes
+      jumelles. On rend le numéro, ses règles, et vers quoi il pointe
+      aujourd'hui — pour choisir en connaissance de cause.
+    #>
+    param([Parameter(Mandatory)] $Pbx)
+    $numeros = @(); $skip = 0
+    do {
+        $page = Invoke-Xapi -Pbx $Pbx -Chemin "DidNumbers?%24top=100&%24skip=$skip"
+        $lot = @($page.value); $numeros += $lot; $skip += 100
+    } while ($lot.Count -eq 100 -and $skip -lt 20000)
+
+    $regles = @(); $skip = 0
+    do {
+        $page = Invoke-Xapi -Pbx $Pbx -Chemin "InboundRules?%24top=100&%24skip=$skip"
+        $lot = @($page.value); $regles += $lot; $skip += 100
+    } while ($lot.Count -eq 100 -and $skip -lt 20000)
+
+    $parNumero = @{}
+    foreach ($r in $regles) {
+        $d = "$(Get-Prop -Objet $r -Nom 'Data' -Defaut '')"
+        if (-not $d) { continue }
+        if (-not $parNumero.ContainsKey($d)) { $parNumero[$d] = @() }
+        $parNumero[$d] += $r
+    }
+    $trunksPar = @{}
+    foreach ($n in $numeros) {
+        $d = "$($n.Number)"
+        if (-not $trunksPar.ContainsKey($d)) { $trunksPar[$d] = @() }
+        $trunksPar[$d] += [int](Get-Prop -Objet $n -Nom 'TrunkId' -Defaut 0)
+    }
+
+    $sortie = @()
+    foreach ($d in ($trunksPar.Keys | Sort-Object)) {
+        $mes = @($parNumero[$d])
+        $dest = 'aucune règle'
+        if ($mes.Count -gt 0) {
+            $o = Get-Prop -Objet $mes[0] -Nom 'OfficeHoursDestination'
+            $vers = "$(Get-Prop -Objet $o -Nom 'To' -Defaut '')"
+            $num = "$(Get-Prop -Objet $o -Nom 'Number' -Defaut '')"
+            $nom = "$(Get-Prop -Objet $o -Nom 'Name' -Defaut '')"
+            $dest = if ($vers -and $vers -ne 'None' -and $num) { "$vers $num$(if ($nom) { " « $nom »" })" } elseif ($vers -and $vers -ne 'None') { $vers } else { 'sans destination' }
+        }
+        $sortie += [pscustomobject]@{
+            Numero  = $d
+            Nom     = $(if ($mes.Count) { "$(Get-Prop -Objet $mes[0] -Nom 'RuleName' -Defaut '')" } else { '' })
+            Pointe  = $dest
+            Regles  = $mes
+            Trunks  = @($trunksPar[$d] | Sort-Object -Unique)
+        }
+    }
+    return @($sortie)
+}
+
+function Set-XapiSdaVersPoste {
+    <#
+      Dirige une SDA vers un poste : les DEUX règles jumelles, une par
+      trunk, sont réécrites — heures ouvrables, hors horaires et jours
+      fériés — et prennent le nom de la personne. Si la SDA n'a encore
+      aucune règle, elles sont créées, une par trunk porteur.
+    #>
+    param(
+        [Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] $Sda,
+        [Parameter(Mandatory)] [string] $Numero, [Parameter(Mandatory)] [string] $NomRegle
+    )
+    $regles = @($Sda.Regles)
+    $destination = @{ To = 'Extension'; Number = $Numero; External = '' }
+    $corps = @{
+        RuleName                    = $NomRegle
+        OfficeHoursDestination      = $destination
+        OutOfOfficeHoursDestination = $destination
+        HolidaysDestination         = $destination
+    }
+    if ($regles.Count -gt 0) {
+        foreach ($r in $regles) {
+            Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "InboundRules($($r.Id))" -Corps $corps `
+                -Libelle "SDA $($Sda.Numero) vers le poste $Numero, règle $($r.Id) renommée « $NomRegle »" | Out-Null
+        }
+    } else {
+        # Aucune règle : on en crée une par trunk porteur, comme le fait la console.
+        foreach ($trunk in @($Sda.Trunks)) {
+            $creation = $corps.Clone()
+            $creation.Data = "$($Sda.Numero)"
+            $creation.Condition = 'BasedOnDID'
+            $creation.CallType = 'AllCalls'
+            $creation.TrunkDN = @{ Id = [int]$trunk }
+            Invoke-Xapi -Pbx $Pbx -Methode POST -Chemin 'InboundRules' -Corps $creation `
+                -Libelle "SDA $($Sda.Numero) : créer la règle du trunk $trunk vers le poste $Numero, au nom de « $NomRegle »" | Out-Null
+        }
+    }
+    if (-not (Test-Simulation3CX)) {
+        $combien = if ($regles.Count -gt 0) { $regles.Count } else { @($Sda.Trunks).Count }
+        Add-Journal -Message "SDA $($Sda.Numero) vers le poste $Numero sur $combien trunk(s), au nom de « $NomRegle »." -Categorie 3CX -Niveau Succes
+    }
+}
+
 function Get-XapiSdaVersPoste {
     <# Règles entrantes (SDA) dont une destination vise ce poste — une ligne par règle. Version 1 : on LISTE, on ne réécrit pas. #>
     param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [string] $Numero)
@@ -2195,6 +2321,9 @@ function ConvertTo-RapportHtml {
     # Le mode, quand il n'est pas le mode normal
     $etiquettes = @()
     if (Test-Simulation) { $etiquettes += "SIMULATION &#183; rien n'a été écrit, chaque geste est seulement décrit" }
+    if ((Test-Simulation) -ne (Test-Simulation3CX)) {
+        $etiquettes += $(if (Test-Simulation3CX) { "3CX SIMULÉ &#183; le central téléphonique n'a pas été touché" } else { "3CX RÉEL &#183; le central téléphonique a bien été modifié, lui" })
+    }
     if (Test-ModeTest)   { $etiquettes += "MODE TEST &#183; rapport détourné, aucune tâche Planner créée" }
     if ($etiquettes.Count -gt 0) {
         [void]$sb.Append("<tr><td style=""background:#fff7ed;border-bottom:1px solid #fcd9a4;padding:12px 28px;$($script:Police);font-size:13px;color:$($p.Alerte)"">")
