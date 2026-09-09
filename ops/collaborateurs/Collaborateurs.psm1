@@ -1783,6 +1783,144 @@ function Set-XapiPoste {
     Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Users($Id)" -Corps $Proprietes -Libelle $Libelle | Out-Null
 }
 
+function Get-XapiNumeroLibre {
+    <# Le premier numéro d'extension libre, selon le PBX lui-même. #>
+    param([Parameter(Mandatory)] $Pbx)
+    $r = Invoke-Xapi -Pbx $Pbx -Chemin 'Users/Pbx.GetFirstAvailableExtensionNumber()'
+    return "$(Get-Prop -Objet $r -Nom 'Number' -Defaut '')"
+}
+
+function Get-XapiPosteComplet {
+    <# Un poste avec ce qu'il faut pour le recopier : profils de renvoi et exceptions. #>
+    param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [string] $Numero)
+    $r = Invoke-Xapi -Pbx $Pbx -Chemin "Users?%24filter=Number%20eq%20'$Numero'&%24expand=ForwardingProfiles,ForwardingExceptions"
+    return @($r.value)[0]
+}
+
+function Get-XapiDepartements {
+    <#
+      Les départements du PBX avec leurs membres ET les droits de chacun —
+      la matrice « Visualiser ». Une seule requête suffit : les droits ne
+      viennent que si on les demande, d'où l'expand imbriqué.
+    #>
+    param([Parameter(Mandatory)] $Pbx)
+    $tous = @(); $skip = 0
+    do {
+        $page = Invoke-Xapi -Pbx $Pbx -Chemin "Groups?%24top=100&%24skip=$skip&%24expand=Members(%24expand%3DRights)"
+        $lot = @($page.value); $tous += $lot; $skip += 100
+    } while ($lot.Count -eq 100 -and $skip -lt 1000)
+    return @($tous | Sort-Object Id -Unique)
+}
+
+function Get-XapiDepartementsDuPoste {
+    param([Parameter(Mandatory)] [object[]] $Departements, [Parameter(Mandatory)] [string] $Numero)
+    return @($Departements | Where-Object { @($_.Members | ForEach-Object { "$($_.Number)" }) -contains $Numero })
+}
+
+# Ce qu'une copie de poste NE reprend JAMAIS : l'identité, les secrets, le
+# matériel, les numéros directs — vérifié poste par poste sur le PBX.
+$script:XapiChampsCopies = @(
+    'Blfs', 'Language', 'PromptSet', 'RecordCalls', 'RecordExternalCallsOnly', 'AllowOwnRecordings',
+    'RecordEmailNotify', 'SendEmailMissedCalls', 'VMEnabled', 'VMEmailOptions', 'VMPlayCallerID',
+    'VMPlayMsgDateTime', 'VMDisablePinAuth', 'MyPhonePush', 'MyPhoneShowRecordings',
+    'MyPhoneAllowDeleteRecordings', 'MyPhoneHideForwardings', 'HideInPhonebook', 'CallScreening',
+    'AllowLanOnly', 'BlockTunnel', 'SRTPMode', 'PbxDeliversAudio', 'Internal', 'PinProtected',
+    'PinProtectTimeout', 'MS365SignInEnabled', 'MS365ContactsEnabled', 'MS365CalendarEnabled',
+    'MS365TeamsEnabled', 'GoogleSignInEnabled', 'GoogleContactsEnabled', 'GoogleCalendarEnabled',
+    'Hours', 'BreakTime', 'TranscriptionMode', 'CallUsRequirement', 'CallUsEnablePhone',
+    'CallUsEnableChat', 'CallUsEnableVideo', 'WebMeetingApproveParticipants', 'DatevEnabled'
+)
+
+function New-XapiPoste {
+    <# Crée un poste. Le PBX compose lui-même le nom affiché à partir du nom et du prénom. #>
+    param(
+        [Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [string] $Numero,
+        [string] $Prenom = '', [string] $Nom = '', [string] $Email = ''
+    )
+    $corps = @{ Number = $Numero; FirstName = $Prenom; LastName = $Nom; Enabled = $true }
+    if ($Email) { $corps.EmailAddress = $Email }
+    $r = Invoke-Xapi -Pbx $Pbx -Methode POST -Chemin 'Users' -Corps $corps -Libelle "Créer le poste $Numero pour $Prenom $Nom$(if ($Email) { " ($Email)" })"
+    if (Test-Simulation) { return $null }
+    return $r
+}
+
+function Copy-XapiConfigurationPoste {
+    <#
+      Recopie la configuration d'un poste modèle sur un poste existant :
+      réglages généraux, touches BLF, profils de renvoi et leurs exceptions.
+      Le département principal en est exclu — le PBX le refuse tant que le
+      poste n'est pas membre du département (constaté à l'essai).
+    #>
+    param(
+        [Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] $Modele,
+        [Parameter(Mandatory)] [int] $Id, [Parameter(Mandatory)] [string] $Numero,
+        [string[]] $Quoi = @('reglages', 'renvois')   # ce que l'opérateur a laissé coché
+    )
+    $corps = @{}
+    if ($Quoi -contains 'reglages') {
+        foreach ($champ in $script:XapiChampsCopies) {
+            $v = Get-Prop -Objet $Modele -Nom $champ
+            if ($null -ne $v) { $corps[$champ] = $v }
+        }
+    }
+    # Les touches BLF du modèle contiennent sa propre extension : on la remplace.
+    if ($corps.ContainsKey('Blfs') -and $corps['Blfs']) {
+        $corps['Blfs'] = "$($corps['Blfs'])" -replace ">$([regex]::Escape("$($Modele.Number)"))<", ">$Numero<"
+    }
+    if ($Quoi -contains 'renvois') {
+        $profils = @()
+        foreach ($p in @(Get-Prop -Objet $Modele -Nom 'ForwardingProfiles' -Defaut @())) {
+            $copie = @{}
+            foreach ($prop in $p.PSObject.Properties) { if ($prop.Name -ne 'Id') { $copie[$prop.Name] = $prop.Value } }
+            $profils += $copie
+        }
+        if ($profils.Count) { $corps['ForwardingProfiles'] = $profils }
+        $exceptions = @(Get-Prop -Objet $Modele -Nom 'ForwardingExceptions' -Defaut @())
+        if ($exceptions.Count) {
+            $corps['ForwardingExceptions'] = @($exceptions | ForEach-Object {
+                $c = @{}; foreach ($prop in $_.PSObject.Properties) { if ($prop.Name -ne 'Id') { $c[$prop.Name] = $prop.Value } }; $c
+            })
+        }
+    }
+    if ($corps.Keys.Count -eq 0) { return }
+    $resume = @("$($corps.Keys.Count) réglages")
+    if ($corps.ContainsKey('Blfs')) { $resume += "$((([regex]::Matches("$($corps['Blfs'])", '<BLF ')).Count)) touches BLF" }
+    if ($corps.ContainsKey('ForwardingProfiles')) { $resume += "$($corps['ForwardingProfiles'].Count) profils de renvoi" }
+    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Users($Id)" -Corps $corps -Libelle "Copier depuis le poste $($Modele.Number) : $($resume -join ', ')" | Out-Null
+}
+
+function Add-XapiPosteAuDepartement {
+    <#
+      Ajoute un poste à un département, avec le rôle du modèle s'il est donné.
+      On renvoie la liste complète des membres : le PBX ne fait pas de diff.
+    #>
+    param(
+        [Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] $Departement,
+        [Parameter(Mandatory)] [string] $Numero, $Droits = $null
+    )
+    $membres = @()
+    foreach ($m in @($Departement.Members)) {
+        if ("$($m.Number)" -eq $Numero) { continue }
+        $ligne = @{ Number = "$($m.Number)" }
+        $r = Get-Prop -Objet $m -Nom 'Rights'
+        if ($r) { $ligne.Rights = $r }
+        $membres += $ligne
+    }
+    $nouveau = @{ Number = $Numero }
+    if ($Droits) { $nouveau.Rights = $Droits }
+    $membres += $nouveau
+    $role = if ($Droits) { " avec le rôle $(Get-Prop -Objet $Droits -Nom 'RoleName' -Defaut '?')" } else { '' }
+    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Groups($($Departement.Id))" -Corps @{ Members = $membres } `
+        -Libelle "Rattacher au département « $($Departement.Name) »$role" | Out-Null
+}
+
+function Set-XapiDepartementPrincipal {
+    <# À n'appeler QU'APRÈS le rattachement : le PBX refuse un département dont le poste n'est pas membre. #>
+    param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [int] $Id, [Parameter(Mandatory)] [int] $DepartementId, [string] $Nom = '')
+    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Users($Id)" -Corps @{ PrimaryGroupId = $DepartementId } `
+        -Libelle "Département principal : $(if ($Nom) { $Nom } else { $DepartementId })" | Out-Null
+}
+
 function Get-XapiSdaVersPoste {
     <# Règles entrantes (SDA) dont une destination vise ce poste — une ligne par règle. Version 1 : on LISTE, on ne réécrit pas. #>
     param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [string] $Numero)

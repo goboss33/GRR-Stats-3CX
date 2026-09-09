@@ -14,6 +14,8 @@ rapport JSON, et le 3CX pris en charge par la XAPI.
 | `Sortie-Collaborateur.ps1` | La sortie. |
 | `Test-Interface.ps1` | Banc d'essai de l'interface : aucune connexion, aucune écriture. |
 | `Test-Annuaire.ps1` | Sonde de l'Active Directory : montre ce que l'annuaire répond pour un compte donné. Lecture seule. |
+
+Côté application de statistiques, `frontend/scripts/diag-xapi-postes.ts` vérifie ce que la XAPI du 3CX permet d'écrire : sans argument il ne fait que lire, avec `--go` il crée un poste d'essai au premier numéro libre, y copie un modèle, compare, puis le supprime.
 | `Set-Secret.ps1` | Enregistre la clé XAPI, chiffrée pour la machine. |
 | `exemples\*.json` | Fichiers de travail pour le mode sans dialogue (`-Job`). |
 
@@ -141,7 +143,11 @@ Quand la lecture d'un compte ou de ses groupes ne donne pas ce qu'on attend, la 
 
 ## Ce que fait le volet 3CX
 
-**Entrée** : propose les postes libres — désactivés, ou nommés « libre » — du site (préfixe `prefixePostes` dans `config.json`, sinon tous), pose nom, prénom, e-mail, réactive, inscrit dans les files choisies. Le lendemain, l'application de statistiques le reconnaît par l'e-mail.
+**Entrée** : demande d'abord s'il faut **créer** un poste — le PBX propose lui-même le premier numéro libre — sinon propose de réaffecter un poste libre, désactivé ou nommé « libre », du site (préfixe `prefixePostes` dans `config.json`). Viennent ensuite les files d'attente, puis la **copie de la configuration d'un collègue**, proposé parmi les agents des files retenues, avec la recherche libre en secours. Le lendemain, l'application de statistiques le reconnaît par l'e-mail.
+
+Ce que la copie reprend, chaque bloc décochable : les réglages généraux et les touches BLF, les profils de renvoi et leurs exceptions, les départements avec les droits « Visualiser » du modèle. Ce qu'elle ne reprend **jamais** : le numéro, l'identité, l'adresse, l'identifiant appelant sortant qui est le numéro direct du modèle, les mots de passe SIP, le code de messagerie, la photo, le téléphone physique, la poste flexible, et les réglages de double authentification. La touche BLF qui pointait sur le modèle est reportée sur le nouveau numéro.
+
+Deux contraintes du PBX, constatées à l'essai : le nom affiché est composé par le 3CX à partir du nom et du prénom, et le **département principal n'est accepté qu'une fois le poste membre du département** — le script fait donc le rattachement d'abord.
 
 **Sortie** : retrouve le poste par l'e-mail, le retire de toutes ses files, vide l'e-mail, le **désactive** — le numéro reste réservé. Les règles entrantes (SDA) qui visent encore le poste sont **listées dans le rapport, pas réécrites** : à faire à la main pour l'instant.
 

@@ -1,5 +1,6 @@
 {
-  "_commentaire": "Exemple de fichier de travail pour Nouveau-Collaborateur.ps1 -Job. Aucune question n'est posée : tout vient d'ici. identifiant, groupesDe, poste3cx et files3cx sont facultatifs. groupesDe = identifiant d'un ou d'une collègue dont on reprend les groupes (sauf les groupes sensibles de config.json).",
+  "_commentaire": "Exemple de fichier de travail pour Nouveau-Collaborateur.ps1 -Job. Aucune question n'est posée : tout vient d'ici. identifiant, groupesDe, poste3cx, nouveauPoste3cx, copierPoste3cxDe et files3cx sont facultatifs.",
+  "_commentaire3cx": "Deux façons d'avoir un poste : nouveauPoste3cx (true = le premier numéro libre, ou un numéro précis) pour en CRÉER un, ou poste3cx pour en réaffecter un existant. copierPoste3cxDe = numéro d'un poste modèle dont on reprend réglages, touches BLF, profils de renvoi, départements et droits.",
   "societe": "GEROFINANCE",
   "site": "PULLY",
   "prenom": "Marie",
@@ -9,6 +10,8 @@
   "titre": "Comptable immobilière",
   "identifiant": null,
   "groupesDe": "jmodele",
-  "poste3cx": "129",
+  "nouveauPoste3cx": true,
+  "poste3cx": null,
+  "copierPoste3cxDe": "129",
   "files3cx": [ "906" ]
 }

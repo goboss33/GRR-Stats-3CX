@@ -78,7 +78,8 @@ $dossier = [ordered]@{
     Societe = $null; Site = $null; Prenom = ''; Nom = ''; Fonction = ''; Service = ''; Titre = ''
     Sam = ''; Email = ''; MailNickname = ''; DisplayName = ''; MotDePasse = ''
     Modele = ''; GroupesRepris = @()          # les groupes repris d'un ou d'une collègue
-    Poste3CX = $null; Files3CX = @()
+    Poste3CX = $null; Files3CX = @(); Numero3CX = ''; NouveauPoste = $false
+    Modele3CX = $null; Copie3CX = @(); Departements3CX = @()
 }
 
 Set-Etape 'Le collaborateur'
@@ -194,29 +195,101 @@ if ($pbx) {
         $prefixe = "$(Get-Prop -Objet $site -Nom 'prefixePostes' -Defaut '')"
         $candidats = @(Get-XapiPostesLibres -Pbx $pbx -Prefixe $prefixe)
         if ($candidats.Count -eq 0 -and $prefixe) { $candidats = @(Get-XapiPostesLibres -Pbx $pbx) }
-        return @{ Candidats = $candidats; Files = @(Get-XapiFiles -Pbx $pbx | Select-Object Id, Number, Name | Sort-Object Name) }
-    }
-    $candidats = @($lecture.Candidats); $toutesFiles = @($lecture.Files)
-
-    # Poste : un poste libre du site (désactivé ou nommé « libre »), ou aucun.
-    $posteVoulu = if ($Job) { "$(Get-Prop -Objet $j -Nom 'poste3cx' -Defaut '')" } else { '' }
-    if ($posteVoulu) {
-        $dossier.Poste3CX = @(Get-XapiUtilisateurs -Pbx $pbx | Where-Object { "$($_.Number)" -eq $posteVoulu })[0]
-        if (-not $dossier.Poste3CX) { throw "Poste 3CX introuvable : $posteVoulu" }
-    } elseif (-not $Job) {
-        Show-Constat -Titre "$($candidats.Count) postes libres au 3CX — désactivés, ou nommés « libre »" -Niveau Info
-        if ($candidats.Count -gt 0 -and (Confirm-Choix -Question 'Réaffecter un poste libre à ce collaborateur ?' -DefautOui)) {
-            $vue = @($candidats | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled) { 'actif' } else { 'désactivé' } } })
-            $dossier.Poste3CX = Read-Choix -Titre 'Quel poste 3CX réaffecter ?' -Elements $vue -Colonnes Number, DisplayName, EmailAddress, Etat
+        return @{
+            Candidats     = $candidats
+            Files         = @(Get-XapiFiles -Pbx $pbx | Sort-Object Name)
+            Utilisateurs  = @(Get-XapiUtilisateurs -Pbx $pbx)
+            Departements  = @(Get-XapiDepartements -Pbx $pbx)
+            NumeroLibre   = "$(Get-XapiNumeroLibre -Pbx $pbx)"
         }
     }
-    if ($dossier.Poste3CX) {
-        if (-not $Job) { Add-Resume -Cle 'Poste' -Valeur "$($dossier.Poste3CX.Number)" }
-        $filesVoulues = if ($Job) { @(Get-Prop -Objet $j -Nom 'files3cx' -Defaut @() | ForEach-Object { "$_" }) } else { @() }
-        if ($filesVoulues.Count -gt 0) {
-            $dossier.Files3CX = @($toutesFiles | Where-Object { $filesVoulues -contains "$($_.Number)" })
-        } elseif (-not $Job -and (Confirm-Choix -Question "Inscrire ce poste dans des files d'attente ?" -DefautOui)) {
-            $dossier.Files3CX = @(Read-Choix -Titre "Dans quelles files d'attente ?" -Elements $toutesFiles -Colonnes Number, Name -Multiple)
+    $candidats = @($lecture.Candidats); $toutesFiles = @($lecture.Files)
+    $tousPostes = @($lecture.Utilisateurs); $departements = @($lecture.Departements)
+
+    if ($Job) {
+        # Sans dialogue : le fichier de travail décide.
+        $posteVoulu = "$(Get-Prop -Objet $j -Nom 'poste3cx' -Defaut '')"
+        $nouveau = "$(Get-Prop -Objet $j -Nom 'nouveauPoste3cx' -Defaut '')"
+        if ($nouveau) {
+            $dossier.NouveauPoste = $true
+            $dossier.Numero3CX = $(if ($nouveau -match '^\d+$') { $nouveau } else { $lecture.NumeroLibre })
+        } elseif ($posteVoulu) {
+            $dossier.Poste3CX = @($tousPostes | Where-Object { "$($_.Number)" -eq $posteVoulu })[0]
+            if (-not $dossier.Poste3CX) { throw "Poste 3CX introuvable : $posteVoulu" }
+            $dossier.Numero3CX = "$($dossier.Poste3CX.Number)"
+        }
+        $filesVoulues = @(Get-Prop -Objet $j -Nom 'files3cx' -Defaut @() | ForEach-Object { "$_" })
+        if ($filesVoulues.Count -gt 0) { $dossier.Files3CX = @($toutesFiles | Where-Object { $filesVoulues -contains "$($_.Number)" }) }
+        $modeleVoulu = "$(Get-Prop -Objet $j -Nom 'copierPoste3cxDe' -Defaut '')"
+        if ($modeleVoulu -and $dossier.NouveauPoste) {
+            $dossier.Modele3CX = Get-XapiPosteComplet -Pbx $pbx -Numero $modeleVoulu
+            if (-not $dossier.Modele3CX) { throw "Poste modèle introuvable : $modeleVoulu" }
+            $dossier.Copie3CX = @('reglages', 'renvois', 'departements')
+        }
+    } else {
+        # --- Le poste : on en crée un, ou on en reprend un qui dort.
+        if (Confirm-Choix -Question 'Créer un nouveau poste 3CX pour ce collaborateur ?' -DefautOui) {
+            $dossier.NouveauPoste = $true
+            $dossier.Numero3CX = Read-Texte -Invite 'Numéro du nouveau poste' -Defaut $lecture.NumeroLibre `
+                -Aide 'le 3CX propose le premier numéro libre' -Obligatoire -QuitteSurQ
+            while (@($tousPostes | Where-Object { "$($_.Number)" -eq $dossier.Numero3CX }).Count -gt 0) {
+                Show-Note "Le poste $($dossier.Numero3CX) existe déjà." -Niveau Alerte
+                $dossier.Numero3CX = Read-Texte -Invite 'Numéro du nouveau poste' -Defaut $lecture.NumeroLibre -Obligatoire -QuitteSurQ
+            }
+            Show-Constat -Titre 'Nouveau poste à créer' -Valeurs @("poste $($dossier.Numero3CX)") -Niveau Info
+        } else {
+            Show-Constat -Titre "$($candidats.Count) postes libres au 3CX — désactivés, ou nommés « libre »" -Niveau Info
+            if ($candidats.Count -gt 0 -and (Confirm-Choix -Question 'Réaffecter un poste libre à ce collaborateur ?' -DefautOui)) {
+                $vue = @($candidats | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled) { 'actif' } else { 'désactivé' } } })
+                $dossier.Poste3CX = Read-Choix -Titre 'Quel poste 3CX réaffecter ?' -Elements $vue -Colonnes Number, DisplayName, EmailAddress, Etat
+                $dossier.Numero3CX = "$($dossier.Poste3CX.Number)"
+            }
+        }
+
+        if ($dossier.Numero3CX) {
+            Add-Resume -Cle 'Poste' -Valeur $dossier.Numero3CX
+            # --- Les files d'attente AVANT le modèle : elles désignent les bons collègues.
+            if (Confirm-Choix -Question "Inscrire ce poste dans des files d'attente ?" -DefautOui) {
+                $dossier.Files3CX = @(Read-Choix -Titre "Dans quelles files d'attente ?" -Elements $toutesFiles -Colonnes Number, Name -Multiple)
+            }
+
+            # --- Copier la configuration d'un collègue : réglages, renvois, BLF, départements.
+            if ($dossier.NouveauPoste -and (Confirm-Choix -Question "Copier la configuration 3CX d'un collègue sur ce poste ?" -DefautOui)) {
+                # Les agents des files choisies d'abord : ce sont les bons modèles.
+                $numerosFiles = @()
+                foreach ($f in $dossier.Files3CX) { $numerosFiles += @($f.Agents | ForEach-Object { "$($_.Number)" }) }
+                $numerosFiles = @($numerosFiles | Sort-Object -Unique)
+                $proposes = @($tousPostes | Where-Object { $numerosFiles -contains "$($_.Number)" -and "$($_.Number)" -ne $dossier.Numero3CX } |
+                    Sort-Object { [int]("$($_.Number)" -replace '\D', '0') })
+                $modele = $null
+                if ($proposes.Count -gt 0) {
+                    $ailleurs = [pscustomobject]@{ Number = ''; DisplayName = "Chercher un autre poste…"; EmailAddress = '' }
+                    $choix = Read-Choix -Titre "Sur le modèle de quel poste ? ($($proposes.Count) dans les files choisies)" `
+                        -Elements (@($ailleurs) + $proposes) -Colonnes Number, DisplayName, EmailAddress
+                    if ($choix.Number) { $modele = $choix }
+                }
+                while (-not $modele) {
+                    $recherche = Read-Texte -Invite 'Quel poste prendre pour modèle ?' -Aide 'numéro ou nom — q pour quitter' -Obligatoire -QuitteSurQ
+                    $trouves = @($tousPostes | Where-Object { "$($_.Number)" -like "*$recherche*" -or "$($_.DisplayName)" -like "*$recherche*" } |
+                        Where-Object { "$($_.Number)" -ne $dossier.Numero3CX } | Sort-Object DisplayName)
+                    if ($trouves.Count -eq 0) { Show-Note "Aucun poste ne correspond à « $recherche »." -Niveau Alerte; continue }
+                    $modele = Read-Choix -Titre "Quel poste ? ($($trouves.Count) trouvé$(if ($trouves.Count -gt 1) { 's' }))" -Elements $trouves -Colonnes Number, DisplayName, EmailAddress
+                }
+                $dossier.Modele3CX = Invoke-Attente -Titre "Lecture du poste $($modele.Number)" -Action { Get-XapiPosteComplet -Pbx $pbx -Numero "$($modele.Number)" }
+                $sesDepartements = @(Get-XapiDepartementsDuPoste -Departements $departements -Numero "$($modele.Number)")
+                $nbBlf = ([regex]::Matches("$(Get-Prop -Objet $dossier.Modele3CX -Nom 'Blfs' -Defaut '')", '<BLF ')).Count
+                $nbRenvois = @(Get-Prop -Objet $dossier.Modele3CX -Nom 'ForwardingProfiles' -Defaut @()).Count
+                $quoi = @(
+                    [pscustomobject]@{ Code = 'reglages';     Quoi = "Réglages généraux et $nbBlf touches BLF" },
+                    [pscustomobject]@{ Code = 'renvois';      Quoi = "$nbRenvois profils de renvoi et leurs exceptions" },
+                    [pscustomobject]@{ Code = 'departements'; Quoi = "$($sesDepartements.Count) départements et leurs droits" }
+                )
+                $retenus = @(Read-Choix -Titre "Que reprendre du poste $($modele.Number) ?" -Aide 'tout est coché — décochez ce qui ne doit pas suivre' `
+                    -Elements $quoi -Colonnes Quoi -Multiple -IndicesCoches @(0..($quoi.Count - 1)))
+                $dossier.Copie3CX = @($retenus | ForEach-Object { $_.Code })
+                $dossier.Departements3CX = $(if ($dossier.Copie3CX -contains 'departements') { $sesDepartements } else { @() })
+                Show-Constat -Titre "Configuration reprise du poste $($modele.Number)" -Valeurs @($dossier.Modele3CX.DisplayName) -Niveau Info
+            }
         }
     }
 }
@@ -235,8 +308,10 @@ $recap = [ordered]@{
     'OU'              = $site.ou
     'Groupes auto'    = $(if ($soc.groupesAuto) { $soc.groupesAuto -join '; ' } else { '—' })
     'Groupes repris'  = $(if ($dossier.GroupesRepris.Count) { "$($dossier.GroupesRepris.Count) de $($dossier.Modele) : $(($dossier.GroupesRepris | ForEach-Object { $_.Nom }) -join '; ')" } else { '—' })
-    'Poste 3CX'       = $(if ($dossier.Poste3CX) { "$($dossier.Poste3CX.Number) (ex « $($dossier.Poste3CX.DisplayName) »)" } elseif ($pbx) { 'aucun' } else { 'pas de PBX pour cette société' })
+    'Poste 3CX'       = $(if ($dossier.NouveauPoste) { "$($dossier.Numero3CX) — à CRÉER" } elseif ($dossier.Poste3CX) { "$($dossier.Numero3CX) réaffecté (ex « $($dossier.Poste3CX.DisplayName) »)" } elseif ($pbx) { 'aucun' } else { 'pas de PBX pour cette société' })
     'Files 3CX'       = $(if ($dossier.Files3CX.Count) { ($dossier.Files3CX | ForEach-Object { "$($_.Number) $($_.Name)" }) -join ' · ' } else { '—' })
+    'Config 3CX'      = $(if ($dossier.Modele3CX) { "copiée du poste $($dossier.Modele3CX.Number) « $($dossier.Modele3CX.DisplayName) » : $($dossier.Copie3CX -join ', ')" } else { '—' })
+    'Départements'    = $(if ($dossier.Departements3CX.Count) { ($dossier.Departements3CX | ForEach-Object { $_.Name }) -join '; ' } else { '—' })
     'Mode'            = $(if ($Reglages.Simulation) { 'SIMULATION — rien ne sera écrit' } else { 'RÉEL — le compte sera créé' })
 }
 Show-Recap -Paires $recap -Titre 'Récapitulatif avant création'
@@ -285,16 +360,44 @@ try {
 
     Invoke-Etape -Nom 'Synchronisation AD Connect (delta)' -Categorie AD -Ignorer:(-not $Reglages.SynchroniserAdConnect) -Action { Invoke-AdConnectDelta } | Out-Null
 
-    Invoke-Etape -Nom 'Poste 3CX réaffecté' -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX) -Action {
-        $num = "$($dossier.Poste3CX.Number)"
-        Set-XapiPoste -Pbx $pbx -Id $dossier.Poste3CX.Id -Numero $num -Proprietes @{
-            FirstName = $dossier.Prenom; LastName = $dossier.Nom; EmailAddress = $dossier.Email; Enabled = $true
-        } -Libelle "Réaffecter le poste $num à $($dossier.DisplayName) ($($dossier.Email)) et le réactiver"
-        if (-not (Test-Simulation)) { Add-Journal -Message "Poste $num à $($dossier.DisplayName) ($($dossier.Email)), réactivé." -Categorie 3CX -Niveau Succes }
+    # L'identifiant du poste créé, que les étapes suivantes réclament. En
+    # simulation il n'existe pas : les appels sont décrits, jamais envoyés.
+    $idPoste = 0
+    if ($dossier.Poste3CX) { $idPoste = [int]$dossier.Poste3CX.Id }
+
+    Invoke-Etape -Nom $(if ($dossier.NouveauPoste) { "Poste 3CX $($dossier.Numero3CX) créé" } else { "Poste 3CX $($dossier.Numero3CX) réaffecté" }) `
+                 -Categorie 3CX -Ignorer:(-not $dossier.Numero3CX) -Action {
+        if ($dossier.NouveauPoste) {
+            $cree = New-XapiPoste -Pbx $pbx -Numero $dossier.Numero3CX -Prenom $dossier.Prenom -Nom $dossier.Nom -Email $dossier.Email
+            if ($cree) { $script:idPoste = [int]$cree.Id; Add-Journal -Message "Poste $($dossier.Numero3CX) créé pour $($dossier.DisplayName)." -Categorie 3CX -Niveau Succes }
+        } else {
+            Set-XapiPoste -Pbx $pbx -Id $idPoste -Numero $dossier.Numero3CX -Proprietes @{
+                FirstName = $dossier.Prenom; LastName = $dossier.Nom; EmailAddress = $dossier.Email; Enabled = $true
+            } -Libelle "Réaffecter le poste $($dossier.Numero3CX) à $($dossier.DisplayName) ($($dossier.Email)) et le réactiver"
+            if (-not (Test-Simulation)) { Add-Journal -Message "Poste $($dossier.Numero3CX) à $($dossier.DisplayName), réactivé." -Categorie 3CX -Niveau Succes }
+        }
+    } | Out-Null
+    if ($script:idPoste) { $idPoste = $script:idPoste }
+
+    Invoke-Etape -Nom $(if ($dossier.Modele3CX) { "Configuration copiée du poste $($dossier.Modele3CX.Number)" } else { 'Configuration 3CX copiée' }) `
+                 -Categorie 3CX -Ignorer:(-not $dossier.Modele3CX -or -not ($dossier.Copie3CX | Where-Object { $_ -ne 'departements' })) -Action {
+        Copy-XapiConfigurationPoste -Pbx $pbx -Modele $dossier.Modele3CX -Id $idPoste -Numero $dossier.Numero3CX -Quoi $dossier.Copie3CX
     } | Out-Null
 
-    Invoke-Etape -Nom "Poste 3CX inscrit dans ses files d'attente" -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX -or $dossier.Files3CX.Count -eq 0) -Action {
-        Add-XapiPosteAuxFiles -Pbx $pbx -Numero "$($dossier.Poste3CX.Number)" -Files $dossier.Files3CX
+    Invoke-Etape -Nom 'Départements 3CX et droits' -Categorie 3CX -Ignorer:($dossier.Departements3CX.Count -eq 0) -Action {
+        $principal = $null
+        foreach ($dep in $dossier.Departements3CX) {
+            $sien = @($dep.Members | Where-Object { "$($_.Number)" -eq "$($dossier.Modele3CX.Number)" })[0]
+            Add-XapiPosteAuDepartement -Pbx $pbx -Departement $dep -Numero $dossier.Numero3CX -Droits (Get-Prop -Objet $sien -Nom 'Rights')
+            if ($dep.Id -eq (Get-Prop -Objet $dossier.Modele3CX -Nom 'PrimaryGroupId')) { $principal = $dep }
+        }
+        if (-not (Test-Simulation)) { Add-Journal -Message "Rattaché à $($dossier.Departements3CX.Count) département(s) avec les droits du modèle." -Categorie 3CX -Niveau Succes }
+        # Le département principal ne s'accepte QU'APRÈS le rattachement.
+        if ($principal) { Set-XapiDepartementPrincipal -Pbx $pbx -Id $idPoste -DepartementId ([int]$principal.Id) -Nom $principal.Name }
+    } | Out-Null
+
+    Invoke-Etape -Nom "Poste 3CX inscrit dans ses files d'attente" -Categorie 3CX -Ignorer:(-not $dossier.Numero3CX -or $dossier.Files3CX.Count -eq 0) -Action {
+        Add-XapiPosteAuxFiles -Pbx $pbx -Numero $dossier.Numero3CX -Files $dossier.Files3CX
     } | Out-Null
 } catch {
     Show-Note "Exécution interrompue : $(Get-MessageErreur $_)" -Niveau Erreur
