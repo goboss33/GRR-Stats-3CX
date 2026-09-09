@@ -56,7 +56,9 @@ Get-Module -ListAvailable ActiveDirectory, PwshSpectreConsole, ExchangeOnlineMan
 .\Set-Secret.ps1
 ```
 
-   Le script vérifie aussitôt qu'un jeton s'obtient. Utilisez de préférence un **principal de service dédié** aux scripts (Intégrations ▸ API du 3CX), et reportez son ID client dans `config.json` → `pbx.gerofinance.clientId`.
+   Le script vérifie aussitôt qu'un jeton s'obtient.
+
+   **Utilisez un principal de service dédié aux scripts** (Intégrations ▸ API du 3CX), avec un ID client distinct de celui de l'application de statistiques, et reportez-le dans `config.json` → `pbx.gerofinance.clientId`. Ce n'est pas une préférence de style : **le 3CX ne garde qu'un jeton par ID client**. Dès qu'un autre consommateur en demande un, le précédent est révoqué et l'appel suivant repart en 401. L'application échantillonne la présence chaque minute avec le client `stats` : tant que le script partage cet identifiant, il se fait révoquer en pleine exécution. Le script sait désormais redemander un jeton et réessayer une fois, ce qui suffit à passer, mais un client dédié supprime le problème à la racine.
 
 6. Vérifier `config.json` → `operateurs` : la clé est le **nom de session Windows** de chacun (`$env:USERNAME`). Si vous ouvrez la session avec `gbossens` et non `admingbo`, renommez la clé.
 

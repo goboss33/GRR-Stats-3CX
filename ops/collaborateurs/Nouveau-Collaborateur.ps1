@@ -206,11 +206,10 @@ if ($pbx) {
             Utilisateurs  = @(Get-XapiUtilisateurs -Pbx $pbx)
             Departements  = @(Get-XapiDepartements -Pbx $pbx)
             NumeroLibre   = "$(Get-XapiNumeroLibre -Pbx $pbx)"
-            Sda           = @(Get-XapiSda -Pbx $pbx)
         }
     }
     $candidats = @($lecture.Candidats); $toutesFiles = @($lecture.Files)
-    $tousPostes = @($lecture.Utilisateurs); $departements = @($lecture.Departements); $sda = @($lecture.Sda)
+    $tousPostes = @($lecture.Utilisateurs); $departements = @($lecture.Departements)
 
     if ($Job) {
         # Sans dialogue : le fichier de travail décide.
@@ -228,7 +227,7 @@ if ($pbx) {
         if ($filesVoulues.Count -gt 0) { $dossier.Files3CX = @($toutesFiles | Where-Object { $filesVoulues -contains "$($_.Number)" }) }
         $sdaVoulue = "$(Get-Prop -Objet $j -Nom 'sda' -Defaut '')"
         if ($sdaVoulue) {
-            $dossier.Sda3CX = @($sda | Where-Object { $_.Numero -eq $sdaVoulue })[0]
+            $dossier.Sda3CX = @(Get-XapiSda -Pbx $pbx | Where-Object { $_.Numero -eq $sdaVoulue })[0]
             if (-not $dossier.Sda3CX) { throw "SDA inconnue du PBX : $sdaVoulue" }
         }
         $modeleVoulu = "$(Get-Prop -Objet $j -Nom 'copierPoste3cxDe' -Defaut '')"
@@ -266,6 +265,7 @@ if ($pbx) {
 
             # --- La SDA : un numéro direct, choisi dans la liste du PBX.
             if (Confirm-Choix -Question 'Attribuer un numéro direct (SDA) à ce poste ?' -DefautOui) {
+                $sda = @(Invoke-Attente -Titre 'Lecture des numéros directs du 3CX' -Action { @(Get-XapiSda -Pbx $pbx) })
                 $vueSda = @($sda | Select-Object Numero, @{ n = 'Actuellement'; e = { $_.Pointe } }, Nom)
                 $choisie = Read-Choix -Titre "Quel numéro direct ? ($($sda.Count) SDA)" `
                     -Aide 'tapez le début du numéro pour filtrer, +4122 par exemple' -Elements $vueSda -Colonnes Numero, Actuellement, Nom

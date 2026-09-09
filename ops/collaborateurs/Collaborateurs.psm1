@@ -1692,6 +1692,22 @@ function Connect-Xapi {
     return $rep.access_token
 }
 
+function Reset-JetonXapi {
+    <# Oublie le jeton gardé en session : le prochain appel en redemandera un. #>
+    param([Parameter(Mandatory)] $Pbx)
+    if ($script:Xapi.ContainsKey($Pbx.adresse)) { [void]$script:Xapi.Remove($Pbx.adresse) }
+}
+
+function Test-Erreur401 {
+    <# Le PBX a-t-il refusé l'autorisation ? (jeton révoqué, expiré, ou clé fausse) #>
+    param([Parameter(Mandatory)] $Erreur)
+    try {
+        $reponse = $Erreur.Exception.Response
+        if ($reponse) { if ([int]$reponse.StatusCode -eq 401) { return $true } }
+    } catch { }
+    return ("$($Erreur.Exception.Message)" -match '\b401\b|Unauthorized')
+}
+
 function Invoke-Xapi {
     <# Un appel XAPI. Les écritures (PATCH/POST/DELETE) passent par Invoke-Ecriture : décrites en simulation. #>
     param(
@@ -1702,10 +1718,24 @@ function Invoke-Xapi {
         [string] $Libelle = ''                       # la description lisible, pour le journal
     )
     $appel = {
-        $token = Connect-Xapi -Pbx $Pbx
-        $params = @{ Method = $Methode; Uri = "$($Pbx.adresse)/xapi/v1/$Chemin"; Headers = @{ Authorization = "Bearer $token" }; TimeoutSec = 30 }
+        $params = @{ Method = $Methode; Uri = "$($Pbx.adresse)/xapi/v1/$Chemin"; TimeoutSec = 30 }
         if ($Corps) { $params.Body = ($Corps | ConvertTo-Json -Depth 6); $params.ContentType = 'application/json' }
-        Invoke-RestMethod @params
+        # Le 3CX ne garde QU'UN jeton par identifiant client : dès qu'un autre
+        # consommateur en demande un (l'application de statistiques échantillonne
+        # la présence chaque minute avec le même client), le nôtre est révoqué et
+        # l'appel suivant repart en 401. On en redemande un et on réessaie une fois.
+        for ($essai = 1; $essai -le 2; $essai++) {
+            try {
+                $params.Headers = @{ Authorization = "Bearer $(Connect-Xapi -Pbx $Pbx)" }
+                return Invoke-RestMethod @params
+            } catch {
+                if ($essai -eq 1 -and (Test-Erreur401 -Erreur $_)) {
+                    Reset-JetonXapi -Pbx $Pbx
+                    continue
+                }
+                throw
+            }
+        }
     }
     if ($Methode -eq 'GET') { return & $appel }
     $description = $Libelle
