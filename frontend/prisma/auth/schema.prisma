@@ -589,6 +589,10 @@ model PresenceDay {
   absentSeconds    Int
   dndSeconds       Int
   offlineSeconds   Int
+  /// Profil personnalisé du 3CX (« Custom 1 », bleu dans le client) : ni
+  /// disponible au sens strict, ni absent. Défaut 0 pour les jours relevés
+  /// avant l'introduction de cet état (9 sept. 2026).
+  customSeconds    Int    @default(0)
   /// Connecté aux files, pendant les heures de bureau échantillonnées.
   queueSeconds     Int
   groupId          Int?

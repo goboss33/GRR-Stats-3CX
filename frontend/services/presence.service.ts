@@ -67,11 +67,21 @@ interface EtatPoste {
     intervalId: string;
 }
 
+/** Le profil d'un poste et son libellé réel (« Custom 1 » → « En séance »). */
+interface ProfilPoste {
+    slot: string;
+    label: string;
+}
+
 /** Ce que l'échantillonneur garde en mémoire, par tenant, entre deux minutes. */
 interface Memoire {
     /** Faux au (re)démarrage : les intervalles restés ouverts en base sont d'abord clos. */
     amorcee: boolean;
     postes: Map<string, EtatPoste>;
+    /** Profil courant de chaque poste, avec son nom d'usage — pour l'infobulle. */
+    profils: Map<string, ProfilPoste>;
+    /** Nom que CHAQUE poste donne à ses profils : extension → slot → libellé. */
+    libelles: Map<string, Map<string, string>>;
     sampledAt: number | null;
     derniereConsolidation: number;
     horairesDuJour: string | null;
@@ -81,7 +91,7 @@ const memoires = new Map<string, Memoire>();
 function memoireDe(serverId: ServerId): Memoire {
     let m = memoires.get(serverId);
     if (!m) {
-        m = { amorcee: false, postes: new Map(), sampledAt: null, derniereConsolidation: 0, horairesDuJour: null };
+        m = { amorcee: false, postes: new Map(), profils: new Map(), libelles: new Map(), sampledAt: null, derniereConsolidation: 0, horairesDuJour: null };
         memoires.set(serverId, m);
     }
     return m;
@@ -148,6 +158,12 @@ async function lirePages<T>(base: string, jeton: string, requete: string): Promi
 const PAGE_SIZE = 100;
 const REQUETE_USERS = "Users?%24select=Number,CurrentProfileName,QueueStatus,IsRegistered,Enabled,PrimaryGroupId&%24orderby=Id";
 const REQUETE_GROUPS = "Groups?%24select=Id,Name,Hours,BreakTime&%24expand=OfficeHolidays&%24orderby=Id";
+/**
+ * Le nom que chaque poste donne à ses profils. Le PBX ne renvoie que le slot
+ * dans CurrentProfileName (« Custom 1 ») ; le nom d'usage vit ici
+ * (CustomName : « En séance »). Relu une fois par jour, avec les horaires.
+ */
+const REQUETE_PROFILS = "Users?%24select=Number&%24expand=ForwardingProfiles&%24orderby=Id";
 
 // ============================================
 // ÉCHANTILLONNAGE
@@ -203,11 +219,17 @@ export async function echantillonner(serverId: ServerId): Promise<ResumeEchantil
     }
 
     const vus = new Set<string>();
+    // Le profil courant se note à CHAQUE relevé, même quand l'état ne change
+    // pas : passer de « Custom 1 » à « Custom 2 » ne rouvre pas d'intervalle,
+    // mais l'infobulle doit suivre.
+    mem.profils.clear();
     const aClore: string[] = [];
     const aOuvrir: Array<{ extension: string; state: PresenceState; queueLoggedIn: boolean; groupId: number | null }> = [];
     for (const u of users) {
         if (!u.Number || u.Enabled === false) continue;
         vus.add(u.Number);
+        const slot = (u.CurrentProfileName ?? "").trim();
+        if (slot) mem.profils.set(u.Number, { slot, label: mem.libelles.get(u.Number)?.get(slot) || slot });
         const state = etatDe({ profile: u.CurrentProfileName, registered: u.IsRegistered === true });
         const queueLoggedIn = u.QueueStatus === "LoggedIn";
         const groupId = typeof u.PrimaryGroupId === "number" ? u.PrimaryGroupId : null;
@@ -249,6 +271,7 @@ export async function echantillonner(serverId: ServerId): Promise<ResumeEchantil
             const jour = jourLocal(now.getTime(), tz);
             if (mem.horairesDuJour !== jour) {
                 await rafraichirHoraires(serverId, acces.base, acces.jeton);
+                await rafraichirLibelles(mem, acces.base, acces.jeton);
                 mem.horairesDuJour = jour;
             }
             await consoliderPresence(serverId);
@@ -261,6 +284,26 @@ export async function echantillonner(serverId: ServerId): Promise<ResumeEchantil
     }
 
     return { serverId, ran: true, users: vus.size, changes: aOuvrir.length };
+}
+
+/**
+ * Le nom d'usage des profils, poste par poste. Sans cet appel, l'écran
+ * afficherait « Custom 1 » là où la personne a écrit « En séance ».
+ * Uniquement en mémoire : un libellé n'a de sens que pour l'état courant.
+ */
+async function rafraichirLibelles(mem: Memoire, base: string, jeton: string): Promise<void> {
+    const users = await lirePages<{ Number?: string; ForwardingProfiles?: Array<{ Name?: string; CustomName?: string }> }>(base, jeton, REQUETE_PROFILS);
+    mem.libelles.clear();
+    for (const u of users) {
+        if (!u.Number || !Array.isArray(u.ForwardingProfiles)) continue;
+        const parSlot = new Map<string, string>();
+        for (const p of u.ForwardingProfiles) {
+            const slot = (p.Name ?? "").trim();
+            const nom = (p.CustomName ?? "").trim();
+            if (slot && nom) parSlot.set(slot, nom);
+        }
+        if (parSlot.size > 0) mem.libelles.set(u.Number, parSlot);
+    }
 }
 
 /** Les horaires de bureau des départements, tels que le PBX les déclare aujourd'hui. */
@@ -336,7 +379,8 @@ export async function consoliderPresence(serverId: ServerId): Promise<{ jours: n
         }
         const rows: Array<{
             serverId: string; extension: string; day: string; officeSeconds: number; sampledSeconds: number;
-            availableSeconds: number; absentSeconds: number; dndSeconds: number; offlineSeconds: number; queueSeconds: number;
+            availableSeconds: number; absentSeconds: number; dndSeconds: number; offlineSeconds: number;
+            customSeconds: number; queueSeconds: number;
             groupId: number | null; hoursSource: SourceHoraires;
         }> = [];
         for (const [extension, liste] of parPoste) {
@@ -376,7 +420,7 @@ export async function consoliderPresence(serverId: ServerId): Promise<{ jours: n
 
 export interface PresenceMaintenant {
     at: Date;
-    postes: Map<string, { state: PresenceState; queueLoggedIn: boolean }>;
+    postes: Map<string, { state: PresenceState; queueLoggedIn: boolean; profileLabel: string | null }>;
 }
 
 /** L'état de chaque poste au dernier relevé — depuis la mémoire, sans base ni PBX ; null si le relevé date. */
@@ -385,7 +429,11 @@ export function getPresenceMaintenant(serverId: ServerId): PresenceMaintenant | 
     if (!mem?.sampledAt || Date.now() - mem.sampledAt > FRAICHEUR_MS) return null;
     return {
         at: new Date(mem.sampledAt),
-        postes: new Map([...mem.postes].map(([ext, p]) => [ext, { state: p.state, queueLoggedIn: p.queueLoggedIn }])),
+        postes: new Map([...mem.postes].map(([ext, p]) => [ext, {
+            state: p.state, queueLoggedIn: p.queueLoggedIn,
+            // Le nom d'usage du profil, quand le poste en a donné un.
+            profileLabel: mem.profils.get(ext)?.label ?? null,
+        }])),
     };
 }
 
@@ -397,6 +445,7 @@ export interface AgregatPresence {
     absentSeconds: number;
     dndSeconds: number;
     offlineSeconds: number;
+    customSeconds: number;
     queueSeconds: number;
     /** Nom du département dont les horaires ont servi (le plus récent), ou null en repli. */
     departement: string | null;
@@ -417,12 +466,13 @@ export async function getPresenceRecente(serverId: ServerId): Promise<Map<string
     for (const j of jours) {
         const a = out.get(j.extension) ?? {
             days: 0, officeSeconds: 0, sampledSeconds: 0, availableSeconds: 0, absentSeconds: 0, dndSeconds: 0,
-            offlineSeconds: 0, queueSeconds: 0, departement: null, hoursSource: "default" as SourceHoraires,
+            offlineSeconds: 0, customSeconds: 0, queueSeconds: 0, departement: null, hoursSource: "default" as SourceHoraires,
         };
         a.days++;
         a.officeSeconds += j.officeSeconds; a.sampledSeconds += j.sampledSeconds;
         a.availableSeconds += j.availableSeconds; a.absentSeconds += j.absentSeconds;
-        a.dndSeconds += j.dndSeconds; a.offlineSeconds += j.offlineSeconds; a.queueSeconds += j.queueSeconds;
+        a.dndSeconds += j.dndSeconds; a.offlineSeconds += j.offlineSeconds;
+        a.customSeconds += j.customSeconds; a.queueSeconds += j.queueSeconds;
         // Le jour le plus récent fait foi (tri croissant).
         a.hoursSource = j.hoursSource as SourceHoraires;
         a.departement = j.hoursSource === "department" && j.groupId != null ? (nomDep.get(j.groupId) ?? null) : null;

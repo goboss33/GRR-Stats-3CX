@@ -30,7 +30,7 @@ export interface CollaborateurRow {
 
 export interface PresenceCollaborateur {
     /** État au dernier relevé (moins de trois minutes) ; null si le relevé date ou ignore ce poste. */
-    now: { state: PresenceState; queueLoggedIn: boolean } | null;
+    now: { state: PresenceState; queueLoggedIn: boolean; profileLabel: string | null } | null;
     /** Les PRESENCE_JOURS derniers jours ; null sans aucune heure de bureau observée. */
     recent: AgregatPresence | null;
 }

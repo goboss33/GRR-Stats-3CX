@@ -17,7 +17,7 @@
  * Available et connecté à la Q avec un téléphone non enregistré.
  */
 
-export type PresenceState = "available" | "absent" | "dnd" | "offline";
+export type PresenceState = "available" | "absent" | "dnd" | "offline" | "custom";
 
 /** Ce que le XAPI dit d'un poste à un instant (entité Users). */
 export interface EtatXapi {
@@ -26,16 +26,24 @@ export interface EtatXapi {
 }
 
 /**
- * L'état d'un poste : hors ligne prime (un profil « Disponible » sur un
- * téléphone non enregistré ne reçoit rien) ; « Ne pas déranger » est le seul
- * profil rouge ; tout le reste (Away, Lunch, Business trip, Out of office,
- * profils personnalisés « Custom N ») est une absence.
+ * L'état d'un poste :
+ * - hors ligne prime (un profil « Disponible » sur un téléphone non
+ *   enregistré ne reçoit rien) ;
+ * - « Disponible » et « Ne pas déranger » sont ce qu'ils disent ;
+ * - un PROFIL PERSONNALISÉ (« Custom 1 », « Custom 2 » — bleu dans le client
+ *   3CX) a son état à lui : le PBX ne dit pas ce qu'il fait, et ceux d'ici
+ *   veulent dire « joignable autrement ». Chez ce tenant, le « Custom 1 »
+ *   d'une gérante s'appelle « En séance · sonne 5 s », et elle décroche :
+ *   131 sonneries de file dont 16 prises en neuf jours. Le ranger dans les
+ *   absences la donnait pour partie alors qu'elle travaillait ;
+ * - le reste (Away, Lunch, Business trip, Out of office) est une absence.
  */
 export function etatDe(u: EtatXapi): PresenceState {
     if (!u.registered) return "offline";
     const profil = (u.profile ?? "").trim().toLowerCase();
     if (profil === "available") return "available";
     if (/disturb|\bdnd\b/.test(profil)) return "dnd";
+    if (/^custom\b/.test(profil)) return "custom";
     return "absent";
 }
 
@@ -245,13 +253,15 @@ export interface Ventilation {
     absentSeconds: number;
     dndSeconds: number;
     offlineSeconds: number;
+    /** Profil personnalisé : ni disponible au sens strict, ni absent. */
+    customSeconds: number;
     /** Connecté aux files, pendant les secondes échantillonnées. */
     queueSeconds: number;
 }
 
 /** Répartit les intervalles d'état sur les plages de bureau. */
 export function ventiler(intervalles: readonly IntervallePresence[], plages: readonly Plage[]): Ventilation {
-    const ms = { sampled: 0, available: 0, absent: 0, dnd: 0, offline: 0, queue: 0 };
+    const ms = { sampled: 0, available: 0, absent: 0, dnd: 0, offline: 0, custom: 0, queue: 0 };
     for (const i of intervalles) {
         for (const p of plages) {
             const recouvrement = Math.min(i.endedAt, p.end) - Math.max(i.startedAt, p.start);
@@ -264,7 +274,7 @@ export function ventiler(intervalles: readonly IntervallePresence[], plages: rea
     const s = (v: number) => Math.round(v / 1000);
     return {
         sampledSeconds: s(ms.sampled), availableSeconds: s(ms.available), absentSeconds: s(ms.absent),
-        dndSeconds: s(ms.dnd), offlineSeconds: s(ms.offline), queueSeconds: s(ms.queue),
+        dndSeconds: s(ms.dnd), offlineSeconds: s(ms.offline), customSeconds: s(ms.custom), queueSeconds: s(ms.queue),
     };
 }
 
@@ -273,14 +283,23 @@ export interface PartsPresence {
     absent: number;
     dnd: number;
     offline: number;
+    custom: number;
     queue: number;
 }
 
-/** Parts (en %, entiers) sur le temps échantillonné ; null sans échantillon. */
-export function partsPresence(v: Pick<Ventilation, "sampledSeconds" | "availableSeconds" | "absentSeconds" | "dndSeconds" | "offlineSeconds" | "queueSeconds">): PartsPresence | null {
+/**
+ * Parts (en %, entiers) sur le temps échantillonné ; null sans échantillon.
+ *
+ * « Disponible » reste STRICT (arbitrage du 9 sept. 2026) : le temps passé
+ * dans un profil personnalisé se lit à côté, jamais dedans.
+ */
+export function partsPresence(v: Pick<Ventilation, "sampledSeconds" | "availableSeconds" | "absentSeconds" | "dndSeconds" | "offlineSeconds" | "customSeconds" | "queueSeconds">): PartsPresence | null {
     if (v.sampledSeconds <= 0) return null;
     const pct = (x: number) => Math.round((100 * x) / v.sampledSeconds);
-    return { available: pct(v.availableSeconds), absent: pct(v.absentSeconds), dnd: pct(v.dndSeconds), offline: pct(v.offlineSeconds), queue: pct(v.queueSeconds) };
+    return {
+        available: pct(v.availableSeconds), absent: pct(v.absentSeconds), dnd: pct(v.dndSeconds),
+        offline: pct(v.offlineSeconds), custom: pct(v.customSeconds), queue: pct(v.queueSeconds),
+    };
 }
 
 /** « 6 h 20 » — pour les infobulles. */

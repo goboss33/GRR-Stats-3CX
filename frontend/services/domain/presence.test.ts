@@ -35,9 +35,20 @@ describe("état d'un poste", () => {
         expect(etatDe({ profile: "Available", registered: true })).toBe("available");
         expect(etatDe({ profile: "Do Not Disturb", registered: true })).toBe("dnd");
         expect(etatDe({ profile: "DND", registered: true })).toBe("dnd");
-        for (const p of ["Away", "Lunch", "Business Trip", "Out of office", "Custom 1", "", null, undefined]) {
+        for (const p of ["Away", "Lunch", "Business Trip", "Out of office", "", null, undefined]) {
             expect(etatDe({ profile: p, registered: true })).toBe("absent");
         }
+    });
+
+    it("un profil personnalisé a son état à lui — chez ce tenant, « En séance · sonne 5 s »", () => {
+        for (const p of ["Custom 1", "Custom 2", "custom 3"]) {
+            expect(etatDe({ profile: p, registered: true })).toBe("custom");
+        }
+        // Hors ligne prime : un profil personnalisé sans téléphone ne reçoit rien.
+        expect(etatDe({ profile: "Custom 1", registered: false })).toBe("offline");
+        // Un profil dont le NOM D'USAGE commence par « custom… » n'existe pas :
+        // le PBX ne renvoie que le slot dans CurrentProfileName.
+        expect(etatDe({ profile: "Customer care", registered: true })).toBe("absent");
     });
 });
 
@@ -114,14 +125,30 @@ describe("ventilation des intervalles sur les heures de bureau", () => {
         expect(v.absentSeconds).toBe(1 * H + 1 * H);
         expect(v.offlineSeconds).toBe(0);
         expect(v.queueSeconds).toBe(2 * H + 2 * H);
-        expect(partsPresence(v)).toEqual({ available: 67, absent: 33, dnd: 0, offline: 0, queue: 67 });
+        expect(v.customSeconds).toBe(0);
+        expect(partsPresence(v)).toEqual({ available: 67, absent: 33, dnd: 0, offline: 0, custom: 0, queue: 67 });
     });
     it("une panne d'échantillonnage n'est pas de l'absence : le dénominateur est le temps observé", () => {
         const v = ventiler([{ state: "available", queueLoggedIn: true, startedAt: t("09:00"), endedAt: t("10:30") }], plages);
         expect(v.sampledSeconds).toBe(1.5 * H);
         expect(partsPresence(v)?.available).toBe(100);
-        expect(partsPresence({ sampledSeconds: 0, availableSeconds: 0, absentSeconds: 0, dndSeconds: 0, offlineSeconds: 0, queueSeconds: 0 })).toBeNull();
+        expect(partsPresence({ sampledSeconds: 0, availableSeconds: 0, absentSeconds: 0, dndSeconds: 0, offlineSeconds: 0, customSeconds: 0, queueSeconds: 0 })).toBeNull();
     });
+    it("le temps en profil personnalisé se compte à part, jamais dans la disponibilité", () => {
+        const v = ventiler([
+            { state: "available", queueLoggedIn: true, startedAt: t("09:00"), endedAt: t("11:00") },
+            { state: "custom", queueLoggedIn: true, startedAt: t("11:00"), endedAt: t("12:00") },
+            { state: "custom", queueLoggedIn: false, startedAt: t("13:00"), endedAt: t("16:00") },
+        ], plages);
+        expect(v.availableSeconds).toBe(2 * H);
+        expect(v.customSeconds).toBe(4 * H);
+        expect(v.absentSeconds).toBe(0);
+        const parts = partsPresence(v)!;
+        expect(parts.available).toBe(33);
+        expect(parts.custom).toBe(67);
+        expect(parts.queue).toBe(50);
+    });
+
     it("formatHeures : heures et minutes lisibles", () => {
         expect(formatHeures(6 * H + 20 * 60)).toBe("6 h 20");
         expect(formatHeures(2 * H)).toBe("2 h");

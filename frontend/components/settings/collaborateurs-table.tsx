@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
  * moitié cassée. Ils restent à un clic.
  */
 
-type Colonne = "nom" | "poste" | "email" | "equipes" | "etat" | "depuis" | "presence";
+type Colonne = "nom" | "poste" | "email" | "equipes" | "etat" | "depuis" | "presence" | "presenceFile";
 
 const COLONNES: Record<Colonne, DefinitionColonne<CollaborateurRow>> = {
     nom: { type: "texte", valeur: (c) => c.displayName },
@@ -39,11 +39,19 @@ const COLONNES: Record<Colonne, DefinitionColonne<CollaborateurRow>> = {
     depuis: { type: "date", valeur: (c) => c.depuis },
     // Part de temps disponible ; sans relevé, en queue de tri.
     presence: { type: "nombre", valeur: (c) => (c.presence?.recent ? partsPresence(c.presence.recent)?.available ?? -1 : -1) },
+    // Part de temps connecté aux files : sa propre colonne, donc son propre tri.
+    presenceFile: { type: "nombre", valeur: (c) => (c.presence?.recent ? partsPresence(c.presence.recent)?.queue ?? -1 : -1) },
 };
 
-/** Grammaire des états de présence — la même que la pastille du client 3CX. */
+/**
+ * Grammaire des états de présence — les couleurs du client 3CX. Le BLEU est
+ * celui des profils personnalisés : le PBX ne dit pas ce qu'ils font, et ceux
+ * d'ici veulent dire « joignable autrement » (« En séance · sonne 5 s »).
+ * Ils ne comptent pas dans la disponibilité, qui reste stricte.
+ */
 const ETATS_PRESENCE: Record<PresenceState, { libelle: string; pastille: string; barre: string }> = {
     available: { libelle: "Disponible", pastille: "bg-emerald-500", barre: "bg-emerald-500" },
+    custom: { libelle: "Profil personnalisé", pastille: "bg-blue-500", barre: "bg-blue-500" },
     absent: { libelle: "Absent", pastille: "bg-amber-400", barre: "bg-amber-400" },
     dnd: { libelle: "Ne pas déranger", pastille: "bg-red-500", barre: "bg-red-500" },
     offline: { libelle: "Hors ligne (téléphone non enregistré)", pastille: "bg-slate-300", barre: "bg-slate-300" },
@@ -144,7 +152,7 @@ export function CollaborateursTable({
     if (donnees === "chargement") return <div className="py-10"><Attente libelle="Lecture des collaborateurs…" /></div>;
     if (donnees === "échec") return <ZoneEnEchec message="La liste des collaborateurs n'a pas pu être lue." onReessayer={charger} />;
     const { resume, presence } = donnees;
-    const nbColonnes = presence.enabled ? 7 : 6;
+    const nbColonnes = presence.enabled ? 8 : 6;
 
     return (
         <div className="space-y-4">
@@ -202,6 +210,9 @@ export function CollaborateursTable({
                                     {presence.enabled && (
                                         <EnTeteTri colonne="presence" libelle={`Présence (${presence.jours} j)`} tri={tri} onTrier={(c) => setTri((t) => basculerTri(t, c, COLONNES))} />
                                     )}
+                                    {presence.enabled && (
+                                        <EnTeteTri colonne="presenceFile" libelle={`Files (${presence.jours} j)`} tri={tri} onTrier={(c) => setTri((t) => basculerTri(t, c, COLONNES))} />
+                                    )}
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
@@ -230,6 +241,9 @@ export function CollaborateursTable({
                                         <td className="px-4 py-2 text-xs text-slate-500">{dateCourte(c.depuis)}</td>
                                         {presence.enabled && (
                                             <td className="px-4 py-2"><CellulePresence presence={c.presence} jours={presence.jours} /></td>
+                                        )}
+                                        {presence.enabled && (
+                                            <td className="px-4 py-2"><CelluleFile presence={c.presence} jours={presence.jours} /></td>
                                         )}
                                     </tr>
                                 ))}
@@ -262,8 +276,11 @@ function AvatarAvecPresence({ collaborateur: c }: { collaborateur: Collaborateur
     const now = c.presence?.now ?? null;
     if (!now) return <AvatarCollaborateur name={c.displayName} photoUrl={c.photoUrl} />;
     const etat = ETATS_PRESENCE[now.state];
+    // Le nom d'usage du profil quand la personne en a donné un (« En séance »),
+    // le libellé générique sinon.
+    const nom = now.state === "custom" && now.profileLabel ? now.profileLabel : etat.libelle;
     return (
-        <Tip content={`${etat.libelle}${now.state === "offline" ? "" : now.queueLoggedIn ? " · connecté aux files" : " · déconnecté des files"} — au dernier relevé`}>
+        <Tip content={`${nom}${now.state === "offline" ? "" : now.queueLoggedIn ? " · connecté aux files" : " · déconnecté des files"} — au dernier relevé`}>
             <span className="relative inline-flex">
                 <AvatarCollaborateur name={c.displayName} photoUrl={c.photoUrl} />
                 <span className={cn("absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white", etat.pastille)} />
@@ -273,10 +290,10 @@ function AvatarAvecPresence({ collaborateur: c }: { collaborateur: Collaborateur
 }
 
 /**
- * Les parts de temps de bureau des derniers jours : une barre empilée, le
- * pourcentage disponible en avant, la connexion aux files en badge. Le détail
- * (heures observées, horaires appliqués, les quatre parts) vit dans l'infobulle
- * — jamais une chronologie.
+ * Les parts de temps de bureau des derniers jours : une barre empilée et le
+ * pourcentage DISPONIBLE au sens strict. Le détail (heures observées, horaires
+ * appliqués, les cinq parts) vit dans l'infobulle — jamais une chronologie.
+ * La connexion aux files a sa propre colonne, pour pouvoir trier dessus.
  */
 function CellulePresence({ presence, jours }: { presence: PresenceCollaborateur | null; jours: number }) {
     const recent = presence?.recent ?? null;
@@ -292,8 +309,8 @@ function CellulePresence({ presence, jours }: { presence: PresenceCollaborateur 
         ? `horaires ${recent.departement}`
         : "horaires par défaut, le département n'en déclare pas";
     const detail = `Sur ${formatHeures(recent.sampledSeconds)} de bureau observées (${recent.days} jour${recent.days > 1 ? "s" : ""}, ${horaires}) : `
-        + `disponible ${parts.available} % · absent ${parts.absent} % · ne pas déranger ${parts.dnd} % · hors ligne ${parts.offline} % · connecté aux files ${parts.queue} %`;
-    const segments: Array<[PresenceState, number]> = [["available", parts.available], ["absent", parts.absent], ["dnd", parts.dnd], ["offline", parts.offline]];
+        + `disponible ${parts.available} % · profil personnalisé ${parts.custom} % · absent ${parts.absent} % · ne pas déranger ${parts.dnd} % · hors ligne ${parts.offline} %`;
+    const segments: Array<[PresenceState, number]> = [["available", parts.available], ["custom", parts.custom], ["absent", parts.absent], ["dnd", parts.dnd], ["offline", parts.offline]];
     return (
         <Tip content={detail} align="start">
             <div className="flex items-center gap-2.5">
@@ -303,7 +320,33 @@ function CellulePresence({ presence, jours }: { presence: PresenceCollaborateur 
                     ))}
                 </span>
                 <span className="w-10 text-sm font-medium tabular-nums text-slate-900">{parts.available}&nbsp;%</span>
-                <span className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] tabular-nums text-slate-600">Q {parts.queue}&nbsp;%</span>
+            </div>
+        </Tip>
+    );
+}
+
+/**
+ * La connexion aux files (l'icône Q du client 3CX), à part : c'est une
+ * question différente de la disponibilité — on peut être disponible sans
+ * être connecté à sa file, et l'inverse arrive tout autant.
+ */
+function CelluleFile({ presence, jours }: { presence: PresenceCollaborateur | null; jours: number }) {
+    const recent = presence?.recent ?? null;
+    const parts = recent ? partsPresence(recent) : null;
+    if (!recent || !parts) {
+        return (
+            <Tip content={`Aucune heure de bureau observée sur ${jours} jours.`}>
+                <span className="text-xs text-slate-400">—</span>
+            </Tip>
+        );
+    }
+    return (
+        <Tip content={`Connecté aux files ${formatHeures(recent.queueSeconds)} sur ${formatHeures(recent.sampledSeconds)} de bureau observées.`} align="start">
+            <div className="flex items-center gap-2.5">
+                <span className="flex h-2 w-16 shrink-0 overflow-hidden rounded-full bg-slate-100">
+                    <span className="h-full bg-blue-500" style={{ width: `${parts.queue}%` }} />
+                </span>
+                <span className="w-10 text-sm tabular-nums text-slate-700">{parts.queue}&nbsp;%</span>
             </div>
         </Tip>
     );

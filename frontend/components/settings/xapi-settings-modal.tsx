@@ -247,7 +247,7 @@ export function XapiSettingsModal({
                                     </Label>
                                     <p className="mt-0.5 text-xs text-slate-500">
                                         Toutes les minutes, l&apos;état de chaque poste est relevé (disponible, absent,
-                                        ne pas déranger, hors ligne, connecté aux files) et ventilé par jour sur les
+                                        profil personnalisé, ne pas déranger, hors ligne, connecté aux files) et ventilé par jour sur les
                                         heures de bureau de son département. L&apos;annuaire des collaborateurs en montre
                                         des parts de temps sur 30 jours — jamais de chronologie. C&apos;est une mesure de
                                         présence individuelle : à annoncer aux collaborateurs avant de l&apos;allumer.
