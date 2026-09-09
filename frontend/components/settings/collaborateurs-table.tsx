@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Tip } from "@/components/ui/tooltip";
 import { Attente, ZoneEnEchec } from "@/components/ui/etat-chargement";
 import { AvatarCollaborateur } from "@/components/avatar-collaborateur";
+import { QIcon } from "@/components/q-icon";
 import { BadgeM365, LIBELLES_M365, LogoMicrosoft } from "@/components/badge-m365";
 import { EnTeteTri, MenuFiltre, PucesDeFiltres, basculerDansSet } from "@/components/tableau-filtrable";
 import { basculerTri, trierLignes, type DefinitionColonne, type TriTableau } from "@/services/domain/tri-tableau";
@@ -39,8 +40,9 @@ const COLONNES: Record<Colonne, DefinitionColonne<CollaborateurRow>> = {
     depuis: { type: "date", valeur: (c) => c.depuis },
     // Part de temps disponible ; sans relevé, en queue de tri.
     presence: { type: "nombre", valeur: (c) => (c.presence?.recent ? partsPresence(c.presence.recent)?.available ?? -1 : -1) },
-    // Part de temps connecté aux files : sa propre colonne, donc son propre tri.
-    presenceFile: { type: "nombre", valeur: (c) => (c.presence?.recent ? partsPresence(c.presence.recent)?.queue ?? -1 : -1) },
+    // Part de temps connecté aux files : sa propre colonne, donc son propre
+    // tri. Sans équipe, la question ne se pose pas : en queue de tri.
+    presenceFile: { type: "nombre", valeur: (c) => (c.equipes.length > 0 && c.presence?.recent ? partsPresence(c.presence.recent)?.queue ?? -1 : -1) },
 };
 
 /**
@@ -243,7 +245,7 @@ export function CollaborateursTable({
                                             <td className="px-4 py-2"><CellulePresence presence={c.presence} jours={presence.jours} /></td>
                                         )}
                                         {presence.enabled && (
-                                            <td className="px-4 py-2"><CelluleFile presence={c.presence} jours={presence.jours} /></td>
+                                            <td className="px-4 py-2"><CelluleFile collaborateur={c} jours={presence.jours} /></td>
                                         )}
                                     </tr>
                                 ))}
@@ -326,12 +328,29 @@ function CellulePresence({ presence, jours }: { presence: PresenceCollaborateur 
 }
 
 /**
+ * Teinte du Q : gris quand la personne n'est jamais connectée à ses files,
+ * bleu 3CX quand elle l'est en permanence, et le mélange entre les deux.
+ * L'intensité de la couleur EST la mesure — pas besoin d'une barre à côté.
+ */
+function couleurQ(part: number): string {
+    const p = Math.min(100, Math.max(0, part)) / 100;
+    const melange = (gris: number, bleu: number) => Math.round(gris + (bleu - gris) * p);
+    return `rgb(${melange(148, 0)}, ${melange(163, 152)}, ${melange(184, 201)})`;
+}
+
+/**
  * La connexion aux files (l'icône Q du client 3CX), à part : c'est une
  * question différente de la disponibilité — on peut être disponible sans
  * être connecté à sa file, et l'inverse arrive tout autant.
+ *
+ * Un poste membre d'aucune équipe n'a rien à dire ici : ni Q, ni
+ * pourcentage, un tiret. Le 3CX le déclare « connecté » comme les autres,
+ * mais aucune file ne le sollicitera jamais — afficher 100 % serait un
+ * chiffre juste qui ment.
  */
-function CelluleFile({ presence, jours }: { presence: PresenceCollaborateur | null; jours: number }) {
-    const recent = presence?.recent ?? null;
+function CelluleFile({ collaborateur: c, jours }: { collaborateur: CollaborateurRow; jours: number }) {
+    if (c.equipes.length === 0) return <span className="text-xs text-slate-400">—</span>;
+    const recent = c.presence?.recent ?? null;
     const parts = recent ? partsPresence(recent) : null;
     if (!recent || !parts) {
         return (
@@ -342,10 +361,8 @@ function CelluleFile({ presence, jours }: { presence: PresenceCollaborateur | nu
     }
     return (
         <Tip content={`Connecté aux files ${formatHeures(recent.queueSeconds)} sur ${formatHeures(recent.sampledSeconds)} de bureau observées.`} align="start">
-            <div className="flex items-center gap-2.5">
-                <span className="flex h-2 w-16 shrink-0 overflow-hidden rounded-full bg-slate-100">
-                    <span className="h-full bg-blue-500" style={{ width: `${parts.queue}%` }} />
-                </span>
+            <div className="flex items-center gap-2">
+                <span style={{ color: couleurQ(parts.queue) }}><QIcon className="h-4 w-4" /></span>
                 <span className="w-10 text-sm tabular-nums text-slate-700">{parts.queue}&nbsp;%</span>
             </div>
         </Tip>
