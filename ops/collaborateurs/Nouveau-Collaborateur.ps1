@@ -85,6 +85,7 @@ $dossier = [ordered]@{
     Modele = ''; GroupesRepris = @()          # les groupes repris d'un ou d'une collègue
     Poste3CX = $null; Files3CX = @(); Numero3CX = ''; NouveauPoste = $false
     Modele3CX = $null; Copie3CX = @(); Departements3CX = @(); Sda3CX = $null
+    DepartementsAFaire = @()                  # ceux du modèle quand le script n'écrit pas les départements : listés dans le rapport
 }
 
 Set-Etape 'Le collaborateur'
@@ -234,7 +235,10 @@ if ($pbx) {
         if ($modeleVoulu -and $dossier.NouveauPoste) {
             $dossier.Modele3CX = Get-XapiPosteComplet -Pbx $pbx -Numero $modeleVoulu
             if (-not $dossier.Modele3CX) { throw "Poste modèle introuvable : $modeleVoulu" }
-            $dossier.Copie3CX = @('reglages', 'renvois', 'departements')
+            $dossier.Copie3CX = @('reglages', 'renvois')
+            $sesDepartements = @(Get-XapiDepartementsDuPoste -Departements $departements -Numero $modeleVoulu)
+            if ([bool](Get-Prop -Objet $pbx -Nom 'rattacherDepartements' -Defaut $false)) { $dossier.Copie3CX += 'departements'; $dossier.Departements3CX = $sesDepartements }
+            else { $dossier.DepartementsAFaire = $sesDepartements }
         }
     } else {
         # --- Le poste : on en crée un, ou on en reprend un qui dort.
@@ -326,9 +330,17 @@ if ($pbx) {
                     $nbRenvois = @(Get-Prop -Objet $dossier.Modele3CX -Nom 'ForwardingProfiles' -Defaut @()).Count
                     $quoi = @(
                         [pscustomobject]@{ Code = 'reglages';     Quoi = "Réglages généraux et $nbBlf touches BLF" },
-                        [pscustomobject]@{ Code = 'renvois';      Quoi = "$nbRenvois profils de renvoi et leurs exceptions" },
-                        [pscustomobject]@{ Code = 'departements'; Quoi = "$($sesDepartements.Count) départements et leurs droits" }
+                        [pscustomobject]@{ Code = 'renvois';      Quoi = "$nbRenvois profils de renvoi et leurs exceptions" }
                     )
+                    # Les départements ne s'écrivent que si config.json l'autorise : le
+                    # 10.09.2026, réécrire un département a retiré ses files et son
+                    # principal d'API. Sinon ils sont listés dans le rapport, à faire à la main.
+                    if ([bool](Get-Prop -Objet $pbx -Nom 'rattacherDepartements' -Defaut $false)) {
+                        $quoi += [pscustomobject]@{ Code = 'departements'; Quoi = "$($sesDepartements.Count) départements et leurs droits" }
+                    } elseif ($sesDepartements.Count) {
+                        Show-Note "Les $($sesDepartements.Count) départements du poste $($modele.Number) ne seront pas rattachés par le script (écriture désactivée dans config.json) : le rapport les listera, à faire dans la console 3CX." -Niveau Alerte
+                        $dossier.DepartementsAFaire = $sesDepartements
+                    }
                     $retenus = @(Read-Choix -Titre "Que reprendre du poste $($modele.Number) ?" -Aide 'tout est coché — décochez ce qui ne doit pas suivre' `
                         -Elements $quoi -Colonnes Quoi -Multiple -IndicesCoches @(0..($quoi.Count - 1)))
                     $dossier.Copie3CX = @($retenus | ForEach-Object { $_.Code })
@@ -357,7 +369,9 @@ $recap = [ordered]@{
     'Poste 3CX'       = $(if ($dossier.NouveauPoste) { "$($dossier.Numero3CX) — à CRÉER" } elseif ($dossier.Poste3CX) { "$($dossier.Numero3CX) réaffecté (ex « $($dossier.Poste3CX.DisplayName) »)" } elseif ($pbx) { 'aucun' } else { 'pas de PBX pour cette société' })
     'Files 3CX'       = $(if ($dossier.Files3CX.Count) { ($dossier.Files3CX | ForEach-Object { "$($_.Number) $($_.Name)" }) -join ' · ' } else { '—' })
     'Config 3CX'      = $(if ($dossier.Modele3CX) { "copiée du poste $($dossier.Modele3CX.Number) « $($dossier.Modele3CX.DisplayName) » : $($dossier.Copie3CX -join ', ')" } else { '—' })
-    'Départements'    = $(if ($dossier.Departements3CX.Count) { ($dossier.Departements3CX | ForEach-Object { $_.Name }) -join '; ' } else { '—' })
+    'Départements'    = $(if ($dossier.Departements3CX.Count) { ($dossier.Departements3CX | ForEach-Object { $_.Name }) -join '; ' }
+                           elseif ($dossier.DepartementsAFaire.Count) { "à faire dans la console : $(($dossier.DepartementsAFaire | ForEach-Object { $_.Name }) -join '; ')" }
+                           else { '—' })
     'Numéro direct'   = $(if ($dossier.Sda3CX) { "$($dossier.Sda3CX.Numero) — aujourd'hui : $($dossier.Sda3CX.Etat)" } else { '—' })
     'Mode'            = (Get-ModeEcriture)
 }
@@ -431,15 +445,28 @@ try {
         Copy-XapiConfigurationPoste -Pbx $pbx -Modele $dossier.Modele3CX -Id $idPoste -Numero $dossier.Numero3CX -Quoi $dossier.Copie3CX
     } | Out-Null
 
+    # Le rôle du modèle dans chacun de ses départements, tel que lu au départ.
+    function Get-DroitsDuModele($Departement) {
+        $sien = @(Get-Prop -Objet $Departement -Nom 'Members' -Defaut @() | Where-Object { "$(Get-Prop -Objet $_ -Nom 'Number' -Defaut '')" -eq "$($dossier.Modele3CX.Number)" })[0]
+        return (Get-Prop -Objet $sien -Nom 'Rights')
+    }
+
     Invoke-Etape -Nom 'Départements 3CX et droits' -Categorie 3CX -Ignorer:($dossier.Departements3CX.Count -eq 0) -Action {
-        $principal = $null
-        foreach ($dep in $dossier.Departements3CX) {
-            $sien = @($dep.Members | Where-Object { "$($_.Number)" -eq "$($dossier.Modele3CX.Number)" })[0]
-            Add-XapiPosteAuDepartement -Pbx $pbx -Departement $dep -Numero $dossier.Numero3CX -Droits (Get-Prop -Objet $sien -Nom 'Rights')
-            if ($dep.Id -eq (Get-Prop -Objet $dossier.Modele3CX -Nom 'PrimaryGroupId')) { $principal = $dep }
-        }
+        # On écrit sur le poste, jamais sur le département (voir Set-XapiDepartementsDuPoste).
+        $voulus = @()
+        foreach ($dep in $dossier.Departements3CX) { $voulus += @{ Departement = $dep; Droits = (Get-DroitsDuModele $dep) } }
+        Set-XapiDepartementsDuPoste -Pbx $pbx -Id $idPoste -Numero $dossier.Numero3CX -Voulus $voulus
         # Le département principal ne s'accepte QU'APRÈS le rattachement.
+        $principal = @($dossier.Departements3CX | Where-Object { $_.Id -eq (Get-Prop -Objet $dossier.Modele3CX -Nom 'PrimaryGroupId') })[0]
         if ($principal) { Set-XapiDepartementPrincipal -Pbx $pbx -Id $idPoste -DepartementId ([int]$principal.Id) -Nom $principal.Name }
+    } | Out-Null
+
+    Invoke-Etape -Nom 'Départements 3CX : à rattacher dans la console' -Categorie 3CX -Ignorer:($dossier.DepartementsAFaire.Count -eq 0) -Action {
+        $liste = @()
+        foreach ($dep in $dossier.DepartementsAFaire) {
+            $liste += "« $($dep.Name) » ($(Get-Prop -Objet (Get-DroitsDuModele $dep) -Nom 'RoleName' -Defaut 'rôle inconnu'))$(if ($dep.Id -eq (Get-Prop -Objet $dossier.Modele3CX -Nom 'PrimaryGroupId')) { ', principal' })"
+        }
+        Add-Journal -Message "Le script n'écrit pas les départements (config.json). À faire dans la console 3CX pour le poste $($dossier.Numero3CX), comme le poste $($dossier.Modele3CX.Number) : $($liste -join ' ; ')." -Categorie 3CX -Niveau Alerte
     } | Out-Null
 
     Invoke-Etape -Nom "Poste 3CX inscrit dans ses files d'attente" -Categorie 3CX -Ignorer:(-not $dossier.Numero3CX -or $dossier.Files3CX.Count -eq 0) -Action {

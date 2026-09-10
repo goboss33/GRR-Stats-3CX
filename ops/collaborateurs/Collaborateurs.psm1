@@ -2078,60 +2078,102 @@ function Get-EmpreinteDroits {
     return ($paires -join ';')
 }
 
-function Add-XapiPosteAuDepartement {
+function Get-EmpreinteMembres {
     <#
-      Rattache un poste à un département, puis lui donne le rôle du modèle
-      s'il est fourni. Deux envois, dans cet ordre, comme diag-xapi-postes.ts
-      l'a vérifié sur le PBX : la liste complète des membres, nue — les
-      numéros seulement —, puis les droits du nouveau membre une fois qu'il
-      est membre. Un seul envoi portant les droits de tout le monde a été
-      refusé (400) le 10.09.2026. La liste se relit à l'instant, pas au
-      lancement du script, et se relit après coup : si un collègue y a perdu
-      ses droits, le journal le dit.
+      Les membres d'un département en une table comparable : une clé par
+      membre (type, numéro, nom) et ses droits en empreinte. Sert à prouver,
+      après une écriture, que personne d'autre n'a bougé.
+    #>
+    param([Parameter(Mandatory)] [AllowNull()] $Departement)
+    $table = @{}
+    foreach ($m in @(Get-Prop -Objet $Departement -Nom 'Members' -Defaut @())) {
+        $cle = "$(Get-Prop -Objet $m -Nom 'Type' -Defaut '?') $(Get-Prop -Objet $m -Nom 'Number' -Defaut '') $(Get-Prop -Objet $m -Nom 'MemberName' -Defaut '')".Trim()
+        $table[$cle] = Get-EmpreinteDroits -Droits (Get-Prop -Objet $m -Nom 'Rights')
+    }
+    return $table
+}
+
+function Compare-EmpreinteMembres {
+    <# Ce qui a changé entre deux relevés d'un département, hors le poste qu'on vient d'y mettre. #>
+    param([Parameter(Mandatory)] [hashtable] $Avant, [Parameter(Mandatory)] [hashtable] $Apres, [string] $Sauf = '')
+    $ecarts = @()
+    foreach ($cle in @($Avant.Keys | Sort-Object)) {
+        if ($Sauf -and $cle -match "\s$([regex]::Escape($Sauf))(\s|$)") { continue }
+        if (-not $Apres.ContainsKey($cle)) { $ecarts += "$cle : disparu"; continue }
+        if ($Apres[$cle] -ne $Avant[$cle]) { $ecarts += "$cle : droits changés" }
+    }
+    return @($ecarts)
+}
+
+function Set-XapiDepartementsDuPoste {
+    <#
+      Rattache un poste à des départements EN ÉCRIVANT SUR LE POSTE
+      (PATCH Users(Id) { Groups }), jamais sur le département.
+
+      Le 10.09.2026, réécrire la liste des membres d'un département
+      (PATCH Groups(Id) { Members }) a retiré de la liste tout ce qui n'est
+      pas un poste — un département contient toutes sortes de DN (PeerType :
+      Queue, IVR, RingGroup, Fax, Parking…) — et le principal d'API a perdu
+      son rôle dans la foulée : plus rien ne passait. On ne réécrit pas ce
+      qu'on ne porte pas : ici, seule la ligne du poste change. Avant et
+      après, chaque département est relu ; si un autre membre a disparu ou
+      changé de droits, le journal le dit.
+
+      Chemin à prouver par Test-Pbx.ps1 -EssaiDepartement avant d'être activé
+      (config.json → pbx.<clé>.rattacherDepartements).
     #>
     param(
-        [Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] $Departement,
-        [Parameter(Mandatory)] [string] $Numero, $Droits = $null
+        [Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [int] $Id, [Parameter(Mandatory)] [string] $Numero,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Voulus   # @{ Departement = <groupe>; Droits = <Rights du modèle, ou $null> }
     )
-    $idDep = [int]$Departement.Id
-    $nom = "$(Get-Prop -Objet $Departement -Nom 'Name' -Defaut $idDep)"
-    $frais = $(if (Test-Simulation3CX) { $Departement } else { Get-XapiDepartement -Pbx $Pbx -Id $idDep })
-    $autres = @(); $avant = @{}
-    foreach ($m in @(Get-Prop -Objet $frais -Nom 'Members' -Defaut @())) {
-        $n = "$(Get-Prop -Objet $m -Nom 'Number' -Defaut '')"
-        if (-not $n -or $n -eq $Numero) { continue }
-        $autres += @{ Number = $n }
-        $avant[$n] = Get-EmpreinteDroits -Droits (Get-Prop -Objet $m -Nom 'Rights')
+    if ($Id -le 0) { throw "Rattachement impossible : l'identifiant du poste $Numero est inconnu." }
+    if ($Voulus.Count -eq 0) { return }
+    $simule = Test-Simulation3CX
+    $avant = @{}
+    if (-not $simule) {
+        foreach ($v in $Voulus) { $idDep = [int]$v.Departement.Id; $avant[$idDep] = Get-EmpreinteMembres -Departement (Get-XapiDepartement -Pbx $Pbx -Id $idDep) }
     }
-    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Groups($idDep)" -Corps @{ Members = @($autres + @(@{ Number = $Numero })) } `
-        -Libelle "Rattacher au département « $nom »" | Out-Null
-    $role = ''
-    if ($Droits) {
-        $role = "$(Get-Prop -Objet $Droits -Nom 'RoleName' -Defaut '?')"
-        # Le rôle est un plus : s'il est refusé, le rattachement reste acquis,
-        # le rapport le dit, et le département principal peut encore suivre.
-        try {
-            Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Groups($idDep)" -Corps @{ Members = @($autres + @(@{ Number = $Numero; Rights = $Droits })) } `
-                -Libelle "Rôle « $role » dans le département « $nom »" | Out-Null
-        } catch {
-            Add-Journal -Message "Rôle « $role » non recopié dans le département « $nom » — $(Get-MessageErreur $_)" -Categorie 3CX -Niveau Alerte
-            $role = ''
+    # Les appartenances que le poste a déjà, conservées telles quelles.
+    $groupes = @(); $dejaIds = @()
+    if (-not $simule) {
+        $u = Invoke-Xapi -Pbx $Pbx -Chemin "Users($Id)?%24select=Id,Number&%24expand=Groups(%24expand%3DRights)"
+        foreach ($g in @(Get-Prop -Objet $u -Nom 'Groups' -Defaut @())) {
+            $idDeja = [int](Get-Prop -Objet $g -Nom 'GroupId' -Defaut 0)
+            if ($idDeja -le 0) { continue }
+            $ligne = @{ GroupId = $idDeja }
+            $droitsDeja = Get-Prop -Objet $g -Nom 'Rights'
+            if ($droitsDeja) { $ligne.Rights = $droitsDeja }
+            $groupes += $ligne; $dejaIds += $idDeja
         }
     }
-    if (Test-Simulation3CX) { return }
-    $membres = @(Get-Prop -Objet (Get-XapiDepartement -Pbx $Pbx -Id $idDep) -Nom 'Members' -Defaut @())
-    if (@($membres | Where-Object { "$(Get-Prop -Objet $_ -Nom 'Number' -Defaut '')" -eq $Numero }).Count -eq 0) {
-        throw "Le poste $Numero n'apparaît pas dans le département « $nom » après l'envoi."
+    $noms = @()
+    foreach ($v in $Voulus) {
+        $idDep = [int]$v.Departement.Id
+        $nom = "$(Get-Prop -Objet $v.Departement -Nom 'Name' -Defaut $idDep)"
+        $role = $(if ($v.Droits) { "$(Get-Prop -Objet $v.Droits -Nom 'RoleName' -Defaut '?')" } else { '' })
+        $noms += "« $nom »$(if ($role) { " ($role)" })"
+        if ($dejaIds -contains $idDep) { continue }
+        $ligne = @{ GroupId = $idDep }
+        if ($v.Droits) { $ligne.Rights = $v.Droits }
+        $groupes += $ligne
     }
-    $touches = @()
-    foreach ($m in $membres) {
-        $n = "$(Get-Prop -Objet $m -Nom 'Number' -Defaut '')"
-        if ($avant.ContainsKey($n) -and $avant[$n] -ne (Get-EmpreinteDroits -Droits (Get-Prop -Objet $m -Nom 'Rights'))) { $touches += $n }
+    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Users($Id)" -Corps @{ Groups = @($groupes) } `
+        -Libelle "Rattacher le poste $Numero aux départements $($noms -join ', ')" | Out-Null
+    if ($simule) { return }
+    foreach ($v in $Voulus) {
+        $idDep = [int]$v.Departement.Id
+        $nom = "$(Get-Prop -Objet $v.Departement -Nom 'Name' -Defaut $idDep)"
+        $dep = Get-XapiDepartement -Pbx $Pbx -Id $idDep
+        $membres = @(Get-Prop -Objet $dep -Nom 'Members' -Defaut @())
+        $moi = @($membres | Where-Object { "$(Get-Prop -Objet $_ -Nom 'Number' -Defaut '')" -eq $Numero })
+        if ($moi.Count -eq 0) { throw "Le poste $Numero n'apparaît pas dans le département « $nom » après l'envoi." }
+        $ecarts = @(Compare-EmpreinteMembres -Avant $avant[$idDep] -Apres (Get-EmpreinteMembres -Departement $dep) -Sauf $Numero)
+        if ($ecarts.Count) {
+            Add-Journal -Message "Dans le département « $nom », $($ecarts.Count) membre(s) ne sont plus comme avant : $($ecarts -join ' ; ') — à vérifier dans la console 3CX." -Categorie 3CX -Niveau Alerte
+        }
+        $roleLu = "$(Get-Prop -Objet (Get-Prop -Objet $moi[0] -Nom 'Rights') -Nom 'RoleName' -Defaut '')"
+        Add-Journal -Message "Rattaché au département « $nom »$(if ($roleLu) { " avec le rôle « $roleLu »" }) — $($membres.Count) membres." -Categorie 3CX -Niveau Succes
     }
-    if ($touches.Count) {
-        Add-Journal -Message "Les droits de $($touches.Count) membre(s) du département « $nom » ne sont plus ceux d'avant le rattachement ($($touches -join ', ')) — à vérifier dans la console 3CX." -Categorie 3CX -Niveau Alerte
-    }
-    Add-Journal -Message "Rattaché au département « $nom »$(if ($role) { " avec le rôle « $role »" }) — $($membres.Count) membres." -Categorie 3CX -Niveau Succes
 }
 
 function Set-XapiDepartementPrincipal {
