@@ -1714,6 +1714,44 @@ function Test-Erreur401 {
     return ("$($Erreur.Exception.Message)" -match '\b401\b|Unauthorized')
 }
 
+function Test-Erreur404 {
+    <# Le PBX n'a pas trouvé ce qu'on adresse ? (entité absente, ou identifiant que le PBX ne sait pas résoudre) #>
+    param([Parameter(Mandatory)] $Erreur)
+    try {
+        $reponse = $Erreur.Exception.Response
+        if ($reponse) { if ([int]$reponse.StatusCode -eq 404) { return $true } }
+    } catch { }
+    return ("$($Erreur.Exception.Message)" -match '\b404\b|Not Found')
+}
+
+function Format-ErreurXapi {
+    <#
+      « 3CX PATCH InboundRules(12) → 404 NotFound : {"error":…} » — la requête,
+      le statut, et ce que le PBX a répondu. Le corps est lu dans ErrorDetails
+      (PowerShell 7 et souvent 5.1), sinon dans le flux de la réponse (5.1).
+    #>
+    param([Parameter(Mandatory)] $Erreur, [string] $Methode = '', [string] $Chemin = '')
+    $statut = ''
+    try {
+        $reponse = $Erreur.Exception.Response
+        if ($reponse) { $statut = "$([int]$reponse.StatusCode) $($reponse.StatusCode)" }
+    } catch { }
+    $corps = ''
+    try { if ($Erreur.ErrorDetails -and $Erreur.ErrorDetails.Message) { $corps = "$($Erreur.ErrorDetails.Message)" } } catch { }
+    if (-not $corps) {
+        try {
+            $flux = $Erreur.Exception.Response.GetResponseStream()
+            if ($flux) { $corps = (New-Object System.IO.StreamReader($flux)).ReadToEnd() }
+        } catch { }
+    }
+    $corps = ("$corps" -replace '\s+', ' ').Trim()
+    if ($corps.Length -gt 400) { $corps = $corps.Substring(0, 400) + '…' }
+    $requete = "3CX $Methode $([uri]::UnescapeDataString("$Chemin"))"
+    $texte = if ($statut) { "$requete → $statut" } else { "$requete → $(Get-MessageErreur $Erreur)" }
+    if ($corps) { $texte += " : $corps" }
+    return $texte
+}
+
 function Invoke-Xapi {
     <# Un appel XAPI. Les écritures (PATCH/POST/DELETE) passent par Invoke-Ecriture : décrites en simulation. #>
     param(
@@ -1739,7 +1777,10 @@ function Invoke-Xapi {
                     Reset-JetonXapi -Pbx $Pbx
                     continue
                 }
-                throw
+                # Le message brut de PowerShell ne dit ni quelle requête a échoué,
+                # ni ce que le PBX a répondu. On rend les deux : c'est ce qui
+                # permet de comprendre un refus sans avoir à rejouer.
+                throw (New-Object System.Exception -ArgumentList (Format-ErreurXapi -Erreur $_ -Methode $Methode -Chemin $Chemin), $_.Exception)
             }
         }
     }
@@ -1863,9 +1904,15 @@ function Remove-XapiPosteDesFiles {
 function Add-XapiPosteAuxFiles {
     param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [string] $Numero, [Parameter(Mandatory)] [object[]] $Files)
     $toutes = Get-XapiFiles -Pbx $Pbx
+    if ($toutes.Count -eq 0) { throw "Le PBX n'a rendu aucune file d'attente : impossible d'y inscrire le poste $Numero." }
     foreach ($choisie in $Files) {
-        $f = $toutes | Where-Object { $_.Id -eq $choisie.Id } | Select-Object -First 1
-        if (-not $f) { continue }
+        $idVoulu = "$(Get-Prop -Objet $choisie -Nom 'Id' -Defaut '')"
+        $f = $toutes | Where-Object { "$($_.Id)" -eq $idVoulu } | Select-Object -First 1
+        if (-not $f) {
+            # Jamais en silence : une file choisie qui a disparu se dit.
+            Add-Journal -Message "File $(Get-Prop -Objet $choisie -Nom 'Number' -Defaut '?') « $(Get-Prop -Objet $choisie -Nom 'Name' -Defaut '') » introuvable au PBX (identifiant $idVoulu) — le poste $Numero n'y est pas inscrit." -Categorie 3CX -Niveau Alerte
+            continue
+        }
         if ((Get-NumerosAgents -File $f) -contains $Numero) { Add-Journal -Message "Déjà dans la $(Get-NomFile $f)" -Categorie 3CX; continue }
         $agents = @(Get-Prop -Objet $f -Nom 'Agents' -Defaut @()) + @([pscustomobject]@{ Number = $Numero; SkillGroup = $Pbx.skillGroupParDefaut })
         Set-XapiAgentsDeFile -Pbx $Pbx -File $f -Agents $agents -Libelle "Inscrire dans la $(Get-NomFile $f) — $($agents.Count) agent(s)"
@@ -2057,8 +2104,15 @@ function Add-XapiPosteAuDepartement {
     $role = ''
     if ($Droits) {
         $role = "$(Get-Prop -Objet $Droits -Nom 'RoleName' -Defaut '?')"
-        Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Groups($idDep)" -Corps @{ Members = @($autres + @(@{ Number = $Numero; Rights = $Droits })) } `
-            -Libelle "Rôle « $role » dans le département « $nom »" | Out-Null
+        # Le rôle est un plus : s'il est refusé, le rattachement reste acquis,
+        # le rapport le dit, et le département principal peut encore suivre.
+        try {
+            Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Groups($idDep)" -Corps @{ Members = @($autres + @(@{ Number = $Numero; Rights = $Droits })) } `
+                -Libelle "Rôle « $role » dans le département « $nom »" | Out-Null
+        } catch {
+            Add-Journal -Message "Rôle « $role » non recopié dans le département « $nom » — $(Get-MessageErreur $_)" -Categorie 3CX -Niveau Alerte
+            $role = ''
+        }
     }
     if (Test-Simulation3CX) { return }
     $membres = @(Get-Prop -Objet (Get-XapiDepartement -Pbx $Pbx -Id $idDep) -Nom 'Members' -Defaut @())
@@ -2167,13 +2221,29 @@ function Set-XapiSdaVersPoste {
         OutOfOfficeHoursDestination = $destination
         HolidaysDestination         = $destination
     }
-    if ($regles.Count -gt 0) {
-        foreach ($r in $regles) {
-            Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "InboundRules($($r.Id))" -Corps $corps `
-                -Libelle "SDA $($Sda.Numero) vers le poste $Numero, règle $($r.Id) renommée « $NomRegle »" | Out-Null
+    # Une règle lue dans la liste n'est pas forcément adressable une à une : le
+    # 10.09.2026, PATCH InboundRules(Id) a répondu 404 sur une règle que la
+    # liste venait de rendre. On vérifie donc d'abord que le PBX retrouve la
+    # règle par son identifiant ; sinon on repart comme pour un numéro sans
+    # règle, en créant celle de chaque trunk — ce que fait la console.
+    $reecrites = @(); $introuvables = @()
+    foreach ($r in $regles) {
+        $existe = $true
+        if (-not (Test-Simulation3CX)) {
+            try { Invoke-Xapi -Pbx $Pbx -Chemin "InboundRules($($r.Id))" | Out-Null }
+            catch { if (Test-Erreur404 -Erreur $_) { $existe = $false } else { throw } }
         }
-    } else {
-        # Aucune règle : on en crée une par trunk porteur, comme le fait la console.
+        if (-not $existe) { $introuvables += "$($r.Id)"; continue }
+        Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "InboundRules($($r.Id))" -Corps $corps `
+            -Libelle "SDA $($Sda.Numero) vers le poste $Numero, règle $($r.Id) renommée « $NomRegle »" | Out-Null
+        $reecrites += "$($r.Id)"
+    }
+    $creees = 0
+    if ($reecrites.Count -eq 0) {
+        if ($introuvables.Count) {
+            Add-Journal -Message "SDA $($Sda.Numero) : le PBX ne retrouve pas la règle $($introuvables -join ' ni la règle ') par son identifiant — on crée celle de chaque trunk, comme la console." -Categorie 3CX -Niveau Alerte
+        }
+        # Aucune règle utilisable : on en crée une par trunk porteur.
         foreach ($trunk in @($Sda.Trunks)) {
             $creation = $corps.Clone()
             $creation.Data = "$($Sda.Numero)"
@@ -2182,11 +2252,14 @@ function Set-XapiSdaVersPoste {
             $creation.TrunkDN = @{ Id = [int]$trunk }
             Invoke-Xapi -Pbx $Pbx -Methode POST -Chemin 'InboundRules' -Corps $creation `
                 -Libelle "SDA $($Sda.Numero) : créer la règle du trunk $trunk vers le poste $Numero, au nom de « $NomRegle »" | Out-Null
+            $creees++
         }
+    } elseif ($introuvables.Count) {
+        Add-Journal -Message "SDA $($Sda.Numero) : règle(s) $($introuvables -join ', ') introuvable(s) par identifiant, non réécrite(s) — à vérifier dans la console." -Categorie 3CX -Niveau Alerte
     }
     if (-not (Test-Simulation3CX)) {
-        $combien = if ($regles.Count -gt 0) { $regles.Count } else { @($Sda.Trunks).Count }
-        Add-Journal -Message "SDA $($Sda.Numero) vers le poste $Numero sur $combien trunk(s), au nom de « $NomRegle »." -Categorie 3CX -Niveau Succes
+        $quoi = if ($reecrites.Count) { "$($reecrites.Count) règle(s) réécrite(s)" } else { "$creees règle(s) créée(s)" }
+        Add-Journal -Message "SDA $($Sda.Numero) vers le poste $Numero — $quoi, au nom de « $NomRegle »." -Categorie 3CX -Niveau Succes
     }
 }
 
