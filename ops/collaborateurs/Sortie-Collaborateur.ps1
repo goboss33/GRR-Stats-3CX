@@ -360,7 +360,7 @@ try {
         $num = "$($dossier.Poste3CX.Number)"
         Remove-XapiPosteDesFiles -Pbx $pbx -Numero $num | Out-Null
         Set-XapiPoste -Pbx $pbx -Id $dossier.Poste3CX.Id -Numero $num -Proprietes @{ Enabled = $false; EmailAddress = '' } -Libelle "Désactiver le poste $num et vider son e-mail — le numéro reste réservé"
-        if (-not (Test-Simulation)) { Add-Journal -Message "Poste $num désactivé, e-mail vidé — le numéro reste réservé." -Categorie 3CX -Niveau Succes }
+        if (-not (Test-Simulation3CX)) { Add-Journal -Message "Poste $num désactivé, e-mail vidé — le numéro reste réservé." -Categorie 3CX -Niveau Succes }
         if ($dossier.Sda3CX.Count -gt 0) {
             Add-Journal -Message "$($dossier.Sda3CX.Count) règle(s) entrante(s) visent encore le poste $num, à rerouter à la main :" -Categorie 3CX -Niveau Alerte
             foreach ($s in $dossier.Sda3CX) {

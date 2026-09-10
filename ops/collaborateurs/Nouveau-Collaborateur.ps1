@@ -421,7 +421,7 @@ try {
             Set-XapiPoste -Pbx $pbx -Id $idPoste -Numero $dossier.Numero3CX -Proprietes @{
                 FirstName = $dossier.Prenom; LastName = $dossier.Nom; EmailAddress = $dossier.Email; Enabled = $true
             } -Libelle "Réaffecter le poste $($dossier.Numero3CX) à $($dossier.DisplayName) ($($dossier.Email)) et le réactiver"
-            if (-not (Test-Simulation)) { Add-Journal -Message "Poste $($dossier.Numero3CX) à $($dossier.DisplayName), réactivé." -Categorie 3CX -Niveau Succes }
+            if (-not (Test-Simulation3CX)) { Add-Journal -Message "Poste $($dossier.Numero3CX) à $($dossier.DisplayName), réactivé." -Categorie 3CX -Niveau Succes }
         }
     } | Out-Null
     if ($script:idPoste) { $idPoste = $script:idPoste }
@@ -438,7 +438,6 @@ try {
             Add-XapiPosteAuDepartement -Pbx $pbx -Departement $dep -Numero $dossier.Numero3CX -Droits (Get-Prop -Objet $sien -Nom 'Rights')
             if ($dep.Id -eq (Get-Prop -Objet $dossier.Modele3CX -Nom 'PrimaryGroupId')) { $principal = $dep }
         }
-        if (-not (Test-Simulation)) { Add-Journal -Message "Rattaché à $($dossier.Departements3CX.Count) département(s) avec les droits du modèle." -Categorie 3CX -Niveau Succes }
         # Le département principal ne s'accepte QU'APRÈS le rattachement.
         if ($principal) { Set-XapiDepartementPrincipal -Pbx $pbx -Id $idPoste -DepartementId ([int]$principal.Id) -Nom $principal.Name }
     } | Out-Null

@@ -1855,7 +1855,7 @@ function Remove-XapiPosteDesFiles {
     foreach ($f in $files) {
         $restants = @(@(Get-Prop -Objet $f -Nom 'Agents' -Defaut @()) | Where-Object { (Get-NumeroAgent -Agent $_) -ne $Numero })
         Set-XapiAgentsDeFile -Pbx $Pbx -File $f -Agents $restants -Libelle "Retirer de la $(Get-NomFile $f) — $($restants.Count) agent(s) restant(s)"
-        if (-not (Test-Simulation)) { Add-Journal -Message "Retiré de la $(Get-NomFile $f)" -Categorie 3CX -Niveau Succes }
+        if (-not (Test-Simulation3CX)) { Add-Journal -Message "Retiré de la $(Get-NomFile $f)" -Categorie 3CX -Niveau Succes }
     }
     return $files
 }
@@ -1869,7 +1869,7 @@ function Add-XapiPosteAuxFiles {
         if ((Get-NumerosAgents -File $f) -contains $Numero) { Add-Journal -Message "Déjà dans la $(Get-NomFile $f)" -Categorie 3CX; continue }
         $agents = @(Get-Prop -Objet $f -Nom 'Agents' -Defaut @()) + @([pscustomobject]@{ Number = $Numero; SkillGroup = $Pbx.skillGroupParDefaut })
         Set-XapiAgentsDeFile -Pbx $Pbx -File $f -Agents $agents -Libelle "Inscrire dans la $(Get-NomFile $f) — $($agents.Count) agent(s)"
-        if (-not (Test-Simulation)) { Add-Journal -Message "Inscrit dans la $(Get-NomFile $f)" -Categorie 3CX -Niveau Succes }
+        if (-not (Test-Simulation3CX)) { Add-Journal -Message "Inscrit dans la $(Get-NomFile $f)" -Categorie 3CX -Niveau Succes }
     }
 }
 
@@ -1939,79 +1939,141 @@ function New-XapiPoste {
     )
     $corps = @{ Number = $Numero; FirstName = $Prenom; LastName = $Nom; Enabled = $true }
     if ($Email) { $corps.EmailAddress = $Email }
-    $r = Invoke-Xapi -Pbx $Pbx -Methode POST -Chemin 'Users' -Corps $corps -Libelle "Créer le poste $Numero pour $Prenom $Nom$(if ($Email) { " ($Email)" })"
-    if (Test-Simulation) { return $null }
-    return $r
+    # Invoke-Ecriture rend $null quand le 3CX est simulé. Quand il est écrit
+    # pour de vrai pendant une simulation générale (-Simulation -Reel3CX), le
+    # poste créé revient ici avec son identifiant, que la copie de la
+    # configuration et le département principal réclament ensuite. Un test sur
+    # la simulation générale rendait $null dans ce cas : PATCH Users(0), 404,
+    # et rien n'était copié — constaté le 10.09.2026.
+    return Invoke-Xapi -Pbx $Pbx -Methode POST -Chemin 'Users' -Corps $corps -Libelle "Créer le poste $Numero pour $Prenom $Nom$(if ($Email) { " ($Email)" })"
+}
+
+function ConvertTo-SansId {
+    <#
+      Un objet lu sur le PBX, prêt à être renvoyé pour un AUTRE poste : le
+      même contenu, sans l'identifiant de ligne, qui appartient au modèle.
+    #>
+    param([Parameter(Mandatory)] $Objet)
+    $copie = @{}
+    foreach ($prop in $Objet.PSObject.Properties) { if ($prop.Name -ne 'Id') { $copie[$prop.Name] = $prop.Value } }
+    return $copie
 }
 
 function Copy-XapiConfigurationPoste {
     <#
       Recopie la configuration d'un poste modèle sur un poste existant :
-      réglages généraux, touches BLF, profils de renvoi et leurs exceptions.
-      Le département principal en est exclu — le PBX le refuse tant que le
-      poste n'est pas membre du département (constaté à l'essai).
+      réglages généraux et touches BLF, profils de renvoi, exceptions de
+      renvoi. Trois envois séparés : un refus sur l'un ne fait pas perdre les
+      autres, et le journal dit lequel. Le département principal en est
+      exclu — le PBX le refuse tant que le poste n'est pas membre du
+      département (constaté à l'essai).
     #>
     param(
         [Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] $Modele,
         [Parameter(Mandatory)] [int] $Id, [Parameter(Mandatory)] [string] $Numero,
         [string[]] $Quoi = @('reglages', 'renvois')   # ce que l'opérateur a laissé coché
     )
-    $corps = @{}
+    if ($Id -le 0) { throw "Copie impossible : l'identifiant du poste $Numero est inconnu." }
+    $depuis = "Copier depuis le poste $($Modele.Number)"
+    $lots = @()
     if ($Quoi -contains 'reglages') {
+        $reglages = @{}
         foreach ($champ in $script:XapiChampsCopies) {
             $v = Get-Prop -Objet $Modele -Nom $champ
-            if ($null -ne $v) { $corps[$champ] = $v }
+            if ($null -ne $v) { $reglages[$champ] = $v }
         }
-    }
-    # Les touches BLF du modèle contiennent sa propre extension : on la remplace.
-    if ($corps.ContainsKey('Blfs') -and $corps['Blfs']) {
-        $corps['Blfs'] = "$($corps['Blfs'])" -replace ">$([regex]::Escape("$($Modele.Number)"))<", ">$Numero<"
+        $resume = @("$($reglages.Keys.Count) réglages")
+        # Les touches BLF du modèle contiennent sa propre extension : on la remplace.
+        if ($reglages.ContainsKey('Blfs') -and $reglages['Blfs']) {
+            $reglages['Blfs'] = "$($reglages['Blfs'])" -replace ">$([regex]::Escape("$($Modele.Number)"))<", ">$Numero<"
+            $resume += "$(([regex]::Matches("$($reglages['Blfs'])", '<BLF ')).Count) touches BLF"
+        }
+        if ($reglages.Keys.Count) { $lots += @{ Corps = $reglages; Libelle = "$depuis : $($resume -join ', ')" } }
     }
     if ($Quoi -contains 'renvois') {
-        $profils = @()
-        foreach ($p in @(Get-Prop -Objet $Modele -Nom 'ForwardingProfiles' -Defaut @())) {
-            $copie = @{}
-            foreach ($prop in $p.PSObject.Properties) { if ($prop.Name -ne 'Id') { $copie[$prop.Name] = $prop.Value } }
-            $profils += $copie
-        }
-        if ($profils.Count) { $corps['ForwardingProfiles'] = $profils }
-        $exceptions = @(Get-Prop -Objet $Modele -Nom 'ForwardingExceptions' -Defaut @())
-        if ($exceptions.Count) {
-            $corps['ForwardingExceptions'] = @($exceptions | ForEach-Object {
-                $c = @{}; foreach ($prop in $_.PSObject.Properties) { if ($prop.Name -ne 'Id') { $c[$prop.Name] = $prop.Value } }; $c
-            })
+        $profils = @(@(Get-Prop -Objet $Modele -Nom 'ForwardingProfiles' -Defaut @()) | ForEach-Object { ConvertTo-SansId -Objet $_ })
+        if ($profils.Count) { $lots += @{ Corps = @{ ForwardingProfiles = $profils }; Libelle = "$depuis : $($profils.Count) profils de renvoi" } }
+        $exceptions = @(@(Get-Prop -Objet $Modele -Nom 'ForwardingExceptions' -Defaut @()) | ForEach-Object { ConvertTo-SansId -Objet $_ })
+        if ($exceptions.Count) { $lots += @{ Corps = @{ ForwardingExceptions = $exceptions }; Libelle = "$depuis : $($exceptions.Count) exceptions de renvoi" } }
+    }
+    $refus = @()
+    foreach ($lot in $lots) {
+        try {
+            Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Users($Id)" -Corps $lot.Corps -Libelle $lot.Libelle | Out-Null
+            if (-not (Test-Simulation3CX)) { Add-Journal -Message $lot.Libelle -Categorie 3CX -Niveau Succes }
+        } catch {
+            $refus += $lot.Libelle
+            Add-Journal -Message "Refusé par le PBX — $($lot.Libelle) : $(Get-MessageErreur $_)" -Categorie 3CX -Niveau Erreur
         }
     }
-    if ($corps.Keys.Count -eq 0) { return }
-    $resume = @("$($corps.Keys.Count) réglages")
-    if ($corps.ContainsKey('Blfs')) { $resume += "$((([regex]::Matches("$($corps['Blfs'])", '<BLF ')).Count)) touches BLF" }
-    if ($corps.ContainsKey('ForwardingProfiles')) { $resume += "$($corps['ForwardingProfiles'].Count) profils de renvoi" }
-    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Users($Id)" -Corps $corps -Libelle "Copier depuis le poste $($Modele.Number) : $($resume -join ', ')" | Out-Null
+    if ($refus.Count) { throw "$($refus.Count) envoi(s) sur $($lots.Count) refusé(s) par le PBX — voir le journal." }
+}
+
+function Get-XapiDepartement {
+    <# Un département avec ses membres et leurs droits, lu à l'instant. #>
+    param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [int] $Id)
+    return Invoke-Xapi -Pbx $Pbx -Chemin "Groups($Id)?%24expand=Members(%24expand%3DRights)"
+}
+
+function Get-EmpreinteDroits {
+    <# Les droits d'un membre en une chaîne comparable : clés triées, sans l'identifiant de ligne, propre à chacun. #>
+    param([AllowNull()] $Droits)
+    if ($null -eq $Droits) { return '' }
+    $paires = @()
+    foreach ($p in @($Droits.PSObject.Properties | Sort-Object Name)) {
+        if ($p.Name -eq 'Id') { continue }
+        $paires += "$($p.Name)=$(if ($null -eq $p.Value) { 'null' } else { ConvertTo-Json -InputObject $p.Value -Depth 4 -Compress })"
+    }
+    return ($paires -join ';')
 }
 
 function Add-XapiPosteAuDepartement {
     <#
-      Ajoute un poste à un département, avec le rôle du modèle s'il est donné.
-      On renvoie la liste complète des membres : le PBX ne fait pas de diff.
+      Rattache un poste à un département, puis lui donne le rôle du modèle
+      s'il est fourni. Deux envois, dans cet ordre, comme diag-xapi-postes.ts
+      l'a vérifié sur le PBX : la liste complète des membres, nue — les
+      numéros seulement —, puis les droits du nouveau membre une fois qu'il
+      est membre. Un seul envoi portant les droits de tout le monde a été
+      refusé (400) le 10.09.2026. La liste se relit à l'instant, pas au
+      lancement du script, et se relit après coup : si un collègue y a perdu
+      ses droits, le journal le dit.
     #>
     param(
         [Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] $Departement,
         [Parameter(Mandatory)] [string] $Numero, $Droits = $null
     )
-    $membres = @()
-    foreach ($m in @($Departement.Members)) {
-        if ("$($m.Number)" -eq $Numero) { continue }
-        $ligne = @{ Number = "$($m.Number)" }
-        $r = Get-Prop -Objet $m -Nom 'Rights'
-        if ($r) { $ligne.Rights = $r }
-        $membres += $ligne
+    $idDep = [int]$Departement.Id
+    $nom = "$(Get-Prop -Objet $Departement -Nom 'Name' -Defaut $idDep)"
+    $frais = $(if (Test-Simulation3CX) { $Departement } else { Get-XapiDepartement -Pbx $Pbx -Id $idDep })
+    $autres = @(); $avant = @{}
+    foreach ($m in @(Get-Prop -Objet $frais -Nom 'Members' -Defaut @())) {
+        $n = "$(Get-Prop -Objet $m -Nom 'Number' -Defaut '')"
+        if (-not $n -or $n -eq $Numero) { continue }
+        $autres += @{ Number = $n }
+        $avant[$n] = Get-EmpreinteDroits -Droits (Get-Prop -Objet $m -Nom 'Rights')
     }
-    $nouveau = @{ Number = $Numero }
-    if ($Droits) { $nouveau.Rights = $Droits }
-    $membres += $nouveau
-    $role = if ($Droits) { " avec le rôle $(Get-Prop -Objet $Droits -Nom 'RoleName' -Defaut '?')" } else { '' }
-    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Groups($($Departement.Id))" -Corps @{ Members = $membres } `
-        -Libelle "Rattacher au département « $($Departement.Name) »$role" | Out-Null
+    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Groups($idDep)" -Corps @{ Members = @($autres + @(@{ Number = $Numero })) } `
+        -Libelle "Rattacher au département « $nom »" | Out-Null
+    $role = ''
+    if ($Droits) {
+        $role = "$(Get-Prop -Objet $Droits -Nom 'RoleName' -Defaut '?')"
+        Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Groups($idDep)" -Corps @{ Members = @($autres + @(@{ Number = $Numero; Rights = $Droits })) } `
+            -Libelle "Rôle « $role » dans le département « $nom »" | Out-Null
+    }
+    if (Test-Simulation3CX) { return }
+    $membres = @(Get-Prop -Objet (Get-XapiDepartement -Pbx $Pbx -Id $idDep) -Nom 'Members' -Defaut @())
+    if (@($membres | Where-Object { "$(Get-Prop -Objet $_ -Nom 'Number' -Defaut '')" -eq $Numero }).Count -eq 0) {
+        throw "Le poste $Numero n'apparaît pas dans le département « $nom » après l'envoi."
+    }
+    $touches = @()
+    foreach ($m in $membres) {
+        $n = "$(Get-Prop -Objet $m -Nom 'Number' -Defaut '')"
+        if ($avant.ContainsKey($n) -and $avant[$n] -ne (Get-EmpreinteDroits -Droits (Get-Prop -Objet $m -Nom 'Rights'))) { $touches += $n }
+    }
+    if ($touches.Count) {
+        Add-Journal -Message "Les droits de $($touches.Count) membre(s) du département « $nom » ne sont plus ceux d'avant le rattachement ($($touches -join ', ')) — à vérifier dans la console 3CX." -Categorie 3CX -Niveau Alerte
+    }
+    Add-Journal -Message "Rattaché au département « $nom »$(if ($role) { " avec le rôle « $role »" }) — $($membres.Count) membres." -Categorie 3CX -Niveau Succes
 }
 
 function Set-XapiDepartementPrincipal {
