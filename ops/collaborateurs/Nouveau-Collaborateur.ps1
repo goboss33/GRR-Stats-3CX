@@ -119,6 +119,8 @@ if (-not $Job) { Add-Resume -Cle 'Collaborateur' -Valeur $dossier.DisplayName }
 # Avant la moindre écriture : on se connecte, on vérifie l'unicité, on lit le PBX.
 Set-Etape 'Vérifications'
 $ad = Connect-Domaine -Societe $soc
+$avisAd = Test-EcritureAdRisquee -Ad $ad
+if ($avisAd) { Show-Note $avisAd -Niveau Alerte; Add-Journal -Message $avisAd -Categorie AD -Niveau Alerte }
 $pbx = if ($Reglages.Gerer3CX) { Get-Pbx -Societe $soc } else { $null }
 
 while ($true) {
@@ -404,7 +406,8 @@ try {
                 # vraie entrée lancée depuis une session sans droits sur l'OU s'est
                 # arrêtée là-dessus sans que l'opérateur comprenne.
                 if (Test-ErreurAccesRefuse -Erreur $_) {
-                    throw "Accès refusé par l'annuaire : le compte $(Get-CompteAdEcriture -Ad $ad) n'a pas le droit de créer un utilisateur dans $($site.ou), ou d'y écrire le mot de passe et les adresses. Relancez depuis une session d'un compte administrateur du domaine, ou déléguez ce droit sur cette OU."
+                    $avis = Test-EcritureAdRisquee -Ad $ad
+                    throw "Accès refusé par l'annuaire pour $(Get-CompteAdEcriture -Ad $ad) à la création dans $($site.ou). $(if ($avis) { $avis } else { "Ce compte n'a pas le droit d'y créer un utilisateur, ou d'y écrire le mot de passe et les adresses : relancez avec un compte administrateur du domaine, ou déléguez ce droit sur cette OU." })"
                 }
                 throw
             }

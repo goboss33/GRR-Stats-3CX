@@ -1371,7 +1371,28 @@ function Get-CompteAdEcriture {
     #>
     param([Parameter(Mandatory)] [hashtable] $Ad)
     if ($Ad.ContainsKey('Credential') -and $Ad.Credential) { return "$($Ad.Credential.UserName) (identifiants saisis)" }
-    return "$env:USERDOMAIN\$env:USERNAME (compte de la session Windows)"
+    return "$env:USERDOMAIN\$env:USERNAME (compte de la session Windows$(if (-not (Test-ConsoleElevee)) { ', console NON élevée' }))"
+}
+
+function Test-ConsoleElevee {
+    <#
+      La console tourne-t-elle avec un jeton complet (« Exécuter en tant
+      qu'administrateur ») ? Sans cela, l'UAC ampute le jeton des groupes
+      d'administration, et sur le contrôleur lui-même l'annuaire écrit avec
+      ce jeton amputé : il refuse.
+    #>
+    try {
+        $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+        return ([Security.Principal.WindowsPrincipal]$id).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch { return $true }   # inconnu : on ne crie pas pour rien
+}
+
+function Test-EcritureAdRisquee {
+    <# Un avertissement quand l'annuaire va être écrit avec un jeton amputé ; vide sinon. #>
+    param([Parameter(Mandatory)] [hashtable] $Ad)
+    if ($Ad.ContainsKey('Credential') -and $Ad.Credential) { return '' }
+    if (Test-ConsoleElevee) { return '' }
+    return "Console non élevée : sur le contrôleur, l'annuaire est écrit avec le jeton de la session Windows, que l'UAC ampute des groupes d'administration — créations et modifications risquent « Accès refusé ». Relancez PowerShell en tant qu'administrateur (clic droit › Exécuter en tant qu'administrateur)."
 }
 
 function Test-ErreurAccesRefuse {

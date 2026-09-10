@@ -97,6 +97,8 @@ if ($Job) {
     $dossier.Sam = "$(Get-Prop -Objet $j -Nom 'identifiant' -Defaut '')"
     if (-not $dossier.Sam) { throw "Le fichier de travail ne donne pas d'identifiant." }
     $ad = Connect-Domaine -Societe $dossier.Societe
+    $avisAd = Test-EcritureAdRisquee -Ad $ad
+    if ($avisAd) { Show-Note $avisAd -Niveau Alerte; Add-Journal -Message $avisAd -Categorie AD -Niveau Alerte }
     $dossier.Utilisateur = Get-ADUser -Identity $dossier.Sam -Properties $proprietesAd @ad
     $vers = Get-Prop -Objet $j -Nom 'redirectionVers'
     if ($vers) {
@@ -107,6 +109,8 @@ if ($Job) {
     $dossier.Societe = Read-Choix -Titre 'Quelle société ?' -Elements @($config.societes) -Colonnes nom, domaineMail
     Add-Resume -Cle 'Société' -Valeur $dossier.Societe.id
     $ad = Connect-Domaine -Societe $dossier.Societe
+    $avisAd = Test-EcritureAdRisquee -Ad $ad
+    if ($avisAd) { Show-Note $avisAd -Niveau Alerte; Add-Journal -Message $avisAd -Categorie AD -Niveau Alerte }
     do {
         $recherche = Read-Texte -Invite 'Qui part ?' -Aide 'nom, prénom, identifiant ou e-mail — q pour quitter' -Obligatoire -QuitteSurQ
         $trouves = @(Invoke-Attente -Titre "Recherche de « $recherche » dans l'Active Directory" -Action {
