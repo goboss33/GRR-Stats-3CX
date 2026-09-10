@@ -266,9 +266,24 @@ if ($pbx) {
             # --- La SDA : un numéro direct, choisi dans la liste du PBX.
             if (Confirm-Choix -Question 'Attribuer un numéro direct (SDA) à ce poste ?' -DefautOui) {
                 $sda = @(Invoke-Attente -Titre 'Lecture des numéros directs du 3CX' -Action { @(Get-XapiSda -Pbx $pbx) })
-                $vueSda = @($sda | Select-Object Numero, @{ n = 'Actuellement'; e = { $_.Pointe } }, Nom)
-                $choisie = Read-Choix -Titre "Quel numéro direct ? ($($sda.Count) SDA)" `
-                    -Aide 'tapez le début du numéro pour filtrer, +4122 par exemple' -Elements $vueSda -Colonnes Numero, Actuellement, Nom
+                $libres = @($sda | Where-Object { $_.Libre })
+                # On propose les numéros attribuables ; les autres restent à une
+                # touche, pour le cas où l'on reprend celui d'un poste qui part.
+                $choisie = $null
+                $liste = $libres
+                while (-not $choisie) {
+                    $tousVisibles = ($liste.Count -eq $sda.Count)
+                    if ($liste.Count -eq 0) { $liste = $sda; $tousVisibles = $true }
+                    $bascule = [pscustomobject]@{
+                        Numero = ''
+                        Etat = $(if ($tousVisibles) { "← Ne montrer que les $($libres.Count) numéros libres" } else { "Voir aussi les $($sda.Count - $libres.Count) numéros déjà attribués" })
+                        Nom = ''
+                    }
+                    $titre = if ($tousVisibles) { "Quel numéro direct ? ($($sda.Count) SDA, dont $($libres.Count) libres)" } else { "Quel numéro direct ? ($($libres.Count) libres sur $($sda.Count))" }
+                    $rendu = Read-Choix -Titre $titre -Aide 'tapez le début du numéro pour filtrer, +4122 par exemple' `
+                        -Elements (@($bascule) + @($liste | Select-Object Numero, Etat, Nom)) -Colonnes Numero, Etat, Nom
+                    if ($rendu.Numero) { $choisie = $rendu } else { $liste = $(if ($tousVisibles) { $libres } else { $sda }) }
+                }
                 $dossier.Sda3CX = @($sda | Where-Object { $_.Numero -eq $choisie.Numero })[0]
                 $combien = if ($dossier.Sda3CX.Regles.Count) { "$($dossier.Sda3CX.Regles.Count) règle(s) à réécrire" } else { "$(@($dossier.Sda3CX.Trunks).Count) règle(s) à créer" }
                 Show-Constat -Titre "Numéro direct retenu — $combien" -Valeurs @($dossier.Sda3CX.Numero, "vers le poste $($dossier.Numero3CX)") -Niveau Info
@@ -334,7 +349,7 @@ $recap = [ordered]@{
     'Files 3CX'       = $(if ($dossier.Files3CX.Count) { ($dossier.Files3CX | ForEach-Object { "$($_.Number) $($_.Name)" }) -join ' · ' } else { '—' })
     'Config 3CX'      = $(if ($dossier.Modele3CX) { "copiée du poste $($dossier.Modele3CX.Number) « $($dossier.Modele3CX.DisplayName) » : $($dossier.Copie3CX -join ', ')" } else { '—' })
     'Départements'    = $(if ($dossier.Departements3CX.Count) { ($dossier.Departements3CX | ForEach-Object { $_.Name }) -join '; ' } else { '—' })
-    'Numéro direct'   = $(if ($dossier.Sda3CX) { "$($dossier.Sda3CX.Numero) — aujourd'hui : $($dossier.Sda3CX.Pointe)" } else { '—' })
+    'Numéro direct'   = $(if ($dossier.Sda3CX) { "$($dossier.Sda3CX.Numero) — aujourd'hui : $($dossier.Sda3CX.Etat)" } else { '—' })
     'Mode'            = (Get-ModeEcriture)
 }
 Show-Recap -Paires $recap -Titre 'Récapitulatif avant création'

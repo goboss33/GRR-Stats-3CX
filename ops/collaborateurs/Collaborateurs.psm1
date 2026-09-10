@@ -2024,18 +2024,25 @@ function Get-XapiSda {
         # Attention : @($null) contient UN élément nul, pas zéro. Un numéro sans
         # règle passerait donc pour en avoir une, et la lecture suivante planterait.
         $mes = @($parNumero[$d] | Where-Object { $null -ne $_ })
-        $dest = 'aucune règle'
-        if ($mes.Count -gt 0) {
-            $o = Get-Prop -Objet $mes[0] -Nom 'OfficeHoursDestination'
+        # Un numéro est LIBRE de deux façons : aucune règle, ou des règles qui
+        # ne mènent nulle part. Les deux se disent « libre » : c'est le seul mot
+        # à taper pour ne voir que les numéros attribuables.
+        $dest = ''
+        foreach ($r in $mes) {
+            $o = Get-Prop -Objet $r -Nom 'OfficeHoursDestination'
             $vers = "$(Get-Prop -Objet $o -Nom 'To' -Defaut '')"
             $num = "$(Get-Prop -Objet $o -Nom 'Number' -Defaut '')"
             $nom = "$(Get-Prop -Objet $o -Nom 'Name' -Defaut '')"
-            $dest = if ($vers -and $vers -ne 'None' -and $num) { "$vers $num$(if ($nom) { " « $nom »" })" } elseif ($vers -and $vers -ne 'None') { $vers } else { 'sans destination' }
+            $ext = "$(Get-Prop -Objet $o -Nom 'External' -Defaut '')"
+            if (-not $vers -or $vers -eq 'None') { continue }
+            if ($num) { $dest = "$vers $num$(if ($nom) { " « $nom »" })"; break }
+            if ($ext) { $dest = "$vers $ext"; break }
         }
         $sortie += [pscustomobject]@{
             Numero  = $d
-            Nom     = $(if ($mes.Count) { "$(Get-Prop -Objet $mes[0] -Nom 'RuleName' -Defaut '')" } else { '' })
-            Pointe  = $dest
+            Etat    = $(if ($dest) { $dest } else { 'libre' })
+            Nom     = $(if ($dest -and $mes.Count) { "$(Get-Prop -Objet $mes[0] -Nom 'RuleName' -Defaut '')" } else { '' })
+            Libre   = (-not $dest)
             Regles  = $mes
             Trunks  = @($trunksPar[$d] | Sort-Object -Unique)
         }
