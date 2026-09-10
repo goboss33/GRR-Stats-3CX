@@ -1769,8 +1769,12 @@ function Invoke-Xapi {
         # la présence chaque minute avec le même client), le nôtre est révoqué et
         # l'appel suivant repart en 401. On en redemande un et on réessaie une fois.
         for ($essai = 1; $essai -le 2; $essai++) {
+            # Le jeton d'abord, à part : un refus du guichet des jetons doit se
+            # lire comme tel, pas comme un refus de la requête qu'on préparait.
+            try { $jeton = Connect-Xapi -Pbx $Pbx }
+            catch { throw (New-Object System.Exception -ArgumentList (Format-ErreurXapi -Erreur $_ -Methode 'POST' -Chemin "connect/token (client_id $($Pbx.clientId))"), $_.Exception) }
             try {
-                $params.Headers = @{ Authorization = "Bearer $(Connect-Xapi -Pbx $Pbx)" }
+                $params.Headers = @{ Authorization = "Bearer $jeton" }
                 return Invoke-RestMethod @params
             } catch {
                 if ($essai -eq 1 -and (Test-Erreur401 -Erreur $_)) {

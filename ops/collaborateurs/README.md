@@ -154,7 +154,9 @@ Deux contraintes du PBX, constatées à l'essai : le nom affiché est composé p
 
 **Le numéro direct.** Le script propose d'abord les SDA **libres**, une ligne par numéro et non par trunk : est libre un numéro sans aucune règle entrante, ou dont les règles ne mènent nulle part. Sur le central de Gérofinance, 597 des 1570 numéros sont dans ce cas. Une entrée en tête de liste bascule vers la liste complète, avec ce vers quoi chaque numéro pointe aujourd'hui, pour reprendre celui d'un poste qui part. On tape le début d'un numéro pour filtrer, `+4122` par exemple, ou le mot `libre` pour ne garder que les attribuables. Le numéro retenu est dirigé vers le nouveau poste sur **les deux trunks**, aux heures ouvrables comme en dehors et les jours fériés, et les deux règles prennent le nom de la personne. Une SDA qui n'a encore aucune règle en reçoit une par trunk. Avant de réécrire une règle, le script vérifie que le central la retrouve par son identifiant ; sinon il en crée une par trunk, comme la console, et le signale.
 
-Quand le central refuse une écriture, la ligne d'erreur dit la requête, le statut et la réponse du PBX, par exemple `3CX PATCH InboundRules(2118) → 404 NotFound : {…}`. C'est ce qu'il faut me transmettre pour comprendre un refus sans rejouer.
+Quand le central refuse une écriture, la ligne d'erreur dit la requête, le statut et la réponse du PBX, par exemple `3CX PATCH InboundRules(2118) → 404 NotFound : {…}`. Un refus au guichet des jetons se lit `3CX POST connect/token (client_id …)`. C'est ce qu'il faut me transmettre pour comprendre un refus sans rejouer.
+
+**`Test-Pbx.ps1`** est la sonde du central, en lecture seule : le jeton, puis les lectures que font les scripts, puis, si on les donne, l'adresse, le poste et la SDA en cause — `.\Test-Pbx.ps1 -Email x@grrsa.ch -Numero 128 -Sda +4121…`. Chaque requête affiche OK et un résumé, ou KO et la réponse du PBX. Ne pas la lancer pendant qu'un script tourne : le 3CX ne garde qu'un jeton par principal.
 
 **Le central n'est interrogé que pour Gérofinance.** Les autres sociétés ont `pbx: null` dans la configuration : ni lecture ni écriture, à l'entrée comme à la sortie.
 
