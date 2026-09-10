@@ -130,7 +130,7 @@ Variables d'environnement utiles : `COLLABORATEURS_SANS_PWSH=1` (ne pas se relan
 .\Sortie-Collaborateur.ps1  -Job .\exemples\sortie.json -Simulation
 ```
 
-Le JSON décrit tout, aucune question n'est posée. C'est le contrat avec le futur portail : il déposera un fichier, le script l'exécutera. Pour la sortie : `redirectionVers` (+ `redirectionVersNom`), et `reponseAuto` (texte) **ou** `reponseAutoModele` (id du modèle) avec `variables` pour ce que le script ne déduit pas ; côté 3CX, `supprimerPoste3cx` (`true` = supprimer, `false` = garder désactivé et nommé « Libre <file> ») et `fileSda3cx` (numéro de la file qui reçoit les numéros directs et nomme le poste libéré ; déduite si le poste n'est que dans une file).
+Le JSON décrit tout, aucune question n'est posée. C'est le contrat avec le futur portail : il déposera un fichier, le script l'exécutera. Pour la sortie : `redirectionVers` (+ `redirectionVersNom`), et `reponseAuto` (texte) **ou** `reponseAutoModele` (id du modèle) avec `variables` pour ce que le script ne déduit pas ; côté 3CX, `supprimerPoste3cx` (`true` = supprimer, `false` = garder désactivé et nommé « Libre <file> ») et `fileSda3cx` (numéro de la file qui reçoit les numéros directs et nomme le poste libéré ; déduite si le poste n'est que dans une file), `poste3cx` pour désigner le poste par son numéro quand son adresse ne suffit pas.
 
 ## Les groupes d'un ou d'une collègue
 
@@ -162,7 +162,7 @@ Quand le central refuse une écriture, la ligne d'erreur dit la requête, le sta
 
 **Le central n'est interrogé que pour Gérofinance.** Les autres sociétés ont `pbx: null` dans la configuration : ni lecture ni écriture, à l'entrée comme à la sortie.
 
-**Sortie** : retrouve le poste par l'e-mail, puis demande s'il faut le **supprimer**. Non : il reste, désactivé, e-mail vidé, renommé **« Libre <file> »**, réservé à son équipe. Oui : il est supprimé du central. Dans les deux cas, ses **numéros directs** (SDA) sont redirigés vers **sa file d'attente**, aux heures ouvrables comme en dehors, et les règles sont renommées **« ex Prénom Nom (date du jour) »**. La file est déduite quand le poste n'est que dans une seule ; s'il est dans plusieurs, ou dans aucune, le script demande laquelle, dans la liste de toutes les files, filtrable par numéro, par nom de file ou par nom de collègue. Le poste est retiré de ses files avant d'être libéré ou supprimé.
+**Sortie** : retrouve le poste par l'e-mail, puis demande s'il faut le **supprimer**. Non : il reste, désactivé, e-mail vidé, renommé **« Libre <file> »**, réservé à son équipe. Oui : il est supprimé du central. Dans les deux cas, ses **numéros directs** (SDA) sont redirigés vers **sa file d'attente**, aux heures ouvrables comme en dehors, et les règles sont renommées **« ex Prénom Nom (date du jour) »**. La file est déduite quand le poste n'est que dans une seule ; s'il est dans plusieurs, ou dans aucune, le script demande laquelle, dans la liste de toutes les files, filtrable par numéro, par nom de file ou par nom de collègue. Le poste est retiré de ses files avant d'être libéré ou supprimé. Si aucun poste ne porte l'adresse du compte, le script propose de le désigner à la main dans la liste des postes du central ; `-Poste3CX 128` le désigne d'emblée, ce qui sert à tester la sortie sur un poste d'essai avec `-Simulation -Reel3CX` : le compte choisi à l'écran n'est pas touché, seul le poste désigné l'est.
 
 ## Le rapport envoyé au helpdesk
 

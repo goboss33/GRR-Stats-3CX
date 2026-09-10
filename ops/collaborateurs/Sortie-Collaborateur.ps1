@@ -26,7 +26,8 @@ param(
     [switch] $SansPlanner,
     [switch] $SansScanDelegations,
     [switch] $Simulation3CX,      # simuler le 3CX même si le reste est réel
-    [switch] $Reel3CX             # écrire sur le 3CX POUR DE VRAI même si le reste est simulé
+    [switch] $Reel3CX,            # écrire sur le 3CX POUR DE VRAI même si le reste est simulé
+    [string] $Poste3CX = ''       # désigner le poste 3CX par son numéro, au lieu de le chercher par l'adresse du compte
 )
 
 # ------------------------------------------- RELANCE SOUS POWERSHELL 7
@@ -225,16 +226,35 @@ Set-Etape 'Connexions'
 if ($soc.tenantId) { Connect-M365 -Societe $soc } else { Add-Journal -Message "Pas de tenant Microsoft 365 pour $($soc.id) : étapes Exchange, licences et délégations ignorées." -Niveau Alerte }
 $pbx = if ($Reglages.Gerer3CX) { Get-Pbx -Societe $soc } else { $null }
 if ($pbx) {
-    $lecture = Invoke-Attente -Titre "Lecture du 3CX ($($pbx.adresse))" -Action {
-        $postes = @(Find-XapiUtilisateurParEmail -Pbx $pbx -Email $dossier.Upn)
-        if ($postes.Count -eq 0) { Add-Journal -Message "Aucun poste 3CX ne porte l'adresse $($dossier.Upn)." -Categorie 3CX -Niveau Alerte; return $null }
-        $poste = $postes[0]
-        $toutes = @(Get-XapiFiles -Pbx $pbx | Sort-Object Name)
-        return @{
-            Poste  = $poste
-            Toutes = $toutes
-            Files  = @($toutes | Where-Object { (Get-NumerosAgents -File $_) -contains "$($poste.Number)" })
-            Sda    = @(Get-XapiSdaVersPoste -Pbx $pbx -Numero "$($poste.Number)")
+    # Le poste se trouve par l'adresse du compte ; -Poste3CX (ou poste3cx en -Job) le désigne par son numéro.
+    $numeroVoulu = $(if ($Job) { "$(Get-Prop -Objet $j -Nom 'poste3cx' -Defaut '')" } else { $Poste3CX })
+    $poste = Invoke-Attente -Titre $(if ($numeroVoulu) { "Recherche du poste 3CX $numeroVoulu" } else { "Recherche du poste 3CX de $($dossier.Upn)" }) -Action {
+        $trouves = @($(if ($numeroVoulu) { Find-XapiUtilisateurParNumero -Pbx $pbx -Numero $numeroVoulu } else { Find-XapiUtilisateurParEmail -Pbx $pbx -Email $dossier.Upn }))
+        if ($trouves.Count -gt 0) { return $trouves[0] }
+        if ($numeroVoulu) { throw "Aucun poste 3CX ne porte le numéro $numeroVoulu." }
+        return $null
+    }
+    if (-not $poste) {
+        Add-Journal -Message "Aucun poste 3CX ne porte l'adresse $($dossier.Upn)." -Categorie 3CX -Niveau Alerte
+        # Un ancien poste n'a pas toujours d'adresse : on peut le désigner à la main.
+        if (-not $Job -and (Confirm-Choix -Question "Aucun poste 3CX ne porte l'adresse $($dossier.Upn). En désigner un à la main ?")) {
+            $tous = @(Invoke-Attente -Titre 'Lecture des postes du 3CX' -Action { @(Get-XapiUtilisateurs -Pbx $pbx | Sort-Object { [int]("$($_.Number)" -replace '\D', '0') }) })
+            if ($tous.Count -gt 0) {
+                $poste = Read-Choix -Titre "Quel poste 3CX est celui de $($dossier.Nom) ? ($($tous.Count) postes au central)" -Aide 'tapez un numéro ou un nom pour filtrer' `
+                    -Elements $tous -Colonnes Number, DisplayName, EmailAddress
+            }
+        }
+    }
+    $lecture = $null
+    if ($poste) {
+        $lecture = Invoke-Attente -Titre "Lecture du 3CX ($($pbx.adresse))" -Action {
+            $toutes = @(Get-XapiFiles -Pbx $pbx | Sort-Object Name)
+            return @{
+                Poste  = $poste
+                Toutes = $toutes
+                Files  = @($toutes | Where-Object { (Get-NumerosAgents -File $_) -contains "$($poste.Number)" })
+                Sda    = @(Get-XapiSdaVersPoste -Pbx $pbx -Numero "$($poste.Number)")
+            }
         }
     }
     if ($lecture) {

@@ -1828,6 +1828,14 @@ function Find-XapiUtilisateurParEmail {
     return @($rep.value)
 }
 
+function Find-XapiUtilisateurParNumero {
+    <# Le poste qui porte ce numéro d'extension — un ancien poste n'a pas toujours d'adresse. #>
+    param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [string] $Numero)
+    $n = $Numero.Replace("'", "''")
+    $rep = Invoke-Xapi -Pbx $Pbx -Chemin "Users?%24filter=Number%20eq%20'$([uri]::EscapeDataString($n))'&%24select=Id,Number,FirstName,LastName,DisplayName,EmailAddress,Enabled"
+    return @($rep.value)
+}
+
 function Get-XapiPostesLibres {
     <# Candidats à la réaffectation : postes désactivés, ou nommés « libre » (motif de config), filtrés par préfixe de site si connu. #>
     param([Parameter(Mandatory)] $Pbx, [string] $Prefixe = '')
