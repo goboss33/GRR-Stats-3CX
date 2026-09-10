@@ -87,56 +87,39 @@ $dossier = [ordered]@{
     ForcerCache = $false
     Poste3CX = $null; Files3CX = @(); Sda3CX = @(); ToutesFiles3CX = @()
     SupprimerPoste = $false; FileSda = $null       # supprimer le poste, ou le libérer « Libre <file> » ; la file qui reçoit ses numéros directs
+    Recherche = ''                                  # la dernière recherche du compte, reproposée quand on revient
 }
 $proprietesAd = @('DisplayName', 'GivenName', 'Surname', 'Title', 'Department', 'Office', 'UserPrincipalName', 'Enabled', 'DistinguishedName', 'mail')
 
 Set-Etape 'Le collaborateur'
-if ($Job) {
-    $j = Get-Content -Path $Job -Raw -Encoding UTF8 | ConvertFrom-Json
-    $dossier.Societe = Get-Societe -Id $j.societe
-    $dossier.Sam = "$(Get-Prop -Objet $j -Nom 'identifiant' -Defaut '')"
-    if (-not $dossier.Sam) { throw "Le fichier de travail ne donne pas d'identifiant." }
-    $ad = Connect-Domaine -Societe $dossier.Societe
-    $avisAd = Test-EcritureAdRisquee -Ad $ad
-    if ($avisAd) { Show-Note $avisAd -Niveau Alerte; Add-Journal -Message $avisAd -Categorie AD -Niveau Alerte }
-    $dossier.Utilisateur = Get-ADUser -Identity $dossier.Sam -Properties $proprietesAd @ad
-    $vers = Get-Prop -Objet $j -Nom 'redirectionVers'
-    if ($vers) {
-        $dossier.Redirection = 'activer'; $dossier.RedirectionVers = "$vers"
-        $dossier.RedirectionVersNom = "$(Get-Prop -Objet $j -Nom 'redirectionVersNom' -Defaut $vers)"
-    } elseif ((Get-Prop -Objet $j -Nom 'redirection') -eq 'desactiver') { $dossier.Redirection = 'desactiver' }
-} else {
-    $dossier.Societe = Read-Choix -Titre 'Quelle société ?' -Elements @($config.societes) -Colonnes nom, domaineMail
-    Add-Resume -Cle 'Société' -Valeur $dossier.Societe.id
-    $ad = Connect-Domaine -Societe $dossier.Societe
-    $avisAd = Test-EcritureAdRisquee -Ad $ad
-    if ($avisAd) { Show-Note $avisAd -Niveau Alerte; Add-Journal -Message $avisAd -Categorie AD -Niveau Alerte }
-    do {
-        $recherche = Read-Texte -Invite 'Qui part ?' -Aide 'nom, prénom, identifiant ou e-mail — q pour quitter' -Obligatoire -QuitteSurQ
-        $trouves = @(Invoke-Attente -Titre "Recherche de « $recherche » dans l'Active Directory" -Action {
-            # « déjà désactivé » seulement si l'annuaire l'affirme : une propriété absente n'est pas un compte fermé.
-            @(Find-AdUtilisateur -Recherche $recherche -Ad $ad | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled -eq $false) { 'déjà désactivé' } else { '' } } })
-        })
-        if ($trouves.Count -eq 0) { Show-Note 'Aucun compte ne correspond.' -Niveau Alerte }
-    } while ($trouves.Count -eq 0)
-    $choix = Read-Choix -Titre "Quel compte ? ($($trouves.Count) trouvé$(if ($trouves.Count -gt 1) { 's' }))" -Elements $trouves -Colonnes Name, SamAccountName, Title, Department, Etat
-    $dossier.Utilisateur = Get-ADUser -Identity $choix.SamAccountName -Properties $proprietesAd @ad
+
+# ---------------------------------------------- ce que les deux modes partagent
+function Connect-Annuaire {
+    <# La connexion au domaine, une fois par société. #>
+    if ($script:adSociete -ne $dossier.Societe.id) {
+        $script:ad = Connect-Domaine -Societe $dossier.Societe
+        $script:adSociete = $dossier.Societe.id
+        $avis = Test-EcritureAdRisquee -Ad $script:ad
+        if ($avis) { Show-Note $avis -Niveau Alerte; Add-JournalUnique -Cle 'elevation' -Message $avis -Categorie AD -Niveau Alerte }
+    }
 }
-$soc = $dossier.Societe
-$u = $dossier.Utilisateur
-$dossier.Sam = $u.SamAccountName; $dossier.Upn = $u.UserPrincipalName; $dossier.Nom = $u.Name; $dossier.Bureau = "$($u.Office)"
-$dossier.Prenom = "$($u.GivenName)"; $dossier.NomFamille = "$($u.Surname)"
-if (-not $Job) {
-    Add-Resume -Cle 'Qui part' -Valeur "$($dossier.Nom) · $($dossier.Sam)"
-    Show-Constat -Titre 'Compte retenu' -Valeurs @($dossier.Nom, $dossier.Sam, $dossier.Upn)
+
+function Set-Compte {
+    <# Le compte retenu, et ce qu'on en garde. #>
+    param([Parameter(Mandatory)] [string] $Sam)
+    $ad = $script:ad
+    $dossier.Utilisateur = Get-ADUser -Identity $Sam -Properties $proprietesAd @ad
+    $u = $dossier.Utilisateur
+    $dossier.Sam = $u.SamAccountName; $dossier.Upn = $u.UserPrincipalName; $dossier.Nom = $u.Name; $dossier.Bureau = "$($u.Office)"
+    $dossier.Prenom = "$($u.GivenName)"; $dossier.NomFamille = "$($u.Surname)"
+    if ($u.Enabled -eq $false) { Add-JournalUnique -Cle "desactive/$($u.SamAccountName)" -Message "Le compte $($u.SamAccountName) est DÉJÀ désactivé — le script reprend là où il en est." -Categorie AD -Niveau Alerte }
 }
-if ($u.Enabled -eq $false) { Add-Journal -Message "Le compte $($u.SamAccountName) est DÉJÀ désactivé — le script reprend là où il en est." -Categorie AD -Niveau Alerte }
 
 # Les variables que les modèles de réponse automatique peuvent utiliser.
 function Get-VariablesReponse {
     return @{
         Prenom = $dossier.Prenom; Nom = $dossier.NomFamille; NomComplet = $dossier.Nom
-        Societe = $soc.nom; Date = (Get-Date -Format 'dd.MM.yyyy')
+        Societe = $dossier.Societe.nom; Date = (Get-Date -Format 'dd.MM.yyyy')
         Successeur = $dossier.RedirectionVersNom; SuccesseurEmail = $dossier.RedirectionVers
     }
 }
@@ -154,8 +137,97 @@ function Resolve-Modele {
     return Expand-Modele -Texte $Modele.texte -Variables $variables
 }
 
-# ============================================================ 2. MESSAGERIE
+function Connect-Services {
+    <# Microsoft 365 une seule fois ; le PBX de la société. #>
+    if ($dossier.Societe.tenantId) { if (-not $script:m365Connecte) { Connect-M365 -Societe $dossier.Societe; $script:m365Connecte = $true } }
+    else { Add-JournalUnique -Cle 'tenant' -Message "Pas de tenant Microsoft 365 pour $($dossier.Societe.id) : étapes Exchange, licences et délégations ignorées." -Niveau Alerte }
+    $script:pbx = if ($Reglages.Gerer3CX) { Get-Pbx -Societe $dossier.Societe } else { $null }
+}
+
+function Read-Poste3CX {
+    <# Le poste 3CX de la personne, ses files et ses numéros directs — lus une fois par compte, montrés à chaque passage. #>
+    if (-not $script:pbx) { $dossier.Poste3CX = $null; $dossier.Files3CX = @(); $dossier.Sda3CX = @(); $dossier.ToutesFiles3CX = @(); $dossier.FileSda = $null; return }
+    # Le poste se trouve par l'adresse du compte ; -Poste3CX (ou poste3cx en -Job) le désigne par son numéro.
+    $script:numeroVoulu = $(if ($Job) { "$(Get-Prop -Objet $j -Nom 'poste3cx' -Defaut '')" } else { $Poste3CX })
+    $cle = "$($dossier.Sam)/$($script:numeroVoulu)"
+    if ($script:posteCle -ne $cle) {
+        $script:upnCherche = $dossier.Upn
+        $poste = Invoke-Attente -Titre $(if ($script:numeroVoulu) { "Recherche du poste 3CX $($script:numeroVoulu)" } else { "Recherche du poste 3CX de $($dossier.Upn)" }) -Action {
+            $trouves = @($(if ($script:numeroVoulu) { Find-XapiUtilisateurParNumero -Pbx $script:pbx -Numero $script:numeroVoulu } else { Find-XapiUtilisateurParEmail -Pbx $script:pbx -Email $script:upnCherche }))
+            if ($trouves.Count -gt 0) { return $trouves[0] }
+            if ($script:numeroVoulu) { throw "Aucun poste 3CX ne porte le numéro $($script:numeroVoulu)." }
+            return $null
+        }
+        if (-not $poste) {
+            Add-JournalUnique -Cle "poste/$($dossier.Upn)" -Message "Aucun poste 3CX ne porte l'adresse $($dossier.Upn)." -Categorie 3CX -Niveau Alerte
+            # Un ancien poste n'a pas toujours d'adresse : on peut le désigner à la main.
+            if (-not $Job -and (Confirm-Choix -Question "Aucun poste 3CX ne porte l'adresse $($dossier.Upn). En désigner un à la main ?")) {
+                $tous = @(Invoke-Attente -Titre 'Lecture des postes du 3CX' -Action { @(Get-XapiUtilisateurs -Pbx $script:pbx | Sort-Object { [int]("$($_.Number)" -replace '\D', '0') }) })
+                if ($tous.Count -gt 0) {
+                    $poste = Read-Choix -Titre "Quel poste 3CX est celui de $($dossier.Nom) ? ($($tous.Count) postes au central)" -Aide 'tapez un numéro ou un nom pour filtrer' `
+                        -Elements $tous -Colonnes Number, DisplayName, EmailAddress
+                }
+            }
+        }
+        $dossier.Poste3CX = $poste; $dossier.Files3CX = @(); $dossier.Sda3CX = @(); $dossier.ToutesFiles3CX = @(); $dossier.FileSda = $null
+        if ($poste) {
+            $script:posteTrouve = $poste
+            $lecture = Invoke-Attente -Titre "Lecture du 3CX ($($script:pbx.adresse))" -Action {
+                $toutes = @(Get-XapiFiles -Pbx $script:pbx | Sort-Object Name)
+                return @{
+                    Toutes = $toutes
+                    Files  = @($toutes | Where-Object { (Get-NumerosAgents -File $_) -contains "$($script:posteTrouve.Number)" })
+                    Sda    = @(Get-XapiSdaVersPoste -Pbx $script:pbx -Numero "$($script:posteTrouve.Number)")
+                }
+            }
+            $dossier.Files3CX = @($lecture.Files); $dossier.Sda3CX = @($lecture.Sda); $dossier.ToutesFiles3CX = @($lecture.Toutes)
+        }
+        $script:posteCle = $cle
+    }
+    if ($dossier.Poste3CX) {
+        Show-Constat -Titre "Poste 3CX trouvé — $($dossier.Files3CX.Count) file(s) d'attente, $($dossier.Sda3CX.Count) règle(s) entrante(s)" `
+                     -Valeurs @("poste $($dossier.Poste3CX.Number)", "$($dossier.Poste3CX.DisplayName)")
+    }
+}
+
+function Get-Recap {
+    <# Le récapitulatif — le même à l'écran, en mode -Job et dans le rapport. #>
+    $soc = $dossier.Societe; $pbx = $script:pbx
+    $texteRedirection = switch ($dossier.Redirection) { 'activer' { "vers $($dossier.RedirectionVersNom) <$($dossier.RedirectionVers)>" } 'desactiver' { 'désactivée' } default { 'inchangée' } }
+    $texteReponse = switch ($dossier.ReponseAuto) { 'activer' { "activée ($(if ($dossier.ReponseAutoModele -eq 'personnalise') { 'texte personnalisé' } else { "modèle $($dossier.ReponseAutoModele)" }))" } 'desactiver' { 'désactivée' } default { 'inchangée' } }
+    $nomEx = "ex $($dossier.Prenom) $($dossier.NomFamille) (date du jour)"
+    return [ordered]@{
+        'Société'             = $soc.nom
+        'Compte'              = "$($dossier.Nom)  ($($dossier.Sam))  —  $($dossier.Upn)"
+        'Bureau'              = $(if ($dossier.Bureau) { $dossier.Bureau } else { '—' })
+        'Redirection'         = $texteRedirection
+        'Réponse automatique' = $texteReponse
+        'OU de destination'   = $(if ($soc.ouDesactives) { $soc.ouDesactives } else { 'AUCUNE (pas de déplacement)' })
+        'Microsoft 365'       = $(if ($soc.tenantId) { 'boîte partagée, licences, délégations' } else { 'pas de tenant : ignoré' })
+        'Poste 3CX'           = $(if ($dossier.Poste3CX) { "$($dossier.Poste3CX.Number) « $($dossier.Poste3CX.DisplayName) » — $(if ($dossier.SupprimerPoste) { 'SUPPRIMÉ' } else { "libéré, nommé « Libre $(if ($dossier.FileSda) { $dossier.FileSda.Name } else { '?' }) »" }), retiré de $($dossier.Files3CX.Count) file(s)" } elseif ($pbx) { 'aucun trouvé' } else { 'pas de PBX / désactivé' })
+        'Numéros directs'     = $(if (-not $dossier.Poste3CX) { '—' } elseif ($dossier.Sda3CX.Count -eq 0) { 'aucun' }
+                                  elseif (-not $dossier.SupprimerPoste) { "$($dossier.Sda3CX.Count) règle(s) renommée(s) « $nomEx », destination inchangée : le poste reste" }
+                                  elseif ($dossier.FileSda) { "$($dossier.Sda3CX.Count) règle(s) vers la $(Get-NomFile $dossier.FileSda), renommée(s) « $nomEx »" }
+                                  else { "$($dossier.Sda3CX.Count) règle(s), AUCUNE file désignée : à rerouter à la main" })
+        'Écriture AD'         = (Get-CompteAdEcriture -Ad $script:ad)
+        'Mode'                = (Get-ModeEcriture)
+    }
+}
+
 if ($Job) {
+    # ---------------------------------------------- sans dialogue : le fichier de travail décide
+    $j = Get-Content -Path $Job -Raw -Encoding UTF8 | ConvertFrom-Json
+    $dossier.Societe = Get-Societe -Id $j.societe
+    $samVoulu = "$(Get-Prop -Objet $j -Nom 'identifiant' -Defaut '')"
+    if (-not $samVoulu) { throw "Le fichier de travail ne donne pas d'identifiant." }
+    Connect-Annuaire
+    Set-Compte -Sam $samVoulu
+    $vers = Get-Prop -Objet $j -Nom 'redirectionVers'
+    if ($vers) {
+        $dossier.Redirection = 'activer'; $dossier.RedirectionVers = "$vers"
+        $dossier.RedirectionVersNom = "$(Get-Prop -Objet $j -Nom 'redirectionVersNom' -Defaut $vers)"
+    } elseif ((Get-Prop -Objet $j -Nom 'redirection') -eq 'desactiver') { $dossier.Redirection = 'desactiver' }
+
     $texte = Get-Prop -Objet $j -Nom 'reponseAuto'
     $modeleId = Get-Prop -Objet $j -Nom 'reponseAutoModele'
     if ($texte) { $dossier.ReponseAuto = 'activer'; $dossier.ReponseAutoTexte = "$texte" }
@@ -166,152 +238,158 @@ if ($Job) {
         if ($vars) { foreach ($p in $vars.PSObject.Properties) { $fournies[$p.Name] = "$($p.Value)" } }
         $dossier.ReponseAuto = 'activer'; $dossier.ReponseAutoModele = $m.id; $dossier.ReponseAutoTexte = Resolve-Modele -Modele $m -Fournies $fournies
     } elseif ((Get-Prop -Objet $j -Nom 'reponseAutoEtat') -eq 'desactiver') { $dossier.ReponseAuto = 'desactiver' }
-} else {
-    Set-Etape 'Messagerie'
 
-    # --- Redirection : vers un utilisateur ou une liste, choisi dans une recherche.
+    Set-Etape 'Connexions'
+    Connect-Services
+    Read-Poste3CX
+    if ($dossier.Poste3CX) {
+        $dossier.SupprimerPoste = [bool](Get-Prop -Objet $j -Nom 'supprimerPoste3cx' -Defaut $false)
+        $voulue = "$(Get-Prop -Objet $j -Nom 'fileSda3cx' -Defaut '')"
+        if ($voulue) {
+            $dossier.FileSda = @($dossier.ToutesFiles3CX | Where-Object { "$($_.Number)" -eq $voulue })[0]
+            if (-not $dossier.FileSda) { throw "File 3CX inconnue du PBX : $voulue" }
+        } elseif ($dossier.Files3CX.Count -eq 1) { $dossier.FileSda = $dossier.Files3CX[0] }
+    }
+
+    Set-Etape 'Confirmation'
+    Show-Recap -Paires (Get-Recap) -Titre 'Récapitulatif avant exécution'
+} else {
+    # ---------------------------------------------- l'assistant : des sections qu'on peut reprendre
+    # Échap dans une liste, « q » dans un champ : question précédente. Au
+    # récapitulatif, « Non » ouvre la liste des réponses à modifier. Chaque
+    # question reprend sa réponse précédente comme défaut.
     $optionsRedirection = @(
         [pscustomobject]@{ Code = 'activer';    Texte = "Rediriger les mails vers un collaborateur ou une liste" },
         [pscustomobject]@{ Code = 'desactiver'; Texte = 'Désactiver la redirection existante' },
         [pscustomobject]@{ Code = 'aucune';     Texte = 'Ne rien changer à la redirection' }
     )
-    $r = Read-Choix -Titre "Redirection des mails de $($dossier.Upn) ?" -Elements $optionsRedirection -Colonnes Texte -SansAnnulation
-    if ($r.Code -eq 'activer') {
-        do {
-            $recherche = Read-Texte -Invite 'Vers qui ?' -Aide 'nom, prénom, identifiant, adresse ou nom de liste' -Obligatoire -QuitteSurQ
-            $cibles = @(Invoke-Attente -Titre "Recherche de « $recherche »" -Action {
-                @(Find-AdDestinataire -Recherche $recherche -Ad $ad | Select-Object *, @{ n = 'Etat'; e = { if ($_.Actif) { '' } else { 'compte désactivé' } } })
-            })
-            if ($cibles.Count -eq 0) { Show-Note "Rien ne correspond dans l'Active Directory." -Niveau Alerte; continue }
-            $cible = Read-Choix -Titre "Vers quel destinataire ? ($($cibles.Count) trouvé$(if ($cibles.Count -gt 1) { 's' }))" -Elements $cibles -Colonnes Type, Nom, Adresse, Detail, Etat
-            if (-not $cible.Actif -and -not (Confirm-Choix -Question 'Ce compte est désactivé — rediriger quand même vers lui ?')) { $cible = $null }
-        } while (-not $cible)
-        $dossier.Redirection = 'activer'; $dossier.RedirectionVers = $cible.Adresse; $dossier.RedirectionVersNom = $cible.Nom
-        Show-Constat -Titre 'Les mails seront redirigés' -Valeurs @($cible.Nom, $cible.Adresse)
-        Add-Resume -Cle 'Redirection' -Valeur $cible.Adresse
-    } elseif ($r.Code -eq 'desactiver') {
-        $dossier.Redirection = 'desactiver'
-        Add-Resume -Cle 'Redirection' -Valeur 'désactivée'
-    }
-
-    # --- Réponse automatique : un modèle, ou un texte tapé / collé ; aperçu avant de retenir.
     $modeles = @(Get-Prop -Objet (Get-Prop -Objet $config.sortie -Nom 'reponsesAutomatiques') -Nom 'modeles' -Defaut @())
     $optionsReponse = @()
     foreach ($m in $modeles) { $optionsReponse += [pscustomobject]@{ Code = 'modele'; Modele = $m; Texte = "Modèle — $($m.nom)" } }
     $optionsReponse += [pscustomobject]@{ Code = 'libre';      Modele = $null; Texte = 'Texte personnalisé — à taper ou à coller' }
     $optionsReponse += [pscustomobject]@{ Code = 'desactiver'; Modele = $null; Texte = 'Désactiver la réponse automatique existante' }
     $optionsReponse += [pscustomobject]@{ Code = 'aucune';     Modele = $null; Texte = 'Ne rien changer à la réponse automatique' }
-    do {
-        $decide = $true
-        $a = Read-Choix -Titre 'Réponse automatique ?' -Elements $optionsReponse -Colonnes Texte -SansAnnulation
-        $texte = ''
-        switch ($a.Code) {
-            'modele'     { $texte = Resolve-Modele -Modele $a.Modele }
-            'libre'      { $texte = Read-TexteMultiligne -Invite 'Message de réponse automatique' }
-            'desactiver' { $dossier.ReponseAuto = 'desactiver'; Add-Resume -Cle 'Réponse auto' -Valeur 'désactivée' }
-            'aucune'     { $dossier.ReponseAuto = 'aucune' }
-        }
-        if ($a.Code -eq 'modele' -or $a.Code -eq 'libre') {
-            if (-not $texte.Trim()) { Show-Note 'Texte vide.' -Niveau Alerte; $decide = $false; continue }
-            Show-Panneau -Texte $texte -Titre 'Aperçu de la réponse automatique'
-            if (Confirm-Choix -Question 'Retenir ce texte ?' -DefautOui) {
-                $dossier.ReponseAuto = 'activer'; $dossier.ReponseAutoTexte = $texte.Trim()
-                $dossier.ReponseAutoModele = if ($a.Modele) { $a.Modele.id } else { 'personnalise' }
-                Add-Resume -Cle 'Réponse auto' -Valeur $(if ($a.Modele) { $a.Modele.nom } else { 'texte personnalisé' })
-            } else { $decide = $false }
-        }
-    } while (-not $decide)
 
-    if ($Reglages.ScanDelegations) { $dossier.ForcerCache = Confirm-Choix -Question 'Reconstruire le cache des redirections et délégations (long, toutes les boîtes) ?' }
-}
+    $sections = @(
+        @{ Etape = 'Le collaborateur'; Nom = 'Société'; Resume = { $dossier.Societe.id }; Action = {
+            $societes = @($config.societes)
+            $dossier.Societe = Read-Choix -Titre 'Quelle société ?' -Elements $societes -Colonnes nom, domaineMail `
+                -DefautIndice (Get-IndiceDe -Elements $societes -Ou { $dossier.Societe -and $_.id -eq $dossier.Societe.id })
+            Add-Resume -Cle 'Société' -Valeur $dossier.Societe.id
+            Connect-Annuaire
+        } },
+        @{ Nom = 'Qui part'; Resume = { if ($dossier.Sam) { "$($dossier.Nom) ($($dossier.Sam))" } }; Action = {
+            $choix = $null
+            do {
+                $script:recherche = Read-Texte -Invite 'Qui part ?' -Defaut $dossier.Recherche -Aide 'nom, prénom, identifiant ou e-mail' -Obligatoire -QuitteSurQ
+                $dossier.Recherche = $script:recherche
+                $trouves = @(Invoke-Attente -Titre "Recherche de « $($script:recherche) » dans l'Active Directory" -Action {
+                    # « déjà désactivé » seulement si l'annuaire l'affirme : une propriété absente n'est pas un compte fermé.
+                    @(Find-AdUtilisateur -Recherche $script:recherche -Ad $script:ad | Select-Object *, @{ n = 'Etat'; e = { if ($_.Enabled -eq $false) { 'déjà désactivé' } else { '' } } })
+                })
+                if ($trouves.Count -eq 0) { Show-Note 'Aucun compte ne correspond.' -Niveau Alerte; continue }
+                $choix = Read-Choix -Titre "Quel compte ? ($($trouves.Count) trouvé$(if ($trouves.Count -gt 1) { 's' }))" -Elements $trouves -Colonnes Name, SamAccountName, Title, Department, Etat `
+                    -DefautIndice (Get-IndiceDe -Elements $trouves -Ou { $_.SamAccountName -eq $dossier.Sam })
+            } while (-not $choix)
+            Set-Compte -Sam $choix.SamAccountName
+            Add-Resume -Cle 'Qui part' -Valeur "$($dossier.Nom) · $($dossier.Sam)"
+            Show-Constat -Titre 'Compte retenu' -Valeurs @($dossier.Nom, $dossier.Sam, $dossier.Upn)
+        } },
 
-# =========================================== 3. CONNEXIONS ET LECTURE 3CX
-Set-Etape 'Connexions'
-if ($soc.tenantId) { Connect-M365 -Societe $soc } else { Add-Journal -Message "Pas de tenant Microsoft 365 pour $($soc.id) : étapes Exchange, licences et délégations ignorées." -Niveau Alerte }
-$pbx = if ($Reglages.Gerer3CX) { Get-Pbx -Societe $soc } else { $null }
-if ($pbx) {
-    # Le poste se trouve par l'adresse du compte ; -Poste3CX (ou poste3cx en -Job) le désigne par son numéro.
-    $numeroVoulu = $(if ($Job) { "$(Get-Prop -Objet $j -Nom 'poste3cx' -Defaut '')" } else { $Poste3CX })
-    $poste = Invoke-Attente -Titre $(if ($numeroVoulu) { "Recherche du poste 3CX $numeroVoulu" } else { "Recherche du poste 3CX de $($dossier.Upn)" }) -Action {
-        $trouves = @($(if ($numeroVoulu) { Find-XapiUtilisateurParNumero -Pbx $pbx -Numero $numeroVoulu } else { Find-XapiUtilisateurParEmail -Pbx $pbx -Email $dossier.Upn }))
-        if ($trouves.Count -gt 0) { return $trouves[0] }
-        if ($numeroVoulu) { throw "Aucun poste 3CX ne porte le numéro $numeroVoulu." }
-        return $null
-    }
-    if (-not $poste) {
-        Add-Journal -Message "Aucun poste 3CX ne porte l'adresse $($dossier.Upn)." -Categorie 3CX -Niveau Alerte
-        # Un ancien poste n'a pas toujours d'adresse : on peut le désigner à la main.
-        if (-not $Job -and (Confirm-Choix -Question "Aucun poste 3CX ne porte l'adresse $($dossier.Upn). En désigner un à la main ?")) {
-            $tous = @(Invoke-Attente -Titre 'Lecture des postes du 3CX' -Action { @(Get-XapiUtilisateurs -Pbx $pbx | Sort-Object { [int]("$($_.Number)" -replace '\D', '0') }) })
-            if ($tous.Count -gt 0) {
-                $poste = Read-Choix -Titre "Quel poste 3CX est celui de $($dossier.Nom) ? ($($tous.Count) postes au central)" -Aide 'tapez un numéro ou un nom pour filtrer' `
-                    -Elements $tous -Colonnes Number, DisplayName, EmailAddress
+        @{ Etape = 'Messagerie'; Nom = 'Redirection des mails'; Resume = { switch ($dossier.Redirection) { 'activer' { $dossier.RedirectionVers } 'desactiver' { 'désactivée' } default { 'inchangée' } } }; Action = {
+            # --- Redirection : vers un utilisateur ou une liste, choisi dans une recherche.
+            $r = Read-Choix -Titre "Redirection des mails de $($dossier.Upn) ?" -Elements $optionsRedirection -Colonnes Texte `
+                -DefautIndice (Get-IndiceDe -Elements $optionsRedirection -Ou { $_.Code -eq $dossier.Redirection })
+            if ($r.Code -eq 'activer') {
+                $cible = $null
+                do {
+                    $script:rechercheCible = Read-Texte -Invite 'Vers qui ?' -Defaut $dossier.RedirectionVersNom -Aide 'nom, prénom, identifiant, adresse ou nom de liste' -Obligatoire -QuitteSurQ
+                    $cibles = @(Invoke-Attente -Titre "Recherche de « $($script:rechercheCible) »" -Action {
+                        @(Find-AdDestinataire -Recherche $script:rechercheCible -Ad $script:ad | Select-Object *, @{ n = 'Etat'; e = { if ($_.Actif) { '' } else { 'compte désactivé' } } })
+                    })
+                    if ($cibles.Count -eq 0) { Show-Note "Rien ne correspond dans l'Active Directory." -Niveau Alerte; continue }
+                    $cible = Read-Choix -Titre "Vers quel destinataire ? ($($cibles.Count) trouvé$(if ($cibles.Count -gt 1) { 's' }))" -Elements $cibles -Colonnes Type, Nom, Adresse, Detail, Etat `
+                        -DefautIndice (Get-IndiceDe -Elements $cibles -Ou { $_.Adresse -eq $dossier.RedirectionVers })
+                    if (-not $cible.Actif -and -not (Confirm-Choix -Question 'Ce compte est désactivé — rediriger quand même vers lui ?')) { $cible = $null }
+                } while (-not $cible)
+                $dossier.Redirection = 'activer'; $dossier.RedirectionVers = $cible.Adresse; $dossier.RedirectionVersNom = $cible.Nom
+                Show-Constat -Titre 'Les mails seront redirigés' -Valeurs @($cible.Nom, $cible.Adresse)
+                Add-Resume -Cle 'Redirection' -Valeur $cible.Adresse
+            } elseif ($r.Code -eq 'desactiver') {
+                $dossier.Redirection = 'desactiver'; $dossier.RedirectionVers = ''; $dossier.RedirectionVersNom = ''
+                Add-Resume -Cle 'Redirection' -Valeur 'désactivée'
+            } else {
+                $dossier.Redirection = 'aucune'; $dossier.RedirectionVers = ''; $dossier.RedirectionVersNom = ''
+                Remove-Resume -Cle 'Redirection'
             }
-        }
-    }
-    $lecture = $null
-    if ($poste) {
-        $lecture = Invoke-Attente -Titre "Lecture du 3CX ($($pbx.adresse))" -Action {
-            $toutes = @(Get-XapiFiles -Pbx $pbx | Sort-Object Name)
-            return @{
-                Poste  = $poste
-                Toutes = $toutes
-                Files  = @($toutes | Where-Object { (Get-NumerosAgents -File $_) -contains "$($poste.Number)" })
-                Sda    = @(Get-XapiSdaVersPoste -Pbx $pbx -Numero "$($poste.Number)")
-            }
-        }
-    }
-    if ($lecture) {
-        $dossier.Poste3CX = $lecture.Poste; $dossier.Files3CX = @($lecture.Files); $dossier.Sda3CX = @($lecture.Sda); $dossier.ToutesFiles3CX = @($lecture.Toutes)
-        Show-Constat -Titre "Poste 3CX trouvé — $($dossier.Files3CX.Count) file(s) d'attente, $($dossier.Sda3CX.Count) règle(s) entrante(s)" `
-                     -Valeurs @("poste $($dossier.Poste3CX.Number)", "$($dossier.Poste3CX.DisplayName)")
-        if ($Job) {
-            $dossier.SupprimerPoste = [bool](Get-Prop -Objet $j -Nom 'supprimerPoste3cx' -Defaut $false)
-            $voulue = "$(Get-Prop -Objet $j -Nom 'fileSda3cx' -Defaut '')"
-            if ($voulue) {
-                $dossier.FileSda = @($dossier.ToutesFiles3CX | Where-Object { "$($_.Number)" -eq $voulue })[0]
-                if (-not $dossier.FileSda) { throw "File 3CX inconnue du PBX : $voulue" }
-            } elseif ($dossier.Files3CX.Count -eq 1) { $dossier.FileSda = $dossier.Files3CX[0] }
-        } else {
-            # Supprimer, ou libérer : le numéro reste alors réservé à son équipe, sous le nom « Libre <file> ».
-            $dossier.SupprimerPoste = Confirm-Choix -Question "Supprimer le poste 3CX $($dossier.Poste3CX.Number) ? (Non : il reste, désactivé, nommé « Libre <file> »)"
-            # La file de la personne reçoit ses numéros directs et donne son nom au poste libéré.
-            if ($dossier.Sda3CX.Count -gt 0 -or -not $dossier.SupprimerPoste) {
-                if ($dossier.Files3CX.Count -eq 1) {
-                    $dossier.FileSda = $dossier.Files3CX[0]
-                    Show-Constat -Titre "File d'attente de $($dossier.Nom)" -Valeurs @((Get-NomFile $dossier.FileSda)) -Niveau Info
-                } else {
-                    $pourquoi = if ($dossier.Files3CX.Count -eq 0) { "le poste n'est dans aucune file" } else { "le poste est dans $($dossier.Files3CX.Count) files" }
-                    $dossier.FileSda = Read-Choix -Titre "Quelle file reçoit ses numéros directs$(if (-not $dossier.SupprimerPoste) { ' et nomme le poste libéré' }) ? ($pourquoi)" `
-                        -Aide "tapez un numéro, un nom de file ou celui d'un collègue" `
-                        -Elements (Get-VueFiles -Files $dossier.ToutesFiles3CX) -Colonnes Number, Name, Equipe -MotsCles { $_.Equipe }
+        } },
+
+        @{ Nom = 'Réponse automatique'; Resume = { switch ($dossier.ReponseAuto) { 'activer' { $(if ($dossier.ReponseAutoModele -eq 'personnalise') { 'texte personnalisé' } else { "modèle $($dossier.ReponseAutoModele)" }) } 'desactiver' { 'désactivée' } default { 'inchangée' } } }; Action = {
+            # --- Réponse automatique : un modèle, ou un texte tapé / collé ; aperçu avant de retenir.
+            do {
+                $decide = $true
+                $a = Read-Choix -Titre 'Réponse automatique ?' -Elements $optionsReponse -Colonnes Texte `
+                    -DefautIndice (Get-IndiceDe -Elements $optionsReponse -Ou {
+                        ($dossier.ReponseAuto -eq 'activer' -and $_.Code -eq 'modele' -and $_.Modele.id -eq $dossier.ReponseAutoModele) -or
+                        ($dossier.ReponseAuto -eq 'activer' -and $_.Code -eq 'libre' -and $dossier.ReponseAutoModele -eq 'personnalise') -or
+                        ($dossier.ReponseAuto -ne 'activer' -and $_.Code -eq $dossier.ReponseAuto) })
+                $texte = ''
+                switch ($a.Code) {
+                    'modele'     { $texte = Resolve-Modele -Modele $a.Modele }
+                    'libre'      { $texte = Read-TexteMultiligne -Invite 'Message de réponse automatique' }
+                    'desactiver' { $dossier.ReponseAuto = 'desactiver'; $dossier.ReponseAutoTexte = ''; $dossier.ReponseAutoModele = ''; Add-Resume -Cle 'Réponse auto' -Valeur 'désactivée' }
+                    'aucune'     { $dossier.ReponseAuto = 'aucune'; $dossier.ReponseAutoTexte = ''; $dossier.ReponseAutoModele = ''; Remove-Resume -Cle 'Réponse auto' }
                 }
-                Add-Resume -Cle 'File' -Valeur "$($dossier.FileSda.Number)"
-            }
-            Add-Resume -Cle 'Poste' -Valeur "$($dossier.Poste3CX.Number) $(if ($dossier.SupprimerPoste) { 'supprimé' } else { 'libéré' })"
-        }
-    }
-}
+                if ($a.Code -eq 'modele' -or $a.Code -eq 'libre') {
+                    if (-not $texte.Trim()) { Show-Note 'Texte vide.' -Niveau Alerte; $decide = $false; continue }
+                    Show-Panneau -Texte $texte -Titre 'Aperçu de la réponse automatique'
+                    if (Confirm-Choix -Question 'Retenir ce texte ?' -DefautOui) {
+                        $dossier.ReponseAuto = 'activer'; $dossier.ReponseAutoTexte = $texte.Trim()
+                        $dossier.ReponseAutoModele = if ($a.Modele) { $a.Modele.id } else { 'personnalise' }
+                        Add-Resume -Cle 'Réponse auto' -Valeur $(if ($a.Modele) { $a.Modele.nom } else { 'texte personnalisé' })
+                    } else { $decide = $false }
+                }
+            } while (-not $decide)
+        } },
 
-# ====================================================== 4. RÉCAPITULATIF
-Set-Etape 'Confirmation'
-$texteRedirection = switch ($dossier.Redirection) { 'activer' { "vers $($dossier.RedirectionVersNom) <$($dossier.RedirectionVers)>" } 'desactiver' { 'désactivée' } default { 'inchangée' } }
-$texteReponse = switch ($dossier.ReponseAuto) { 'activer' { "activée ($(if ($dossier.ReponseAutoModele -eq 'personnalise') { 'texte personnalisé' } else { "modèle $($dossier.ReponseAutoModele)" }))" } 'desactiver' { 'désactivée' } default { 'inchangée' } }
-$recap = [ordered]@{
-    'Société'             = $soc.nom
-    'Compte'              = "$($dossier.Nom)  ($($dossier.Sam))  —  $($dossier.Upn)"
-    'Bureau'              = $(if ($dossier.Bureau) { $dossier.Bureau } else { '—' })
-    'Redirection'         = $texteRedirection
-    'Réponse automatique' = $texteReponse
-    'OU de destination'   = $(if ($soc.ouDesactives) { $soc.ouDesactives } else { 'AUCUNE (pas de déplacement)' })
-    'Microsoft 365'       = $(if ($soc.tenantId) { 'boîte partagée, licences, délégations' } else { 'pas de tenant : ignoré' })
-    'Poste 3CX'           = $(if ($dossier.Poste3CX) { "$($dossier.Poste3CX.Number) « $($dossier.Poste3CX.DisplayName) » — $(if ($dossier.SupprimerPoste) { 'SUPPRIMÉ' } else { "libéré, nommé « Libre $(if ($dossier.FileSda) { $dossier.FileSda.Name } else { '?' }) »" }), retiré de $($dossier.Files3CX.Count) file(s)" } elseif ($pbx) { 'aucun trouvé' } else { 'pas de PBX / désactivé' })
-    'Numéros directs'     = $(if (-not $dossier.Poste3CX) { '—' } elseif ($dossier.Sda3CX.Count -eq 0) { 'aucun' } elseif ($dossier.FileSda) { "$($dossier.Sda3CX.Count) règle(s) vers la $(Get-NomFile $dossier.FileSda), renommée(s) « ex $($dossier.Prenom) $($dossier.NomFamille) (date) »" } else { "$($dossier.Sda3CX.Count) règle(s), AUCUNE file désignée : à rerouter à la main" })
-    'Écriture AD'     = (Get-CompteAdEcriture -Ad $ad)
-    'Mode'            = (Get-ModeEcriture)
+        @{ Nom = 'Cache des délégations'; Resume = { if ($dossier.ForcerCache) { 'reconstruit' } else { 'réutilisé' } }; Action = {
+            if ($Reglages.ScanDelegations) { $dossier.ForcerCache = Confirm-Choix -Question 'Reconstruire le cache des redirections et délégations (long, toutes les boîtes) ?' -DefautOui:([bool]$dossier.ForcerCache) }
+        } },
+
+        @{ Etape = 'Connexions'; Nom = 'Connexions et lecture du 3CX'; Action = { Connect-Services; Read-Poste3CX } },
+
+        @{ Nom = 'Poste 3CX'; Resume = { if ($dossier.Poste3CX) { "$($dossier.Poste3CX.Number) $(if ($dossier.SupprimerPoste) { 'supprimé' } else { 'libéré' })$(if ($dossier.FileSda) { " · file $($dossier.FileSda.Number)" })" } }; Action = {
+            if (-not $dossier.Poste3CX) { return }
+            # Supprimer, ou libérer : le numéro reste alors réservé à son équipe, sous le nom « Libre <file> ».
+            $dossier.SupprimerPoste = Confirm-Choix -Question "Supprimer le poste 3CX $($dossier.Poste3CX.Number) ? (Non : il reste, désactivé, nommé « Libre <file> »)" -DefautOui:([bool]$dossier.SupprimerPoste)
+            # La file nomme le poste libéré ; si le poste est supprimé, elle reçoit ses numéros directs.
+            $besoin = (-not $dossier.SupprimerPoste) -or ($dossier.Sda3CX.Count -gt 0)
+            if (-not $besoin) { $dossier.FileSda = $null; Remove-Resume -Cle 'File' }
+            elseif ($dossier.Files3CX.Count -eq 1) {
+                $dossier.FileSda = $dossier.Files3CX[0]
+                Show-Constat -Titre "File d'attente de $($dossier.Nom)" -Valeurs @((Get-NomFile $dossier.FileSda)) -Niveau Info
+            } else {
+                $pourquoi = if ($dossier.Files3CX.Count -eq 0) { "le poste n'est dans aucune file" } else { "le poste est dans $($dossier.Files3CX.Count) files" }
+                $vue = @(Get-VueFiles -Files $dossier.ToutesFiles3CX)
+                $dossier.FileSda = Read-Choix -Titre "Quelle file $(if ($dossier.SupprimerPoste) { 'reçoit ses numéros directs' } else { 'nomme le poste libéré' }) ? ($pourquoi)" `
+                    -Aide "tapez un numéro, un nom de file ou celui d'un collègue — Entrée pour retenir" `
+                    -Elements $vue -Colonnes Number, Name, Equipe -MotsCles { $_.Equipe } `
+                    -DefautIndice (Get-IndiceDe -Elements $vue -Ou { $dossier.FileSda -and $_.Id -eq $dossier.FileSda.Id })
+            }
+            if ($dossier.FileSda) { Add-Resume -Cle 'File' -Valeur "$($dossier.FileSda.Number)" }
+            Add-Resume -Cle 'Poste' -Valeur "$($dossier.Poste3CX.Number) $(if ($dossier.SupprimerPoste) { 'supprimé' } else { 'libéré' })"
+        } },
+
+        @{ Etape = 'Confirmation'; Nom = 'Récapitulatif'; Action = {
+            Show-Recap -Paires (Get-Recap) -Titre 'Récapitulatif avant exécution'
+            if (Confirm-Choix -Question $(if ($Reglages.Simulation) { 'Lancer la simulation ?' } else { 'Confirmer et EXÉCUTER ?' })) { return }
+            Read-SectionAModifier
+        } }
+    )
+    Invoke-Parcours -Sections $sections
 }
-Show-Recap -Paires $recap -Titre 'Récapitulatif avant exécution'
-if (-not $Job -and -not (Confirm-Choix -Question $(if ($Reglages.Simulation) { 'Lancer la simulation ?' } else { 'Confirmer et EXÉCUTER ?' }))) { Stop-Script }
+$soc = $dossier.Societe; $u = $dossier.Utilisateur
+$recap = Get-Recap
 
 # ============================================================ 5. EXÉCUTION
 Set-Etape 'Exécution'
@@ -409,16 +487,20 @@ try {
         Invoke-ScanDelegations -Cible $upn -Societe $soc.id -ForcerCache $dossier.ForcerCache
     } | Out-Null
 
-    # Les numéros directs vont à l'équipe, sous le nom de la personne qui part, daté du jour.
+    # Les numéros directs prennent le nom de la personne qui part, daté du jour.
+    # Ils ne vont à l'équipe QUE si le poste est supprimé ; s'il reste, ils
+    # gardent leur destination (décision du 10.09.2026).
     $nomEx = "ex $($dossier.Prenom) $($dossier.NomFamille) ($(Get-Date -Format 'dd.MM.yyyy'))" -replace '\s+', ' '
-    Invoke-Etape -Nom $(if ($dossier.FileSda) { "Numéros directs redirigés vers la $(Get-NomFile $dossier.FileSda)" } else { 'Numéros directs' }) `
-                 -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX -or $dossier.Sda3CX.Count -eq 0) -Action {
-        if (-not $dossier.FileSda) {
+    $nomEtapeSda = if (-not $dossier.SupprimerPoste) { 'Numéros directs renommés, destination inchangée' }
+                   elseif ($dossier.FileSda) { "Numéros directs redirigés vers la $(Get-NomFile $dossier.FileSda)" } else { 'Numéros directs' }
+    Invoke-Etape -Nom $nomEtapeSda -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX -or $dossier.Sda3CX.Count -eq 0) -Action {
+        if ($dossier.SupprimerPoste -and -not $dossier.FileSda) {
             Add-Journal -Message "$($dossier.Sda3CX.Count) règle(s) entrante(s) visent le poste $($dossier.Poste3CX.Number) et aucune file n'a été désignée : à rerouter à la main." -Categorie 3CX -Niveau Alerte
             foreach ($s in $dossier.Sda3CX) { Add-Journal -Message "  $($s.RuleName) — SDA $($s.Data)  (règle $(Get-Prop -Objet $s -Nom 'Id' -Defaut '?'))" -Categorie 3CX -Niveau Alerte }
             return
         }
-        Set-XapiReglesVersFile -Pbx $pbx -Regles $dossier.Sda3CX -File $dossier.FileSda -NomRegle $nomEx
+        $fileCible = $(if ($dossier.FileSda) { $dossier.FileSda } else { [pscustomobject]@{ Number = ''; Name = '' } })
+        Set-XapiReglesVersFile -Pbx $pbx -Regles $dossier.Sda3CX -File $fileCible -NomRegle $nomEx -SansRediriger:(-not $dossier.SupprimerPoste)
     } | Out-Null
 
     Invoke-Etape -Nom 'Poste 3CX retiré de ses files' -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX -or $dossier.Files3CX.Count -eq 0) -Action {

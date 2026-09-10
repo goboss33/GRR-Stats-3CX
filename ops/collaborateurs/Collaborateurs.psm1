@@ -634,8 +634,10 @@ function Read-Texte {
       aligné avec elle — pas au bout de la ligne.
     #>
     param([Parameter(Mandatory)] [string] $Invite, [string] $Defaut = '', [switch] $Obligatoire, [switch] $QuitteSurQ, [string] $Aide = '')
+    if ($script:Parcours) { $script:Parcours.ADemande = $true }
     $aide = $Aide
     if ($Defaut) { $aide = if ($aide) { "$aide — Entrée pour « $Defaut »" } else { "Entrée pour « $Defaut »" } }
+    if ($QuitteSurQ -and (Test-Navigation) -and $aide -notmatch 'q pour') { $aide = if ($aide) { "$aide — q pour revenir" } else { 'q pour revenir' } }
     do {
         Show-Ecran -Reserve 7
         $valeur = $null
@@ -661,7 +663,7 @@ function Read-Texte {
             $valeur = "$(Read-Host "$(' ' * (Get-Marge))›")"
         }
         $valeur = "$valeur".Trim()
-        if ($QuitteSurQ -and $valeur -eq 'q') { Stop-Script }
+        if ($QuitteSurQ -and $valeur -eq 'q') { Invoke-Retour }
         if (-not $valeur -and $Defaut) { $valeur = $Defaut }
         if ($Obligatoire -and -not $valeur) { Add-Ligne '[yellow]!  Valeur obligatoire.[/]' }
     } while ($Obligatoire -and -not $valeur)
@@ -750,8 +752,10 @@ function Read-Liste {
         [switch] $Multiple,
         [switch] $SansAnnulation,
         [int[]] $Precoches = @(),      # index déjà cochés à l'ouverture (sélection multiple)
-        [string[]] $Cles = @()         # par ligne, ce que le filtre regarde EN PLUS du texte affiché (les agents d'une file…)
+        [string[]] $Cles = @(),        # par ligne, ce que le filtre regarde EN PLUS du texte affiché (les agents d'une file…)
+        [int] $Curseur = 0             # la ligne sous le pointeur à l'ouverture : la réponse précédente, quand on revient
     )
+    if ($script:Parcours) { $script:Parcours.ADemande = $true }
     $largeur = Get-Colonne
     $marge = Get-Marge
     # PowerShell ne distingue pas les majuscules : un paramètre $Coches et une
@@ -759,7 +763,7 @@ function Read-Liste {
     $coches = @{}
     foreach ($c in $Precoches) { if ($c -ge 0 -and $c -lt $Textes.Count) { $coches[$c] = $true } }
     $filtre = ''
-    $curseur = 0
+    $curseur = [Math]::Max(0, [Math]::Min($Textes.Count - 1, $Curseur))
     $sommet = 0
     $indices = @(0..($Textes.Count - 1))
 
@@ -792,7 +796,7 @@ function Read-Liste {
             if ($Multiple) { $aideAffichee += 'espace pour cocher' }
             $aideAffichee += '↑↓ choisir'
             $aideAffichee += 'Entrée valider'
-            if (-not $SansAnnulation) { $aideAffichee += 'Échap annuler' }
+            if (-not $SansAnnulation) { $aideAffichee += $(if (Test-Navigation) { 'Échap revenir' } else { 'Échap annuler' }) }
             if ($Textes.Count -gt 6) { $aideAffichee += 'tapez pour filtrer' }
             if ($Aide) { $aideAffichee = @($Aide) + $aideAffichee }
             Write-Ligne (Format-Question -Texte $Question)
@@ -877,9 +881,11 @@ function Read-Choix {
         [switch]      $Multiple,
         [switch]      $SansAnnulation,
         [int[]]       $IndicesCoches = @(),  # sélection multiple : les éléments déjà cochés à l'ouverture
-        [scriptblock] $MotsCles              # ce que le filtre regarde en plus de la ligne affichée : un texte rendu pour $_
+        [scriptblock] $MotsCles,             # ce que le filtre regarde en plus de la ligne affichée : un texte rendu pour $_
+        [int]         $DefautIndice = 0      # la ligne sous le pointeur à l'ouverture (voir Get-IndiceDe)
     )
     if (-not $Elements -or $Elements.Count -eq 0) { throw "Rien à choisir pour « $Titre »." }
+    if ($script:Parcours) { $script:Parcours.ADemande = $true }
     $textes = @()
     if ($Colonnes) { $textes = @(Format-Colonnes -Elements $Elements -Colonnes $Colonnes) }
     else { foreach ($e in $Elements) { $textes += $(if ($Libelle) { "$(ForEach-Object -InputObject $e -Process $Libelle)" } else { "$e" }) } }
@@ -888,7 +894,7 @@ function Read-Choix {
 
     $indices = $null
     if (Test-ConsolePilotable) {
-        try { $indices = @(Read-Liste -Question $Titre -Textes $textes -Aide $Aide -Multiple:$Multiple -SansAnnulation:$SansAnnulation -Precoches $IndicesCoches -Cles $cles) }
+        try { $indices = @(Read-Liste -Question $Titre -Textes $textes -Aide $Aide -Multiple:$Multiple -SansAnnulation:$SansAnnulation -Precoches $IndicesCoches -Cles $cles -Curseur $DefautIndice) }
         catch {
             $indices = $null
             # L'avertissement rejoint le contenu de l'étape : il survit au redessin, on le voit.
@@ -905,7 +911,8 @@ function Read-Choix {
         for ($i = 0; $i -lt $textes.Count; $i++) { Write-Ligne ("  [grey70]{0,3}) $(Protect-Texte $textes[$i])[/]" -f ($i + 1)) }
         $nums = @()
         do {
-            $saisie = Read-Host "$(' ' * (Get-Marge))$(if ($Multiple) { 'Numéros séparés par des virgules (q pour quitter)' } else { 'Numéro (q pour quitter)' })"
+            $motQ = $(if (Test-Navigation) { 'q pour revenir' } else { 'q pour quitter' })
+            $saisie = Read-Host "$(' ' * (Get-Marge))$(if ($Multiple) { "Numéros séparés par des virgules ($motQ)" } else { "Numéro ($motQ)" })"
             if ($saisie -eq 'q') { $nums = @(-1); break }
             $nums = @($saisie -split '[,; ]+' | Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ - 1 } | Where-Object { $_ -ge 0 -and $_ -lt $textes.Count })
         } while ($nums.Count -eq 0)
@@ -914,6 +921,9 @@ function Read-Choix {
 
     $indices = @($indices)
     if ($indices.Count -eq 0 -or $indices[0] -lt 0) {
+        # Dans un parcours, Échap ramène à la question précédente ; sinon une
+        # sélection multiple annulée est vide, une simple ferme le script.
+        if (Test-Navigation) { Invoke-Retour }
         if ($Multiple) { return @() }
         Stop-Script
     }
@@ -927,7 +937,8 @@ function Confirm-Choix {
     param([Parameter(Mandatory)] [string] $Question, [switch] $DefautOui)
     $choix = if ($DefautOui) { @('Oui', 'Non') } else { @('Non', 'Oui') }
     $elements = @($choix | ForEach-Object { [pscustomobject]@{ Texte = $_ } })
-    $r = Read-Choix -Titre $Question -Elements $elements -Colonnes Texte -SansAnnulation
+    # Dans un parcours, Échap ramène à la question précédente ; sinon on ne peut qu'y répondre.
+    $r = Read-Choix -Titre $Question -Elements $elements -Colonnes Texte -SansAnnulation:(-not (Test-Navigation))
     return ("$($r.Texte)" -eq 'Oui')
 }
 
@@ -1010,6 +1021,120 @@ function Stop-Script {
     Disconnect-M365
     try { Stop-Transcript | Out-Null } catch { }
     exit $Code
+}
+
+# ====================================================================
+#  PARCOURS — des sections qu'on peut reprendre
+#
+#  Un assistant n'est pas un tunnel : Échap dans une liste, « q » dans un
+#  champ, ramènent à la question précédente ; au récapitulatif, « Non »
+#  ouvre la liste des réponses à modifier. On repart de là vers l'avant,
+#  chaque question reprenant sa réponse précédente comme défaut.
+# ====================================================================
+
+$script:Parcours = $null
+
+function Test-Navigation { return [bool]$script:Parcours }
+
+function Invoke-Retour {
+    <# Depuis une question : revenir à la section interactive précédente. Hors parcours, c'est une fermeture. #>
+    if ($script:Parcours) { throw (New-Object System.OperationCanceledException -ArgumentList 'RETOUR') }
+    Stop-Script
+}
+
+function Invoke-Saut {
+    <# Reprendre le parcours à une section donnée. #>
+    param([Parameter(Mandatory)] [int] $Vers)
+    throw (New-Object System.OperationCanceledException -ArgumentList "SAUT:$Vers")
+}
+
+function Invoke-Parcours {
+    <#
+      Enchaîne des sections — @{ Nom ; Etape ; Action ; Resume } — avec
+      retour en arrière. Une section qui ne pose aucune question (lecture,
+      calcul) est sautée quand on recule. Tout saut vide l'écran de l'étape
+      et rejoue les sections suivantes, qui reprennent leurs réponses.
+    #>
+    param([Parameter(Mandatory)] [object[]] $Sections)
+    $liste = @()
+    $etape = ''
+    foreach ($s in $Sections) {
+        $copie = @{}; foreach ($k in $s.Keys) { $copie[$k] = $s[$k] }
+        if ($copie.ContainsKey('Etape') -and $copie.Etape) { $etape = "$($copie.Etape)" } else { $copie.Etape = $etape }
+        $liste += $copie
+    }
+    $script:Parcours = @{ Sections = $liste; Index = 0; Interactives = @{}; ADemande = $false; EtapeCourante = '' }
+    $i = 0
+    try {
+        while ($i -lt $liste.Count) {
+            $s = $liste[$i]
+            $script:Parcours.Index = $i
+            if ($s.Etape -and $s.Etape -ne $script:Parcours.EtapeCourante) { Set-Etape $s.Etape; $script:Parcours.EtapeCourante = $s.Etape }
+            $script:Parcours.ADemande = $false
+            try {
+                & $s.Action | Out-Null
+                $script:Parcours.Interactives[$i] = $script:Parcours.ADemande
+                $i++
+            } catch [System.OperationCanceledException] {
+                $message = "$($_.Exception.Message)"
+                if ($message -eq 'RETOUR') {
+                    $j = $i - 1
+                    while ($j -ge 0 -and -not $script:Parcours.Interactives[$j]) { $j-- }
+                    $i = [Math]::Max(0, $j)
+                } elseif ($message -like 'SAUT:*') {
+                    $i = [Math]::Max(0, [Math]::Min($liste.Count - 1, [int]$message.Substring(5)))
+                } else { throw }
+                # L'écran de l'étape repart de zéro : les sections rejouées le remplissent.
+                $script:Parcours.EtapeCourante = ''
+            }
+        }
+    } finally { $script:Parcours = $null }
+}
+
+function Read-SectionAModifier {
+    <# Après un « Non » au récapitulatif : quelle réponse reprendre ? On saute là-bas ; « Quitter » ferme. #>
+    param([string] $Titre = 'Que voulez-vous modifier ?')
+    if (-not $script:Parcours) { Stop-Script }
+    $elements = @()
+    for ($k = 0; $k -lt $script:Parcours.Index; $k++) {
+        if (-not $script:Parcours.Interactives[$k]) { continue }
+        $s = $script:Parcours.Sections[$k]
+        $valeur = ''
+        if ($s.ContainsKey('Resume') -and $s.Resume) { try { $valeur = "$(& $s.Resume)" } catch { $valeur = '' } }
+        $elements += [pscustomobject]@{ Indice = $k; Section = "$($s.Nom)"; Valeur = $valeur }
+    }
+    $elements += [pscustomobject]@{ Indice = -1; Section = 'Quitter sans rien faire'; Valeur = '' }
+    $choix = Read-Choix -Titre $Titre -Aide 'la section choisie et les suivantes sont reposées, réponses précédentes proposées' -Elements $elements -Colonnes Section, Valeur -SansAnnulation
+    if ($choix.Indice -lt 0) { Stop-Script }
+    Invoke-Saut -Vers ([int]$choix.Indice)
+}
+
+function Get-IndiceDe {
+    <# L'indice du premier élément qui satisfait le test, 0 sinon — pour poser le curseur sur la réponse précédente. #>
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Elements, [Parameter(Mandatory)] [scriptblock] $Ou, [int] $Sinon = 0)
+    for ($k = 0; $k -lt $Elements.Count; $k++) {
+        $ok = $false
+        try { $ok = [bool](ForEach-Object -InputObject $Elements[$k] -Process $Ou) } catch { $ok = $false }
+        if ($ok) { return $k }
+    }
+    return $Sinon
+}
+
+function Remove-Resume {
+    <# Retire une décision de l'encadré du haut (réponse revenue à « non »). #>
+    param([Parameter(Mandatory)] [string] $Cle)
+    if ($script:Ecran.Resume.Contains($Cle)) { $script:Ecran.Resume.Remove($Cle); Show-Ecran }
+}
+
+function Add-JournalUnique {
+    <# Une ligne de journal qu'une section rejouée ne doit pas répéter. #>
+    param([Parameter(Mandatory)] [string] $Cle, [Parameter(Mandatory)] [string] $Message,
+          [ValidateSet('AD', 'Groupes', 'Exchange', 'Licences', 'Delegations', '3CX', 'Planner', 'General')] [string] $Categorie = 'General',
+          [ValidateSet('Info', 'Succes', 'Alerte', 'Erreur', 'Simule')] [string] $Niveau = 'Info')
+    if (-not $script:JournalCles) { $script:JournalCles = @{} }
+    if ($script:JournalCles.ContainsKey($Cle)) { return }
+    $script:JournalCles[$Cle] = $true
+    Add-Journal -Message $Message -Categorie $Categorie -Niveau $Niveau
 }
 
 # ====================================================================
@@ -2457,26 +2582,27 @@ function Set-XapiReglesVersFile {
     #>
     param(
         [Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Regles,
-        [Parameter(Mandatory)] $File, [Parameter(Mandatory)] [string] $NomRegle
+        [Parameter(Mandatory)] $File, [Parameter(Mandatory)] [string] $NomRegle,
+        [switch] $SansRediriger      # le poste reste : on renomme seulement, la destination ne bouge pas
     )
     if ($Regles.Count -eq 0) { return }
     $numeroFile = "$(Get-Prop -Objet $File -Nom 'Number' -Defaut '')"
-    if (-not $numeroFile) { throw "La file cible n'a pas de numéro." }
-    $destination = @{ To = 'Queue'; Number = $numeroFile; External = '' }
-    $corps = @{
-        RuleName                    = $NomRegle
-        OfficeHoursDestination      = $destination
-        OutOfOfficeHoursDestination = $destination
-        HolidaysDestination         = $destination
+    if (-not $numeroFile -and -not $SansRediriger) { throw "La file cible n'a pas de numéro." }
+    $corps = @{ RuleName = $NomRegle }
+    if (-not $SansRediriger) {
+        $destination = @{ To = 'Queue'; Number = $numeroFile; External = '' }
+        $corps.OfficeHoursDestination      = $destination
+        $corps.OutOfOfficeHoursDestination = $destination
+        $corps.HolidaysDestination         = $destination
     }
     $refus = @()
     foreach ($r in $Regles) {
         $id = Get-Prop -Objet $r -Nom 'Id'
         $sda = "$(Get-Prop -Objet $r -Nom 'Data' -Defaut '?')"
+        $quoi = if ($SansRediriger) { "règle $id renommée « $NomRegle », destination inchangée" } else { "vers la $(Get-NomFile $File), règle $id renommée « $NomRegle »" }
         try {
-            Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "InboundRules($id)" -Corps $corps `
-                -Libelle "SDA $sda vers la $(Get-NomFile $File), règle $id renommée « $NomRegle »" | Out-Null
-            if (-not (Test-Simulation3CX)) { Add-Journal -Message "SDA $sda vers la $(Get-NomFile $File) — règle $id renommée « $NomRegle »." -Categorie 3CX -Niveau Succes }
+            Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "InboundRules($id)" -Corps $corps -Libelle "SDA $sda $quoi" | Out-Null
+            if (-not (Test-Simulation3CX)) { Add-Journal -Message "SDA $sda — $quoi." -Categorie 3CX -Niveau Succes }
         } catch {
             $refus += "$sda (règle $id)"
             Add-Journal -Message "SDA $sda, règle $id : refusée par le PBX — $(Get-MessageErreur $_) — à rerouter à la main." -Categorie 3CX -Niveau Alerte
