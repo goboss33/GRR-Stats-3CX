@@ -86,7 +86,7 @@
     "_commentaire": "Un PBX par cle ; SEULE GEROFINANCE a une surcouche XAPI. Les autres societes ont pbx null : le script ne touche jamais au central pour elles. Le secret est lu dans le fichier chiffre indique, cree par Set-Secret.ps1. Utilisez de preference un principal DEDIE aux scripts.",
     "gerofinance": {
       "adresse": "https://gerofinance.3cx.ch:5001",
-      "clientId": "stats",
+      "clientId": "scriptentree",
       "fichierSecret": "secrets\\xapi.gerofinance.bin",
       "motifPosteLibre": "\\blibre\\b",
       "skillGroupParDefaut": "1"

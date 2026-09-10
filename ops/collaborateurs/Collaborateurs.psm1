@@ -93,8 +93,14 @@ function Initialize-Collaborateurs {
 function Get-Config { return $script:Config }
 
 function Get-Prop {
-    <# Lit une propriété qui peut ne pas exister (JSON, OData) sans que StrictMode ne s'en offusque. #>
-    param([Parameter(Mandatory)] $Objet, [Parameter(Mandatory)] [string] $Nom, $Defaut = $null)
+    <#
+      Lit une propriété qui peut ne pas exister (JSON, OData) sans que
+      StrictMode ne s'en offusque — et sur un objet qui peut lui-même être
+      absent. [AllowNull] est indispensable : sans lui, un paramètre
+      obligatoire refuse $null AVANT d'entrer dans la fonction, et le garde
+      ci-dessous ne sert jamais.
+    #>
+    param([Parameter(Mandatory)] [AllowNull()] $Objet, [Parameter(Mandatory)] [string] $Nom, $Defaut = $null)
     if ($null -eq $Objet) { return $Defaut }
     $p = $Objet.PSObject.Properties[$Nom]
     if ($p -and $null -ne $p.Value) { return $p.Value }
@@ -2015,7 +2021,9 @@ function Get-XapiSda {
 
     $sortie = @()
     foreach ($d in ($trunksPar.Keys | Sort-Object)) {
-        $mes = @($parNumero[$d])
+        # Attention : @($null) contient UN élément nul, pas zéro. Un numéro sans
+        # règle passerait donc pour en avoir une, et la lecture suivante planterait.
+        $mes = @($parNumero[$d] | Where-Object { $null -ne $_ })
         $dest = 'aucune règle'
         if ($mes.Count -gt 0) {
             $o = Get-Prop -Objet $mes[0] -Nom 'OfficeHoursDestination'
