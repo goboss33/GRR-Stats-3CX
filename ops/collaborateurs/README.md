@@ -152,7 +152,7 @@ Ce que la copie reprend, chaque bloc décochable : les réglages généraux et l
 
 Deux contraintes du PBX, constatées à l'essai : le nom affiché est composé par le 3CX à partir du nom et du prénom, et le **département principal n'est accepté qu'une fois le poste membre du département** — le script fait donc le rattachement d'abord.
 
-**Le numéro direct.** Le script propose la liste des SDA du central, une ligne par numéro et non par trunk, avec ce vers quoi chacune pointe aujourd'hui. On tape le début d'un numéro pour filtrer, `+4122` par exemple. Le numéro retenu est dirigé vers le nouveau poste sur **les deux trunks**, aux heures ouvrables comme en dehors et les jours fériés, et les deux règles prennent le nom de la personne. Une SDA qui n'a encore aucune règle en reçoit une par trunk.
+**Le numéro direct.** Le script propose d'abord les SDA **libres**, une ligne par numéro et non par trunk : est libre un numéro sans aucune règle entrante, ou dont les règles ne mènent nulle part. Sur le central de Gérofinance, 597 des 1570 numéros sont dans ce cas. Une entrée en tête de liste bascule vers la liste complète, avec ce vers quoi chaque numéro pointe aujourd'hui, pour reprendre celui d'un poste qui part. On tape le début d'un numéro pour filtrer, `+4122` par exemple, ou le mot `libre` pour ne garder que les attribuables. Le numéro retenu est dirigé vers le nouveau poste sur **les deux trunks**, aux heures ouvrables comme en dehors et les jours fériés, et les deux règles prennent le nom de la personne. Une SDA qui n'a encore aucune règle en reçoit une par trunk.
 
 **Le central n'est interrogé que pour Gérofinance.** Les autres sociétés ont `pbx: null` dans la configuration : ni lecture ni écriture, à l'entrée comme à la sortie.
 
