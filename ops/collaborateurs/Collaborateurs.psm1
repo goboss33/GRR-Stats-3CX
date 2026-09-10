@@ -1867,24 +1867,60 @@ function Get-XapiFilesDuPoste {
     return @(Get-XapiFiles -Pbx $Pbx | Where-Object { (Get-NumerosAgents -File $_) -contains $Numero })
 }
 
+function Get-EmpreinteAgents {
+    <# Les agents d'une file en table comparable : numéro → compétence et étiquettes. #>
+    param([Parameter(Mandatory)] [AllowNull()] $File)
+    $table = @{}
+    foreach ($a in @(Get-Prop -Objet $File -Nom 'Agents' -Defaut @())) {
+        $n = Get-NumeroAgent -Agent $a
+        if (-not $n) { continue }
+        $tags = Get-Prop -Objet $a -Nom 'Tags'
+        $table[$n] = "SkillGroup=$(Get-Prop -Objet $a -Nom 'SkillGroup' -Defaut '');Tags=$(if ($null -eq $tags) { 'null' } else { ConvertTo-Json -InputObject @($tags) -Depth 4 -Compress })"
+    }
+    return $table
+}
+
 function Set-XapiAgentsDeFile {
     <#
-      Remplace la liste des agents d'une file (PATCH). On envoie TOUJOURS la
-      liste complète : le PBX ne fait pas de diff. Un numéro qu'on ne sait pas
-      relire ferait donc disparaître l'agent de la file — on refuse d'écrire
-      plutôt que de la vider en silence.
+      Remplace la liste des agents d'une file (PATCH Queues(Id) { Agents }).
+      Le PBX ne fait pas de diff : on renvoie la liste complète, et chaque
+      agent déjà là repart TEL QUE LU — identifiant, compétence, étiquettes —
+      jamais reconstruit : le 10.09.2026, reconstruire les membres d'un
+      département en a fait disparaître tout ce qu'on ne portait pas. Un agent
+      dont on ne sait pas relire le numéro ferait perdre sa ligne : on refuse
+      d'écrire. Après l'envoi, la file est relue : le changement voulu doit
+      s'y voir, sinon l'étape échoue ; un autre agent qui aurait bougé est
+      signalé.
     #>
     param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] $File, [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Agents, [string] $Libelle = '')
-    $lignes = @()
+    $lignes = @(); $voulus = @()
     foreach ($a in $Agents) {
         $numero = Get-NumeroAgent -Agent $a
         if (-not $numero) { throw "File $($File.Number) : un agent sans numéro lisible — la liste n'est pas réécrite." }
-        $competence = "$(Get-Prop -Objet $a -Nom 'SkillGroup' -Defaut '')"
-        $lignes += @{ Number = $numero; SkillGroup = $(if ($competence) { $competence } else { "$($Pbx.skillGroupParDefaut)" }) }
+        $ligne = @{}
+        if ($a -is [hashtable]) { foreach ($k in $a.Keys) { if ($null -ne $a[$k]) { $ligne[$k] = $a[$k] } } }
+        else { foreach ($p in $a.PSObject.Properties) { if ($null -ne $p.Value) { $ligne[$p.Name] = $p.Value } } }
+        $ligne['Number'] = $numero
+        if (-not "$(Get-Prop -Objet $a -Nom 'SkillGroup' -Defaut '')") { $ligne['SkillGroup'] = "$($Pbx.skillGroupParDefaut)" }
+        $lignes += $ligne; $voulus += $numero
     }
-    $corps = @{ Agents = @($lignes) }
     if (-not $Libelle) { $Libelle = "File $($File.Number) : $(@($Agents).Count) agent(s)" }
-    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Queues($($File.Id))" -Corps $corps -Libelle $Libelle | Out-Null
+    $avant = Get-EmpreinteAgents -File $File
+    Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Queues($($File.Id))" -Corps @{ Agents = @($lignes) } -Libelle $Libelle | Out-Null
+    if (Test-Simulation3CX) { return }
+    $apres = Get-EmpreinteAgents -File (Invoke-Xapi -Pbx $Pbx -Chemin "Queues($($File.Id))?%24expand=Agents")
+    $manquants = @($voulus | Where-Object { -not $apres.ContainsKey($_) })
+    $enTrop = @($apres.Keys | Where-Object { $voulus -notcontains $_ })
+    if ($manquants.Count -or $enTrop.Count) {
+        $quoi = @()
+        if ($manquants.Count) { $quoi += "absent(s) après l'envoi : $($manquants -join ', ')" }
+        if ($enTrop.Count) { $quoi += "toujours là alors qu'on l'a retiré : $($enTrop -join ', ')" }
+        throw "File $($File.Number) : la relecture ne correspond pas à l'envoi — $($quoi -join ' ; ')."
+    }
+    $touches = @($avant.Keys | Where-Object { $apres.ContainsKey($_) -and $apres[$_] -ne $avant[$_] })
+    if ($touches.Count) {
+        Add-Journal -Message "File $($File.Number) : compétence ou étiquettes changées pour $($touches -join ', ') — à vérifier dans la console 3CX." -Categorie 3CX -Niveau Alerte
+    }
 }
 
 function Get-NomFile {
@@ -1907,7 +1943,8 @@ function Remove-XapiPosteDesFiles {
 
 function Add-XapiPosteAuxFiles {
     param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [string] $Numero, [Parameter(Mandatory)] [object[]] $Files)
-    $toutes = Get-XapiFiles -Pbx $Pbx
+    # @() : une seule file rendue serait déballée en objet nu, sans .Count.
+    $toutes = @(Get-XapiFiles -Pbx $Pbx)
     if ($toutes.Count -eq 0) { throw "Le PBX n'a rendu aucune file d'attente : impossible d'y inscrire le poste $Numero." }
     foreach ($choisie in $Files) {
         $idVoulu = "$(Get-Prop -Objet $choisie -Nom 'Id' -Defaut '')"

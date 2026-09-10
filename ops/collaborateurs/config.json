@@ -90,8 +90,8 @@
       "fichierSecret": "secrets\\xapi.gerofinance.bin",
       "motifPosteLibre": "\\blibre\\b",
       "skillGroupParDefaut": "1",
-      "rattacherDepartements": false,
-      "_rattacherDepartements": "false tant que Test-Pbx.ps1 -EssaiDepartement n a pas prouve le chemin PATCH Users(Id).Groups sur ce central. Tant que c est false, le script ne touche a aucun departement et liste ceux du modele dans le rapport, a faire dans la console. Le 10.09.2026, reecrire la liste des membres d un departement a retire files, IVR et principal d API : plus jamais."
+      "rattacherDepartements": true,
+      "_rattacherDepartements": "true depuis le 10.09.2026 : Test-Pbx.ps1 -EssaiDepartement -Modele 163 a prouve sur ce central que PATCH Users(Id).Groups rattache le poste sans toucher au departement (GRR PULLY, 53 membres dont 10 files, 3 groupes de sonnerie et 1 point de routage, revenus a l identique). A false, le script ne touche a aucun departement et liste ceux du modele dans le rapport. Ne JAMAIS revenir a une reecriture de Groups(Id).Members : le 10.09 elle a retire files, IVR et principal d API."
     }
   },
   "operateurs": {

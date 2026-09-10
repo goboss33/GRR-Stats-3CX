@@ -21,6 +21,14 @@
     chemin que le script d'entrée emploiera une fois
     config.json → pbx.<clé>.rattacherDepartements passé à true.
 
+    Même chose pour une file d'attente, désignée par son numéro :
+
+        .\Test-Pbx.ps1 -EssaiFile 925
+
+    crée un poste jetable, l'inscrit dans la file en renvoyant les agents
+    actuels tels que lus, relit, l'en retire, relit, SUPPRIME le poste et
+    prouve que les autres agents sont ressortis à l'identique.
+
     ATTENTION : le 3CX ne garde qu'UN jeton par identifiant client. Lancer la
     sonde pendant qu'un script tourne lui ferait perdre le sien.
     Collez la sortie telle quelle : elle suffit à trancher.
@@ -32,7 +40,8 @@ param(
     [string] $Numero = '',
     [string] $Sda = '',
     [switch] $EssaiDepartement,
-    [string] $Modele = ''
+    [string] $Modele = '',
+    [string] $EssaiFile = ''
 )
 
 Import-Module (Join-Path $PSScriptRoot 'Collaborateurs.psm1') -Force
@@ -188,6 +197,52 @@ if ($EssaiDepartement) {
         $ecarts = @(Compare-EmpreinteMembres -Avant $empreinteAvant -Apres (Get-EmpreinteMembres -Departement (Get-XapiDepartement -Pbx $pbx -Id ([int]$cible.Id))) -Sauf "$libre")
         if ($ecarts.Count) { Write-Host "   ATTENTION : le département n'est pas revenu à l'identique — $($ecarts -join ' ; ')" -ForegroundColor Red }
         else { Write-Host "   Le département « $($cible.Name) » est revenu à l'identique : $($empreinteAvant.Count) membres, mêmes droits." -ForegroundColor Green }
+    }
+    Write-Host ''
+}
+
+# ------------------------------------------------------------------ 12 : l'essai sur une file, sur demande
+if ($EssaiFile) {
+    Write-Host "12. ESSAI D'ÉCRITURE — inscrire un poste jetable dans la file $EssaiFile, puis l'en retirer" -ForegroundColor Yellow
+    $file = @(Get-XapiFiles -Pbx $pbx | Where-Object { "$(Get-Prop -Objet $_ -Nom 'Number' -Defaut '')" -eq $EssaiFile })[0]
+    if (-not $file) { Write-Host "   File $EssaiFile introuvable au PBX." -ForegroundColor Red; exit 1 }
+    $agentsAvant = @(Get-Prop -Objet $file -Nom 'Agents' -Defaut @())
+    $libre = Get-XapiNumeroLibre -Pbx $pbx
+    Write-Host "   File « $(Get-Prop -Objet $file -Nom 'Name') » (Id $($file.Id)) · $($agentsAvant.Count) agents : $((@($agentsAvant | ForEach-Object { "$(Get-NumeroAgent -Agent $_)/$(Get-Prop -Objet $_ -Nom 'SkillGroup' -Defaut '?')" })) -join ' ')"
+    Write-Host "   Le script va : créer le poste $libre « ZZ ESSAI SCRIPT », l'inscrire dans la file en renvoyant les agents actuels tels que lus,"
+    Write-Host "   relire la file, l'en retirer, relire, puis SUPPRIMER le poste. Les autres agents doivent ressortir à l'identique."
+    $ok = Read-Host '   Tapez OUI pour continuer'
+    if ($ok -ne 'OUI') { Write-Host '   Abandon.'; exit 0 }
+    Write-Host ''
+    (Get-Reglages)['Simulation3CX'] = $false      # écriture réelle sur le 3CX, pour cet essai seulement
+    $empreinteAvant = Get-EmpreinteAgents -File $file
+    $cree = $null
+    try {
+        $cree = New-XapiPoste -Pbx $pbx -Numero "$libre" -Prenom 'ZZ ESSAI' -Nom 'SCRIPT'
+        Write-Host "   poste créé : Id $($cree.Id), numéro $($cree.Number)" -ForegroundColor Green
+        Add-XapiPosteAuxFiles -Pbx $pbx -Numero "$libre" -Files @($file)
+        $relue = Invoke-Xapi -Pbx $pbx -Chemin "Queues($($file.Id))?%24expand=Agents"
+        Write-Host "   relue : $(@(Get-Prop -Objet $relue -Nom 'Agents' -Defaut @()).Count) agents · le poste $libre y est : $((Get-NumerosAgents -File $relue) -contains "$libre")" -ForegroundColor Green
+        Remove-XapiPosteDesFiles -Pbx $pbx -Numero "$libre" | Out-Null
+        $relue = Invoke-Xapi -Pbx $pbx -Chemin "Queues($($file.Id))?%24expand=Agents"
+        Write-Host "   après retrait : $(@(Get-Prop -Objet $relue -Nom 'Agents' -Defaut @()).Count) agents · le poste $libre y est : $((Get-NumerosAgents -File $relue) -contains "$libre")" -ForegroundColor Green
+    } catch {
+        Write-Host "   KO  $(Get-MessageErreur $_)" -ForegroundColor Red
+    } finally {
+        if ($cree) {
+            try {
+                Invoke-Xapi -Pbx $pbx -Methode DELETE -Chemin "Users($($cree.Id))" -Libelle "Supprimer le poste d'essai $libre" | Out-Null
+                Write-Host "   poste d'essai $libre supprimé." -ForegroundColor Green
+            } catch { Write-Host "   SUPPRESSION ÉCHOUÉE, à faire à la main : poste $libre (Id $($cree.Id)) — $(Get-MessageErreur $_)" -ForegroundColor Red }
+        }
+        $apres = Get-EmpreinteAgents -File (Invoke-Xapi -Pbx $pbx -Chemin "Queues($($file.Id))?%24expand=Agents")
+        $ecarts = @()
+        foreach ($k in @($empreinteAvant.Keys | Sort-Object)) {
+            if (-not $apres.ContainsKey($k)) { $ecarts += "$k : disparu" } elseif ($apres[$k] -ne $empreinteAvant[$k]) { $ecarts += "$k : compétence ou étiquettes changées" }
+        }
+        foreach ($k in @($apres.Keys)) { if (-not $empreinteAvant.ContainsKey($k)) { $ecarts += "$k : en trop" } }
+        if ($ecarts.Count) { Write-Host "   ATTENTION : la file n'est pas revenue à l'identique — $($ecarts -join ' ; ')" -ForegroundColor Red }
+        else { Write-Host "   La file « $(Get-Prop -Objet $file -Nom 'Name') » est revenue à l'identique : $($empreinteAvant.Count) agents, mêmes compétences et étiquettes." -ForegroundColor Green }
     }
     Write-Host ''
 }
