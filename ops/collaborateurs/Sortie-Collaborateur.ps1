@@ -303,6 +303,7 @@ $recap = [ordered]@{
     'Microsoft 365'       = $(if ($soc.tenantId) { 'boîte partagée, licences, délégations' } else { 'pas de tenant : ignoré' })
     'Poste 3CX'           = $(if ($dossier.Poste3CX) { "$($dossier.Poste3CX.Number) « $($dossier.Poste3CX.DisplayName) » — $(if ($dossier.SupprimerPoste) { 'SUPPRIMÉ' } else { "libéré, nommé « Libre $(if ($dossier.FileSda) { $dossier.FileSda.Name } else { '?' }) »" }), retiré de $($dossier.Files3CX.Count) file(s)" } elseif ($pbx) { 'aucun trouvé' } else { 'pas de PBX / désactivé' })
     'Numéros directs'     = $(if (-not $dossier.Poste3CX) { '—' } elseif ($dossier.Sda3CX.Count -eq 0) { 'aucun' } elseif ($dossier.FileSda) { "$($dossier.Sda3CX.Count) règle(s) vers la $(Get-NomFile $dossier.FileSda), renommée(s) « ex $($dossier.Prenom) $($dossier.NomFamille) (date) »" } else { "$($dossier.Sda3CX.Count) règle(s), AUCUNE file désignée : à rerouter à la main" })
+    'Écriture AD'     = (Get-CompteAdEcriture -Ad $ad)
     'Mode'            = (Get-ModeEcriture)
 }
 Show-Recap -Paires $recap -Titre 'Récapitulatif avant exécution'

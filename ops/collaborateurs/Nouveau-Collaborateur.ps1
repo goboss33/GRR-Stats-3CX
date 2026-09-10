@@ -375,6 +375,7 @@ $recap = [ordered]@{
                            elseif ($dossier.DepartementsAFaire.Count) { "à faire dans la console : $(($dossier.DepartementsAFaire | ForEach-Object { $_.Name }) -join '; ')" }
                            else { '—' })
     'Numéro direct'   = $(if ($dossier.Sda3CX) { "$($dossier.Sda3CX.Numero) — aujourd'hui : $($dossier.Sda3CX.Etat)" } else { '—' })
+    'Écriture AD'     = (Get-CompteAdEcriture -Ad $ad)
     'Mode'            = (Get-ModeEcriture)
 }
 Show-Recap -Paires $recap -Titre 'Récapitulatif avant création'
@@ -397,7 +398,16 @@ try {
             OtherAttributes = @{ mailNickname = $dossier.MailNickname; proxyAddresses = $proxy }
         }
         Invoke-Ecriture -Categorie AD -Description "Créer $($dossier.DisplayName) — $($dossier.Email) — dans $($site.ou)" -Action {
-            New-ADUser @params @ad
+            try { New-ADUser @params @ad }
+            catch {
+                # « Accès refusé » nu ne dit ni qui écrivait, ni où : le 10.09.2026, une
+                # vraie entrée lancée depuis une session sans droits sur l'OU s'est
+                # arrêtée là-dessus sans que l'opérateur comprenne.
+                if (Test-ErreurAccesRefuse -Erreur $_) {
+                    throw "Accès refusé par l'annuaire : le compte $(Get-CompteAdEcriture -Ad $ad) n'a pas le droit de créer un utilisateur dans $($site.ou), ou d'y écrire le mot de passe et les adresses. Relancez depuis une session d'un compte administrateur du domaine, ou déléguez ce droit sur cette OU."
+                }
+                throw
+            }
             Wait-AdUtilisateur -Sam $dossier.Sam -Ad $ad | Out-Null
             Add-Journal -Message "Dans $($site.ou), UPN $($dossier.Email)." -Categorie AD
         } | Out-Null

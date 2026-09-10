@@ -1363,6 +1363,29 @@ function Connect-Domaine {
     return $splat
 }
 
+function Get-CompteAdEcriture {
+    <#
+      Sous quel compte les cmdlets AD écriront : celui saisi pour un domaine
+      distant, sinon celui de la session Windows — sur le contrôleur lui-même,
+      rien n'est demandé, et c'est donc la session qui doit avoir les droits.
+    #>
+    param([Parameter(Mandatory)] [hashtable] $Ad)
+    if ($Ad.ContainsKey('Credential') -and $Ad.Credential) { return "$($Ad.Credential.UserName) (identifiants saisis)" }
+    return "$env:USERDOMAIN\$env:USERNAME (compte de la session Windows)"
+}
+
+function Test-ErreurAccesRefuse {
+    <# L'annuaire a-t-il refusé l'écriture faute de droits ? #>
+    param([Parameter(Mandatory)] $Erreur)
+    $ex = if ($Erreur -is [Exception]) { $Erreur } else { $Erreur.Exception }
+    while ($ex) {
+        if ($ex -is [System.UnauthorizedAccessException]) { return $true }
+        if ("$($ex.Message)" -match 'Acc.s refus|Access is denied|Access denied') { return $true }
+        $ex = $ex.InnerException
+    }
+    return $false
+}
+
 function Find-AdUtilisateur {
     <# Recherche large (nom, prénom, identifiant, e-mail) → liste pour le sélecteur. #>
     param([Parameter(Mandatory)] [string] $Recherche, [Parameter(Mandatory)] [hashtable] $Ad)
