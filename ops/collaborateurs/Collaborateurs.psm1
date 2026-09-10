@@ -1781,9 +1781,13 @@ function Get-XapiPostesLibres {
 }
 
 function Get-XapiFiles {
-    <# Toutes les files avec leurs agents. #>
+    <#
+      Toutes les files avec leurs agents. Pas de $select : il ne porte que sur
+      les propriétés de la file, et une file amputée de ses agents ne sert à
+      rien ici — on prend la réponse entière, elle est courte.
+    #>
     param([Parameter(Mandatory)] $Pbx)
-    $tous = @(); $url = "Queues?%24top=100&%24expand=Agents&%24select=Id,Number,Name"
+    $tous = @(); $url = "Queues?%24top=100&%24expand=Agents"
     for ($i = 0; $url -and $i -lt 25; $i++) {
         $page = Invoke-Xapi -Pbx $Pbx -Chemin $url
         $tous += @($page.value)
@@ -1793,15 +1797,47 @@ function Get-XapiFiles {
     return @($tous | Sort-Object Id -Unique)
 }
 
+function Get-NumeroAgent {
+    <#
+      Le numéro d'un agent de file. Le central rend « Number » ; selon la
+      version il enveloppe l'utilisateur, on regarde donc aussi dedans. Rend
+      toujours une chaîne : vide quand le numéro reste illisible.
+    #>
+    param([Parameter(Mandatory)] [AllowNull()] $Agent)
+    foreach ($nom in @('Number', 'Extension')) {
+        $valeur = "$(Get-Prop -Objet $Agent -Nom $nom -Defaut '')"
+        if ($valeur) { return $valeur }
+    }
+    return "$(Get-Prop -Objet (Get-Prop -Objet $Agent -Nom 'User') -Nom 'Number' -Defaut '')"
+}
+
+function Get-NumerosAgents {
+    <# Les numéros des agents d'une file, les illisibles écartés. #>
+    param([Parameter(Mandatory)] [AllowNull()] $File)
+    return @(@(Get-Prop -Objet $File -Nom 'Agents' -Defaut @()) | ForEach-Object { Get-NumeroAgent -Agent $_ } | Where-Object { $_ })
+}
+
 function Get-XapiFilesDuPoste {
     param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [string] $Numero)
-    return @(Get-XapiFiles -Pbx $Pbx | Where-Object { @($_.Agents | ForEach-Object { "$($_.Number)" }) -contains $Numero })
+    return @(Get-XapiFiles -Pbx $Pbx | Where-Object { (Get-NumerosAgents -File $_) -contains $Numero })
 }
 
 function Set-XapiAgentsDeFile {
-    <# Remplace la liste des agents d'une file (PATCH). On envoie TOUJOURS la liste complète : le PBX ne fait pas de diff. #>
+    <#
+      Remplace la liste des agents d'une file (PATCH). On envoie TOUJOURS la
+      liste complète : le PBX ne fait pas de diff. Un numéro qu'on ne sait pas
+      relire ferait donc disparaître l'agent de la file — on refuse d'écrire
+      plutôt que de la vider en silence.
+    #>
     param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] $File, [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Agents, [string] $Libelle = '')
-    $corps = @{ Agents = @($Agents | ForEach-Object { @{ Number = "$($_.Number)"; SkillGroup = $(if ($_.SkillGroup) { "$($_.SkillGroup)" } else { "$($Pbx.skillGroupParDefaut)" }) } }) }
+    $lignes = @()
+    foreach ($a in $Agents) {
+        $numero = Get-NumeroAgent -Agent $a
+        if (-not $numero) { throw "File $($File.Number) : un agent sans numéro lisible — la liste n'est pas réécrite." }
+        $competence = "$(Get-Prop -Objet $a -Nom 'SkillGroup' -Defaut '')"
+        $lignes += @{ Number = $numero; SkillGroup = $(if ($competence) { $competence } else { "$($Pbx.skillGroupParDefaut)" }) }
+    }
+    $corps = @{ Agents = @($lignes) }
     if (-not $Libelle) { $Libelle = "File $($File.Number) : $(@($Agents).Count) agent(s)" }
     Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "Queues($($File.Id))" -Corps $corps -Libelle $Libelle | Out-Null
 }
@@ -1817,7 +1853,7 @@ function Remove-XapiPosteDesFiles {
     param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [string] $Numero)
     $files = Get-XapiFilesDuPoste -Pbx $Pbx -Numero $Numero
     foreach ($f in $files) {
-        $restants = @($f.Agents | Where-Object { "$($_.Number)" -ne $Numero })
+        $restants = @(@(Get-Prop -Objet $f -Nom 'Agents' -Defaut @()) | Where-Object { (Get-NumeroAgent -Agent $_) -ne $Numero })
         Set-XapiAgentsDeFile -Pbx $Pbx -File $f -Agents $restants -Libelle "Retirer de la $(Get-NomFile $f) — $($restants.Count) agent(s) restant(s)"
         if (-not (Test-Simulation)) { Add-Journal -Message "Retiré de la $(Get-NomFile $f)" -Categorie 3CX -Niveau Succes }
     }
@@ -1830,8 +1866,8 @@ function Add-XapiPosteAuxFiles {
     foreach ($choisie in $Files) {
         $f = $toutes | Where-Object { $_.Id -eq $choisie.Id } | Select-Object -First 1
         if (-not $f) { continue }
-        if (@($f.Agents | ForEach-Object { "$($_.Number)" }) -contains $Numero) { Add-Journal -Message "Déjà dans la $(Get-NomFile $f)" -Categorie 3CX; continue }
-        $agents = @($f.Agents) + @([pscustomobject]@{ Number = $Numero; SkillGroup = $Pbx.skillGroupParDefaut })
+        if ((Get-NumerosAgents -File $f) -contains $Numero) { Add-Journal -Message "Déjà dans la $(Get-NomFile $f)" -Categorie 3CX; continue }
+        $agents = @(Get-Prop -Objet $f -Nom 'Agents' -Defaut @()) + @([pscustomobject]@{ Number = $Numero; SkillGroup = $Pbx.skillGroupParDefaut })
         Set-XapiAgentsDeFile -Pbx $Pbx -File $f -Agents $agents -Libelle "Inscrire dans la $(Get-NomFile $f) — $($agents.Count) agent(s)"
         if (-not (Test-Simulation)) { Add-Journal -Message "Inscrit dans la $(Get-NomFile $f)" -Categorie 3CX -Niveau Succes }
     }

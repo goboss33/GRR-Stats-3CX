@@ -292,40 +292,49 @@ if ($pbx) {
 
             # --- Copier la configuration d'un collègue : réglages, renvois, BLF, départements.
             if ($dossier.NouveauPoste -and (Confirm-Choix -Question "Copier la configuration 3CX d'un collègue sur ce poste ?" -DefautOui)) {
-                # Les agents des files choisies d'abord : ce sont les bons modèles.
+                # On ne cherche plus à l'aveugle : la liste des postes s'ouvre et
+                # se filtre en tapant un numéro ou un nom. Quand des files sont
+                # choisies, elle s'ouvre sur leurs agents — ce sont les bons
+                # modèles — avec une bascule vers l'annuaire complet du central.
                 $numerosFiles = @()
-                foreach ($f in $dossier.Files3CX) { $numerosFiles += @($f.Agents | ForEach-Object { "$($_.Number)" }) }
+                foreach ($f in $dossier.Files3CX) { $numerosFiles += @(Get-NumerosAgents -File $f) }
                 $numerosFiles = @($numerosFiles | Sort-Object -Unique)
-                $proposes = @($tousPostes | Where-Object { $numerosFiles -contains "$($_.Number)" -and "$($_.Number)" -ne $dossier.Numero3CX } |
-                    Sort-Object { [int]("$($_.Number)" -replace '\D', '0') })
+                $annuaire = @($tousPostes | Where-Object { "$($_.Number)" -ne $dossier.Numero3CX } |
+                    Sort-Object { [int]("$($_.Number)" -replace '\D', '0') } |
+                    Select-Object Number, DisplayName, EmailAddress)
+                $desFiles = @($annuaire | Where-Object { $numerosFiles -contains "$($_.Number)" })
                 $modele = $null
-                if ($proposes.Count -gt 0) {
-                    $ailleurs = [pscustomobject]@{ Number = ''; DisplayName = "Chercher un autre poste…"; EmailAddress = '' }
-                    $choix = Read-Choix -Titre "Sur le modèle de quel poste ? ($($proposes.Count) dans les files choisies)" `
-                        -Elements (@($ailleurs) + $proposes) -Colonnes Number, DisplayName, EmailAddress
-                    if ($choix.Number) { $modele = $choix }
+                if ($annuaire.Count -eq 0) { Show-Note "Le central n'a rendu aucun poste : rien à prendre pour modèle." -Niveau Alerte }
+                elseif ($dossier.Files3CX.Count -gt 0 -and $desFiles.Count -eq 0) { Show-Note "Aucun agent lisible dans les files choisies : l'annuaire complet est proposé." -Niveau Alerte }
+                $liste = $(if ($desFiles.Count -gt 0) { $desFiles } else { $annuaire })
+                while (-not $modele -and $annuaire.Count -gt 0) {
+                    $tousVisibles = ($liste.Count -eq $annuaire.Count)
+                    $elements = @($liste)
+                    if ($desFiles.Count -gt 0 -and $desFiles.Count -lt $annuaire.Count) {
+                        $texte = $(if ($tousVisibles) { "← Ne montrer que les $($desFiles.Count) postes des files choisies" } else { "Chercher parmi les $($annuaire.Count) postes du central" })
+                        $elements = @([pscustomobject]@{ Number = ''; DisplayName = $texte; EmailAddress = '' }) + $elements
+                    }
+                    $titre = $(if ($tousVisibles) { "Sur le modèle de quel poste ? ($($annuaire.Count) postes au central)" } else { "Sur le modèle de quel poste ? ($($desFiles.Count) dans les files choisies)" })
+                    $choix = Read-Choix -Titre $titre -Aide 'tapez un numéro ou un nom pour filtrer' `
+                        -Elements $elements -Colonnes Number, DisplayName, EmailAddress
+                    if ($choix.Number) { $modele = $choix } else { $liste = $(if ($tousVisibles) { $desFiles } else { $annuaire }) }
                 }
-                while (-not $modele) {
-                    $recherche = Read-Texte -Invite 'Quel poste prendre pour modèle ?' -Aide 'numéro ou nom — q pour quitter' -Obligatoire -QuitteSurQ
-                    $trouves = @($tousPostes | Where-Object { "$($_.Number)" -like "*$recherche*" -or "$($_.DisplayName)" -like "*$recherche*" } |
-                        Where-Object { "$($_.Number)" -ne $dossier.Numero3CX } | Sort-Object DisplayName)
-                    if ($trouves.Count -eq 0) { Show-Note "Aucun poste ne correspond à « $recherche »." -Niveau Alerte; continue }
-                    $modele = Read-Choix -Titre "Quel poste ? ($($trouves.Count) trouvé$(if ($trouves.Count -gt 1) { 's' }))" -Elements $trouves -Colonnes Number, DisplayName, EmailAddress
+                if ($modele) {
+                    $dossier.Modele3CX = Invoke-Attente -Titre "Lecture du poste $($modele.Number)" -Action { Get-XapiPosteComplet -Pbx $pbx -Numero "$($modele.Number)" }
+                    $sesDepartements = @(Get-XapiDepartementsDuPoste -Departements $departements -Numero "$($modele.Number)")
+                    $nbBlf = ([regex]::Matches("$(Get-Prop -Objet $dossier.Modele3CX -Nom 'Blfs' -Defaut '')", '<BLF ')).Count
+                    $nbRenvois = @(Get-Prop -Objet $dossier.Modele3CX -Nom 'ForwardingProfiles' -Defaut @()).Count
+                    $quoi = @(
+                        [pscustomobject]@{ Code = 'reglages';     Quoi = "Réglages généraux et $nbBlf touches BLF" },
+                        [pscustomobject]@{ Code = 'renvois';      Quoi = "$nbRenvois profils de renvoi et leurs exceptions" },
+                        [pscustomobject]@{ Code = 'departements'; Quoi = "$($sesDepartements.Count) départements et leurs droits" }
+                    )
+                    $retenus = @(Read-Choix -Titre "Que reprendre du poste $($modele.Number) ?" -Aide 'tout est coché — décochez ce qui ne doit pas suivre' `
+                        -Elements $quoi -Colonnes Quoi -Multiple -IndicesCoches @(0..($quoi.Count - 1)))
+                    $dossier.Copie3CX = @($retenus | ForEach-Object { $_.Code })
+                    $dossier.Departements3CX = $(if ($dossier.Copie3CX -contains 'departements') { $sesDepartements } else { @() })
+                    Show-Constat -Titre "Configuration reprise du poste $($modele.Number)" -Valeurs @($dossier.Modele3CX.DisplayName) -Niveau Info
                 }
-                $dossier.Modele3CX = Invoke-Attente -Titre "Lecture du poste $($modele.Number)" -Action { Get-XapiPosteComplet -Pbx $pbx -Numero "$($modele.Number)" }
-                $sesDepartements = @(Get-XapiDepartementsDuPoste -Departements $departements -Numero "$($modele.Number)")
-                $nbBlf = ([regex]::Matches("$(Get-Prop -Objet $dossier.Modele3CX -Nom 'Blfs' -Defaut '')", '<BLF ')).Count
-                $nbRenvois = @(Get-Prop -Objet $dossier.Modele3CX -Nom 'ForwardingProfiles' -Defaut @()).Count
-                $quoi = @(
-                    [pscustomobject]@{ Code = 'reglages';     Quoi = "Réglages généraux et $nbBlf touches BLF" },
-                    [pscustomobject]@{ Code = 'renvois';      Quoi = "$nbRenvois profils de renvoi et leurs exceptions" },
-                    [pscustomobject]@{ Code = 'departements'; Quoi = "$($sesDepartements.Count) départements et leurs droits" }
-                )
-                $retenus = @(Read-Choix -Titre "Que reprendre du poste $($modele.Number) ?" -Aide 'tout est coché — décochez ce qui ne doit pas suivre' `
-                    -Elements $quoi -Colonnes Quoi -Multiple -IndicesCoches @(0..($quoi.Count - 1)))
-                $dossier.Copie3CX = @($retenus | ForEach-Object { $_.Code })
-                $dossier.Departements3CX = $(if ($dossier.Copie3CX -contains 'departements') { $sesDepartements } else { @() })
-                Show-Constat -Titre "Configuration reprise du poste $($modele.Number)" -Valeurs @($dossier.Modele3CX.DisplayName) -Niveau Info
             }
         }
     }
