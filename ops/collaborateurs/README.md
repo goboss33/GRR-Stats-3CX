@@ -130,7 +130,7 @@ Variables d'environnement utiles : `COLLABORATEURS_SANS_PWSH=1` (ne pas se relan
 .\Sortie-Collaborateur.ps1  -Job .\exemples\sortie.json -Simulation
 ```
 
-Le JSON décrit tout, aucune question n'est posée. C'est le contrat avec le futur portail : il déposera un fichier, le script l'exécutera. Pour la sortie : `redirectionVers` (+ `redirectionVersNom`), et `reponseAuto` (texte) **ou** `reponseAutoModele` (id du modèle) avec `variables` pour ce que le script ne déduit pas.
+Le JSON décrit tout, aucune question n'est posée. C'est le contrat avec le futur portail : il déposera un fichier, le script l'exécutera. Pour la sortie : `redirectionVers` (+ `redirectionVersNom`), et `reponseAuto` (texte) **ou** `reponseAutoModele` (id du modèle) avec `variables` pour ce que le script ne déduit pas ; côté 3CX, `supprimerPoste3cx` (`true` = supprimer, `false` = garder désactivé et nommé « Libre <file> ») et `fileSda3cx` (numéro de la file qui reçoit les numéros directs et nomme le poste libéré ; déduite si le poste n'est que dans une file).
 
 ## Les groupes d'un ou d'une collègue
 
@@ -146,7 +146,7 @@ Quand la lecture d'un compte ou de ses groupes ne donne pas ce qu'on attend, la 
 
 ## Ce que fait le volet 3CX
 
-**Entrée** : demande d'abord s'il faut **créer** un poste — le PBX propose lui-même le premier numéro libre — sinon propose de réaffecter un poste libre, désactivé ou nommé « libre », du site (préfixe `prefixePostes` dans `config.json`). Viennent ensuite les files d'attente, puis la **copie de la configuration d'un collègue**. Le modèle se choisit dans une liste, jamais par une recherche à l'aveugle : quand des files ont été retenues, elle s'ouvre sur leurs agents, et une ligne en tête bascule vers tous les postes du central ; sans file, elle s'ouvre directement sur le central entier. Dans les deux cas on tape un numéro ou un nom pour filtrer. Le lendemain, l'application de statistiques le reconnaît par l'e-mail.
+**Entrée** : demande d'abord s'il faut **créer** un poste — le PBX propose lui-même le premier numéro libre — sinon propose de réaffecter un poste libre, désactivé ou nommé « libre », du site (préfixe `prefixePostes` dans `config.json`). Viennent ensuite les files d'attente — la liste montre les collègues de chaque file et se filtre aussi par leur nom : taper « Lola » ne garde que les files où elle est —, puis la **copie de la configuration d'un collègue**. Le modèle se choisit dans une liste, jamais par une recherche à l'aveugle : quand des files ont été retenues, elle s'ouvre sur leurs agents, et une ligne en tête bascule vers tous les postes du central ; sans file, elle s'ouvre directement sur le central entier. Dans les deux cas on tape un numéro ou un nom pour filtrer. Le lendemain, l'application de statistiques le reconnaît par l'e-mail.
 
 Ce que la copie reprend, chaque bloc décochable : les réglages généraux et les touches BLF, les profils de renvoi et leurs exceptions, et — seulement si `config.json` → `pbx.<clé>.rattacherDepartements` est à `true` — les départements avec les droits « Visualiser » du modèle. **Incident du 10.09.2026** : rattacher le poste en réécrivant la liste des membres d'un département (`PATCH Groups(Id)`) a retiré de ce département tout ce qui n'est pas un poste — un département contient aussi des files, des IVR, des groupes de sonnerie — et le principal d'API y a perdu son rôle : plus aucune requête ne passait. Depuis, le script n'écrit un département qu'en écrivant sur le poste lui-même (`PATCH Users(Id).Groups`), relit le département avant et après et signale tout autre membre qui aurait bougé. Ce chemin a été prouvé sur le central le 10.09.2026 par `.\Test-Pbx.ps1 -EssaiDepartement -Modele 163` : le département GRR PULLY, 53 membres dont 10 files, 3 groupes de sonnerie et 1 point de routage, est ressorti à l'identique. L'interrupteur est donc à `true`. À `false`, le script ne touche à aucun département et le rapport liste ceux du modèle, avec les rôles, dans les points d'attention.
 
@@ -162,7 +162,7 @@ Quand le central refuse une écriture, la ligne d'erreur dit la requête, le sta
 
 **Le central n'est interrogé que pour Gérofinance.** Les autres sociétés ont `pbx: null` dans la configuration : ni lecture ni écriture, à l'entrée comme à la sortie.
 
-**Sortie** : retrouve le poste par l'e-mail, le retire de toutes ses files, vide l'e-mail, le **désactive** — le numéro reste réservé. Les règles entrantes (SDA) qui visent encore le poste sont **listées dans le rapport, pas réécrites** : à faire à la main pour l'instant.
+**Sortie** : retrouve le poste par l'e-mail, puis demande s'il faut le **supprimer**. Non : il reste, désactivé, e-mail vidé, renommé **« Libre <file> »**, réservé à son équipe. Oui : il est supprimé du central. Dans les deux cas, ses **numéros directs** (SDA) sont redirigés vers **sa file d'attente**, aux heures ouvrables comme en dehors, et les règles sont renommées **« ex Prénom Nom (date du jour) »**. La file est déduite quand le poste n'est que dans une seule ; s'il est dans plusieurs, ou dans aucune, le script demande laquelle, dans la liste de toutes les files, filtrable par numéro, par nom de file ou par nom de collègue. Le poste est retiré de ses files avant d'être libéré ou supprimé.
 
 ## Le rapport envoyé au helpdesk
 

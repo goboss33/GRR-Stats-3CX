@@ -1,7 +1,9 @@
 {
-  "_commentaire": "Exemple de fichier de travail pour Sortie-Collaborateur.ps1 -Job. Tout est facultatif sauf societe et identifiant. Redirection : 'redirectionVers' (adresse) + 'redirectionVersNom' (pour les modèles), ou 'redirection': 'desactiver'. Réponse automatique : 'reponseAuto' (texte libre), ou 'reponseAutoModele' (id d'un modèle de config.json → sortie.reponsesAutomatiques) avec 'variables' pour ce que le script ne déduit pas, ou 'reponseAutoEtat': 'desactiver'.",
+  "_commentaire": "Exemple de fichier de travail pour Sortie-Collaborateur.ps1 -Job. Tout est facultatif sauf societe et identifiant. Redirection : 'redirectionVers' (adresse) + 'redirectionVersNom' (pour les modèles), ou 'redirection': 'desactiver'. Réponse automatique : 'reponseAuto' (texte libre), ou 'reponseAutoModele' (id d'un modèle de config.json → sortie.reponsesAutomatiques) avec 'variables' pour ce que le script ne déduit pas, ou 'reponseAutoEtat': 'desactiver'. 3CX : 'supprimerPoste3cx' (true = supprimer le poste ; false = le garder désactivé, nommé « Libre <file> ») et 'fileSda3cx' (numéro de la file qui reçoit ses numéros directs et nomme le poste libéré ; déduite si le poste n'est que dans une file).",
   "societe": "GEROFINANCE",
   "identifiant": "mexemple",
+  "supprimerPoste3cx": false,
+  "fileSda3cx": "925",
   "redirectionVers": "comptabilite.pully@grrsa.ch",
   "redirectionVersNom": "Comptabilité Pully",
   "reponseAutoModele": "standard",

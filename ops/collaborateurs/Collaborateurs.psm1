@@ -728,6 +728,14 @@ function Format-Colonnes {
     return $textes
 }
 
+function Test-FiltreLigne {
+    <# Une ligne passe le filtre si le texte affiché OU sa clé cachée le contient. Sans filtre, tout passe. #>
+    param([string] $Texte = '', [string] $Cle = '', [string] $Filtre = '')
+    if (-not $Filtre) { return $true }
+    if ($Texte -like "*$Filtre*") { return $true }
+    return [bool]($Cle -and $Cle -like "*$Filtre*")
+}
+
 function Read-Liste {
     <#
       LE sélecteur : flèches, filtre en tapant, Entrée pour valider, Échap
@@ -741,7 +749,8 @@ function Read-Liste {
         [string] $Aide = '',
         [switch] $Multiple,
         [switch] $SansAnnulation,
-        [int[]] $Precoches = @()       # index déjà cochés à l'ouverture (sélection multiple)
+        [int[]] $Precoches = @(),      # index déjà cochés à l'ouverture (sélection multiple)
+        [string[]] $Cles = @()         # par ligne, ce que le filtre regarde EN PLUS du texte affiché (les agents d'une file…)
     )
     $largeur = Get-Colonne
     $marge = Get-Marge
@@ -768,7 +777,8 @@ function Read-Liste {
             # Ce que le filtre laisse passer.
             $indices = @()
             for ($i = 0; $i -lt $Textes.Count; $i++) {
-                if (-not $filtre -or $Textes[$i] -like "*$filtre*") { $indices += $i }
+                $cle = if ($Cles.Count -gt $i) { "$($Cles[$i])" } else { '' }
+                if (Test-FiltreLigne -Texte $Textes[$i] -Cle $cle -Filtre $filtre) { $indices += $i }
             }
             if ($indices.Count -eq 0) { $indices = @() }
             if ($curseur -ge $indices.Count) { $curseur = [Math]::Max(0, $indices.Count - 1) }
@@ -866,16 +876,19 @@ function Read-Choix {
         [string]      $Aide = '',
         [switch]      $Multiple,
         [switch]      $SansAnnulation,
-        [int[]]       $IndicesCoches = @()   # sélection multiple : les éléments déjà cochés à l'ouverture
+        [int[]]       $IndicesCoches = @(),  # sélection multiple : les éléments déjà cochés à l'ouverture
+        [scriptblock] $MotsCles              # ce que le filtre regarde en plus de la ligne affichée : un texte rendu pour $_
     )
     if (-not $Elements -or $Elements.Count -eq 0) { throw "Rien à choisir pour « $Titre »." }
     $textes = @()
     if ($Colonnes) { $textes = @(Format-Colonnes -Elements $Elements -Colonnes $Colonnes) }
     else { foreach ($e in $Elements) { $textes += $(if ($Libelle) { "$(ForEach-Object -InputObject $e -Process $Libelle)" } else { "$e" }) } }
+    $cles = @()
+    if ($MotsCles) { foreach ($e in $Elements) { $cles += "$(ForEach-Object -InputObject $e -Process $MotsCles)" } }
 
     $indices = $null
     if (Test-ConsolePilotable) {
-        try { $indices = @(Read-Liste -Question $Titre -Textes $textes -Aide $Aide -Multiple:$Multiple -SansAnnulation:$SansAnnulation -Precoches $IndicesCoches) }
+        try { $indices = @(Read-Liste -Question $Titre -Textes $textes -Aide $Aide -Multiple:$Multiple -SansAnnulation:$SansAnnulation -Precoches $IndicesCoches -Cles $cles) }
         catch {
             $indices = $null
             # L'avertissement rejoint le contenu de l'étape : il survit au redessin, on le voit.
@@ -1862,6 +1875,30 @@ function Get-NumerosAgents {
     return @(@(Get-Prop -Objet $File -Nom 'Agents' -Defaut @()) | ForEach-Object { Get-NumeroAgent -Agent $_ } | Where-Object { $_ })
 }
 
+function Get-NomsAgents {
+    <# Les noms des agents d'une file, tels que le PBX les porte sur la file (« Nom, Prénom ») ; le numéro à défaut. #>
+    param([Parameter(Mandatory)] [AllowNull()] $File)
+    $noms = @()
+    foreach ($a in @(Get-Prop -Objet $File -Nom 'Agents' -Defaut @())) {
+        $n = "$(Get-Prop -Objet $a -Nom 'Name' -Defaut '')"
+        if (-not $n) { $n = Get-NumeroAgent -Agent $a }
+        if ($n) { $noms += $n }
+    }
+    return @($noms)
+}
+
+function Get-VueFiles {
+    <#
+      Les files prêtes pour un choix : numéro, nom, et une colonne « Equipe »
+      qui porte TOUS les noms des agents. À l'écran elle est coupée, mais
+      c'est elle que le filtre regarde (-MotsCles { $_.Equipe }) : taper le
+      nom d'une personne ne garde que les files où elle est. L'objet garde
+      Id et Agents : ce qu'on choisit reste une file entière.
+    #>
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Files)
+    return @($Files | Select-Object Id, Number, Name, Agents, @{ n = 'Equipe'; e = { (Get-NomsAgents -File $_) -join ', ' } })
+}
+
 function Get-XapiFilesDuPoste {
     param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [string] $Numero)
     return @(Get-XapiFiles -Pbx $Pbx | Where-Object { (Get-NumerosAgents -File $_) -contains $Numero })
@@ -2356,6 +2393,51 @@ function Get-XapiSdaVersPoste {
     } while ($lot.Count -eq 100 -and $skip -lt 5000)
     $motif = '"' + [regex]::Escape($Numero) + '"'
     return @($tous | Sort-Object Id -Unique | Where-Object { ($_ | ConvertTo-Json -Depth 6 -Compress) -match $motif } | Select-Object Id, RuleName, Data, TrunkDN)
+}
+
+function Set-XapiReglesVersFile {
+    <#
+      Reroute des règles entrantes (SDA) vers une file d'attente et les
+      renomme — le départ d'un collaborateur : ses numéros directs vont à
+      son équipe, sous le nom « ex Prénom Nom (date) ». Chaque règle est
+      tentée ; un refus n'empêche pas les autres, il est journalisé, et
+      l'étape échoue à la fin s'il y en a eu un.
+    #>
+    param(
+        [Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Regles,
+        [Parameter(Mandatory)] $File, [Parameter(Mandatory)] [string] $NomRegle
+    )
+    if ($Regles.Count -eq 0) { return }
+    $numeroFile = "$(Get-Prop -Objet $File -Nom 'Number' -Defaut '')"
+    if (-not $numeroFile) { throw "La file cible n'a pas de numéro." }
+    $destination = @{ To = 'Queue'; Number = $numeroFile; External = '' }
+    $corps = @{
+        RuleName                    = $NomRegle
+        OfficeHoursDestination      = $destination
+        OutOfOfficeHoursDestination = $destination
+        HolidaysDestination         = $destination
+    }
+    $refus = @()
+    foreach ($r in $Regles) {
+        $id = Get-Prop -Objet $r -Nom 'Id'
+        $sda = "$(Get-Prop -Objet $r -Nom 'Data' -Defaut '?')"
+        try {
+            Invoke-Xapi -Pbx $Pbx -Methode PATCH -Chemin "InboundRules($id)" -Corps $corps `
+                -Libelle "SDA $sda vers la $(Get-NomFile $File), règle $id renommée « $NomRegle »" | Out-Null
+            if (-not (Test-Simulation3CX)) { Add-Journal -Message "SDA $sda vers la $(Get-NomFile $File) — règle $id renommée « $NomRegle »." -Categorie 3CX -Niveau Succes }
+        } catch {
+            $refus += "$sda (règle $id)"
+            Add-Journal -Message "SDA $sda, règle $id : refusée par le PBX — $(Get-MessageErreur $_) — à rerouter à la main." -Categorie 3CX -Niveau Alerte
+        }
+    }
+    if ($refus.Count) { throw "$($refus.Count) règle(s) sur $($Regles.Count) refusée(s) : $($refus -join ', ')." }
+}
+
+function Remove-XapiPoste {
+    <# Supprime un poste du PBX (DELETE Users(Id)) — définitif : le numéro redevient attribuable. #>
+    param([Parameter(Mandatory)] $Pbx, [Parameter(Mandatory)] [int] $Id, [Parameter(Mandatory)] [string] $Numero)
+    Invoke-Xapi -Pbx $Pbx -Methode DELETE -Chemin "Users($Id)" -Libelle "Supprimer le poste $Numero (définitif)" | Out-Null
+    if (-not (Test-Simulation3CX)) { Add-Journal -Message "Poste $Numero supprimé du PBX." -Categorie 3CX -Niveau Succes }
 }
 
 # ====================================================================

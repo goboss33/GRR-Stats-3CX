@@ -84,7 +84,8 @@ $dossier = [ordered]@{
     Redirection = 'aucune'; RedirectionVers = ''; RedirectionVersNom = ''      # 'activer' | 'desactiver' | 'aucune'
     ReponseAuto = 'aucune'; ReponseAutoTexte = ''; ReponseAutoModele = ''     # idem
     ForcerCache = $false
-    Poste3CX = $null; Files3CX = @(); Sda3CX = @()
+    Poste3CX = $null; Files3CX = @(); Sda3CX = @(); ToutesFiles3CX = @()
+    SupprimerPoste = $false; FileSda = $null       # supprimer le poste, ou le libérer « Libre <file> » ; la file qui reçoit ses numéros directs
 }
 $proprietesAd = @('DisplayName', 'GivenName', 'Surname', 'Title', 'Department', 'Office', 'UserPrincipalName', 'Enabled', 'DistinguishedName', 'mail')
 
@@ -228,17 +229,43 @@ if ($pbx) {
         $postes = @(Find-XapiUtilisateurParEmail -Pbx $pbx -Email $dossier.Upn)
         if ($postes.Count -eq 0) { Add-Journal -Message "Aucun poste 3CX ne porte l'adresse $($dossier.Upn)." -Categorie 3CX -Niveau Alerte; return $null }
         $poste = $postes[0]
+        $toutes = @(Get-XapiFiles -Pbx $pbx | Sort-Object Name)
         return @{
-            Poste = $poste
-            Files = @(Get-XapiFilesDuPoste -Pbx $pbx -Numero "$($poste.Number)")
-            Sda   = @(Get-XapiSdaVersPoste -Pbx $pbx -Numero "$($poste.Number)")
+            Poste  = $poste
+            Toutes = $toutes
+            Files  = @($toutes | Where-Object { (Get-NumerosAgents -File $_) -contains "$($poste.Number)" })
+            Sda    = @(Get-XapiSdaVersPoste -Pbx $pbx -Numero "$($poste.Number)")
         }
     }
     if ($lecture) {
-        $dossier.Poste3CX = $lecture.Poste; $dossier.Files3CX = @($lecture.Files); $dossier.Sda3CX = @($lecture.Sda)
+        $dossier.Poste3CX = $lecture.Poste; $dossier.Files3CX = @($lecture.Files); $dossier.Sda3CX = @($lecture.Sda); $dossier.ToutesFiles3CX = @($lecture.Toutes)
         Show-Constat -Titre "Poste 3CX trouvé — $($dossier.Files3CX.Count) file(s) d'attente, $($dossier.Sda3CX.Count) règle(s) entrante(s)" `
                      -Valeurs @("poste $($dossier.Poste3CX.Number)", "$($dossier.Poste3CX.DisplayName)")
-        if (-not $Job) { Add-Resume -Cle 'Poste' -Valeur "$($dossier.Poste3CX.Number)" }
+        if ($Job) {
+            $dossier.SupprimerPoste = [bool](Get-Prop -Objet $j -Nom 'supprimerPoste3cx' -Defaut $false)
+            $voulue = "$(Get-Prop -Objet $j -Nom 'fileSda3cx' -Defaut '')"
+            if ($voulue) {
+                $dossier.FileSda = @($dossier.ToutesFiles3CX | Where-Object { "$($_.Number)" -eq $voulue })[0]
+                if (-not $dossier.FileSda) { throw "File 3CX inconnue du PBX : $voulue" }
+            } elseif ($dossier.Files3CX.Count -eq 1) { $dossier.FileSda = $dossier.Files3CX[0] }
+        } else {
+            # Supprimer, ou libérer : le numéro reste alors réservé à son équipe, sous le nom « Libre <file> ».
+            $dossier.SupprimerPoste = Confirm-Choix -Question "Supprimer le poste 3CX $($dossier.Poste3CX.Number) ? (Non : il reste, désactivé, nommé « Libre <file> »)"
+            # La file de la personne reçoit ses numéros directs et donne son nom au poste libéré.
+            if ($dossier.Sda3CX.Count -gt 0 -or -not $dossier.SupprimerPoste) {
+                if ($dossier.Files3CX.Count -eq 1) {
+                    $dossier.FileSda = $dossier.Files3CX[0]
+                    Show-Constat -Titre "File d'attente de $($dossier.Nom)" -Valeurs @((Get-NomFile $dossier.FileSda)) -Niveau Info
+                } else {
+                    $pourquoi = if ($dossier.Files3CX.Count -eq 0) { "le poste n'est dans aucune file" } else { "le poste est dans $($dossier.Files3CX.Count) files" }
+                    $dossier.FileSda = Read-Choix -Titre "Quelle file reçoit ses numéros directs$(if (-not $dossier.SupprimerPoste) { ' et nomme le poste libéré' }) ? ($pourquoi)" `
+                        -Aide "tapez un numéro, un nom de file ou celui d'un collègue" `
+                        -Elements (Get-VueFiles -Files $dossier.ToutesFiles3CX) -Colonnes Number, Name, Equipe -MotsCles { $_.Equipe }
+                }
+                Add-Resume -Cle 'File' -Valeur "$($dossier.FileSda.Number)"
+            }
+            Add-Resume -Cle 'Poste' -Valeur "$($dossier.Poste3CX.Number) $(if ($dossier.SupprimerPoste) { 'supprimé' } else { 'libéré' })"
+        }
     }
 }
 
@@ -254,7 +281,8 @@ $recap = [ordered]@{
     'Réponse automatique' = $texteReponse
     'OU de destination'   = $(if ($soc.ouDesactives) { $soc.ouDesactives } else { 'AUCUNE (pas de déplacement)' })
     'Microsoft 365'       = $(if ($soc.tenantId) { 'boîte partagée, licences, délégations' } else { 'pas de tenant : ignoré' })
-    'Poste 3CX'           = $(if ($dossier.Poste3CX) { "$($dossier.Poste3CX.Number) « $($dossier.Poste3CX.DisplayName) » — $($dossier.Files3CX.Count) file(s), $($dossier.Sda3CX.Count) SDA" } elseif ($pbx) { 'aucun trouvé' } else { 'pas de PBX / désactivé' })
+    'Poste 3CX'           = $(if ($dossier.Poste3CX) { "$($dossier.Poste3CX.Number) « $($dossier.Poste3CX.DisplayName) » — $(if ($dossier.SupprimerPoste) { 'SUPPRIMÉ' } else { "libéré, nommé « Libre $(if ($dossier.FileSda) { $dossier.FileSda.Name } else { '?' }) »" }), retiré de $($dossier.Files3CX.Count) file(s)" } elseif ($pbx) { 'aucun trouvé' } else { 'pas de PBX / désactivé' })
+    'Numéros directs'     = $(if (-not $dossier.Poste3CX) { '—' } elseif ($dossier.Sda3CX.Count -eq 0) { 'aucun' } elseif ($dossier.FileSda) { "$($dossier.Sda3CX.Count) règle(s) vers la $(Get-NomFile $dossier.FileSda), renommée(s) « ex $($dossier.Prenom) $($dossier.NomFamille) (date) »" } else { "$($dossier.Sda3CX.Count) règle(s), AUCUNE file désignée : à rerouter à la main" })
     'Mode'            = (Get-ModeEcriture)
 }
 Show-Recap -Paires $recap -Titre 'Récapitulatif avant exécution'
@@ -356,20 +384,34 @@ try {
         Invoke-ScanDelegations -Cible $upn -Societe $soc.id -ForcerCache $dossier.ForcerCache
     } | Out-Null
 
-    Invoke-Etape -Nom 'Poste 3CX retiré de ses files et désactivé' -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX) -Action {
+    # Les numéros directs vont à l'équipe, sous le nom de la personne qui part, daté du jour.
+    $nomEx = "ex $($dossier.Prenom) $($dossier.NomFamille) ($(Get-Date -Format 'dd.MM.yyyy'))" -replace '\s+', ' '
+    Invoke-Etape -Nom $(if ($dossier.FileSda) { "Numéros directs redirigés vers la $(Get-NomFile $dossier.FileSda)" } else { 'Numéros directs' }) `
+                 -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX -or $dossier.Sda3CX.Count -eq 0) -Action {
+        if (-not $dossier.FileSda) {
+            Add-Journal -Message "$($dossier.Sda3CX.Count) règle(s) entrante(s) visent le poste $($dossier.Poste3CX.Number) et aucune file n'a été désignée : à rerouter à la main." -Categorie 3CX -Niveau Alerte
+            foreach ($s in $dossier.Sda3CX) { Add-Journal -Message "  $($s.RuleName) — SDA $($s.Data)  (règle $(Get-Prop -Objet $s -Nom 'Id' -Defaut '?'))" -Categorie 3CX -Niveau Alerte }
+            return
+        }
+        Set-XapiReglesVersFile -Pbx $pbx -Regles $dossier.Sda3CX -File $dossier.FileSda -NomRegle $nomEx
+    } | Out-Null
+
+    Invoke-Etape -Nom 'Poste 3CX retiré de ses files' -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX -or $dossier.Files3CX.Count -eq 0) -Action {
+        Remove-XapiPosteDesFiles -Pbx $pbx -Numero "$($dossier.Poste3CX.Number)" | Out-Null
+    } | Out-Null
+
+    Invoke-Etape -Nom $(if ($dossier.SupprimerPoste) { "Poste 3CX $($dossier.Poste3CX.Number) supprimé" } else { "Poste 3CX $($dossier.Poste3CX.Number) libéré pour son équipe" }) `
+                 -Categorie 3CX -Ignorer:(-not $dossier.Poste3CX) -Action {
         $num = "$($dossier.Poste3CX.Number)"
-        Remove-XapiPosteDesFiles -Pbx $pbx -Numero $num | Out-Null
-        Set-XapiPoste -Pbx $pbx -Id $dossier.Poste3CX.Id -Numero $num -Proprietes @{ Enabled = $false; EmailAddress = '' } -Libelle "Désactiver le poste $num et vider son e-mail — le numéro reste réservé"
-        if (-not (Test-Simulation3CX)) { Add-Journal -Message "Poste $num désactivé, e-mail vidé — le numéro reste réservé." -Categorie 3CX -Niveau Succes }
-        if ($dossier.Sda3CX.Count -gt 0) {
-            Add-Journal -Message "$($dossier.Sda3CX.Count) règle(s) entrante(s) visent encore le poste $num, à rerouter à la main :" -Categorie 3CX -Niveau Alerte
-            foreach ($s in $dossier.Sda3CX) {
-                # Deux règles peuvent porter le même nom et la même SDA : l'identifiant les départage.
-                $ref = @("règle $(Get-Prop -Objet $s -Nom 'Id' -Defaut '?')")
-                if (Get-Prop -Objet $s -Nom 'TrunkDN') { $ref += "trunk $($s.TrunkDN)" }
-                Add-Journal -Message "  $($s.RuleName) — SDA $($s.Data)  ($($ref -join ', '))" -Categorie 3CX -Niveau Alerte
-            }
-        } else { Add-Journal -Message 'Aucune règle entrante ne vise ce poste.' -Categorie 3CX -Niveau Succes }
+        if ($dossier.SupprimerPoste) {
+            Remove-XapiPoste -Pbx $pbx -Id ([int]$dossier.Poste3CX.Id) -Numero $num
+        } else {
+            # Le PBX compose le nom affiché à partir du nom et du prénom : « Libre <file> » tient dans le nom, prénom vide.
+            $libre = "Libre $(if ($dossier.FileSda) { $dossier.FileSda.Name } else { '' })".Trim()
+            Set-XapiPoste -Pbx $pbx -Id ([int]$dossier.Poste3CX.Id) -Numero $num -Proprietes @{ FirstName = ''; LastName = $libre; EmailAddress = ''; Enabled = $false } `
+                -Libelle "Libérer le poste $num : nommé « $libre », désactivé, e-mail vidé — le numéro reste réservé à l'équipe"
+            if (-not (Test-Simulation3CX)) { Add-Journal -Message "Poste $num nommé « $libre », désactivé, e-mail vidé — le numéro reste réservé à l'équipe." -Categorie 3CX -Niveau Succes }
+        }
     } | Out-Null
 
     Invoke-Etape -Nom 'Tâche Planner (suivi à 180 jours)' -Categorie Planner -Ignorer:(-not $Reglages.CreerTachePlanner) -Action {

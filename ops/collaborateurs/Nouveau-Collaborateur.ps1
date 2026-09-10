@@ -264,7 +264,9 @@ if ($pbx) {
             Add-Resume -Cle 'Poste' -Valeur $dossier.Numero3CX
             # --- Les files d'attente AVANT le modèle : elles désignent les bons collègues.
             if (Confirm-Choix -Question "Inscrire ce poste dans des files d'attente ?" -DefautOui) {
-                $dossier.Files3CX = @(Read-Choix -Titre "Dans quelles files d'attente ?" -Elements $toutesFiles -Colonnes Number, Name -Multiple)
+                # La colonne Equipe porte les collègues de chaque file : taper « Lola » ne garde que les files où elle est.
+                $dossier.Files3CX = @(Read-Choix -Titre "Dans quelles files d'attente ?" -Aide "tapez un numéro, un nom de file ou celui d'un collègue" `
+                    -Elements (Get-VueFiles -Files $toutesFiles) -Colonnes Number, Name, Equipe -MotsCles { $_.Equipe } -Multiple)
             }
 
             # --- La SDA : un numéro direct, choisi dans la liste du PBX.
