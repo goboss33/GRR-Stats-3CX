@@ -37,6 +37,15 @@ interface Decision {
 
 const decisions: Decision[] = [
     {
+        id: "1.23",
+        category: "Collaborateurs",
+        title: "Un seul écran Utilisateurs : les comptes de l'application et l'annuaire 3CX, une ligne par personne",
+        date: "11 septembre 2026",
+        summary: "L'écran Utilisateurs (les comptes) et l'onglet Collaborateurs du Journal (les postes 3CX) montraient la même population sous deux angles. Ils n'en font plus qu'un, dans le menu Utilisateurs : une ligne par personne, rapprochée par e-mail — un poste sans compte, un compte sans poste, ou les deux. Trois vues rapides règlent les filtres : « Comptes » à l'ouverture, « À préparer » pour une campagne, « Tous » pour l'annuaire entier. Les colonnes se choisissent par le même menu que les journaux d'appels, et le choix reste dans le navigateur ; par défaut, cinq colonnes.",
+        justification: "Créer un compte, poser son périmètre, rejouer son onboarding, lire sa fiche 3CX : quatre gestes sur la même personne, qui demandaient deux écrans. Cliquer une ligne ouvre désormais le dialogue d'accès, avec ses onglets Périmètre, Onboarding et Fiche 3CX ; les actions vivent à droite. Un compte sans poste 3CX rapproché apparaît comme « compte seul » plutôt que de disparaître : les administrateurs que le principal XAPI ne voit plus, ou un e-mail différent entre le 3CX et Microsoft, se lisent d'un coup d'œil.",
+        impact: "Le menu Utilisateurs prend la charpente filtrable des collaborateurs. L'onglet Collaborateurs du Journal disparaît ; son lien « voir les collaborateurs » ouvre l'écran Utilisateurs sur l'annuaire entier, les non rapprochés précochés. La section active des réglages vit dans l'adresse (?section=…), donc se partage. La création d'un compte à mot de passe reste, discrète, pour qui n'est pas au 3CX.",
+    },
+    {
         id: "1.22",
         category: "Collaborateurs",
         title: "Visite guidée : chaque écran s'explique lui-même à sa première ouverture",

@@ -12,7 +12,6 @@ import { Attente } from "@/components/ui/etat-chargement";
 import { cn } from "@/lib/utils";
 import type { QueueInfo } from "@/types/queues.types";
 import type { ResumeM365 } from "@/services/collaborators.service";
-import { CollaborateursTable } from "@/components/settings/collaborateurs-table";
 import { Tip } from "@/components/ui/tooltip";
 
 /**
@@ -46,7 +45,7 @@ interface RunDetail {
     files: MouvementFile[];
     total: number;
     tronque: boolean;
-    /** Résumé M365 d'aujourd'hui — la liste vit dans l'onglet Collaborateurs. */
+    /** Résumé M365 d'aujourd'hui — la liste des postes vit dans l'écran Utilisateurs. */
     m365: ResumeM365;
 }
 interface MembreRow { extension: string; name: string; lastSeenAt: string }
@@ -79,7 +78,10 @@ function BlocMouvement({ titre, teinte, children }: {
     );
 }
 
-export function XapiJournalTab() {
+export function XapiJournalTab({ onVoirCollaborateurs }: {
+    /** Le lien d'un relevé vers les postes non rapprochés : c'est l'écran Utilisateurs qui les montre. */
+    onVoirCollaborateurs?: (etats: string[]) => void;
+} = {}) {
     const serverId = getSelectedServer();
     const [loading, setLoading] = useState(true);
     const [xapiUsable, setXapiUsable] = useState(false);
@@ -95,12 +97,6 @@ export function XapiJournalTab() {
     // gardé en mémoire — rouvrir la même ligne ne rappelle pas le serveur.
     const [runOuvert, setRunOuvert] = useState<string | null>(null);
     const [details, setDetails] = useState<Record<string, RunDetail | "chargement" | "échec">>({});
-    // Deux onglets, comme le registre : les équipes (relevés, historique) et
-    // les collaborateurs (le tableau). Le lien d'un relevé ouvre le second
-    // déjà filtré sur les non rapprochés.
-    const [onglet, setOnglet] = useState<"equipes" | "collaborateurs">("equipes");
-    const [filtreCollab, setFiltreCollab] = useState<string[] | null>(null);
-    const [resumeM365, setResumeM365] = useState<ResumeM365 | null>(null);
 
     const basculerRun = useCallback(async (ranAt: string) => {
         if (runOuvert === ranAt) { setRunOuvert(null); return; }
@@ -142,7 +138,6 @@ export function XapiJournalTab() {
         try {
             const res = await fetch(`/api/admin/xapi-journal?server=${encodeURIComponent(serverId)}`);
             const data = await res.json();
-            setResumeM365((data.resumeM365 as ResumeM365 | undefined) ?? null);
             if (res.ok) {
                 setXapiUsable(data.xapiUsable);
                 setXapiEnabled(data.xapiEnabled);
@@ -210,34 +205,7 @@ export function XapiJournalTab() {
     }
 
     return (
-        <div className={cn("space-y-6", onglet === "equipes" && "max-w-3xl")}>
-            <div className="flex gap-1 border-b border-slate-200">
-                {([
-                    ["equipes", `Équipes (${queues.length})`],
-                    ["collaborateurs", resumeM365 ? `Collaborateurs (${resumeM365.total})` : "Collaborateurs"],
-                ] as const).map(([cle, libelle]) => (
-                    <button
-                        key={cle}
-                        type="button"
-                        onClick={() => { setOnglet(cle); if (cle === "collaborateurs") setFiltreCollab(null); }}
-                        aria-current={onglet === cle ? "page" : undefined}
-                        className={cn(
-                            "-mb-px border-b-2 px-4 py-2 text-sm transition-colors",
-                            onglet === cle
-                                ? "border-blue-600 font-medium text-blue-700"
-                                : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700",
-                        )}
-                    >
-                        {libelle}
-                    </button>
-                ))}
-            </div>
-
-            {onglet === "collaborateurs" && (
-                <CollaborateursTable key={filtreCollab ? "filtre" : "libre"} serverId={serverId} filtreEtatInitial={filtreCollab} />
-            )}
-
-            {onglet === "equipes" && (<>
+        <div className="max-w-3xl space-y-6">
             <Card>
                 <CardHeader>
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -426,7 +394,7 @@ export function XapiJournalTab() {
                                                                 <button
                                                                     type="button"
                                                                     className="text-blue-600 underline underline-offset-2 hover:text-blue-800"
-                                                                    onClick={() => { setFiltreCollab(["sans-email", "inconnu-m365", "compte-desactive"]); setOnglet("collaborateurs"); }}
+                                                                    onClick={() => onVoirCollaborateurs?.(["sans-email", "inconnu-m365", "compte-desactive"])}
                                                                 >
                                                                     voir les collaborateurs
                                                                 </button>
@@ -515,7 +483,6 @@ export function XapiJournalTab() {
                     )}
                 </CardContent>
             </Card>
-            </>)}
         </div>
     );
 }

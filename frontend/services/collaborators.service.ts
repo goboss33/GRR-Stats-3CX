@@ -3,6 +3,7 @@ import type { ServerId } from "@/lib/prisma-cdr";
 import { getPresenceMaintenant, getPresenceRecente, PRESENCE_JOURS, type AgregatPresence } from "@/services/presence.service";
 import type { PresenceState } from "@/services/domain/presence";
 import { DROITS_PAR_DEFAUT, normaliserEmail, separerNom, type RoleCompte } from "@/services/domain/compte-collaborateur";
+import { nomAffichable } from "@/services/domain/utilisateurs-tableau";
 
 /**
  * LES COLLABORATEURS, POUR L'ONGLET DU JOURNAL — une ligne par poste du 3CX,
@@ -14,6 +15,10 @@ import { DROITS_PAR_DEFAUT, normaliserEmail, separerNom, type RoleCompte } from 
  */
 
 export interface CollaborateurRow {
+    /** Clé de ligne, unique dans l'écran : le poste, ou le compte quand il n'a pas de poste. */
+    cle: string;
+    /** Un compte de l'application sans poste 3CX rapproché : les colonnes 3CX sont vides. */
+    sansPoste: boolean;
     extension: string;
     displayName: string;
     email: string | null;
@@ -33,9 +38,30 @@ export interface CollaborateurRow {
 
 export interface CompteCollaborateur {
     id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
     role: string;
     authProvider: string;
     lastLoginAt: string | null;
+    lastSeenAt: string | null;
+    createdAt: string;
+    /** Nombre de files dans son périmètre. */
+    perimetre: number;
+}
+
+/** Le compte tel que la base le livre, pour la ligne de l'écran. */
+type CompteBrut = {
+    id: string; email: string; firstName: string | null; lastName: string | null; role: string; authProvider: string;
+    jobTitle: string | null; lastLoginAt: Date | null; lastSeenAt: Date | null; createdAt: Date; _count: { queuePerimeter: number };
+};
+
+function compteDepuis(u: CompteBrut): CompteCollaborateur {
+    return {
+        id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName, role: u.role, authProvider: u.authProvider,
+        lastLoginAt: u.lastLoginAt?.toISOString() ?? null, lastSeenAt: u.lastSeenAt?.toISOString() ?? null,
+        createdAt: u.createdAt.toISOString(), perimetre: u._count.queuePerimeter,
+    };
 }
 
 export interface PresenceCollaborateur {
@@ -67,7 +93,7 @@ const photoUrl = (serverId: string, graphId: string) =>
 
 const ETATS_NON_RAPPROCHES = ["sans-email", "inconnu-m365", "compte-desactive"];
 
-export async function getCollaborateurs(serverId: ServerId): Promise<{ lignes: CollaborateurRow[]; resume: ResumeM365; presence: EtatPresence }> {
+export async function getCollaborateurs(serverId: ServerId): Promise<{ lignes: CollaborateurRow[]; resume: ResumeM365; presence: EtatPresence; comptes: number }> {
     const [ouvertes, premieres, membres, annuaire, photos, reglages, comptes] = await Promise.all([
         prismaAuth.collaboratorDirectoryInterval.findMany({
             where: { serverId, closedAt: null },
@@ -89,7 +115,12 @@ export async function getCollaborateurs(serverId: ServerId): Promise<{ lignes: C
         prismaAuth.tenantSettings.findUnique({ where: { serverId }, select: { presenceSamplingEnabled: true } }),
         // Les comptes de l'application, tous tenants : le rattachement se fait
         // par e-mail, comme à la connexion Microsoft.
-        prismaAuth.user.findMany({ select: { id: true, email: true, role: true, authProvider: true, lastLoginAt: true } }),
+        prismaAuth.user.findMany({
+            select: {
+                id: true, email: true, firstName: true, lastName: true, role: true, authProvider: true, jobTitle: true,
+                lastLoginAt: true, lastSeenAt: true, createdAt: true, _count: { select: { queuePerimeter: true } },
+            },
+        }),
     ]);
     const compteDe = new Map(comptes.map((u) => [normaliserEmail(u.email), u]));
 
@@ -111,6 +142,8 @@ export async function getCollaborateurs(serverId: ServerId): Promise<{ lignes: C
     }
 
     const lignes: CollaborateurRow[] = ouvertes.map((c) => ({
+        cle: `poste:${c.extension}`,
+        sansPoste: false,
         extension: c.extension,
         displayName: c.displayName,
         email: c.email,
@@ -125,14 +158,38 @@ export async function getCollaborateurs(serverId: ServerId): Promise<{ lignes: C
             : null,
         compte: (() => {
             const u = c.email ? compteDe.get(normaliserEmail(c.email)) : undefined;
-            return u ? { id: u.id, role: u.role, authProvider: u.authProvider, lastLoginAt: u.lastLoginAt?.toISOString() ?? null } : null;
+            return u ? compteDepuis(u) : null;
         })(),
     }));
 
+    // Les comptes SANS poste 3CX rapproché — administrateurs que le principal
+    // XAPI ne voit plus, e-mail différent entre le 3CX et Microsoft, compte
+    // de test : une ligne « compte seul », colonnes 3CX vides. Les voir est
+    // déjà une information.
+    const rattaches = new Set(lignes.filter((l) => l.compte).map((l) => l.compte!.id));
+    const seuls: CollaborateurRow[] = comptes
+        .filter((u) => !rattaches.has(u.id))
+        .map((u) => ({
+            cle: `compte:${u.id}`,
+            sansPoste: true,
+            extension: "",
+            displayName: nomAffichable(u),
+            email: u.email,
+            domaine: u.email.split("@")[1] ?? null,
+            jobTitle: u.jobTitle,
+            matchState: "compte-seul",
+            photoUrl: photoDe.has(normaliserEmail(u.email)) ? photoUrl(serverId, photoDe.get(normaliserEmail(u.email))!) : null,
+            depuis: u.createdAt.toISOString(),
+            equipes: [],
+            presence: null,
+            compte: compteDepuis(u),
+        }));
+
     return {
-        lignes,
+        lignes: [...lignes, ...seuls],
         resume: resumer(lignes, photos.length),
         presence: { enabled: presenceActive, jours: PRESENCE_JOURS, sampledAt: maintenant?.at.toISOString() ?? null },
+        comptes: comptes.length,
     };
 }
 
@@ -204,7 +261,10 @@ export async function preparerCompteCollaborateur(serverId: ServerId, extension:
     });
     return {
         ok: true,
-        compte: { id: cree.id, role: cree.role, authProvider: cree.authProvider, lastLoginAt: null },
+        compte: {
+            id: cree.id, email, firstName, lastName, role: cree.role, authProvider: cree.authProvider,
+            lastLoginAt: null, lastSeenAt: null, createdAt: new Date().toISOString(), perimetre: files.length,
+        },
         email,
         equipes: files.length,
         equipesInconnues: numeros.filter((n) => !connues.has(n)),

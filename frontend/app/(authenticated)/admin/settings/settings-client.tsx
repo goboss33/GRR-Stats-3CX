@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Users, Phone, KeyRound, Settings, Building2, BookOpenCheck, Database } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PersonalInfoTab } from "./tabs/personal-info-tab";
-import { UsersTab } from "./tabs/users-tab";
+import { UtilisateursTable } from "@/components/settings/utilisateurs-table";
+import { getSelectedServer } from "@/lib/selected-server";
 import { QueuesTab } from "./tabs/queues-tab";
 import { TenantTab } from "./tabs/tenant-tab";
 import { BusinessRulesTab } from "./tabs/business-rules-tab";
@@ -55,6 +56,24 @@ export default function SettingsPage({ userRole }: { userRole: string }) {
         visibles.flatMap((s) => ("enfants" in s ? s.enfants.map((e) => e.id) : [s.id])),
     );
     const [activeSection, setActiveSection] = useState<SectionId>("personal");
+    // Le Journal envoie ici voir les postes non rapprochés : l'écran
+    // Utilisateurs s'ouvre alors sur l'annuaire entier, ces états précochés.
+    const [filtreUtilisateurs, setFiltreUtilisateurs] = useState<string[] | null>(null);
+
+    // La section vit aussi dans l'adresse (?section=…) : un lien vers un
+    // réglage précis se partage, et un rechargement ne renvoie plus au début.
+    // Lue après le premier rendu, jamais pendant : l'hydratation divergerait.
+    useEffect(() => {
+        const voulue = new URLSearchParams(window.location.search).get("section") as SectionId | null;
+        if (voulue && idsAutorises.has(voulue)) setActiveSection(voulue);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    const ouvrir = (id: SectionId) => {
+        setActiveSection(id);
+        setFiltreUtilisateurs(null);
+        const url = new URL(window.location.href);
+        url.searchParams.set("section", id);
+        window.history.replaceState(null, "", url);
+    };
 
     const renderSection = () => {
         // Ceinture et bretelles : une section non autorisée n'affiche rien.
@@ -62,9 +81,17 @@ export default function SettingsPage({ userRole }: { userRole: string }) {
 
         switch (activeSection) {
             case "personal": return <PersonalInfoTab />;
-            case "users": return <UsersTab />;
+            case "users": return (
+                <UtilisateursTable
+                    key={filtreUtilisateurs ? "filtre" : "libre"}
+                    serverId={getSelectedServer()}
+                    filtreEtatInitial={filtreUtilisateurs}
+                />
+            );
             case "queues-registre": return <QueuesTab />;
-            case "queues-journal": return <XapiJournalTab />;
+            case "queues-journal": return (
+                <XapiJournalTab onVoirCollaborateurs={(etats) => { ouvrir("users"); setFiltreUtilisateurs(etats); }} />
+            );
             case "business-rules": return <BusinessRulesTab />;
             case "api-keys": return <ApiKeysTab />;
             case "tenant": return <TenantTab />;
@@ -75,7 +102,7 @@ export default function SettingsPage({ userRole }: { userRole: string }) {
         const active = activeSection === id;
         return (
             <button
-                onClick={() => setActiveSection(id)}
+                onClick={() => ouvrir(id)}
                 aria-current={active ? "page" : undefined}
                 className={cn(
                     "flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm transition-colors lg:whitespace-normal",

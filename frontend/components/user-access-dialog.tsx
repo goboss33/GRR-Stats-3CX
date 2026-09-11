@@ -13,6 +13,9 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { LIBELLES_VISITE, VISITES, type Visite } from "@/services/domain/visite-guidee";
+import { AvatarCollaborateur } from "@/components/avatar-collaborateur";
+import { BadgeM365 } from "@/components/badge-m365";
+import { ContenuFiche } from "@/components/settings/fiche-collaborateur";
 
 interface TargetUser {
     id: string;
@@ -20,6 +23,17 @@ interface TargetUser {
     firstName: string | null;
     lastName: string | null;
     role: string;
+}
+
+/** Le poste 3CX derrière la ligne, quand il y en a un : il apporte l'onglet « Fiche 3CX ». */
+export interface PosteCible {
+    serverId: string;
+    extension: string;
+    displayName: string;
+    jobTitle: string | null;
+    email: string | null;
+    matchState: string;
+    photoUrl: string | null;
 }
 
 interface RegistryQueue {
@@ -55,10 +69,13 @@ interface ScopePreview {
 
 export function UserAccessDialog({
     user,
+    poste = null,
     open,
     onOpenChange,
 }: {
+    /** Le compte de l'application ; null pour un poste 3CX qui n'en a pas encore. */
     user: TargetUser | null;
+    poste?: PosteCible | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
@@ -83,10 +100,20 @@ export function UserAccessDialog({
     const [queueSearch, setQueueSearch] = useState("");
     const [departementFiltre, setDepartementFiltre] = useState<string>("ALL");
     const [newOverrideExt, setNewOverrideExt] = useState("");
-    // Deux onglets : « Périmètre », tout ce qui se sauvegarde d'un bloc, et
-    // « Onboarding », dont chaque interrupteur s'enregistre aussitôt.
-    const [onglet, setOnglet] = useState<"perimetre" | "onboarding">("perimetre");
-    useEffect(() => { setOnglet("perimetre"); }, [user?.id]);
+    // Trois onglets : « Périmètre », tout ce qui se sauvegarde d'un bloc ;
+    // « Onboarding », dont chaque interrupteur s'enregistre aussitôt ; et
+    // « Fiche 3CX », ce que le journal sait du poste. Les deux premiers
+    // demandent un compte, le troisième un poste — un poste sans compte
+    // n'a que sa fiche.
+    type Onglet = "perimetre" | "onboarding" | "fiche";
+    const onglets: [Onglet, string][] = [
+        ...(user ? [["perimetre", "Périmètre"], ["onboarding", "Onboarding"]] as [Onglet, string][] : []),
+        ...(poste ? [["fiche", "Fiche 3CX"]] as [Onglet, string][] : []),
+    ];
+    const [onglet, setOnglet] = useState<Onglet>("perimetre");
+    // Repart du premier onglet disponible à chaque nouvelle cible.
+    const aCompte = user !== null;
+    useEffect(() => { setOnglet(aCompte ? "perimetre" : "fiche"); }, [aCompte, user?.id, poste?.extension]);
 
     // Rôle « global » : voit aussi les postes qui n'appartiennent à aucune
     // file. Le PÉRIMÈTRE, lui, s'applique à tout le monde depuis août 2026 —
@@ -215,24 +242,42 @@ export function UserAccessDialog({
         }
     };
 
-    const displayName = user ? [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email : "";
+    const displayName = poste?.displayName
+        ?? (user ? [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email : "");
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle>Accès de {displayName}</DialogTitle>
-                    <DialogDescription>
-                        Rôle : <strong>{user?.role}</strong>
-                        {" — ne verra que les files cochées ci-dessous"}
-                        {isGlobalRole
-                            ? ", plus tous les postes du tenant (y compris hors file)."
-                            : ", et les collaborateurs qui en dépendent."}
+                    <DialogTitle className="flex items-center gap-3">
+                        {poste && <AvatarCollaborateur name={poste.displayName} photoUrl={poste.photoUrl} className="h-10 w-10 text-sm" />}
+                        <span>
+                            {user ? `Accès de ${displayName}` : displayName}
+                            {poste && <span className="ml-2 rounded border bg-slate-50 px-1.5 py-0.5 font-mono text-sm font-normal text-slate-600">{poste.extension}</span>}
+                        </span>
+                    </DialogTitle>
+                    <DialogDescription asChild>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                            {user ? (
+                                <span>
+                                    Rôle : <strong>{user.role}</strong>
+                                    {" — ne verra que les files cochées ci-dessous"}
+                                    {isGlobalRole
+                                        ? ", plus tous les postes du tenant (y compris hors file)."
+                                        : ", et les collaborateurs qui en dépendent."}
+                                </span>
+                            ) : (
+                                <span>Pas encore de compte : préparez-le depuis sa ligne pour lui donner un périmètre.</span>
+                            )}
+                            {poste?.jobTitle && <span className="text-slate-500">{poste.jobTitle}</span>}
+                            {poste?.email && <span className="text-slate-500">{poste.email}</span>}
+                            {poste && <BadgeM365 etat={poste.matchState} />}
+                        </div>
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm">
-                    {([["perimetre", "Périmètre"], ["onboarding", "Onboarding"]] as const).map(([cle, libelle]) => (
+                    {onglets.map(([cle, libelle]) => (
                         <button
                             key={cle}
                             type="button"
@@ -247,7 +292,9 @@ export function UserAccessDialog({
                     ))}
                 </div>
 
-                {onglet === "onboarding" && user ? (
+                {onglet === "fiche" && poste ? (
+                    <ContenuFiche serverId={poste.serverId} extension={poste.extension} />
+                ) : onglet === "onboarding" && user ? (
                     <OngletOnboarding userId={user.id} />
                 ) : loading ? (
                     <div className="flex items-center justify-center py-12">
@@ -543,7 +590,7 @@ export function UserAccessDialog({
 
                 <DialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Fermer</Button>
-                    {onglet === "perimetre" && (
+                    {onglet === "perimetre" && user && (
                         <Button onClick={save} disabled={saving || loading}>
                             {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enregistrement…</> : "Enregistrer"}
                         </Button>
