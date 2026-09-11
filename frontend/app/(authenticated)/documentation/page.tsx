@@ -37,6 +37,15 @@ interface Decision {
 
 const decisions: Decision[] = [
     {
+        id: "1.21",
+        category: "Collaborateurs",
+        title: "Préparer le compte : le compte naît de l'annuaire, avant la première connexion",
+        date: "11 septembre 2026",
+        summary: "Jusqu'ici, ouvrir l'accès à un manager demandait un appel : il se connectait une première fois avec Microsoft, puis l'administrateur lui posait son périmètre. L'annuaire des collaborateurs connaît déjà l'e-mail, le titre et les équipes de chaque poste rapproché de Microsoft 365 : un bouton « Préparer le compte » sur sa ligne crée le compte de l'application avant toute connexion, en choisissant sa nature (manager ou collaborateur). À sa première connexion, la personne est reconnue par son e-mail et retrouve son périmètre.",
+        justification: "La connexion Microsoft cherchait déjà le compte par identifiant Entra puis par e-mail, et ne le recréait pas s'il existait : le mécanisme était là, il manquait la porte d'entrée. Le compte est créé sans mot de passe — il n'existe que par Microsoft, rien à saisir, rien à deviner. L'e-mail est stocké en minuscules et la connexion tolère désormais la casse : une majuscule de différence aurait créé un second compte et laissé le périmètre sur le premier.",
+        impact: "Droits par défaut, restrictifs, arbitrés le 11 septembre 2026 : périmètre = ses équipes du journal uniquement, journaux d'appels non, ratios du tableau limités à la ligne TOTAL, statistiques par poste et SDA non, numéros complets oui, clés API non. Le rôle choisi ne survit qu'à la première connexion : il est ensuite pris dans les groupes de sécurité Entra, comme pour tout compte Microsoft. Seuls les administrateurs préparent des comptes ; ni administrateur ni modérateur ne peuvent naître ainsi. La colonne « Compte » de l'annuaire dit où en est chaque poste et se filtre : à préparer, existant, non préparable.",
+    },
+    {
         id: "1.20",
         category: "Collaborateurs",
         title: "Présence : des parts de temps de bureau, relevées à la minute, jamais une chronologie",

@@ -2,6 +2,7 @@ import { prismaAuth } from "@/lib/prisma-auth";
 import type { ServerId } from "@/lib/prisma-cdr";
 import { getPresenceMaintenant, getPresenceRecente, PRESENCE_JOURS, type AgregatPresence } from "@/services/presence.service";
 import type { PresenceState } from "@/services/domain/presence";
+import { DROITS_PAR_DEFAUT, normaliserEmail, separerNom, type RoleCompte } from "@/services/domain/compte-collaborateur";
 
 /**
  * LES COLLABORATEURS, POUR L'ONGLET DU JOURNAL — une ligne par poste du 3CX,
@@ -26,6 +27,15 @@ export interface CollaborateurRow {
     equipes: { queueNumber: string; queueName: string }[];
     /** Présence (échantillonnage XAPI) ; null quand le relevé est éteint pour ce tenant. */
     presence: PresenceCollaborateur | null;
+    /** Le compte de l'application rattaché à cet e-mail, s'il existe. */
+    compte: CompteCollaborateur | null;
+}
+
+export interface CompteCollaborateur {
+    id: string;
+    role: string;
+    authProvider: string;
+    lastLoginAt: string | null;
 }
 
 export interface PresenceCollaborateur {
@@ -58,7 +68,7 @@ const photoUrl = (serverId: string, graphId: string) =>
 const ETATS_NON_RAPPROCHES = ["sans-email", "inconnu-m365", "compte-desactive"];
 
 export async function getCollaborateurs(serverId: ServerId): Promise<{ lignes: CollaborateurRow[]; resume: ResumeM365; presence: EtatPresence }> {
-    const [ouvertes, premieres, membres, annuaire, photos, reglages] = await Promise.all([
+    const [ouvertes, premieres, membres, annuaire, photos, reglages, comptes] = await Promise.all([
         prismaAuth.collaboratorDirectoryInterval.findMany({
             where: { serverId, closedAt: null },
             select: { extension: true, displayName: true, email: true, jobTitle: true, matchState: true },
@@ -77,7 +87,11 @@ export async function getCollaborateurs(serverId: ServerId): Promise<{ lignes: C
         }),
         prismaAuth.collaboratorPhoto.findMany({ where: { serverId }, select: { email: true, graphId: true } }),
         prismaAuth.tenantSettings.findUnique({ where: { serverId }, select: { presenceSamplingEnabled: true } }),
+        // Les comptes de l'application, tous tenants : le rattachement se fait
+        // par e-mail, comme à la connexion Microsoft.
+        prismaAuth.user.findMany({ select: { id: true, email: true, role: true, authProvider: true, lastLoginAt: true } }),
     ]);
+    const compteDe = new Map(comptes.map((u) => [normaliserEmail(u.email), u]));
 
     // Présence : parts de temps sur les derniers jours (base) et état au
     // dernier relevé (mémoire de l'échantillonneur, même processus) — rien de
@@ -109,6 +123,10 @@ export async function getCollaborateurs(serverId: ServerId): Promise<{ lignes: C
         presence: presenceActive
             ? { now: maintenant?.postes.get(c.extension) ?? null, recent: recente.get(c.extension) ?? null }
             : null,
+        compte: (() => {
+            const u = c.email ? compteDe.get(normaliserEmail(c.email)) : undefined;
+            return u ? { id: u.id, role: u.role, authProvider: u.authProvider, lastLoginAt: u.lastLoginAt?.toISOString() ?? null } : null;
+        })(),
     }));
 
     return {
@@ -127,6 +145,69 @@ function resumer(lignes: Pick<CollaborateurRow, "matchState" | "equipes">[], pho
         enEquipeRapproches: enEquipe.filter((l) => l.matchState === "ok").length,
         nonRapproches: lignes.filter((l) => ETATS_NON_RAPPROCHES.includes(l.matchState)).length,
         photos,
+    };
+}
+
+export type ResultatPreparation =
+    | { ok: true; compte: CompteCollaborateur; email: string; equipes: number; equipesInconnues: string[] }
+    | { ok: false; error: string };
+
+/**
+ * Crée le compte de l'application d'un collaborateur AVANT sa première
+ * connexion : e-mail de l'annuaire, nature choisie, périmètre = ses équipes
+ * du journal, droits par défaut (cf. domain/compte-collaborateur). Sans mot
+ * de passe : ce compte n'existe que par Microsoft. À la première connexion,
+ * lib/auth le retrouve par son e-mail et le complète (identifiant Entra,
+ * photo, rôle des groupes de sécurité) sans toucher au périmètre.
+ */
+export async function preparerCompteCollaborateur(serverId: ServerId, extension: string, role: RoleCompte): Promise<ResultatPreparation> {
+    const poste = await prismaAuth.collaboratorDirectoryInterval.findFirst({
+        where: { serverId, extension, closedAt: null },
+        select: { displayName: true, email: true, jobTitle: true, matchState: true },
+    });
+    if (!poste) return { ok: false, error: "Ce poste n'est plus dans l'annuaire." };
+    if (!poste.email) return { ok: false, error: "Ce poste n'a pas d'e-mail dans le 3CX." };
+    if (poste.matchState !== "ok") return { ok: false, error: "Ce poste n'est pas rapproché d'un compte Microsoft 365 actif." };
+
+    const email = normaliserEmail(poste.email);
+    const existant = await prismaAuth.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, select: { email: true } });
+    if (existant) return { ok: false, error: `Un compte existe déjà pour ${existant.email}.` };
+
+    // Ses équipes : les files qui le sonnent aujourd'hui, d'après le journal.
+    const membres = await prismaAuth.queueMembershipInterval.findMany({
+        where: { serverId, extension, closedAt: null },
+        select: { queueNumber: true },
+    });
+    const numeros = [...new Set(membres.map((m) => m.queueNumber))];
+    const files = numeros.length > 0
+        ? await prismaAuth.queueRegistry.findMany({ where: { tenantId: serverId, queueNumber: { in: numeros } }, select: { id: true, queueNumber: true } })
+        : [];
+    const connues = new Set(files.map((f) => f.queueNumber));
+    const { firstName, lastName } = separerNom(poste.displayName);
+
+    // Une seule écriture : le compte, son tenant et son périmètre naissent
+    // ensemble ou pas du tout.
+    const cree = await prismaAuth.user.create({
+        data: {
+            email,
+            password: "",
+            authProvider: "MICROSOFT",
+            role,
+            firstName,
+            lastName,
+            jobTitle: poste.jobTitle,
+            ...DROITS_PAR_DEFAUT,
+            tenantAccess: { create: [{ tenantId: serverId }] },
+            queuePerimeter: { create: files.map((f) => ({ queueId: f.id })) },
+        },
+        select: { id: true, role: true, authProvider: true, lastLoginAt: true },
+    });
+    return {
+        ok: true,
+        compte: { id: cree.id, role: cree.role, authProvider: cree.authProvider, lastLoginAt: null },
+        email,
+        equipes: files.length,
+        equipesInconnues: numeros.filter((n) => !connues.has(n)),
     };
 }
 

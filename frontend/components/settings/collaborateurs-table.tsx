@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AtSign, Search, ShieldCheck, Users } from "lucide-react";
+import { AtSign, CheckCircle2, Search, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tip } from "@/components/ui/tooltip";
 import { Attente, ZoneEnEchec } from "@/components/ui/etat-chargement";
 import { AvatarCollaborateur } from "@/components/avatar-collaborateur";
@@ -14,6 +15,9 @@ import { EnTeteTri, MenuFiltre, PucesDeFiltres, basculerDansSet } from "@/compon
 import { basculerTri, trierLignes, type DefinitionColonne, type TriTableau } from "@/services/domain/tri-tableau";
 import type { CollaborateurRow, EtatPresence, PresenceCollaborateur, ResumeM365 } from "@/services/collaborators.service";
 import { formatHeures, partsPresence, type PresenceState } from "@/services/domain/presence";
+import {
+    DROITS_PAR_DEFAUT_LIBELLES, LIBELLES_ROLE_COMPTE, ROLES_COMPTE, motifBlocage, type RoleCompte,
+} from "@/services/domain/compte-collaborateur";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,7 +32,19 @@ import { cn } from "@/lib/utils";
  * moitié cassée. Ils restent à un clic.
  */
 
-type Colonne = "nom" | "poste" | "email" | "equipes" | "etat" | "depuis" | "presence" | "presenceFile";
+type Colonne = "nom" | "poste" | "email" | "equipes" | "etat" | "depuis" | "compte" | "presence" | "presenceFile";
+
+/** Où en est le compte de l'application pour cette ligne. */
+type EtatCompte = "existant" | "a-preparer" | "non-preparable";
+const LIBELLES_ETAT_COMPTE: Record<EtatCompte, string> = {
+    existant: "Compte existant",
+    "a-preparer": "À préparer",
+    "non-preparable": "Non préparable (sans e-mail ou non rapproché)",
+};
+const situation = (c: CollaborateurRow) => ({ email: c.email, matchState: c.matchState, compteExistant: c.compte !== null });
+const etatCompte = (c: CollaborateurRow): EtatCompte =>
+    c.compte ? "existant" : motifBlocage(situation(c)) ? "non-preparable" : "a-preparer";
+const LIBELLES_ROLE: Record<string, string> = { ADMIN: "Administrateur", MODERATOR: "Modérateur", MANAGER: "Manager", AGENT: "Collaborateur" };
 
 const COLONNES: Record<Colonne, DefinitionColonne<CollaborateurRow>> = {
     nom: { type: "texte", valeur: (c) => c.displayName },
@@ -38,6 +54,8 @@ const COLONNES: Record<Colonne, DefinitionColonne<CollaborateurRow>> = {
     // L'ordre des états est celui de l'urgence : ce qui se corrige d'abord.
     etat: { type: "nombre", valeur: (c) => ({ "compte-desactive": 0, "inconnu-m365": 1, "sans-email": 2, "m365-inactif": 3, "ok": 4 }[c.matchState] ?? 5) },
     depuis: { type: "date", valeur: (c) => c.depuis },
+    // Comptes existants d'abord, puis ceux à préparer, puis les impossibles.
+    compte: { type: "nombre", valeur: (c) => ({ existant: 2, "a-preparer": 1, "non-preparable": 0 }[etatCompte(c)]) },
     // Part de temps disponible ; sans relevé, en queue de tri.
     presence: { type: "nombre", valeur: (c) => (c.presence?.recent ? partsPresence(c.presence.recent)?.available ?? -1 : -1) },
     // Part de temps connecté aux files : sa propre colonne, donc son propre
@@ -78,7 +96,9 @@ export function CollaborateursTable({
     const [filtreEtat, setFiltreEtat] = useState<Set<string>>(new Set(filtreEtatInitial ?? []));
     const [filtreEquipe, setFiltreEquipe] = useState<Set<string>>(new Set([EN_EQUIPE]));
     const [filtreDomaine, setFiltreDomaine] = useState<Set<string>>(new Set());
+    const [filtreCompte, setFiltreCompte] = useState<Set<string>>(new Set());
     const [fiche, setFiche] = useState<CollaborateurRow | null>(null);
+    const [preparation, setPreparation] = useState<CollaborateurRow | null>(null);
 
     const charger = () => {
         setDonnees("chargement");
@@ -111,8 +131,9 @@ export function CollaborateursTable({
             equipe: (c: CollaborateurRow) =>
                 filtreEquipe.size === 0 || filtreEquipe.has(c.equipes.length > 0 ? EN_EQUIPE : HORS_EQUIPE),
             domaine: (c: CollaborateurRow) => filtreDomaine.size === 0 || (!!c.domaine && filtreDomaine.has(c.domaine)),
+            compte: (c: CollaborateurRow) => filtreCompte.size === 0 || filtreCompte.has(etatCompte(c)),
         };
-    }, [search, filtreEtat, filtreEquipe, filtreDomaine]);
+    }, [search, filtreEtat, filtreEquipe, filtreDomaine, filtreCompte]);
 
     const compter = (liste: CollaborateurRow[], cle: (c: CollaborateurRow) => string | null) => {
         const m = new Map<string, number>();
@@ -120,27 +141,33 @@ export function CollaborateursTable({
         return m;
     };
     const optionsEtat = useMemo(() => {
-        const base = lignes.filter((c) => cribles.recherche(c) && cribles.equipe(c) && cribles.domaine(c));
+        const base = lignes.filter((c) => cribles.recherche(c) && cribles.equipe(c) && cribles.domaine(c) && cribles.compte(c));
         const comptes = compter(base, (c) => c.matchState);
         return (["ok", "sans-email", "inconnu-m365", "compte-desactive", "m365-inactif"] as const)
             .map((e) => ({ valeur: e, libelle: LIBELLES_M365[e], compte: comptes.get(e) ?? 0 }));
     }, [lignes, cribles]);
     const optionsEquipe = useMemo(() => {
-        const base = lignes.filter((c) => cribles.recherche(c) && cribles.etat(c) && cribles.domaine(c));
+        const base = lignes.filter((c) => cribles.recherche(c) && cribles.etat(c) && cribles.domaine(c) && cribles.compte(c));
         return [
             { valeur: EN_EQUIPE, libelle: "Membre d'une équipe", compte: base.filter((c) => c.equipes.length > 0).length },
             { valeur: HORS_EQUIPE, libelle: "Hors équipe (salles, fax, postes libres…)", compte: base.filter((c) => c.equipes.length === 0).length },
         ];
     }, [lignes, cribles]);
     const optionsDomaine = useMemo(() => {
-        const base = lignes.filter((c) => cribles.recherche(c) && cribles.etat(c) && cribles.equipe(c));
+        const base = lignes.filter((c) => cribles.recherche(c) && cribles.etat(c) && cribles.equipe(c) && cribles.compte(c));
         return [...compter(base, (c) => c.domaine).entries()]
             .map(([valeur, compte]) => ({ valeur, libelle: valeur, compte }))
             .sort((a, b) => b.compte - a.compte || a.libelle.localeCompare(b.libelle, "fr"));
     }, [lignes, cribles]);
+    const optionsCompte = useMemo(() => {
+        const base = lignes.filter((c) => cribles.recherche(c) && cribles.etat(c) && cribles.equipe(c) && cribles.domaine(c));
+        const comptes = compter(base, (c) => etatCompte(c));
+        return (["a-preparer", "existant", "non-preparable"] as const)
+            .map((e) => ({ valeur: e, libelle: LIBELLES_ETAT_COMPTE[e], compte: comptes.get(e) ?? 0 }));
+    }, [lignes, cribles]);
 
     const affichees = useMemo(() => trierLignes(
-        lignes.filter((c) => cribles.recherche(c) && cribles.etat(c) && cribles.equipe(c) && cribles.domaine(c)),
+        lignes.filter((c) => cribles.recherche(c) && cribles.etat(c) && cribles.equipe(c) && cribles.domaine(c) && cribles.compte(c)),
         tri, COLONNES, (c) => c.displayName,
     ), [lignes, cribles, tri]);
 
@@ -148,13 +175,14 @@ export function CollaborateursTable({
         ...[...filtreEtat].map((v) => ({ cle: `e:${v}`, libelle: LIBELLES_M365[v as keyof typeof LIBELLES_M365] ?? v, retirer: () => basculerDansSet(setFiltreEtat, v) })),
         ...[...filtreEquipe].map((v) => ({ cle: `q:${v}`, libelle: v === EN_EQUIPE ? "Membre d'une équipe" : "Hors équipe", retirer: () => basculerDansSet(setFiltreEquipe, v) })),
         ...[...filtreDomaine].map((v) => ({ cle: `d:${v}`, libelle: `@${v}`, retirer: () => basculerDansSet(setFiltreDomaine, v) })),
+        ...[...filtreCompte].map((v) => ({ cle: `c:${v}`, libelle: LIBELLES_ETAT_COMPTE[v as EtatCompte] ?? v, retirer: () => basculerDansSet(setFiltreCompte, v) })),
     ];
-    const toutEffacer = () => { setSearch(""); setFiltreEtat(new Set()); setFiltreEquipe(new Set()); setFiltreDomaine(new Set()); };
+    const toutEffacer = () => { setSearch(""); setFiltreEtat(new Set()); setFiltreEquipe(new Set()); setFiltreDomaine(new Set()); setFiltreCompte(new Set()); };
 
     if (donnees === "chargement") return <div className="py-10"><Attente libelle="Lecture des collaborateurs…" /></div>;
     if (donnees === "échec") return <ZoneEnEchec message="La liste des collaborateurs n'a pas pu être lue." onReessayer={charger} />;
     const { resume, presence } = donnees;
-    const nbColonnes = presence.enabled ? 8 : 6;
+    const nbColonnes = presence.enabled ? 9 : 7;
 
     return (
         <div className="space-y-4">
@@ -191,6 +219,7 @@ export function CollaborateursTable({
                     <MenuFiltre libelle="État M365" icone={ShieldCheck} options={optionsEtat} selection={filtreEtat} onBasculer={(v) => basculerDansSet(setFiltreEtat, v)} />
                     <MenuFiltre libelle="Équipe" icone={Users} options={optionsEquipe} selection={filtreEquipe} onBasculer={(v) => basculerDansSet(setFiltreEquipe, v)} />
                     <MenuFiltre libelle="Domaine" icone={AtSign} options={optionsDomaine} selection={filtreDomaine} onBasculer={(v) => basculerDansSet(setFiltreDomaine, v)} />
+                    <MenuFiltre libelle="Compte" icone={UserPlus} options={optionsCompte} selection={filtreCompte} onBasculer={(v) => basculerDansSet(setFiltreCompte, v)} />
                 </div>
                 {(puces.length > 0 || search.trim()) && (
                     <PucesDeFiltres puces={puces} affichees={affichees.length} total={lignes.length} unite="collaborateur(s)" onToutEffacer={toutEffacer} />
@@ -209,6 +238,7 @@ export function CollaborateursTable({
                                     <EnTeteTri colonne="equipes" libelle="Équipes" tri={tri} onTrier={(c) => setTri((t) => basculerTri(t, c, COLONNES))} />
                                     <EnTeteTri colonne="etat" libelle="Microsoft 365" tri={tri} onTrier={(c) => setTri((t) => basculerTri(t, c, COLONNES))} />
                                     <EnTeteTri colonne="depuis" libelle="Depuis" tri={tri} onTrier={(c) => setTri((t) => basculerTri(t, c, COLONNES))} />
+                                    <EnTeteTri colonne="compte" libelle="Compte" tri={tri} onTrier={(c) => setTri((t) => basculerTri(t, c, COLONNES))} />
                                     {presence.enabled && (
                                         <EnTeteTri colonne="presence" libelle={`Présence (${presence.jours} j)`} tri={tri} onTrier={(c) => setTri((t) => basculerTri(t, c, COLONNES))} />
                                     )}
@@ -241,6 +271,10 @@ export function CollaborateursTable({
                                         </td>
                                         <td className="px-4 py-2"><BadgeM365 etat={c.matchState} /></td>
                                         <td className="px-4 py-2 text-xs text-slate-500">{dateCourte(c.depuis)}</td>
+                                        {/* Le bouton ne doit pas ouvrir la fiche : on arrête le clic ici. */}
+                                        <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                                            <CelluleCompte collaborateur={c} onPreparer={() => setPreparation(c)} />
+                                        </td>
                                         {presence.enabled && (
                                             <td className="px-4 py-2"><CellulePresence presence={c.presence} jours={presence.jours} /></td>
                                         )}
@@ -266,6 +300,11 @@ export function CollaborateursTable({
             </Card>
 
             <FicheCollaborateur serverId={serverId} collaborateur={fiche} onClose={() => setFiche(null)} />
+            <PreparerCompteDialog
+                serverId={serverId}
+                collaborateur={preparation}
+                onClose={(cree) => { setPreparation(null); if (cree) charger(); }}
+            />
         </div>
     );
 }
@@ -366,6 +405,152 @@ function CelluleFile({ collaborateur: c, jours }: { collaborateur: Collaborateur
                 <span className="w-10 text-sm tabular-nums text-slate-700">{parts.queue}&nbsp;%</span>
             </div>
         </Tip>
+    );
+}
+
+/**
+ * Le compte de l'application : ce qu'il est, ou le bouton pour le préparer.
+ * Un tiret expliqué quand rien n'est possible (sans e-mail, non rapproché).
+ */
+function CelluleCompte({ collaborateur: c, onPreparer }: { collaborateur: CollaborateurRow; onPreparer: () => void }) {
+    if (c.compte) {
+        return (
+            <div className="text-xs">
+                <p className="font-medium text-slate-700">{LIBELLES_ROLE[c.compte.role] ?? c.compte.role}</p>
+                <p className={cn(c.compte.lastLoginAt ? "text-slate-500" : "text-amber-700")}>
+                    {c.compte.lastLoginAt ? `connecté le ${dateCourte(c.compte.lastLoginAt)}` : "jamais connecté"}
+                </p>
+            </div>
+        );
+    }
+    const motif = motifBlocage(situation(c));
+    if (motif) {
+        return (
+            <Tip content={motif}>
+                <span className="text-xs text-slate-400">—</span>
+            </Tip>
+        );
+    }
+    return (
+        <Button variant="outline" size="sm" onClick={onPreparer} className="h-8 gap-1.5 text-xs">
+            <UserPlus className="h-3.5 w-3.5" />
+            Préparer le compte
+        </Button>
+    );
+}
+
+/**
+ * Préparer le compte : on choisit la nature, on lit ce que le compte aura,
+ * on crée. À la première connexion Microsoft, la personne retrouve son
+ * périmètre — sans appel, sans saisie, sans mot de passe.
+ */
+function PreparerCompteDialog({ serverId, collaborateur, onClose }: {
+    serverId: string;
+    collaborateur: CollaborateurRow | null;
+    /** `true` quand un compte a été créé : la liste est à relire. */
+    onClose: (cree: boolean) => void;
+}) {
+    const [role, setRole] = useState<RoleCompte | null>(null);
+    const [envoi, setEnvoi] = useState(false);
+    const [erreur, setErreur] = useState<string | null>(null);
+    const [resultat, setResultat] = useState<{ email: string; equipes: number; equipesInconnues: string[] } | null>(null);
+    const extension = collaborateur?.extension ?? null;
+
+    // Chaque ouverture repart de zéro : rien ne doit rester d'un compte à l'autre.
+    useEffect(() => { setRole(null); setEnvoi(false); setErreur(null); setResultat(null); }, [extension]);
+
+    const creer = async () => {
+        if (!collaborateur || !role) return;
+        setEnvoi(true);
+        setErreur(null);
+        try {
+            const res = await fetch("/api/admin/collaborateurs/compte", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ serverId, extension: collaborateur.extension, role }),
+            });
+            const data = await res.json();
+            if (!res.ok) setErreur(data.error || "Création du compte impossible");
+            else setResultat({ email: data.email, equipes: data.equipes, equipesInconnues: data.equipesInconnues ?? [] });
+        } catch {
+            setErreur("Création du compte impossible");
+        } finally {
+            setEnvoi(false);
+        }
+    };
+
+    return (
+        <Dialog open={collaborateur !== null} onOpenChange={(o) => !o && onClose(resultat !== null)}>
+            <DialogContent className="max-w-lg">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-3">
+                        {collaborateur && <AvatarCollaborateur name={collaborateur.displayName} photoUrl={collaborateur.photoUrl} className="h-10 w-10 text-sm" />}
+                        <span>Préparer le compte de {collaborateur?.displayName}</span>
+                    </DialogTitle>
+                    <DialogDescription>
+                        {collaborateur?.email} · à sa première connexion Microsoft, le compte est reconnu par cet e-mail et son périmètre l&apos;attend.
+                    </DialogDescription>
+                </DialogHeader>
+
+                {resultat ? (
+                    <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                        <p className="flex items-center gap-2 font-medium"><CheckCircle2 className="h-4 w-4" /> Compte créé pour {resultat.email}</p>
+                        <p>Périmètre : {resultat.equipes} équipe{resultat.equipes > 1 ? "s" : ""}{resultat.equipes === 0 ? " — il ne verra rien tant qu'on ne lui en donne pas" : ""}.</p>
+                        {resultat.equipesInconnues.length > 0 && (
+                            <p className="text-amber-800">
+                                Non posées, absentes du registre des files : {resultat.equipesInconnues.join(", ")}.
+                            </p>
+                        )}
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-3">
+                            {ROLES_COMPTE.map((r) => (
+                                <button
+                                    key={r}
+                                    type="button"
+                                    onClick={() => setRole(r)}
+                                    className={cn(
+                                        "rounded-lg border p-3 text-left transition-colors",
+                                        role === r ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500" : "border-slate-200 hover:bg-slate-50",
+                                    )}
+                                >
+                                    <p className="text-sm font-medium text-slate-900">{LIBELLES_ROLE_COMPTE[r]}</p>
+                                    <p className="mt-0.5 text-xs text-slate-500">
+                                        {r === "MANAGER" ? "Lit les statistiques de ses équipes." : "Lit ses propres statistiques."}
+                                    </p>
+                                </button>
+                            ))}
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Ce que le compte aura</p>
+                            <ul className="space-y-0.5 text-xs text-slate-700">
+                                {DROITS_PAR_DEFAUT_LIBELLES.map((l) => <li key={l}>{l}</li>)}
+                            </ul>
+                            {collaborateur && (
+                                <p className="mt-2 text-xs text-slate-500">
+                                    {collaborateur.equipes.length > 0
+                                        ? `Ses équipes aujourd'hui : ${collaborateur.equipes.map((e) => e.queueName).join(", ")}.`
+                                        : "Membre d'aucune équipe aujourd'hui : le compte naîtra sans périmètre."}
+                                </p>
+                            )}
+                        </div>
+                        {erreur && <p className="text-sm text-red-700">{erreur}</p>}
+                    </div>
+                )}
+
+                <DialogFooter>
+                    {resultat ? (
+                        <Button onClick={() => onClose(true)}>Fermer</Button>
+                    ) : (
+                        <>
+                            <Button variant="outline" onClick={() => onClose(false)} disabled={envoi}>Annuler</Button>
+                            <Button onClick={creer} disabled={!role || envoi}>{envoi ? "Création…" : "Créer le compte"}</Button>
+                        </>
+                    )}
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }
 

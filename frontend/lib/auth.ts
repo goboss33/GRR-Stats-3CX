@@ -116,8 +116,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         async signIn({ user }) {
             if (!user?.email) return;
             try {
-                await prismaAuth.user.update({
-                    where: { email: user.email },
+                // Même tolérance à la casse que le rattachement du compte.
+                await prismaAuth.user.updateMany({
+                    where: { email: { equals: user.email, mode: "insensitive" } },
                     data: { lastLoginAt: new Date() },
                 });
             } catch (error) {
@@ -198,6 +199,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     if (!existingUser && user.email) {
                         existingUser = await prismaAuth.user.findUnique({
                             where: { email: user.email },
+                        });
+                    }
+                    // Un compte PRÉPARÉ depuis l'annuaire (cf. collaborators.service)
+                    // est stocké en minuscules ; Microsoft peut renvoyer l'e-mail
+                    // avec des majuscules. Sans ce repli, la première connexion
+                    // créerait un second compte, et le périmètre resterait sur
+                    // le premier.
+                    if (!existingUser && user.email) {
+                        existingUser = await prismaAuth.user.findFirst({
+                            where: { email: { equals: user.email, mode: "insensitive" } },
                         });
                     }
                     
