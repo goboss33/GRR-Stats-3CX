@@ -160,18 +160,24 @@ export function Header({ userName }: { userName: string }) {
                 de fin (actualiser) déborderait hors écran. */}
             <div className="flex items-center gap-4 min-w-0 max-[999px]:w-full max-[999px]:flex-wrap">
                 <HeaderQueueSearch />
-                <ContextControl
-                    applies={originApplies(pathname)}
-                    title="Sans effet sur cet écran"
-                >
-                    <HeaderOriginToggle />
-                </ContextControl>
-                <ContextControl
-                    applies={periodApplies(pathname)}
-                    title="Sans effet sur cet écran"
-                >
-                    <HeaderPeriodPicker />
-                </ContextControl>
+                {/* Les ancres de la visite guidée (data-visite) : des boîtes
+                    réelles, pas « display: contents », pour être mesurables. */}
+                <div data-visite="origine" className="flex shrink-0">
+                    <ContextControl
+                        applies={originApplies(pathname)}
+                        title="Sans effet sur cet écran"
+                    >
+                        <HeaderOriginToggle />
+                    </ContextControl>
+                </div>
+                <div data-visite="periode" className="flex min-w-0 shrink-[0.5]">
+                    <ContextControl
+                        applies={periodApplies(pathname)}
+                        title="Sans effet sur cet écran"
+                    >
+                        <HeaderPeriodPicker />
+                    </ContextControl>
+                </div>
 
                 <HeaderRefreshButton />
                 {/* Saut de ligne forcé en mode 2 lignes : cet item pleine

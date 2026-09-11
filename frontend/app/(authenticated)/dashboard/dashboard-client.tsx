@@ -17,6 +17,7 @@ import { FilDeProgression, ZoneEnEchec, ContenuPerime } from "@/components/ui/et
 import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
 import { PeriodComparisonToggle, usePeriodComparisonPreference } from "@/components/period-comparison-toggle";
+import { VisiteGuidee } from "@/components/visite-guidee";
 import { weekAlignedPreviousPeriod } from "@/services/domain/period-comparison";
 
 import { getDashboardAllOrigins, getPrevTimelineAllOrigins } from "@/services/dashboard.service";
@@ -242,7 +243,8 @@ export default function DashboardClient() {
             <ContenuPerime perime={perime} className="space-y-6">
             {/* Chiffres-clés. Une seule vignette réutilisée : le balisage n'est
                 plus recopié, donc plus de divergences de mise en forme. */}
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+            <VisiteGuidee visite="dashboard" />
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6" data-visite="kpis">
                 <KpiCard
                     label="Appels reçus"
                     href={lienLogs()}
@@ -305,7 +307,7 @@ export default function DashboardClient() {
             </div>
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 {/* Chart main */}
-                <Card className="border-none shadow-md xl:col-span-2 bg-gradient-to-b from-white to-slate-50/50">
+                <Card className="border-none shadow-md xl:col-span-2 bg-gradient-to-b from-white to-slate-50/50" data-visite="evolution">
                     <CardHeader>
                         <div className="flex items-center justify-between gap-4">
                             <CardTitle className="text-lg font-bold text-slate-900">Évolution du Volume</CardTitle>
@@ -339,7 +341,7 @@ export default function DashboardClient() {
                 </Card>
 
                 {/* Heatmap */}
-                <Card className="border-none shadow-md bg-gradient-to-b from-white to-slate-50/50">
+                <Card className="border-none shadow-md bg-gradient-to-b from-white to-slate-50/50" data-visite="affluences">
                     <CardHeader>
                         <CardTitle className="text-lg font-bold text-slate-900">Carte des Affluences</CardTitle>
                     </CardHeader>
@@ -379,7 +381,7 @@ export default function DashboardClient() {
             {/* Mes équipes — l'aperçu du périmètre, favorites d'abord. Le
                 clin d'œil du manager : pastille rouge = équipe à aller voir. */}
             {teamQueues.length > 0 && (
-                <div className="space-y-3">
+                <div className="space-y-3" data-visite="equipes">
                     <h2 className="text-lg font-bold text-slate-900">Mes équipes</h2>
                     <QueueOverviewGrid
                         queues={teamQueues}

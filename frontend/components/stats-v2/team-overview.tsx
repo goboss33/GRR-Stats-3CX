@@ -7,6 +7,7 @@ import { formatDurationHuman as formatDuration } from "@/services/domain/call-ag
 import { QueueKPIs } from "@/types/statistics.types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tip } from "@/components/ui/tooltip";
+import { TEXTES_BILAN } from "@/services/domain/visite-guidee";
 import { TrendPill } from "@/components/stats-v2/trend-arrow";
 import { Phone, PhoneIncoming, PhoneMissed, ArrowRightLeft, Users, Clock, AlertTriangle, Info } from "lucide-react";
 import { outcomesForBucket, sumBucket, type CallOrigin } from "@/services/domain/call-classification";
@@ -531,7 +532,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             {/* Total Reçus — le dénominateur reste NEUTRE : un
                                 volume n'est ni bon ni mauvais, et le bleu est
                                 réservé au canal « directs ». */}
-                            <div className="flex p-1.5" {...focusHandlers({ kind: "total" })}>
+                            <div className="flex p-1.5" data-visite="recus" {...focusHandlers({ kind: "total" })}>
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("received"))}
                                 toneClass={`bg-slate-50 border-slate-200 ${focus?.kind === "total" ? "ring-2 ring-slate-400 -translate-y-px shadow-md" : ""}`}
@@ -557,7 +558,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <div className="text-[10px] text-slate-500">
                                         Directs:&nbsp;{kpis.teamDirectReceived}&nbsp;· Équipe:&nbsp;{kpis.callsReceived}
                                     </div>
-                                    <Tip content="Total des appels entrants de l'équipe.">
+                                    <Tip content={TEXTES_BILAN.recus}>
                                         <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                     </Tip>
                                 </div>
@@ -565,7 +566,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             </div>
 
                             {/* Répondus */}
-                            <div className="flex p-1.5" {...focusHandlers({ kind: "outcome", key: "answered" })}>
+                            <div className="flex p-1.5" data-visite="repondus" {...focusHandlers({ kind: "outcome", key: "answered" })}>
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("answered"))}
                                 toneClass={`bg-emerald-50/50 border-emerald-200 ${focus?.kind === "outcome" && focus.key === "answered" ? "ring-2 ring-emerald-400 -translate-y-px shadow-md" : ""}`}
@@ -583,7 +584,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <div className="text-[10px] text-emerald-600">
                                         Directs:&nbsp;{kpis.teamDirectAnswered}&nbsp;· Équipe:&nbsp;{kpis.callsAnswered}{totalHandedOff > 0 && <>&nbsp;· Transférés:&nbsp;{totalHandedOff}</>}
                                     </div>
-                                    <Tip content="Total d'appels répondus par l'équipe.">
+                                    <Tip content={TEXTES_BILAN.repondus}>
                                         <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                     </Tip>
                                 </div>
@@ -596,7 +597,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                 accomplis vivent dans la vignette Répondus.
                                 AVANT Perdus : l'ordre des vignettes suit celui
                                 des segments de la barre (vert, ambre, rouge). */}
-                            <div className="flex p-1.5" {...focusHandlers({ kind: "outcome", key: "overflow" })}>
+                            <div className="flex p-1.5" data-visite="debordes" {...focusHandlers({ kind: "outcome", key: "overflow" })}>
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("overflow"))}
                                 toneClass={`bg-amber-50/50 border-amber-200 ${focus?.kind === "outcome" && focus.key === "overflow" ? "ring-2 ring-amber-400 -translate-y-px shadow-md" : ""}`}
@@ -614,7 +615,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <div className="text-[10px] text-amber-600">
                                         Directs:&nbsp;{kpis.directOverflow}&nbsp;· Équipe:&nbsp;{kpis.callsOverflow}
                                     </div>
-                                    <Tip content="Appels non répondus dans les délais et redirigés automatiquement vers une autre équipe ou le service client.">
+                                    <Tip content={TEXTES_BILAN.debordes}>
                                         <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                     </Tip>
                                 </div>
@@ -622,7 +623,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             </div>
 
                             {/* Perdus */}
-                            <div className="flex p-1.5" {...focusHandlers({ kind: "outcome", key: "lost" })}>
+                            <div className="flex p-1.5" data-visite="perdus" {...focusHandlers({ kind: "outcome", key: "lost" })}>
                             <TileShell
                                 href={outcomeLink(outcomesForBucket("lost"))}
                                 toneClass={`bg-red-50/50 border-red-200 ${focus?.kind === "outcome" && focus.key === "lost" ? "ring-2 ring-red-400 -translate-y-px shadow-md" : ""}`}
@@ -640,7 +641,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                     <div className="text-[10px] text-red-600">
                                         Directs:&nbsp;{kpis.directLost}&nbsp;· Équipe:&nbsp;{sumBucket(kpis.outcomeCounts, "lost")}
                                     </div>
-                                    <Tip content="Appels raccrochés par le client.">
+                                    <Tip content={TEXTES_BILAN.perdus}>
                                         <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                     </Tip>
                                 </div>
@@ -652,7 +653,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                         {/* Détails Directs vs File (compact) — enveloppes
                             jointives : pb 6 px de la grille + pt 10 px = les
                             16 px d'avant ; 4 px + 4 px = les 8 px entre blocs. */}
-                        <div className="px-1.5 pt-2.5 pb-1" {...focusHandlers({ kind: "channel", key: "direct" })}>
+                        <div className="px-1.5 pt-2.5 pb-1" data-visite="directs" {...focusHandlers({ kind: "channel", key: "direct" })}>
                             {/* Directs */}
                             <div
                                 className={`flex items-center justify-between p-2.5 rounded-lg bg-blue-50/50 border border-blue-100 transition-all ${focus?.kind === "channel" && focus.key === "direct" ? "ring-2 ring-blue-400 -translate-y-px shadow-md" : ""}`}
@@ -662,7 +663,7 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                                         {/* Le « i » remplace la pastille de couleur :
                                             le fond teinté suffit à dire le canal, la
                                             légende vit désormais sur les chiffres. */}
-                                        <Tip content="Appels arrivés sur les lignes directes des collaborateurs de l'équipe.">
+                                        <Tip content={TEXTES_BILAN.directs}>
                                             <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                         </Tip>
                                         <span className="text-sm font-medium text-blue-900">Appels Directs</span>
@@ -726,14 +727,14 @@ export function TeamOverview({ kpis, previousKpis, logsEnabled, queueName, queue
                             </div>
 
                         </div>
-                        <div className="px-1.5 pt-1 pb-1.5" {...focusHandlers({ kind: "channel", key: "queue" })}>
+                        <div className="px-1.5 pt-1 pb-1.5" data-visite="equipe" {...focusHandlers({ kind: "channel", key: "queue" })}>
                             {/* File */}
                             <div
                                 className={`flex items-center justify-between p-2.5 rounded-lg bg-violet-50/50 border border-violet-100 transition-all ${focus?.kind === "channel" && focus.key === "queue" ? "ring-2 ring-violet-400 -translate-y-px shadow-md" : ""}`}
                             >
                                 <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
-                                        <Tip content="Appels initialement destinés à un collaborateur puis proposés à l'ensemble de l'équipe en l'absence de réponse.">
+                                        <Tip content={TEXTES_BILAN.equipe}>
                                             <Info className="h-3 w-3 flex-shrink-0 text-slate-400 hover:text-slate-600" />
                                         </Tip>
                                         <span className="text-sm font-medium text-violet-900">Appels d'équipe</span>

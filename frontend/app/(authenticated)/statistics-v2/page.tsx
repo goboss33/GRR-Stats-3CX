@@ -19,6 +19,7 @@ import { CallsChart } from "@/components/calls-chart";
 import { HeatmapChart } from "@/components/heatmap-chart";
 import { ProvenanceAppels } from "@/components/stats-v2/provenance-appels";
 import { DestinationsAppels } from "@/components/stats-v2/destinations-appels";
+import { VisiteGuidee } from "@/components/visite-guidee";
 import { PeriodComparisonToggle, usePeriodComparisonPreference } from "@/components/period-comparison-toggle";
 import { weekAlignedPreviousPeriod } from "@/services/domain/period-comparison";
 import type { QueueStatistics, QueueKPIs, AgentStats } from "@/types/statistics.types";
@@ -284,6 +285,7 @@ export default function StatisticsV2Page() {
             {/* Statistics content */}
             {statistics && (
                 <ContenuPerime perime={perime} className="space-y-6">
+                    <VisiteGuidee visite="statistics" />
                     {/* Team Overview - KPIs + Répartition fusionnés */}
                     <TeamOverview
                         kpis={statistics.kpis}
@@ -317,7 +319,7 @@ export default function StatisticsV2Page() {
                     {/* Évolution du Volume + Carte des Affluences */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div className="lg:col-span-2">
-                            <div className="bg-white rounded-xl border border-slate-200 p-6">
+                            <div className="bg-white rounded-xl border border-slate-200 p-6" data-visite="evolution">
                                 <div className="mb-4 flex items-center justify-between gap-4">
                                     <h3 className="text-lg font-semibold text-slate-900">Évolution du Volume</h3>
                                     <PeriodComparisonToggle
@@ -337,7 +339,7 @@ export default function StatisticsV2Page() {
                             </div>
                         </div>
                         <div className="lg:col-span-1">
-                            <div className="bg-white rounded-xl border border-slate-200 p-6">
+                            <div className="bg-white rounded-xl border border-slate-200 p-6" data-visite="affluences">
                                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Carte des Affluences</h3>
                                 <HeatmapChart data={statistics.heatmapData} />
                             </div>

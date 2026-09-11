@@ -9,6 +9,7 @@ import type { CallOrigin } from "@/services/domain/call-classification";
 import { computeTeamTotals } from "@/services/domain/team-totals";
 import { lienJournauxProvenance, replierProvenances } from "@/services/domain/provenance-appels";
 import { GRILLE_ECHANGE, IconeEquipe, LigneEchange } from "@/components/stats-v2/ligne-echange";
+import { TEXTE_PROVENANCE } from "@/services/domain/visite-guidee";
 
 interface ProvenanceAppelsProps {
     kpis: QueueKPIs;
@@ -70,10 +71,10 @@ export function ProvenanceAppels({ kpis, logsEnabled, queueNumber, startDate, en
     };
 
     return (
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="rounded-xl border border-slate-200 bg-white p-6" data-visite="provenance">
             <div className="mb-4 flex items-center gap-2">
                 <h3 className="text-lg font-semibold text-slate-900">D&apos;où viennent nos appels</h3>
-                <Tip content="Appels arrivés dans l'équipe parce qu'une autre équipe ne les a pas pris (ou nous les a transmis).">
+                <Tip content={TEXTE_PROVENANCE}>
                     <Info className="h-4 w-4 text-slate-400 hover:text-slate-600" />
                 </Tip>
             </div>

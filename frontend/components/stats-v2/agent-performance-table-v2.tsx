@@ -223,7 +223,7 @@ export function AgentPerformanceTableV2({
 
     return (
         <TooltipProvider delayDuration={0}>
-            <Card>
+            <Card data-visite="activite">
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Users className="h-5 w-5 text-blue-600" />
@@ -236,7 +236,7 @@ export function AgentPerformanceTableV2({
                 <CardContent className="p-0">
                     <div className="overflow-x-auto">
                         <table className="w-full">
-                            <thead className="bg-slate-50 border-y">
+                            <thead className="bg-slate-50 border-y" data-visite="activite-entetes">
                                 <tr>
                                     <SortHeader field="name" label="Collaborateur" className="w-[22%]" />
                                     {/* Hiérarchie : les 3 composantes en petit et centrées, leur

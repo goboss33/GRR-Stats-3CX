@@ -69,7 +69,7 @@ export function HeaderQueueSearch() {
         // Compression séquentielle du header : ce champ — le plus large et le
         // plus compressible — absorbe le rétrécissement en PREMIER, jusqu'à
         // 200px. En mode 2 lignes (< 1000px), il remplit la seconde ligne.
-        <div className="w-[26rem] min-w-[200px] max-[999px]:order-5 max-[999px]:flex-1">
+        <div className="w-[26rem] min-w-[200px] max-[999px]:order-5 max-[999px]:flex-1" data-visite="recherche">
             {/* show="both" : chercher un AGENT mène à son groupe — chaque
                 entrée du picker porte le queueNumber de rattachement, agent
                 compris. */}

@@ -11,6 +11,7 @@ import type { CallOrigin } from "@/services/domain/call-classification";
 import { replierTraine } from "@/services/domain/provenance-appels";
 import { lienJournauxPersonne } from "@/services/domain/destinations-appels";
 import { GRILLE_ECHANGE_VISAGES, IconeEquipe, LigneEchange } from "@/components/stats-v2/ligne-echange";
+import { TEXTE_DESTINATIONS } from "@/services/domain/visite-guidee";
 
 interface DestinationsAppelsProps {
     teams: OutboundTeam[];
@@ -73,10 +74,10 @@ export function DestinationsAppels({ teams, logsEnabled, queueNumber, startDate,
     );
 
     return (
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="rounded-xl border border-slate-200 bg-white p-6" data-visite="destinations">
             <div className="mb-4 flex items-center gap-2">
                 <h3 className="text-lg font-semibold text-slate-900">Où partent nos appels</h3>
-                <Tip content="Appels décrochés ici puis servis ailleurs (transférés) ou repartis sans décroché (débordés).">
+                <Tip content={TEXTE_DESTINATIONS}>
                     <Info className="h-4 w-4 text-slate-400 hover:text-slate-600" />
                 </Tip>
             </div>

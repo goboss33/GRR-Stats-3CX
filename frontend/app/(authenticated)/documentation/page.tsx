@@ -37,6 +37,15 @@ interface Decision {
 
 const decisions: Decision[] = [
     {
+        id: "1.22",
+        category: "Collaborateurs",
+        title: "Visite guidée : chaque écran s'explique lui-même à sa première ouverture",
+        date: "11 septembre 2026",
+        summary: "Un manager qui découvre l'application n'a plus besoin qu'on la lui présente : à la première ouverture du tableau de bord, puis de l'écran de statistiques d'une équipe, une visite guidée met en lumière les éléments de l'écran un à un — le reste disparaît sous un voile foncé, l'élément visé reste tel qu'il est, une infobulle l'explique, « Suivant » avance, « Passer la visite » arrête. Sept étapes sur le tableau de bord (recherche, externe ou interne, période, chiffres clés, évolution, affluences, mes équipes), douze sur les statistiques (les six vignettes du bilan, l'activité des collaborateurs et ses en-têtes, les deux graphiques, les deux cartes d'échanges).",
+        justification: "Les textes des vignettes et des cartes sont ceux de leurs infobulles, définis à un seul endroit et importés par les composants : la visite dit exactement ce que dit l'écran, et ne peut pas en diverger. Terminer et passer valent tous deux « vue » — on ne relance jamais quelqu'un qui a dit non. Une visite dont aucune étape n'a pu être montrée (écran vide, périmètre absent) n'est pas marquée vue : elle se jouera la prochaine fois.",
+        impact: "Table UserOnboardingTour (une ligne par utilisateur et par écran vu). Le dialogue d'accès d'un utilisateur gagne deux onglets : « Périmètre », tout l'existant, et « Onboarding », où l'administrateur remet une visite à jouer d'un interrupteur. Les éléments visés portent une ancre data-visite ; une étape dont l'ancre est absente de l'écran est attendue quelques secondes puis sautée, sans bloquer.",
+    },
+    {
         id: "1.21",
         category: "Collaborateurs",
         title: "Préparer le compte : le compte naît de l'annuaire, avant la première connexion",

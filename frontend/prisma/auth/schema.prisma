@@ -57,6 +57,21 @@ model User {
   queuePerimeter     UserQueuePerimeter[]
   extensionOverrides UserExtensionOverride[]
   queueFavorites     UserQueueFavorite[]
+  onboardingTours    UserOnboardingTour[]
+}
+
+/// VISITE GUIDÉE (septembre 2026) — une ligne par utilisateur et par écran
+/// quand la visite a été vue, terminée ou passée. Absente = à jouer à la
+/// prochaine visite de l'écran ; l'administrateur la supprime pour la rejouer
+/// (onglet « Onboarding » du dialogue d'accès).
+model UserOnboardingTour {
+  userId      String
+  /// dashboard | statistics (cf. services/domain/visite-guidee)
+  tour        String
+  completedAt DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, tour])
 }
 
 /// Rôles applicatifs (cf. PRD droits d'accès §4).

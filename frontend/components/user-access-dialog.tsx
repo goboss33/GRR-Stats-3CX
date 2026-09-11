@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { LIBELLES_VISITE, VISITES, type Visite } from "@/services/domain/visite-guidee";
 
 interface TargetUser {
     id: string;
@@ -82,6 +83,10 @@ export function UserAccessDialog({
     const [queueSearch, setQueueSearch] = useState("");
     const [departementFiltre, setDepartementFiltre] = useState<string>("ALL");
     const [newOverrideExt, setNewOverrideExt] = useState("");
+    // Deux onglets : « Périmètre », tout ce qui se sauvegarde d'un bloc, et
+    // « Onboarding », dont chaque interrupteur s'enregistre aussitôt.
+    const [onglet, setOnglet] = useState<"perimetre" | "onboarding">("perimetre");
+    useEffect(() => { setOnglet("perimetre"); }, [user?.id]);
 
     // Rôle « global » : voit aussi les postes qui n'appartiennent à aucune
     // file. Le PÉRIMÈTRE, lui, s'applique à tout le monde depuis août 2026 —
@@ -226,7 +231,25 @@ export function UserAccessDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                {loading ? (
+                <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm">
+                    {([["perimetre", "Périmètre"], ["onboarding", "Onboarding"]] as const).map(([cle, libelle]) => (
+                        <button
+                            key={cle}
+                            type="button"
+                            onClick={() => setOnglet(cle)}
+                            className={cn(
+                                "flex-1 rounded-md px-3 py-1.5 font-medium transition-colors",
+                                onglet === cle ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700",
+                            )}
+                        >
+                            {libelle}
+                        </button>
+                    ))}
+                </div>
+
+                {onglet === "onboarding" && user ? (
+                    <OngletOnboarding userId={user.id} />
+                ) : loading ? (
                     <div className="flex items-center justify-center py-12">
                         <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
                     </div>
@@ -520,11 +543,86 @@ export function UserAccessDialog({
 
                 <DialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Fermer</Button>
-                    <Button onClick={save} disabled={saving || loading}>
-                        {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enregistrement…</> : "Enregistrer"}
-                    </Button>
+                    {onglet === "perimetre" && (
+                        <Button onClick={save} disabled={saving || loading}>
+                            {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enregistrement…</> : "Enregistrer"}
+                        </Button>
+                    )}
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+    );
+}
+
+/**
+ * L'onglet « Onboarding » : une ligne par écran qui a sa visite guidée, vue
+ * ou à revoir. « À revoir » la rejoue à la prochaine ouverture de l'écran ;
+ * chaque interrupteur s'enregistre aussitôt, sans passer par Enregistrer.
+ */
+function OngletOnboarding({ userId }: { userId: string }) {
+    const [etat, setEtat] = useState<Record<Visite, string | null> | "chargement" | "échec">("chargement");
+    const [enCours, setEnCours] = useState<Visite | null>(null);
+
+    const charger = useCallback(() => {
+        setEtat("chargement");
+        fetch(`/api/admin/users/${userId}/onboarding`)
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+            .then((d) => setEtat(d.visites as Record<Visite, string | null>))
+            .catch(() => setEtat("échec"));
+    }, [userId]);
+    useEffect(charger, [charger]);
+
+    const basculer = async (visite: Visite, aRevoir: boolean) => {
+        setEnCours(visite);
+        try {
+            const res = await fetch(`/api/admin/users/${userId}/onboarding`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ visite, aRevoir }),
+            });
+            if (!res.ok) throw new Error(String(res.status));
+            const d = await res.json();
+            setEtat(d.visites as Record<Visite, string | null>);
+            toast.success(aRevoir ? "La visite sera rejouée à la prochaine ouverture de l'écran" : "Visite marquée comme vue");
+        } catch {
+            toast.error("Enregistrement impossible");
+        } finally {
+            setEnCours(null);
+        }
+    };
+
+    if (etat === "chargement") {
+        return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>;
+    }
+    if (etat === "échec") {
+        return <p className="py-6 text-sm text-red-700">L&apos;état des visites n&apos;a pas pu être lu.</p>;
+    }
+    return (
+        <div className="space-y-3 py-2">
+            <p className="text-sm text-slate-500">
+                Chaque écran a sa visite guidée, jouée à sa première ouverture. Activez « À revoir » pour la rejouer.
+            </p>
+            {VISITES.map((visite) => {
+                const vueLe = etat[visite];
+                return (
+                    <div key={visite} className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-3">
+                        <div>
+                            <p className="text-sm font-medium text-slate-900">{LIBELLES_VISITE[visite]}</p>
+                            <p className="text-xs text-slate-500">
+                                {vueLe ? `Vue le ${new Date(vueLe).toLocaleDateString("fr-CH")}` : "À la prochaine ouverture de l'écran"}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">À revoir</span>
+                            <Switch
+                                checked={vueLe === null}
+                                disabled={enCours === visite}
+                                onCheckedChange={(v) => basculer(visite, v)}
+                            />
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
     );
 }
