@@ -9,7 +9,7 @@
 
 export type CleColonne =
     | "collaborateur" | "poste" | "equipes" | "compte" | "presence" | "actions"
-    | "email" | "m365" | "files" | "perimetre" | "activite" | "cree" | "depuis";
+    | "email" | "m365" | "files" | "perimetre" | "cree" | "depuis";
 
 export interface ColonneCatalogue {
     cle: CleColonne;
@@ -22,18 +22,22 @@ export interface ColonneCatalogue {
     presence?: boolean;
 }
 
-/** L'ordre du catalogue est l'ordre des colonnes à l'écran. */
+/**
+ * L'ordre du catalogue est l'ordre des colonnes à l'écran. Par défaut, ce
+ * qu'il faut pour gérer des comptes : la personne, son compte, son e-mail,
+ * son périmètre (arbitrage du 11 sept. 2026). La dernière activité n'est pas
+ * une colonne : elle est la date portée par la cellule Compte.
+ */
 export const CATALOGUE_COLONNES: readonly ColonneCatalogue[] = [
     { cle: "collaborateur", libelle: "Collaborateur", fixe: true, defaut: true },
-    { cle: "poste", libelle: "Poste", defaut: true },
-    { cle: "equipes", libelle: "Équipes", defaut: true },
+    { cle: "poste", libelle: "Poste" },
+    { cle: "equipes", libelle: "Équipes" },
     { cle: "compte", libelle: "Compte", defaut: true },
-    { cle: "presence", libelle: "Présence", defaut: true, presence: true },
-    { cle: "email", libelle: "E-mail" },
+    { cle: "presence", libelle: "Présence", presence: true },
+    { cle: "email", libelle: "E-mail", defaut: true },
     { cle: "m365", libelle: "Microsoft 365" },
     { cle: "files", libelle: "Files", presence: true },
-    { cle: "perimetre", libelle: "Périmètre" },
-    { cle: "activite", libelle: "Dernière activité" },
+    { cle: "perimetre", libelle: "Périmètre", defaut: true },
     { cle: "cree", libelle: "Compte créé le" },
     { cle: "depuis", libelle: "Au 3CX depuis" },
     { cle: "actions", libelle: "Actions", fixe: true, defaut: true },

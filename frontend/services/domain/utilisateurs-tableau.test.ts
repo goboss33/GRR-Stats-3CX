@@ -12,9 +12,9 @@ describe("catalogue des colonnes", () => {
     it("les colonnes fixes sont dans le défaut, et le défaut tient en peu de colonnes", () => {
         const defaut = colonnesParDefaut();
         for (const c of CATALOGUE_COLONNES) if (c.fixe) expect(defaut.has(c.cle)).toBe(true);
-        expect(defaut.has("poste")).toBe(true);
-        expect(defaut.has("email")).toBe(false);
-        expect(defaut.size).toBeLessThanOrEqual(6);
+        // Arbitrage du 11 sept. 2026 : compte, e-mail, périmètre — pas le poste ni les équipes.
+        expect([...defaut].sort()).toEqual(["actions", "collaborateur", "compte", "email", "perimetre"]);
+        expect(CATALOGUE_COLONNES.some((c) => (c.cle as string) === "activite")).toBe(false);
     });
     it("un choix mémorisé est relu, une clé inconnue ignorée, une colonne fixe toujours rajoutée", () => {
         const lu = lireColonnesMemorisees(JSON.stringify(["email", "poste", "inconnue"]));

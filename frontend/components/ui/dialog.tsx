@@ -12,6 +12,31 @@ const DialogTrigger = DialogPrimitive.Trigger
 
 const DialogPortal = DialogPrimitive.Portal
 
+/**
+ * Sonde du voile double (11 sept. 2026) : quand un dialogue s'ouvre et que
+ * plus d'un voile couvre l'écran une demi-seconde plus tard, la console dit
+ * lesquels, et à quel dialogue chacun appartient. Le symptôme n'a pas pu
+ * être reproduit hors production ; ce message est la pièce à conviction.
+ */
+function DiagnosticVoiles() {
+  React.useEffect(() => {
+    const t = window.setTimeout(() => {
+      const voiles = Array.from(document.querySelectorAll<HTMLElement>("div.fixed.inset-0"))
+        .filter((v) => getComputedStyle(v).backgroundColor !== "rgba(0, 0, 0, 0)")
+      if (voiles.length < 2) return
+      console.warn("[dialogue] plusieurs voiles superposés :", voiles.map((v) => {
+        const suivant = v.nextElementSibling as HTMLElement | null
+        return {
+          zIndex: getComputedStyle(v).zIndex,
+          voisin: suivant ? `${suivant.tagName.toLowerCase()}[role=${suivant.getAttribute("role")}] ${suivant.textContent?.slice(0, 60) ?? ""}` : "(aucun)",
+        }
+      }), "· dialogues ouverts :", document.querySelectorAll('[role="dialog"]').length)
+    }, 500)
+    return () => window.clearTimeout(t)
+  }, [])
+  return null
+}
+
 const DialogClose = DialogPrimitive.Close
 
 const DialogOverlay = React.forwardRef<
@@ -21,7 +46,13 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      // z-[49], un cran SOUS le contenu (z-50) : voile et contenu partageaient
+      // le même niveau, et seul l'ordre d'apparition les départageait — un
+      // dialogue s'est retrouvé sous un voile, l'écran entier assombri
+      // (constaté le 11 sept. 2026, par intermittence, sans reproduction).
+      // Un cran plus bas, aucun voile ne peut plus recouvrir un dialogue,
+      // et les menus déroulants (z-50) restent au-dessus de tout.
+      "fixed inset-0 z-[49] bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
     {...props}
@@ -35,6 +66,7 @@ const DialogContent = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
+    <DiagnosticVoiles />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(

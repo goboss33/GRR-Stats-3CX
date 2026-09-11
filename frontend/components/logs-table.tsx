@@ -1,5 +1,6 @@
 "use client";
 
+import { ZoneDefilable } from "@/components/zone-defilable";
 import {
     Table,
     TableBody,
@@ -165,7 +166,7 @@ export function LogsTable({
 
     return (
         <TooltipProvider delayDuration={0}>
-            <div className="overflow-x-auto">
+            <ZoneDefilable>
                 <Table>
                     <TableHeader>
                         {/* Row 1: Column Labels + Sort */}
@@ -400,7 +401,7 @@ export function LogsTable({
                         )}
                     </TableBody>
                 </Table>
-            </div>
+            </ZoneDefilable>
         </TooltipProvider>
     );
 }

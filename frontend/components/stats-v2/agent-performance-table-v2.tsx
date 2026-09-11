@@ -1,5 +1,6 @@
 "use client";
 
+import { ZoneDefilable } from "@/components/zone-defilable";
 import { formatDurationHuman as formatDuration } from "@/services/domain/call-aggregation";
 
 import { AgentStats, QueueKPIs } from "@/types/statistics.types";
@@ -234,7 +235,7 @@ export function AgentPerformanceTableV2({
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
-                    <div className="overflow-x-auto">
+                    <ZoneDefilable>
                         <table className="w-full">
                             <thead className="bg-slate-50 border-y" data-visite="activite-entetes">
                                 <tr>
@@ -366,7 +367,7 @@ export function AgentPerformanceTableV2({
                                 </tr>
                             </tfoot>
                         </table>
-                    </div>
+                    </ZoneDefilable>
                 </CardContent>
             </Card>
         </TooltipProvider>
