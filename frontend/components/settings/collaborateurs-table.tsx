@@ -97,8 +97,15 @@ export function CollaborateursTable({
     const [filtreEquipe, setFiltreEquipe] = useState<Set<string>>(new Set([EN_EQUIPE]));
     const [filtreDomaine, setFiltreDomaine] = useState<Set<string>>(new Set());
     const [filtreCompte, setFiltreCompte] = useState<Set<string>>(new Set());
-    const [fiche, setFiche] = useState<CollaborateurRow | null>(null);
-    const [preparation, setPreparation] = useState<CollaborateurRow | null>(null);
+    /**
+     * UNE SEULE modale à la fois, et donc un seul voile. Deux états séparés
+     * laissaient les deux dialogues s'ouvrir sur le même clic : leurs voiles
+     * se cumulaient (0,8 puis 0,8, soit 0,96) et l'écran virait au noir
+     * (constaté le 11 sept. 2026). Avec un seul état, c'est impossible.
+     */
+    const [modale, setModale] = useState<{ type: "fiche" | "preparation"; ligne: CollaborateurRow } | null>(null);
+    const fiche = modale?.type === "fiche" ? modale.ligne : null;
+    const preparation = modale?.type === "preparation" ? modale.ligne : null;
 
     const charger = () => {
         setDonnees("chargement");
@@ -251,7 +258,7 @@ export function CollaborateursTable({
                                 {affichees.map((c) => (
                                     <tr
                                         key={c.extension}
-                                        onClick={() => setFiche(c)}
+                                        onClick={() => setModale((m) => m ?? { type: "fiche", ligne: c })}
                                         className="cursor-pointer hover:bg-slate-50"
                                         title="Voir la fiche (postes, titres et équipes datés)"
                                     >
@@ -271,9 +278,14 @@ export function CollaborateursTable({
                                         </td>
                                         <td className="px-4 py-2"><BadgeM365 etat={c.matchState} /></td>
                                         <td className="px-4 py-2 text-xs text-slate-500">{dateCourte(c.depuis)}</td>
-                                        {/* Le bouton ne doit pas ouvrir la fiche : on arrête le clic ici. */}
-                                        <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
-                                            <CelluleCompte collaborateur={c} onPreparer={() => setPreparation(c)} />
+                                        {/* Le bouton ne doit pas ouvrir la fiche : on arrête le clic ici,
+                                            dès le pointeur — et l'état unique fait le reste. */}
+                                        <td
+                                            className="px-4 py-2"
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <CelluleCompte collaborateur={c} onPreparer={() => setModale({ type: "preparation", ligne: c })} />
                                         </td>
                                         {presence.enabled && (
                                             <td className="px-4 py-2"><CellulePresence presence={c.presence} jours={presence.jours} /></td>
@@ -299,11 +311,11 @@ export function CollaborateursTable({
                 </CardContent>
             </Card>
 
-            <FicheCollaborateur serverId={serverId} collaborateur={fiche} onClose={() => setFiche(null)} />
+            <FicheCollaborateur serverId={serverId} collaborateur={fiche} onClose={() => setModale(null)} />
             <PreparerCompteDialog
                 serverId={serverId}
                 collaborateur={preparation}
-                onClose={(cree) => { setPreparation(null); if (cree) charger(); }}
+                onClose={(cree) => { setModale(null); if (cree) charger(); }}
             />
         </div>
     );
