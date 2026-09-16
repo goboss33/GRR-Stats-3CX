@@ -95,6 +95,33 @@ export function vueDepuisFiltres(compte: ReadonlySet<string>, equipe: ReadonlySe
     return null;
 }
 
+// ============================================
+// LA COLONNE « COMPTE »
+// ============================================
+
+type Venues = { lastSeenAt: string | null; lastLoginAt: string | null };
+
+/**
+ * La date qu'affiche la cellule « Compte » : la dernière ACTIVITÉ, à défaut la
+ * dernière authentification. null = jamais connecté.
+ */
+export function derniereActivite(compte: Venues): string | null {
+    return compte.lastSeenAt ?? compte.lastLoginAt;
+}
+
+/**
+ * La clé de tri de la colonne « Compte », qui suit la date affichée : au
+ * premier clic, les venues les plus récentes d'abord ; au second, les comptes
+ * jamais connectés en tête, puis les venues les plus anciennes. Un compte
+ * jamais connecté vaut 0, le plus ancien possible ; une ligne SANS compte n'a
+ * pas de valeur et reste au bout dans les deux sens (cf. tri-tableau).
+ */
+export function valeurTriCompte(compte: Venues | null): number | null {
+    if (!compte) return null;
+    const moment = derniereActivite(compte);
+    return moment ? Date.parse(moment) || 0 : 0;
+}
+
 /** « Bossens, Geoffrey » depuis un compte, ou l'e-mail quand le nom manque. */
 export function nomAffichable(compte: { firstName: string | null; lastName: string | null; email: string }): string {
     const nom = [compte.lastName, compte.firstName].filter((x) => x && x.trim()).join(", ");

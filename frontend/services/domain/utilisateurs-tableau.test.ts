@@ -3,10 +3,39 @@ import {
     CATALOGUE_COLONNES,
     FILTRES_DES_VUES,
     colonnesParDefaut,
+    derniereActivite,
     lireColonnesMemorisees,
     nomAffichable,
+    valeurTriCompte,
     vueDepuisFiltres,
 } from "./utilisateurs-tableau";
+import { basculerTri, trierLignes, type DefinitionColonne } from "./tri-tableau";
+
+describe("la colonne Compte se trie par date de connexion", () => {
+    type Ligne = { nom: string; compte: { lastSeenAt: string | null; lastLoginAt: string | null } | null };
+    const lignes: Ligne[] = [
+        { nom: "Sans compte", compte: null },
+        { nom: "Jamais B", compte: { lastSeenAt: null, lastLoginAt: null } },
+        { nom: "Ce matin", compte: { lastSeenAt: "2026-09-17T07:30:00Z", lastLoginAt: "2026-09-16T12:44:00Z" } },
+        { nom: "Jamais A", compte: { lastSeenAt: null, lastLoginAt: null } },
+        { nom: "En août", compte: { lastSeenAt: null, lastLoginAt: "2026-08-18T08:21:00Z" } },
+    ];
+    const colonnes: Record<"compte", DefinitionColonne<Ligne>> = { compte: { type: "date", valeur: (l) => valeurTriCompte(l.compte) } };
+    const trier = (sens: "asc" | "desc") => trierLignes(lignes, { colonne: "compte", sens }, colonnes, (l) => l.nom).map((l) => l.nom);
+
+    it("la date affichée est l'activité, à défaut l'authentification", () => {
+        expect(derniereActivite({ lastSeenAt: "2026-09-17T07:30:00Z", lastLoginAt: "2026-09-16T12:44:00Z" })).toBe("2026-09-17T07:30:00Z");
+        expect(derniereActivite({ lastSeenAt: null, lastLoginAt: "2026-08-18T08:21:00Z" })).toBe("2026-08-18T08:21:00Z");
+        expect(derniereActivite({ lastSeenAt: null, lastLoginAt: null })).toBeNull();
+    });
+    it("premier clic : les plus récents d'abord, les jamais connectés ensuite, les lignes sans compte au bout", () => {
+        expect(basculerTri({ colonne: "autre" as "compte", sens: "asc" }, "compte", colonnes).sens).toBe("desc");
+        expect(trier("desc")).toEqual(["Ce matin", "En août", "Jamais A", "Jamais B", "Sans compte"]);
+    });
+    it("second clic : les jamais connectés en tête, puis les plus anciens ; les lignes sans compte toujours au bout", () => {
+        expect(trier("asc")).toEqual(["Jamais A", "Jamais B", "En août", "Ce matin", "Sans compte"]);
+    });
+});
 
 describe("catalogue des colonnes", () => {
     it("les colonnes fixes sont dans le défaut, et le défaut tient en peu de colonnes", () => {

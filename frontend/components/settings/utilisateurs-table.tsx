@@ -25,7 +25,7 @@ import {
 } from "@/services/domain/compte-collaborateur";
 import {
     CATALOGUE_COLONNES, CLE_MEMO_COLONNES, FILTRES_DES_VUES, LIBELLES_VUE,
-    colonnesParDefaut, lireColonnesMemorisees, vueDepuisFiltres, type CleColonne, type Vue,
+    colonnesParDefaut, derniereActivite, lireColonnesMemorisees, valeurTriCompte, vueDepuisFiltres, type CleColonne, type Vue,
 } from "@/services/domain/utilisateurs-tableau";
 import { cn } from "@/lib/utils";
 
@@ -70,8 +70,8 @@ const COLONNES: Record<Colonne, DefinitionColonne<CollaborateurRow>> = {
     // L'ordre des états est celui de l'urgence : ce qui se corrige d'abord.
     etat: { type: "nombre", valeur: (c) => ({ "compte-desactive": 0, "inconnu-m365": 1, "sans-email": 2, "m365-inactif": 3, "ok": 4 }[c.matchState] ?? 5) },
     depuis: { type: "date", valeur: (c) => c.depuis },
-    // Comptes existants d'abord, puis ceux à préparer, puis les impossibles.
-    compte: { type: "nombre", valeur: (c) => ({ existant: 2, "a-preparer": 1, "non-preparable": 0 }[etatCompte(c)]) },
+    // Par date de connexion, celle qu'affiche la cellule (cf. valeurTriCompte).
+    compte: { type: "date", valeur: (c) => valeurTriCompte(c.compte) },
     // Part de temps disponible ; sans relevé, en queue de tri.
     presence: { type: "nombre", valeur: (c) => (c.presence?.recent ? partsPresence(c.presence.recent)?.available ?? -1 : -1) },
     presenceFile: { type: "nombre", valeur: (c) => (c.equipes.length > 0 && c.presence?.recent ? partsPresence(c.presence.recent)?.queue ?? -1 : -1) },
@@ -459,7 +459,7 @@ export function UtilisateursTable({
 function CelluleCompte({ collaborateur: c }: { collaborateur: CollaborateurRow }) {
     if (c.compte) {
         const microsoft = c.compte.authProvider === "MICROSOFT";
-        const activite = c.compte.lastSeenAt ?? c.compte.lastLoginAt;
+        const activite = derniereActivite(c.compte);
         const detail = activite
             ? `Dernière activité le ${new Date(activite).toLocaleString("fr-CH", { dateStyle: "short", timeStyle: "short" })}`
               + (c.compte.lastLoginAt ? ` · dernière authentification le ${dateCourte(c.compte.lastLoginAt)}` : "")
