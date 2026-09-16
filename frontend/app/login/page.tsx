@@ -15,18 +15,27 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-function AccessDeniedBanner() {
+/** Pourquoi l'on revient sur la page de connexion, quand il y a une raison à dire. */
+function LoginBanner() {
     const searchParams = useSearchParams();
     const errorParam = searchParams.get("error");
-    const accessDenied = errorParam === "AccessDenied";
 
-    if (!accessDenied) return null;
-
-    return (
-        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-            Accès refusé. Votre compte n&apos;est pas autorisé à accéder à cette application. Contactez votre administrateur.
-        </div>
-    );
+    if (errorParam === "AccessDenied") {
+        return (
+            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                Accès refusé. Votre compte n&apos;est pas autorisé à accéder à cette application. Contactez votre administrateur.
+            </div>
+        );
+    }
+    // La session désignait un compte qui n'existe plus (cf. app/api/session/fin).
+    if (errorParam === "SessionExpiree") {
+        return (
+            <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-sm">
+                Votre session a pris fin. Reconnectez-vous pour continuer.
+            </div>
+        );
+    }
+    return null;
 }
 
 export default function LoginPage() {
@@ -81,7 +90,7 @@ export default function LoginPage() {
                 </CardHeader>
                 <CardContent>
                     <Suspense>
-                        <AccessDeniedBanner />
+                        <LoginBanner />
                     </Suspense>
                     
                     <Button

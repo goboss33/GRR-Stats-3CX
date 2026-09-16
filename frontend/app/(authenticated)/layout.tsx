@@ -14,8 +14,10 @@ export default async function AuthenticatedLayout({
 }) {
     const session = await auth();
 
+    // Un cookie présent mais illisible : le middleware laisse passer, et
+    // renvoyer vers /login bouclerait (cf. app/api/session/fin).
     if (!session) {
-        redirect("/login");
+        redirect("/api/session/fin");
     }
 
     const handleSignOut = async () => {
@@ -33,6 +35,11 @@ export default async function AuthenticatedLayout({
         where: { id: session.user.id },
         select: { profilePicture: true, canViewLogs: true, canViewExtensionStats: true }
     });
+    // Une session dont le compte n'existe plus (doublon supprimé, compte
+    // retiré) ouvrirait une app vide, sans jamais redemander de connexion.
+    if (!dbUser) {
+        redirect("/api/session/fin");
+    }
     const profilePicture = dbUser?.profilePicture || null;
     // Sans les droits « Voir les logs » / « Extension/DDI », les entrées
     // disparaissent de la navigation — les pages et services refusent de
