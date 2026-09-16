@@ -4,6 +4,7 @@ import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import bcrypt from "bcryptjs";
 import { prismaAuth } from "@/lib/prisma-auth";
 import { logger } from "@/lib/logger";
+import { adressesCandidates, lireRevendications } from "@/services/domain/rattachement-compte";
 
 function getRoleFromGroups(groups: string[]): string | null {
     const groupMappings = [
@@ -114,11 +115,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // L'événement ne se déclenche qu'après acceptation — et ne doit jamais
         // faire échouer la connexion, d'où l'erreur avalée avec trace.
         async signIn({ user }) {
-            if (!user?.email) return;
+            // `user.id` est l'identifiant du COMPTE : celui rendu par authorize
+            // pour un mot de passe, celui posé par le rattachement pour
+            // Microsoft. L'adresse du jeton, elle, peut ne pas être celle du
+            // compte (cf. services/domain/rattachement-compte).
+            if (!user?.id) return;
             try {
-                // Même tolérance à la casse que le rattachement du compte.
                 await prismaAuth.user.updateMany({
-                    where: { email: { equals: user.email, mode: "insensitive" } },
+                    where: { id: user.id },
                     data: { lastLoginAt: new Date() },
                 });
             } catch (error) {
@@ -191,34 +195,46 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                         }
                     }
                     
-                    // Try to find user by Azure AD ID first, then by email
+                    // Le `sub` du jeton : identifiant propre à l'application de
+                    // connexion, gardé dans azureAdId. Ce n'est PAS l'objet Entra.
+                    const sujetEntra = user.id;
+                    const jeton = lireRevendications(profile);
+                    if (!jeton.email && user.email) jeton.email = user.email;
+
+                    // Les adresses 3CX que la synchro Microsoft 365 associe à cet
+                    // objet Entra : c'est sous l'une d'elles que vit un compte
+                    // PRÉPARÉ, quel que soit son domaine. L'adresse du jeton est
+                    // l'adresse principale de la boîte, pas forcément celle du 3CX
+                    // (six doublons le 16 sept. 2026).
+                    const postes = jeton.oid
+                        ? await prismaAuth.collaboratorDirectoryInterval.findMany({
+                            where: { graphId: jeton.oid, closedAt: null, email: { not: null } },
+                            select: { email: true },
+                        })
+                        : [];
+                    const candidates = adressesCandidates(jeton, postes.map((poste) => poste.email));
+
+                    // D'abord un compte déjà connecté ; sinon la plus ancienne des
+                    // adresses candidates — un compte préparé précède toujours un
+                    // compte né d'une connexion.
                     let existingUser = await prismaAuth.user.findUnique({
-                        where: { azureAdId: user.id },
+                        where: { azureAdId: sujetEntra },
                     });
-                    
-                    if (!existingUser && user.email) {
-                        existingUser = await prismaAuth.user.findUnique({
-                            where: { email: user.email },
-                        });
-                    }
-                    // Un compte PRÉPARÉ depuis l'annuaire (cf. collaborators.service)
-                    // est stocké en minuscules ; Microsoft peut renvoyer l'e-mail
-                    // avec des majuscules. Sans ce repli, la première connexion
-                    // créerait un second compte, et le périmètre resterait sur
-                    // le premier.
-                    if (!existingUser && user.email) {
+                    if (!existingUser && candidates.length > 0) {
                         existingUser = await prismaAuth.user.findFirst({
-                            where: { email: { equals: user.email, mode: "insensitive" } },
+                            where: { OR: candidates.map((email) => ({ email: { equals: email, mode: "insensitive" as const } })) },
+                            orderBy: { createdAt: "asc" },
                         });
                     }
-                    
-                    if (existingUser) {
-                        await prismaAuth.user.update({
+
+                    const identite = { id: true, email: true, firstName: true, lastName: true, role: true, authProvider: true } as const;
+                    const compte = existingUser
+                        ? await prismaAuth.user.update({
                             where: { id: existingUser.id },
                             data: {
                                 role: role as "ADMIN" | "MODERATOR" | "MANAGER" | "AGENT",
                                 authProvider: "MICROSOFT",
-                                azureAdId: user.id,
+                                azureAdId: sujetEntra,
                                 firstName: firstName || existingUser.firstName,
                                 lastName: lastName || existingUser.lastName,
                                 profilePicture: profilePicture || existingUser.profilePicture,
@@ -227,16 +243,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                                 mobilePhone: microsoftProfile.mobilePhone || null,
                                 officeLocation: microsoftProfile.officeLocation || null,
                             },
-                        });
-                    } else {
-                        await prismaAuth.user.create({
+                            select: identite,
+                        })
+                        : await prismaAuth.user.create({
+                            // Sans compte : l'adresse du 3CX quand l'annuaire la
+                            // connaît, pour que compte et poste fassent une seule
+                            // ligne de l'écran Utilisateurs ; sinon celle du jeton.
                             data: {
-                                email: user.email!,
+                                email: candidates[0] ?? user.email!,
                                 firstName: firstName,
                                 lastName: lastName,
                                 role: role as "ADMIN" | "MODERATOR" | "MANAGER" | "AGENT",
                                 authProvider: "MICROSOFT",
-                                azureAdId: user.id,
+                                azureAdId: sujetEntra,
                                 profilePicture: profilePicture,
                                 password: "",
                                 jobTitle: microsoftProfile.jobTitle || null,
@@ -244,9 +263,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                                 mobilePhone: microsoftProfile.mobilePhone || null,
                                 officeLocation: microsoftProfile.officeLocation || null,
                             },
+                            select: identite,
                         });
-                    }
-                    
+
+                    // La session porte l'identité du COMPTE, pas celle du jeton :
+                    // un compte retrouvé par l'annuaire n'a pas l'adresse du jeton,
+                    // et tout ce qui suit (jwt, événement de connexion, dernière
+                    // activité) le cherche par son identifiant.
+                    user.id = compte.id;
+                    user.email = compte.email;
+                    user.role = compte.role;
+                    user.firstName = compte.firstName;
+                    user.lastName = compte.lastName;
+                    user.authProvider = compte.authProvider;
+
                     // Clean up user object to avoid large JWT.
                     // Vue à propriétés optionnelles pour autoriser `delete` sans `any`.
                     const mutableUser = user as unknown as {
@@ -286,9 +316,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     token.role = role;
                 }
                 
-                const dbUser = await prismaAuth.user.findUnique({
-                    where: { email: token.email as string },
-                });
+                // Le rattachement a posé sur `user`, donc sur token.id,
+                // l'identifiant du compte : on relit par là, jamais par l'adresse
+                // du jeton, qui peut ne pas être celle du compte.
+                const dbUser = token.id
+                    ? await prismaAuth.user.findUnique({ where: { id: token.id as string } })
+                    : null;
                 if (dbUser) {
                     token.id = dbUser.id;
                     token.firstName = dbUser.firstName;
