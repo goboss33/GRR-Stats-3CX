@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AtSign, CheckCircle2, Lock, Pencil, Search, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
+import { AtSign, CheckCircle2, Eye, Lock, Pencil, Search, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -262,6 +262,22 @@ export function UtilisateursTable({
         }
     };
 
+    // « Voir en tant que » : le serveur pose le cookie, puis on repart du
+    // tableau de bord en rechargeant tout — chaque page relit la vue.
+    const voirComme = async (c: CollaborateurRow) => {
+        if (!c.compte) return;
+        try {
+            const res = await fetch("/api/admin/vue-en-tant-que", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: c.compte.id }),
+            });
+            const data = await res.json();
+            if (!res.ok) { toast.error(data.error || "Impossible d'ouvrir cette vue"); return; }
+            window.location.assign("/dashboard");
+        } catch {
+            toast.error("Impossible d'ouvrir cette vue");
+        }
+    };
+
     if (donnees === "chargement") return <div className="py-10"><Attente libelle="Lecture des utilisateurs…" /></div>;
     if (donnees === "échec") return <ZoneEnEchec message="La liste des utilisateurs n'a pas pu être lue." onReessayer={charger} />;
     const { resume, presence, comptes } = donnees;
@@ -399,6 +415,7 @@ export function UtilisateursTable({
                                                             onAcces={() => setModale({ type: "acces", ligne: c })}
                                                             onModifier={() => setModale({ type: "modifier", ligne: c })}
                                                             onSupprimer={() => supprimer(c)}
+                                                            onVoirComme={() => voirComme(c)}
                                                             onPreparer={() => setModale({ type: "preparation", ligne: c })}
                                                         />
                                                     </td>
@@ -486,18 +503,25 @@ function CelluleCompte({ collaborateur: c }: { collaborateur: CollaborateurRow }
 }
 
 /** Ce qu'on peut faire de cette ligne : les trois gestes d'un compte, ou sa préparation. */
-function CelluleActions({ collaborateur: c, moi, onAcces, onModifier, onSupprimer, onPreparer }: {
+function CelluleActions({ collaborateur: c, moi, onAcces, onModifier, onSupprimer, onVoirComme, onPreparer }: {
     collaborateur: CollaborateurRow;
     moi: { id: string; role: string } | null;
     onAcces: () => void;
     onModifier: () => void;
     onSupprimer: () => void;
+    onVoirComme: () => void;
     onPreparer: () => void;
 }) {
     if (c.compte) {
         const soi = moi?.id === c.compte.id;
         return (
             <div className="flex items-center justify-end gap-0.5">
+                {/* Réservé à l'ADMIN, jamais sur soi : ce serait sa propre vue. */}
+                {moi?.role === "ADMIN" && !soi && (
+                    <Tip content="Voir l'application comme cette personne">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-amber-700" onClick={onVoirComme}><Eye className="h-4 w-4" /></Button>
+                    </Tip>
+                )}
                 <Tip content="Accès, onboarding et fiche 3CX">
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-700" onClick={onAcces}><ShieldCheck className="h-4 w-4" /></Button>
                 </Tip>

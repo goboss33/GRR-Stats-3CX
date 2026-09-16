@@ -2,6 +2,7 @@ import type { Session } from "next-auth";
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { redirect } from "next/navigation";
+import { roleEffectif } from "@/lib/vue-en-tant-que";
 
 /**
  * Rôles applicatifs reconnus (miroir de l'enum Prisma `Role`).
@@ -11,6 +12,16 @@ import { redirect } from "next/navigation";
 export type AppRole = "ADMIN" | "MODERATOR" | "MANAGER" | "AGENT";
 
 type SessionUser = Session["user"];
+
+/**
+ * L'utilisateur tel que les gardes le jugent : pendant « voir en tant que »
+ * (lib/vue-en-tant-que), le rôle est celui de la personne regardée — un
+ * administrateur qui regarde un manager perd les réglages le temps de la vue.
+ * L'identifiant reste le sien : ce qu'il écrit reste écrit en son nom.
+ */
+async function utilisateurJuge(user: SessionUser): Promise<SessionUser> {
+    return { ...user, role: await roleEffectif(user) };
+}
 
 /**
  * Garde d'autorisation pour les Route Handlers (API).
@@ -29,10 +40,11 @@ export async function requireApiRole(
     if (!session?.user) {
         return { ok: false, response: NextResponse.json({ error: "Non authentifié" }, { status: 401 }) };
     }
-    if (!allowedRoles.includes(session.user.role as AppRole)) {
+    const user = await utilisateurJuge(session.user);
+    if (!allowedRoles.includes(user.role as AppRole)) {
         return { ok: false, response: NextResponse.json({ error: "Accès refusé" }, { status: 403 }) };
     }
-    return { ok: true, user: session.user };
+    return { ok: true, user };
 }
 
 /**
@@ -47,8 +59,9 @@ export async function requirePageRole(
 ): Promise<SessionUser> {
     const session = await auth();
     if (!session?.user) redirect("/login");
-    if (!allowedRoles.includes(session.user.role as AppRole)) redirect(redirectTo);
-    return session.user;
+    const user = await utilisateurJuge(session.user);
+    if (!allowedRoles.includes(user.role as AppRole)) redirect(redirectTo);
+    return user;
 }
 
 /**
@@ -57,8 +70,9 @@ export async function requirePageRole(
  */
 export async function requireActionRole(allowedRoles: AppRole[]): Promise<SessionUser> {
     const session = await auth();
-    if (!session?.user || !allowedRoles.includes(session.user.role as AppRole)) {
+    const user = session?.user ? await utilisateurJuge(session.user) : null;
+    if (!user || !allowedRoles.includes(user.role as AppRole)) {
         throw new Error("Non autorisé");
     }
-    return session.user;
+    return user;
 }

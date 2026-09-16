@@ -6,6 +6,10 @@ import { HeaderScopeProvider } from "@/components/header-scope";
 import { Suspense } from "react";
 import Loading from "./loading";
 import { prismaAuth } from "@/lib/prisma-auth";
+import { cookies } from "next/headers";
+import { lireVueEnTantQue } from "@/lib/vue-en-tant-que";
+import { COOKIE_VUE_EN_TANT_QUE } from "@/services/domain/vue-en-tant-que";
+import { BandeauVueEnTantQue } from "@/components/bandeau-vue-en-tant-que";
 
 export default async function AuthenticatedLayout({
     children,
@@ -25,7 +29,16 @@ export default async function AuthenticatedLayout({
         await signOut({ redirectTo: "/login" });
     };
 
-    const userRole = session.user?.role || "AGENT";
+    // « Voir en tant que » : la navigation suit le rôle et les droits de la
+    // personne regardée ; le nom et la photo restent ceux de l'administrateur.
+    const vue = await lireVueEnTantQue();
+    const quitterVue = async () => {
+        "use server";
+        (await cookies()).delete(COOKIE_VUE_EN_TANT_QUE);
+        redirect("/admin/settings?section=users");
+    };
+
+    const userRole = vue?.role ?? session.user?.role ?? "AGENT";
     const userFirstName = session.user?.firstName;
     const userLastName = session.user?.lastName;
     const authProvider = session.user?.authProvider || "CREDENTIALS";
@@ -44,8 +57,11 @@ export default async function AuthenticatedLayout({
     // Sans les droits « Voir les logs » / « Extension/DDI », les entrées
     // disparaissent de la navigation — les pages et services refusent de
     // toute façon (contrôle côté serveur).
-    const canViewLogs = dbUser?.canViewLogs ?? true;
-    const canViewExtensionStats = dbUser?.canViewExtensionStats ?? true;
+    const droits = vue
+        ? await prismaAuth.user.findUnique({ where: { id: vue.id }, select: { canViewLogs: true, canViewExtensionStats: true } })
+        : dbUser;
+    const canViewLogs = droits?.canViewLogs ?? true;
+    const canViewExtensionStats = droits?.canViewExtensionStats ?? true;
 
     return (
         <div className="flex h-screen bg-slate-50">
@@ -67,6 +83,7 @@ export default async function AuthenticatedLayout({
                 colonne — header compris — au-delà de la fenêtre, et les
                 boutons à droite du header seraient clippés hors de l'écran. */}
             <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+                {vue && <BandeauVueEnTantQue cible={vue} quitter={quitterVue} />}
                 {/* Le provider relie les pages au header : elles y déclarent
                     quelles provenances sont préchargées (spinners du toggle). */}
                 <HeaderScopeProvider>

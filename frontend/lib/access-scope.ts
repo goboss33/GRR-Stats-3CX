@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { lireVueEnTantQue } from "@/lib/vue-en-tant-que";
 import { prismaAuth } from "@/lib/prisma-auth";
 import { ServerId } from "@/lib/prisma-cdr";
 import { effectiveAgentRatiosLevel, type AgentRatiosLevel } from "@/lib/ratios-access";
@@ -163,7 +164,10 @@ export async function resolveAccessScope(tenantId: ServerId): Promise<AccessScop
     const session = await auth();
     if (!session?.user) return emptyScope();
 
-    return resolveScopeForUser(session.user.id, tenantId);
+    // « Voir en tant que » : un administrateur voit la portée de la personne
+    // regardée — ses files, ses droits, ses ratios (cf. lib/vue-en-tant-que).
+    const vue = await lireVueEnTantQue();
+    return resolveScopeForUser(vue?.id ?? session.user.id, tenantId);
 }
 
 /** Portée d'un utilisateur donné (partagée par la session et les clés API). */
